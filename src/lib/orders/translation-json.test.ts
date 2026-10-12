@@ -40,6 +40,7 @@ function work(): PageWork {
       round: 0,
       token: null,
       qaIssues: [],
+      updatedAt: "2026-10-12T00:00:00.000Z",
     },
     order: {
       id: orderId,

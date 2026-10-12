@@ -419,10 +419,8 @@ export async function runTranslationAssemble(
 ): Promise<void> {
   const run = await getTranslationRun(db, input.orderId, input.version);
   if (!run || run.status === "ready" || run.status === "failed") return;
-  if (run.status === "running") {
-    const claimed = await claimAssemble(db, input.orderId, input.version);
-    if (!claimed) return;
-  }
+  const claimed = await claimAssemble(db, input.orderId, input.version);
+  if (!claimed) return;
 
   const order = await getOrderById(db, input.orderId);
   if (!order?.sourceLanguage) return;
@@ -605,6 +603,7 @@ export async function runTranslationAssemble(
     );
   } catch (error) {
     await failTranslationOrder(db, { orderId: input.orderId, version: input.version, error });
+    await ensurePageFailureReviewed(db, input.orderId, error);
   }
 }
 
