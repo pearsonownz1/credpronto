@@ -1,7 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
   async headers() {
     return [
       {
@@ -15,6 +14,13 @@ const nextConfig: NextConfig = {
   },
   cacheComponents: true,
   partialPrefetching: true,
+  serverExternalPackages: ["sharp", "unpdf", "heic-convert"],
+  outputFileTracingIncludes: {
+    "/api/**": ["./src/lib/orders/pdf/NotoSans-Regular.ttf"],
+  },
+  experimental: {
+    proxyClientMaxBodySize: "100mb",
+  },
   turbopack: {
     rules: {
       "*.css": {

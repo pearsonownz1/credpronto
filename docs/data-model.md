@@ -28,9 +28,20 @@ The hash is not a password hash. It does not need to be slow. It only prevents a
 
 Price for a translation is `$9.95` per billable page (`orders.unit_price_cents` defaults to `995`, `currency` defaults to `usd`).
 
-A billable page is one side of an original page, up to 250 words. Words past 250 on that same side count as another billable page. Zero words still counts as one side, because the side itself was part of the original.
+A billable page is one side of an original page. Zero counted units still counts as one side, because the side itself was part of the original.
 
-For each `document_pages` row, once `word_count` is known:
+For Chinese, Japanese, and Korean (`billing_basis = 'cjk'`), `word_count` stores a unit count, not a word count. A unit is one Han, Hiragana, Katakana, or Hangul character, or one maximal run of ASCII digits or Latin letters. A run may include `.` `,` `/` `-` when that mark sits between alphanumerics (`3.85`, `2019`, `GPA`, `2019-06` are each one unit). Spaces and other punctuation count as zero. Example: `学号 2019 GPA 3.85` is 5 units.
+
+```text
+billable_units = greatest(1, ceil(word_count / 400))
+```
+
+| CJK units on that side | Billable units |
+| --- | --- |
+| 0–400 | 1 |
+| 401–800 | 2 |
+
+For every other language (`billing_basis = 'words'`):
 
 ```text
 billable_units = greatest(1, ceil(word_count / 250))
@@ -42,7 +53,7 @@ billable_units = greatest(1, ceil(word_count / 250))
 | 251–500 | 2 |
 | 501–750 | 3 |
 
-The check constraint `document_pages_billable_rule_chk` rejects any other pair. Both columns stay null until OCR has produced a count.
+The check constraint `document_pages_billable_rule_chk` rejects any other pair. `word_count` and `billable_units` stay null until the count is known. `GET /api/orders/[token]` returns the sentence for the rule that applied in `pageRule`.
 
 `orders.billable_pages` is the sum of `billable_units` across every side of every document on the order. `orders.total_cents` must equal `billable_pages * unit_price_cents` whenever both are set. A translation cannot move to `paid`, `approved`, or `delivered` unless the language pair is confirmed, `billable_pages` is at least 1, and the total matches that product. Evaluation and expert-letter orders may carry a total without a page count.
 
@@ -72,7 +83,7 @@ Related statuses:
 - `documents.status`: `uploaded` → `processing` → `ready`, or `failed`.
 - `translations.status` and `previews.status`: `pending` → `ready`, or `failed`.
 - `corrections.status`: `open` → `resolved` (a preview version fixed it) or `dismissed`. A resolved row must name `resolved_preview_version`. An open or dismissed row must not.
-- `payments.status`: `pending` → `paid`, or `failed` / `canceled`. `refunded` still requires `paid_at`. At most one `paid` row per order.
+- `payments.status`: `pending` → `paid`, or `failed` / `canceled`. `charge.refunded` sets `refunded` (which still requires `paid_at`) and download is locked again. At most one settled (`paid` or `paid_test`) row per order.
 - `deliveries.status`: `pending` → `approved` → `delivered`, or `failed`. Approval requires `approved_by` (a `staff.user_id`) and `approved_at`. Delivery also requires `delivered_at`. Approved and delivered rows must both have `final_path` and `certification_path`.
 
 ## Tables
