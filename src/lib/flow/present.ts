@@ -702,7 +702,7 @@ export function toPreviewOrder(
         0,
       lines: servicePriceLines(order),
     },
-    addonOptions: withoutExpedited(order.addonOptions, order.orderType !== "evaluation"),
+    addonOptions: withoutExpedited(order.addonOptions, true),
     addons: order.addons,
     shippingAddress: order.shippingAddress,
     included: order.orderType === "evaluation" ? EVALUATION_INCLUDED : PREVIEW_INCLUDED,

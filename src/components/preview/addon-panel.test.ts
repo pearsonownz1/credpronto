@@ -23,7 +23,7 @@ function Hooked({ order }: { order: PreviewOrder }) {
 }
 
 describe("add-on panel", () => {
-  it("labels Expedited from the option price and unit", () => {
+  it("drops Expedited when that is the only option passed in", () => {
     const html = renderToStaticMarkup(
       createElement(AddonPanel, {
         panel: panel({
@@ -33,25 +33,12 @@ describe("add-on panel", () => {
         }),
       }),
     );
-    expect(html).toContain("Expedited");
-    expect(html).toContain("$9.95 per order");
-    expect(html).not.toContain("per page");
-
-    const custom = renderToStaticMarkup(
-      createElement(AddonPanel, {
-        panel: panel({
-          options: [{ id: "expedited", label: "Expedited", unitCents: 1500, per: "order", totalCents: 1500 }],
-          selected: [],
-          totalCents: 1995,
-        }),
-      }),
-    );
-    expect(custom).toContain("$15.00 per order");
-    expect(custom).not.toContain("$9.95");
-    expect(custom).not.toContain("per page");
+    expect(html).not.toContain("Expedited");
+    expect(html).not.toContain('data-testid="addon-expedited"');
+    expect(html).not.toContain("$9.95");
   });
 
-  it("hides Expedited on a translation preview and keeps it on an evaluation", () => {
+  it("hides Expedited on translation and evaluation previews", () => {
     const leaked: PreviewOrder = {
       ...CERTIFICATE_PREVIEW,
       product: "translation",
@@ -84,8 +71,9 @@ describe("add-on panel", () => {
       addonOptions: addonOptions(3, { orderType: "evaluation", service: "diploma" }),
     };
     const html = renderToStaticMarkup(createElement(Hooked, { order: evaluation }));
-    expect(html).toContain('data-testid="addon-expedited"');
-    expect(html).toContain("$9.95 per order");
+    expect(html).not.toContain("Expedited");
+    expect(html).not.toContain('data-testid="addon-expedited"');
+    expect(html).toContain('data-testid="addon-notarization"');
     expect(html).not.toContain("per page");
   });
 });

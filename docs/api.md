@@ -287,11 +287,10 @@ Optional services selected at checkout. The prices live on the order and quote r
 | --- | --- | --- | --- |
 | `notarization` | Notarization | `1795` ($17.95) | `order` |
 | `mail` | USPS Priority hard copy | `1295` ($12.95) | `order` |
-| `expedited` | Expedited | `995` ($9.95) | `order` |
 
-`expedited` is offered only on diploma and course-by-course evaluations (`service_type` `evaluation`). A translation order omits it from `addonOptions`. Checkout, the quote, and `POST /api/v1/orders` reject `{ "addons": ["expedited"] }` on a translation with `400` `{ "error": "Expedited is no longer offered" }`. New translation orders store `expedited: false`. On an evaluation it is a flat fee per order: `addonOptions[].unitCents` once, with `per: "order"` and `expeditedUnit: "order"`. It is not multiplied by the page count, including when `billablePages` is missing. The label uses that price and unit. A diploma evaluation stays `$19.95` (`1995` cents) and a course-by-course evaluation stays `$39.95` (`3995` cents) per degree before add-ons.
+`expedited` is not offered. `addonOptions` omits it for translations and evaluations. Checkout, the quote, and `POST /api/v1/orders` reject `{ "addons": ["expedited"] }` with `400` `{ "error": "Expedited is no longer offered" }`. New orders store `expedited: false`. Older rows that already purchased it stay `true`. A diploma evaluation stays `$19.95` (`1995` cents) and a course-by-course evaluation stays `$39.95` (`3995` cents) per degree before add-ons.
 
-`per: "order"` charges `unitCents` once. `addonOptions[].totalCents` is that charge for this order. Quote and order responses also include `expeditedUnit: "order"` so a client can label Expedited without inferring it from the page count.
+`per: "order"` charges `unitCents` once. `addonOptions[].totalCents` is that charge for this order. Quote and order responses still include `expeditedUnit` for older clients.
 
 `GET /api/orders/[token]` is the order and the quote. It includes `addonOptions` (the add-ons offered for that order), `expeditedUnit` (`"order"`), `addons` (the selected ids, or `[]`), `shippingAddress` (`null` until mail is selected), and `totalCents`. `totalCents` is the service price plus the selected add-on totals. With nothing selected it stays the translation price (`billablePages * unitPriceCents`) or the evaluation price (`evaluationCents + translationCents`).
 
@@ -307,7 +306,7 @@ Optional services selected at checkout. The prices live on the order and quote r
 }
 ```
 
-That example is a 3-page translation (`2985`) plus notarization (`1795`). A diploma or course-by-course evaluation can also add expedited once (`unitCents` from `addonOptions`, `995` cents today), whether the evaluation has 1 page or 12. The option's `per` is `order`.
+That example is a 3-page translation (`2985`) plus notarization (`1795`).
 
 Checkout body:
 
@@ -326,7 +325,7 @@ Checkout body:
 }
 ```
 
-`addons` may be omitted or `[]`. Each id appears at most once. An unknown id, a repeated id, or a non-array is `400` `{ "error": "Unknown add-on" }`. `expedited` on a translation order is `400` `{ "error": "Expedited is no longer offered" }`. On an evaluation, `expedited` adds `addonOptions[].unitCents` once (`995` cents). A missing page count does not change that charge.
+`addons` may be omitted or `[]`. Each id appears at most once. An unknown id, a repeated id, or a non-array is `400` `{ "error": "Unknown add-on" }`. `expedited` is `400` `{ "error": "Expedited is no longer offered" }` on a translation or an evaluation.
 
 `mail` requires `shippingAddress`. Missing, incomplete, or non-US is `400` `{ "error": "Mail requires a US shipping address" }`. Required fields are `name`, `line1`, `city`, `state`, `postalCode`, and `country`. `line2` may be omitted or `null`. `country` must be `US`. `state` is a two-letter US state. An address sent without `mail` is ignored and `shippingAddress` stays `null`.
 
@@ -336,11 +335,10 @@ Each selected add-on is its own Stripe Checkout line item, in addition to the ex
 | --- | --- | --- | --- |
 | `notarization` | Notarization | `1` | `1795` |
 | `mail` | USPS Priority hard copy | `1` | `1295` |
-| `expedited` | Expedited | `1` | `995` |
 
 The rows are stored on the order (`order_addons`: `addon_id`, `unit_cents`, `quantity`, `total_cents`). Mail also stores the address. `orders.total_cents` becomes the inclusive total, and the payment row uses that amount. The webhook still requires `amount_total` to equal `orders.total_cents`. `CHECKOUT_PLACEHOLDER=1` stores the same selection and charges nothing.
 
-`expedited` is true for an evaluation that purchased it, and for older translation orders that already did. New translation orders store `false`. `GET /api/admin/orders` returns `expedited: true` or `false` on each row. Rows are oldest `paid_at` first, with unpaid orders last. Expedited comes first only when `paid_at` ties, then `created_at` descending. `/admin` uses that order for the paid orders waiting on staff.
+`expedited` stays true only on older orders that already purchased it. New orders store `false`. `GET /api/admin/orders` returns `expedited: true` or `false` on each row. Rows are oldest `paid_at` first, with unpaid orders last. An older Expedited purchase comes first only when `paid_at` ties, then `created_at` descending. `/admin` uses that order for the paid orders waiting on staff.
 
 `/admin` order detail shows fulfillment tasks for what was purchased:
 
@@ -868,7 +866,7 @@ While `STRIPE_SECRET_KEY` starts with `sk_test_`, `cp_live_` keys may call `GET`
 | `target_language` | no | Defaults to `en` |
 | `service` | yes | `translation` or `evaluation` |
 | `external_ref` | no | Stored on the order. Unique per `user_id`. A repeat returns the existing order with `200`. |
-| `addons` | no | JSON array of add-on ids, or the same field repeated. `expedited` on `service=translation` is `400` `{ "error": "Expedited is no longer offered", "code": "validation_error" }`. An evaluation accepts it and adds `995` cents once to `totalCents`. The order body includes `expeditedUnit: "order"`. |
+| `addons` | no | JSON array of add-on ids, or the same field repeated. `expedited` is `400` `{ "error": "Expedited is no longer offered", "code": "validation_error" }` for `translation` and `evaluation`. |
 | `shippingAddress` | when `mail` is selected | JSON object with the same fields as checkout. |
 
 The order is owned by the key's user (`orders.user_id`). Analysis quotes it with the same page pricing as `POST /api/orders` (`$9.95` per billable page; an evaluation also includes its evaluation fee). The saved card is then charged off-session for `totalCents` in Stripe test mode (`confirm: true`, `off_session: true`). A successful charge marks the payment `paid`, records `paid`, and for `translation` starts the normal translation pipeline. `evaluation` is quoted and charged the same way, then set to `needs_review` with `reviewReason` `Credential evaluation is reviewed by staff.` It does not enter translation.

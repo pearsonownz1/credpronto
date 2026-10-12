@@ -57,7 +57,7 @@ function CheckoutForm({
   const [selected, setSelected] = useState<AddonId[]>(() =>
     withoutExpedited(
       order.addons.map((id) => ({ id })),
-      !evaluationOrder,
+      true,
     ).map((item) => item.id),
   );
   const [address, setAddress] = useState({
@@ -71,7 +71,7 @@ function CheckoutForm({
 
   const notReady = order.status !== "preview_ready";
   const evaluation = evaluationOrder;
-  const options = withoutExpedited(order.addonOptions, !evaluation);
+  const options = withoutExpedited(order.addonOptions, true);
   const service = serviceCents(order);
   const due = chargeCents(service, options, selected);
   const mail = selected.includes("mail");

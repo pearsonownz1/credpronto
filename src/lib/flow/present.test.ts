@@ -647,11 +647,7 @@ describe("preview mapping", () => {
       order({ orderType: "evaluation", service: "diploma", evaluationCents: 1995, translationCents: 0 }),
       preview,
     );
-    expect(evaluationPreview.addonOptions?.find((option) => option.id === "expedited")).toMatchObject({
-      per: "order",
-      unitCents: 995,
-      totalCents: 995,
-    });
+    expect(evaluationPreview.addonOptions?.map((option) => option.id)).not.toContain("expedited");
     expect(mapped.pricing.lines).toEqual([
       { label: "3 pages × $9.95", amountCents: 2985 },
     ]);
@@ -689,12 +685,7 @@ describe("evaluation prices", () => {
         },
       ],
     });
-    expect(diploma.addonOptions.map((option) => option.id)).toEqual(["notarization", "mail", "expedited"]);
-    expect(diploma.addonOptions.find((option) => option.id === "expedited")).toMatchObject({
-      unitCents: 995,
-      per: "order",
-      totalCents: 995,
-    });
+    expect(diploma.addonOptions.map((option) => option.id)).toEqual(["notarization", "mail"]);
     expect(diploma.expeditedUnit).toBe("order");
     expect(servicePriceLines(diploma)).toEqual([
       { label: "Diploma evaluation", amountCents: 1995 },
@@ -718,8 +709,7 @@ describe("evaluation prices", () => {
         },
       ],
     });
-    expect(course.addonOptions.map((option) => option.id)).toEqual(["notarization", "mail", "expedited"]);
-    expect(course.addonOptions.find((option) => option.id === "expedited")?.per).toBe("order");
+    expect(course.addonOptions.map((option) => option.id)).toEqual(["notarization", "mail"]);
     expect(course.expeditedUnit).toBe("order");
     expect(servicePriceLines(course)).toEqual([
       { label: "Course-by-course evaluation", amountCents: 7990 },
