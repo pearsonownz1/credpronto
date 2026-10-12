@@ -20,6 +20,7 @@ import {
 import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
+import { ReadingFiles } from "./reading-files";
 import { FlowStatus } from "./status";
 import { useCustomerOrder, useStoredToken } from "./use-order";
 import { Checks, FlowColumns, Summary, SummaryRow, buttonClasses, fieldClass } from "./ui";
@@ -55,10 +56,7 @@ export function QuoteView({ token: pathToken }: { token?: string }) {
             }
           />
         ) : order.status === "draft" ? (
-          <FlowStatus
-            title="Reading your files…"
-            body="This usually takes a minute. You can leave this tab."
-          />
+          <ReadingFiles status={order.status} progress={order.progress} />
         ) : order.status === "failed" ? (
           <FlowStatus
             title="We couldn't read these files"

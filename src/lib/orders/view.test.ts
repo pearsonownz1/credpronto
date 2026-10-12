@@ -155,6 +155,26 @@ describe("customer order", () => {
     expect(order.shippingAddress?.state).toBe("CA");
     expect(order.totalCents).toBe(7765);
   });
+
+  it("keeps read progress optional on the customer order", () => {
+    const shared = {
+      order: orderRecord(),
+      documents: [],
+      confirmations: [],
+      previewVersion: null,
+      paymentStatus: null,
+      deliveryStatus: null,
+      email: "ada@example.com",
+    };
+    expect(toCustomerOrder(shared).progress).toBeUndefined();
+    expect(
+      toCustomerOrder({
+        ...shared,
+        progress: { step: "reading", pagesRead: 6, pagesTotal: 9 },
+      }).progress,
+    ).toEqual({ step: "reading", pagesRead: 6, pagesTotal: 9 });
+    expect(toCustomerOrder({ ...shared, progress: { step: "scanning" } }).progress).toBeUndefined();
+  });
 });
 
 describe("preview pages", () => {
