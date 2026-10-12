@@ -5,7 +5,9 @@ import { languageLabel } from "../languages";
 import { faceForCodePoint, fontFace, stableFontkit, type FontFace, type FontFaceId } from "./font";
 import { wrapLines, type CoverDocument, type RenderInput } from "./layout";
 
-export const COVER_ADDRESS = "2520 Venture Oaks Way, Suite 120, Sacramento, CA 95833";
+export const COVER_ADDRESS_LINES = ["2520 Venture Oaks Way, Suite 120", "Sacramento, CA 95833"] as const;
+export const COVER_ADDRESS = COVER_ADDRESS_LINES.join(", ");
+const ATA_LOGO_PATH = path.join(process.cwd(), "src/lib/orders/pdf/ata-logo.png");
 
 /** Printed word for word. Do not edit, shorten, or interpolate this statement. */
 export const CERTIFICATION_STATEMENTS = [
@@ -80,6 +82,10 @@ export function coverSignature(
   if (approver && configured && approver !== configured) return null;
   if (approver && !configured) return null;
   return signature;
+}
+
+export function loadAtaLogo(): Uint8Array {
+  return new Uint8Array(readFileSync(ATA_LOGO_PATH));
 }
 
 export function loadTranslatorSignature(value = process.env.CREDPRONTO_TRANSLATOR_SIGNATURE): Uint8Array | null {
@@ -183,11 +189,15 @@ export function drawFinalFooter(
     thickness: 0.6,
     color: LINE,
   });
-  const left = `CredPronto · ${COVER_ADDRESS}`;
-  const right = `Order ${input.orderId} · Page ${input.pageNumber} of ${input.pageCount}`;
-  page.drawText(left, { x: margin, y, size, font, color: MUTED });
-  const rightWidth = font.widthOfTextAtSize(right, size);
-  page.drawText(right, { x: Math.max(margin, input.width - margin - rightWidth), y, size, font, color: MUTED });
+  const text = `Order ${input.orderId} · Page ${input.pageNumber} of ${input.pageCount}`;
+  const textWidth = font.widthOfTextAtSize(text, size);
+  page.drawText(text, {
+    x: Math.max(margin, input.width - margin - textWidth),
+    y,
+    size,
+    font,
+    color: MUTED,
+  });
 }
 
 export async function drawCertificationPage(doc: PDFDocument, input: RenderInput): Promise<void> {
@@ -203,8 +213,9 @@ export async function drawCertificationPage(doc: PDFDocument, input: RenderInput
   const faces = await embedFaces(doc, sample);
   const page = doc.addPage([PAGE_W, PAGE_H]);
   const signature = await embedSignature(doc, cover.signature);
-  drawHeader(page, faces, cover);
-  let y = PAGE_H - 96;
+  const ata = await embedSignature(doc, loadAtaLogo());
+  if (!ata) throw new Error("ATA logo did not embed");
+  let y = drawHeader(page, faces, cover, ata);
   y = drawTitle(page, faces, cover, y);
   y = drawSummary(page, faces, cover, y);
   y = drawOrderBox(page, faces, cover, y);
@@ -358,29 +369,43 @@ function drawWrapped(
   return y;
 }
 
-function drawHeader(page: PDFPage, faces: Faces, cover: ResolvedCover): void {
-  const top = PAGE_H - 46;
+function drawHeader(page: PDFPage, faces: Faces, cover: ResolvedCover, ata: PDFImage): number {
+  const contentTop = PAGE_H - 40;
+  const top = contentTop - 14;
   page.drawRectangle({ x: MARGIN_X, y: top - 2, width: 16, height: 16, color: BLUE });
   page.drawLine({ start: { x: MARGIN_X + 5, y: top + 10 }, end: { x: MARGIN_X + 12, y: top + 10 }, thickness: 1.4, color: WHITE });
   page.drawLine({ start: { x: MARGIN_X + 12, y: top + 10 }, end: { x: MARGIN_X + 12, y: top + 2 }, thickness: 1.4, color: WHITE });
   page.drawLine({ start: { x: MARGIN_X + 5, y: top + 2 }, end: { x: MARGIN_X + 12, y: top + 2 }, thickness: 1.4, color: WHITE });
   drawText(page, "CredPronto", MARGIN_X + 22, top + 2, 13, INK, false, faces);
 
+  let addressY = top - 16;
+  for (const line of COVER_ADDRESS_LINES) {
+    drawText(page, line, MARGIN_X, addressY, 8, MUTED, false, faces);
+    addressY -= 11;
+  }
+
   const right = PAGE_W - MARGIN_X;
+  const ataHeight = 18;
+  const ataWidth = ataHeight * (ata.width / ata.height);
+  const ataBottom = contentTop - ataHeight;
+  page.drawImage(ata, { x: right - ataWidth, y: ataBottom, width: ataWidth, height: ataHeight });
+
   const lines = [`Order ${cover.orderId}`, "Certified translation", `Issued ${cover.issued}`];
-  let y = top + 8;
+  let y = ataBottom - 14;
   for (const line of lines) {
     const size = 8;
     const width = textWidth(line, size, false, faces);
     drawText(page, line, right - width, y, size, MUTED, false, faces);
     y -= 11;
   }
+  const ruleY = Math.min(addressY + 4, y + 4);
   page.drawLine({
-    start: { x: MARGIN_X, y: top - 16 },
-    end: { x: right, y: top - 16 },
+    start: { x: MARGIN_X, y: ruleY },
+    end: { x: right, y: ruleY },
     thickness: 1.5,
     color: INK,
   });
+  return ruleY - 22;
 }
 
 function drawTitle(page: PDFPage, faces: Faces, cover: ResolvedCover, y: number): number {

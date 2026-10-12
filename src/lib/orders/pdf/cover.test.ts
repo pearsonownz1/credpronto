@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   CERTIFICATION_STATEMENTS,
   COVER_ADDRESS,
+  COVER_ADDRESS_LINES,
   coverClientName,
+  loadAtaLogo,
   coverDocuments,
   coverSignature,
   coverTranslatorName,
@@ -66,7 +68,10 @@ describe("certification cover", () => {
     expect(cover.statements.join(" ")).not.toContain("Intended use");
     expect(cover.issued).toBe("October 11, 2026");
     expect(cover.pageCount).toBe(4);
-    expect(COVER_ADDRESS).toContain("Sacramento, CA 95833");
+    expect(COVER_ADDRESS).toBe("2520 Venture Oaks Way, Suite 120, Sacramento, CA 95833");
+    expect(COVER_ADDRESS_LINES).toEqual(["2520 Venture Oaks Way, Suite 120", "Sacramento, CA 95833"]);
+    const ata = loadAtaLogo();
+    expect(Array.from(ata.subarray(0, 8))).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     expect(cover.clientName).toBe("María Ruiz");
   });
 });
