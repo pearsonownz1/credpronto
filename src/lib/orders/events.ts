@@ -28,5 +28,6 @@ export function isOrderEventType(value: string): value is OrderEventType {
     "translation_edited",
     "note_added",
     "approved",
+    "staff_notified",
   ].includes(value);
 }

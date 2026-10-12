@@ -37,6 +37,7 @@ describe("translated pdf renders", () => {
     });
     expect(passes[0].bucket).toBe("finals");
     expect(passes[0].watermark).toBe(false);
+    expect(passes[0].includeCertification).toBe(true);
 
     const rendered = await renderOrderPdfs({
       orderId: "order-1",
@@ -59,7 +60,7 @@ describe("translated pdf renders", () => {
     const certification = await pdfText(rendered.certification);
 
     expect(preview.pageCount).toBe(1);
-    expect(clean.pageCount).toBe(1);
+    expect(clean.pageCount).toBe(2);
     expect(preview.text).toContain("Hello diploma");
     expect(PREVIEW_WATERMARK).toBe("PREVIEW · CREDPRONTO · NOT FOR OFFICIAL USE");
     expect(PREVIEW_WATERMARK_OPACITY).toBeCloseTo(0.16);
@@ -67,6 +68,7 @@ describe("translated pdf renders", () => {
     expect(preview.text).toContain(PREVIEW_WATERMARK);
     expect(preview.text).not.toContain("Translator certification");
     expect(clean.text).toContain("Hello diploma");
+    expect(clean.text).toContain("Translator certification");
     expect(clean.text).not.toContain("PREVIEW");
     expect(certification.text).toContain("Translator certification");
     expect(certification.text).toContain("order-1");

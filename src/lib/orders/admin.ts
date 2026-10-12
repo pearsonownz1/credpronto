@@ -12,6 +12,7 @@ import {
   listDocuments,
   listOrders,
   listPages,
+  listQaRuns,
   listTranslations,
   settledPayment,
   updateDelivery,
@@ -52,13 +53,15 @@ export async function staffOrder(orderId: string) {
   const documents = await listDocuments(db, order.id);
   const pages = withCombinedNumbers(documents, await listPages(db, documents.map((document) => document.id)));
   const translations = await listTranslations(db, documents.map((document) => document.id));
-  const [confirmations, corrections, payment, delivery, email] = await Promise.all([
+  const [confirmations, corrections, payment, delivery, email, qaRuns] = await Promise.all([
     listConfirmations(db, order.id),
     listCorrections(db, order.id),
     settledPayment(db, order.id),
     getDelivery(db, order.id),
     customerEmail(db, order.customerId),
+    listQaRuns(db, order.id),
   ]);
+  const latestQa = qaRuns[qaRuns.length - 1] ?? null;
 
   return {
     ...order,
@@ -96,6 +99,15 @@ export async function staffOrder(orderId: string) {
     corrections,
     payment,
     delivery,
+    qa: latestQa
+      ? {
+          status: latestQa.status,
+          score: latestQa.score,
+          checkedAt: latestQa.createdAt,
+          attempts: qaRuns.length,
+          issues: latestQa.issues,
+        }
+      : null,
   };
 }
 

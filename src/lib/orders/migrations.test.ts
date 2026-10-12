@@ -47,4 +47,22 @@ describe("auth migrations", () => {
     expect(orders).toMatch(/customer_select_own_payments/);
     expect(notes).toMatch(/create table public\.order_notes/);
   });
+
+  it("keeps staff_notified and the QA status enum out of the table that uses them", () => {
+    const notified = readFileSync(path.join(migrationsDir, "20261012060000_staff_notified_event.sql"), "utf8");
+    const status = readFileSync(path.join(migrationsDir, "20261012060100_qa_status.sql"), "utf8");
+    const runs = readFileSync(path.join(migrationsDir, "20261012060200_order_qa_runs.sql"), "utf8");
+    expect(notified).toMatch(/add value if not exists 'staff_notified'/);
+    expect(notified.toLowerCase()).not.toMatch(/insert into/);
+    expect(status).toMatch(/create type public\.qa_status/);
+    expect(status).not.toMatch(/order_qa_runs/);
+    expect(runs).toMatch(/create table public\.order_qa_runs/);
+    expect(runs.toLowerCase()).not.toMatch(/add value/);
+    expect(runs.toLowerCase()).not.toMatch(/create type/);
+    for (const file of files) {
+      if (file === "20261012060000_staff_notified_event.sql") continue;
+      const sql = readFileSync(path.join(migrationsDir, file), "utf8");
+      expect(sql.includes("staff_notified")).toBe(false);
+    }
+  });
 });

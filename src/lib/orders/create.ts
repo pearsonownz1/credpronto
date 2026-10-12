@@ -57,6 +57,7 @@ export async function createOrder(request: Request): Promise<{
   await insertEvent(db, order.id, "upload_started", { fileCount: prepared.length });
   await storeFiles(db, order.id, prepared);
   await insertEvent(db, order.id, "upload_done", { fileCount: prepared.length });
+  await insertEvent(db, order.id, "staff_notified", { channel: "event" });
 
   return { orderToken, orderId: order.id, email };
 }

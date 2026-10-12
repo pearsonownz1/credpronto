@@ -606,7 +606,7 @@ On failure the order is retranslated, up to 2 times (3 QA runs total). Prior iss
 ```json
 {
   "status": "fail",
-  "score": 50,
+    "score": 75,
   "checkedAt": "2026-10-12T00:00:00.000Z",
   "attempts": 3,
   "issues": [
