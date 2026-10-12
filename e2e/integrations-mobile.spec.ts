@@ -14,6 +14,8 @@ test("phone integrations opens from the account menu", async ({ page }) => {
   await expect(page.getByTestId("event-order.quoted")).toBeVisible();
   await expect(page.getByTestId("event-order.preview_ready")).toBeVisible();
   await expect(page.getByTestId("quick-start")).toContainText("Authorization: Bearer <key>");
+  await expect(page.getByTestId("quick-start")).toContainText("-F files=@acta.pdf");
+  await expect(page.getByTestId("quick-start")).toContainText("POST /api/me/api-keys");
   await expect(page.getByTestId("billing-note")).toContainText("Dashboard orders still check out normally.");
   await expect(page.getByTestId("api-orders-soon")).toBeVisible();
   await expect(page.getByText("Expert letter")).toHaveCount(0);

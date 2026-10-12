@@ -4,6 +4,7 @@ import sitemap from "@/app/sitemap";
 import { EVALUATIONS_CANONICAL_URL } from "@/lib/evaluations/catalog";
 import { FAQ_CANONICAL, GUIDES_CANONICAL } from "@/lib/content/faq";
 import {
+  API_DOCS_CANONICAL,
   HOME_CANONICAL,
   ROBOTS_NOINDEX,
   SITE_ORIGIN,
@@ -35,6 +36,7 @@ describe("crawl policy", () => {
       "https://www.credpronto.com/terms",
       "https://www.credpronto.com/about",
       "https://www.credpronto.com/contact",
+      API_DOCS_CANONICAL,
       "https://www.credpronto.com/guides/birth-certificate-translation-uscis",
       "https://www.credpronto.com/guides/certified-vs-notarized-translation",
       "https://www.credpronto.com/guides/uscis-certified-translation",

@@ -5,6 +5,8 @@ export const ROBOTS_NOINDEX = "noindex, nofollow";
 
 export const HOME_CANONICAL = `${SITE_ORIGIN}/`;
 export const TRANSLATE_CANONICAL = `${SITE_ORIGIN}/translate`;
+export const API_DOCS_PATH = "/docs/api";
+export const API_DOCS_CANONICAL = `${SITE_ORIGIN}${API_DOCS_PATH}`;
 export const TRANSLATE_TITLE =
   "Certified Translation from $9.95/page, Preview Free | CredPronto";
 export const TRANSLATE_DESCRIPTION =
