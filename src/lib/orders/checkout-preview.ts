@@ -21,12 +21,18 @@ export function watermarkedPreviewObject(previewPath: string): {
     !path ||
     segments.includes(FINALS_BUCKET) ||
     segments.length !== path.split("/").length ||
-    !name.startsWith("preview-") ||
-    !name.endsWith(".pdf")
+    !isWatermarkedPreviewName(name)
   ) {
     throw new Error("Checkout images must use the watermarked preview");
   }
   return { bucket: PREVIEWS_BUCKET, path };
+}
+
+/** Watermarked objects in `previews`. Clean `translation-v` and `evaluation-v` files are not previews. */
+function isWatermarkedPreviewName(name: string): boolean {
+  if (!name.endsWith(".pdf")) return false;
+  if (name.startsWith("preview-")) return true;
+  return /^report-v\d+\.pdf$/.test(name) || /^translation-preview-v\d+\.pdf$/.test(name);
 }
 
 export function checkoutPreviewFolder(orderId: string): string {
