@@ -452,7 +452,10 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
           });
           pageIndex += 1;
           pageBillable.push(quoted.billableUnits);
-          const needsReview = read.needsReview || quality.failed;
+          // A blank verso, an English page, or a shipping label is free. The reader
+          // marks a blank page unreadable, and that must not turn a priced quote into
+          // needs_review. A page we are actually billing still holds the quote.
+          const needsReview = quality.failed || (read.needsReview && !quoted.skip);
           pageNeedsReview.push(needsReview);
           return {
             pageNumber: page.appliedPage,
