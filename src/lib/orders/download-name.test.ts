@@ -70,6 +70,9 @@ describe("orderDownloadFilename", () => {
     expect(orderDownloadFilename("certification", ["fr_diplome-licence.pdf"], "en")).toBe(
       "fr_diplome-licence-certificate.pdf",
     );
+    expect(orderDownloadFilename("evaluation", ["fr_diplome-licence.pdf"], "en")).toBe(
+      "fr_diplome-licence-evaluation.pdf",
+    );
   });
 
   it("joins each document stem for a multi-document order", () => {

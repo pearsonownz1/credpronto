@@ -4,6 +4,7 @@ import { addonStripeLines, parseCheckoutBody, serviceCents } from "./addons";
 import { downloadGate } from "./access";
 import { checkoutPreviewImageUrl } from "./checkout-image";
 import { checkoutLineProduct, checkoutProductDescription } from "./checkout-preview";
+import { checkoutPriceLines } from "./evaluation-price";
 import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET, ORIGINALS_BUCKET, PREVIEW_URL_SECONDS } from "./constants";
 import {
   confirmFields,
@@ -226,6 +227,9 @@ export async function getPreview(token: string): Promise<PreviewResponse> {
       pages,
       version: preview.version,
     },
+    report: order.service
+      ? { url: translationUrl, pageCount: order.evaluationResult?.pageCount ?? pages.length }
+      : null,
     corrections: corrections.map((correction) => ({
       id: correction.id,
       documentId: correction.documentId,
@@ -244,8 +248,8 @@ export async function downloadOrderFile(
   documentId: string | null = null,
 ) {
   if (file === "original") return downloadOriginals(token, documentId);
-  if (file !== "translation" && file !== "certification") {
-    throw new HttpError("file must be translation, certification, or original", 400);
+  if (file !== "translation" && file !== "certification" && file !== "evaluation") {
+    throw new HttpError("file must be translation, certification, evaluation, or original", 400);
   }
   const { db, order } = await orderForToken(token);
   const payment = await settledPayment(db, order.id);
@@ -256,7 +260,7 @@ export async function downloadOrderFile(
   });
   if (!gate.ok) throw new HttpError(gate.error, gate.status);
 
-  const path = file === "translation" ? delivery?.finalPath : delivery?.certificationPath;
+  const path = file === "certification" ? delivery?.certificationPath : delivery?.finalPath;
   if (!path) throw new HttpError("That file is not ready", 404);
   const documents = await listDocuments(db, order.id);
   const filename = orderDownloadFilename(
@@ -289,6 +293,58 @@ async function downloadOriginals(token: string, documentId: string | null) {
     documentIds: signed.map((item) => item.documentId),
   });
   return originalDownloadResponse(signed, DOWNLOAD_URL_SECONDS, documentId);
+}
+
+function serviceStripeLines(input: {
+  order: {
+    currency: string;
+    billablePages: number | null;
+    service: Parameters<typeof checkoutPriceLines>[0]["service"];
+    degreeCount: number | null;
+    evaluationCents: number | null;
+    translationCents: number | null;
+  };
+  base: number;
+  description: string;
+  imageUrl: string | null;
+}) {
+  const lines = checkoutPriceLines({
+    service: input.order.service,
+    degreeCount: input.order.degreeCount,
+    evaluationCents: input.order.evaluationCents,
+    translationCents: input.order.translationCents,
+    billablePages: input.order.billablePages,
+    description: input.description,
+    imageUrl: input.imageUrl,
+  });
+  if (!lines) {
+    return [
+      {
+        quantity: 1,
+        price_data: {
+          currency: input.order.currency,
+          unit_amount: input.base,
+          product_data: checkoutLineProduct({
+            billablePages: input.order.billablePages ?? 1,
+            description: input.description,
+            imageUrl: input.imageUrl,
+          }),
+        },
+      },
+    ];
+  }
+  return lines.map((line) => ({
+    quantity: line.quantity,
+    price_data: {
+      currency: input.order.currency,
+      unit_amount: line.unitAmountCents,
+      product_data: {
+        name: line.name,
+        description: line.description,
+        ...(line.imageUrl ? { images: [line.imageUrl] } : {}),
+      },
+    },
+  }));
 }
 
 export async function startCheckout(token: string, body: unknown = {}) {
@@ -349,18 +405,12 @@ export async function startCheckout(token: string, body: unknown = {}) {
     client_reference_id: order.id,
     metadata: { order_id: order.id },
     line_items: [
-      {
-        quantity: 1,
-        price_data: {
-          currency: order.currency,
-          unit_amount: base,
-          product_data: checkoutLineProduct({
-            billablePages: order.billablePages ?? 1,
-            description,
-            imageUrl,
-          }),
-        },
-      },
+      ...serviceStripeLines({
+        order,
+        base,
+        description,
+        imageUrl,
+      }),
       ...addonStripeLines(selection.addons).map((line) => ({
         quantity: line.quantity,
         price_data: {

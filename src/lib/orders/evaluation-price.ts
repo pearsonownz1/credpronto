@@ -121,6 +121,32 @@ export function lineItemsForOrder(input: {
   return lineItems;
 }
 
+export function checkoutPriceLines(input: {
+  service: EvaluationService | null;
+  degreeCount: number | null;
+  evaluationCents: number | null;
+  translationCents: number | null;
+  billablePages: number | null;
+  description: string;
+  imageUrl: string | null;
+}): Array<{
+  quantity: number;
+  unitAmountCents: number;
+  name: string;
+  description: string;
+  imageUrl: string | null;
+}> | null {
+  const items = lineItemsForOrder(input);
+  if (items.length === 0) return null;
+  return items.map((item, index) => ({
+    quantity: item.quantity,
+    unitAmountCents: item.unitAmountCents,
+    name: item.description,
+    description: input.description,
+    imageUrl: index === 0 ? input.imageUrl : null,
+  }));
+}
+
 function text(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -165,7 +191,8 @@ export function parseEvaluationResult(value: unknown): EvaluationResult | null {
       }
       credentials.push({ applicant, institution, country, credential: name, field, dates, usEquivalency, documentsReviewed });
     }
-    return { kind: "diploma", credentials };
+    const pageCount = finite(record.pageCount);
+    return pageCount == null ? { kind: "diploma", credentials } : { kind: "diploma", credentials, pageCount };
   }
   if (record.kind !== "course_by_course" || !Array.isArray(record.years)) return null;
   const applicant = text(record.applicant);
@@ -202,5 +229,8 @@ export function parseEvaluationResult(value: unknown): EvaluationResult | null {
     }
     years.push({ year: label, courses });
   }
-  return { kind: "course_by_course", applicant, institution, country, credential, years, totalHours, gpa, gradeScale };
+  const pageCount = finite(record.pageCount);
+  return pageCount == null
+    ? { kind: "course_by_course", applicant, institution, country, credential, years, totalHours, gpa, gradeScale }
+    : { kind: "course_by_course", applicant, institution, country, credential, years, totalHours, gpa, gradeScale, pageCount };
 }

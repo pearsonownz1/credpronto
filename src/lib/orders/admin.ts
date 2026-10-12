@@ -25,6 +25,8 @@ import { sendDeliveryReady } from "./email";
 import { fulfillmentFor, parseTrackingNumber } from "./fulfillment";
 import { HttpError } from "./errors";
 import { normalizeLanguage } from "./languages";
+import { evaluationQuote } from "./evaluation-price";
+import { retryEvaluation } from "./evaluation";
 import { etaFromNow } from "./quote";
 import { signedObjectUrl } from "./storage";
 import { ensureStaffRow, requireStaff } from "./staff";
@@ -206,7 +208,7 @@ export async function resolveReview(orderId: string, body: unknown) {
   const order = await getOrderById(db, orderId);
   if (!order) throw new HttpError("Order not found", 404);
   if (order.status !== "needs_review") throw new HttpError("This order is not waiting for review", 409);
-  if (!order.billablePages || order.billablePages < 1 || order.totalCents == null) {
+  if (!order.billablePages || order.billablePages < 1 || (!order.service && order.totalCents == null)) {
     throw new HttpError("There is no billable page count to quote", 409);
   }
 
@@ -216,6 +218,31 @@ export async function resolveReview(orderId: string, body: unknown) {
       : null;
   const language = requested ? normalizeLanguage(requested) : order.sourceLanguage;
   if (!language) throw new HttpError("Set a source language", 400);
+
+  if (order.service && order.degreeCount != null) {
+    if (!order.evaluationResult) {
+      await retryEvaluation(db, order, language);
+      const updated = await getOrderById(db, order.id);
+      return { status: updated?.status ?? ("needs_review" as const), sourceLanguage: language };
+    }
+    const quote = evaluationQuote({
+      service: order.service,
+      degreeCount: order.degreeCount,
+      sourceLanguage: language,
+      billablePages: order.billablePages,
+    });
+    await updateOrder(db, order.id, {
+      status: "preview_ready",
+      source_language: language,
+      language_confirmed: true,
+      review_reason: null,
+      eta_at: null,
+      evaluation_cents: quote.evaluationCents,
+      translation_cents: quote.translationCents,
+      total_cents: quote.totalCents,
+    });
+    return { status: "preview_ready" as const, sourceLanguage: language };
+  }
 
   await updateOrder(db, order.id, {
     status: "quoted",

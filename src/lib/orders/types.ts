@@ -95,7 +95,7 @@ export type CourseRow = {
 };
 
 export type EvaluationResult =
-  | { kind: "diploma"; credentials: DiplomaCredential[] }
+  | { kind: "diploma"; credentials: DiplomaCredential[]; pageCount?: number }
   | {
       kind: "course_by_course";
       applicant: string;
@@ -106,6 +106,7 @@ export type EvaluationResult =
       totalHours: number;
       gpa: number;
       gradeScale: string;
+      pageCount?: number;
     };
 
 export type AddonId = "notarization" | "mail" | "expedited";

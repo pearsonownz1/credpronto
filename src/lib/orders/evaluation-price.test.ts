@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  checkoutPriceLines,
   evaluationFeeCents,
   evaluationQuote,
   lineItemsForOrder,
@@ -112,5 +113,45 @@ describe("evaluation quote", () => {
     });
     expect(result?.kind).toBe("diploma");
     expect(parseEvaluationResult({ kind: "diploma", credentials: [{}] })).toBeNull();
+    expect(parseEvaluationResult({ ...result, pageCount: 1 })?.pageCount).toBe(1);
+  });
+});
+
+describe("checkout price lines", () => {
+  it("splits an evaluation and its translation into separate Stripe lines", () => {
+    const lines = checkoutPriceLines({
+      service: "diploma",
+      degreeCount: 1,
+      evaluationCents: 1995,
+      translationCents: 1990,
+      billablePages: 2,
+      description: "French → English · diploma.pdf · 2 pages",
+      imageUrl: "https://files.example/preview.png",
+    });
+    expect(lines).toEqual([
+      {
+        quantity: 1,
+        unitAmountCents: 1995,
+        name: "Diploma evaluation",
+        description: "French → English · diploma.pdf · 2 pages",
+        imageUrl: "https://files.example/preview.png",
+      },
+      {
+        quantity: 2,
+        unitAmountCents: 995,
+        name: "Certified translation",
+        description: "French → English · diploma.pdf · 2 pages",
+        imageUrl: null,
+      },
+    ]);
+    expect(checkoutPriceLines({
+      service: null,
+      degreeCount: null,
+      evaluationCents: null,
+      translationCents: null,
+      billablePages: 2,
+      description: "translation",
+      imageUrl: null,
+    })).toBeNull();
   });
 });
