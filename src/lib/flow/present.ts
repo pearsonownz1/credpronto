@@ -1,4 +1,5 @@
 import { serviceCents } from "@/lib/orders/addons";
+import { TRANSLATION_TIMEOUT_REASON } from "@/lib/orders/translation-failure";
 import {
   languageLabel,
   languagesEqual,
@@ -446,6 +447,7 @@ export type OrderHubStep = "download" | "preview" | "quote" | "processing" | "ca
 export function orderHubStep(
   checkout: string | null | undefined,
   status: string | null | undefined,
+  order?: { delayed?: boolean; reviewReason?: string | null } | null,
 ): OrderHubStep {
   if (checkout === "success") return "download";
   if (checkout === "cancel") return "cancel";
@@ -457,6 +459,12 @@ export function orderHubStep(
     return "download";
   }
   if (status === "preview_ready") return "processing";
+  if (
+    status === "needs_review" &&
+    (order?.delayed || order?.reviewReason === TRANSLATION_TIMEOUT_REASON)
+  ) {
+    return "processing";
+  }
   if (
     status === "quoted" ||
     status === "needs_review" ||

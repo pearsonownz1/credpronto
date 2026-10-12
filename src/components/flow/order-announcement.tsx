@@ -6,11 +6,11 @@ import type { CustomerOrder } from "@/lib/orders/view";
 
 const LOADING_ORDER = "Loading your order";
 
+const PREVIEW_WAIT = new Set(["processing", "confirmed", "correction_requested", "needs_review"]);
+
 export function orderLiveMessage(input: {
   loading: boolean;
   error?: string | null;
-  /** Set only after 15 real minutes on `progress.step === "translating"`. */
-  late?: boolean;
   order: (Pick<CustomerOrder, "status" | "billablePages" | "totalCents"> & {
     delayed?: boolean;
     progress?: { step?: string | null } | null;
@@ -25,6 +25,9 @@ export function orderLiveMessage(input: {
 
   const pages = order.billablePages ?? 0;
   const pageText = `${pages} ${pages === 1 ? "page" : "pages"}`;
+  if (order.status === "needs_review" && order.delayed) {
+    return "Taking longer than usual, we're on it.";
+  }
   if (order.status === "quoted" || order.status === "needs_review") {
     if (order.totalCents == null) return `Quote ready: ${pageText}`;
     return `Quote ready: ${pageText}, ${formatMoney(order.totalCents)}`;
@@ -34,15 +37,17 @@ export function orderLiveMessage(input: {
   if (order.status === "paid" || order.status === "approved" || order.status === "delivered") {
     return "Your translation is ready.";
   }
-  if (order.status === "preview_ready" || order.progress?.step === "done") return "Your preview is ready.";
+  if (order.status === "preview_ready" || (order.progress?.step === "done" && order.status !== "needs_review")) {
+    return "Your preview is ready.";
+  }
+  if (order.delayed && PREVIEW_WAIT.has(order.status)) {
+    return "Taking longer than usual, we're on it.";
+  }
   if (
     order.status === "processing" ||
     order.status === "confirmed" ||
     order.status === "correction_requested"
   ) {
-    if (input.late && order.progress?.step === "translating") {
-      return "Taking longer than usual, we're on it.";
-    }
     return "Translating your document.";
   }
   return "";

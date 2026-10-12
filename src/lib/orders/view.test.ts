@@ -198,6 +198,30 @@ describe("customer order", () => {
       }).delayed,
     ).toBe(false);
     expect(toCustomerOrder({ ...shared, order: orderRecord() }).delayed).toBe(false);
+    expect(
+      toCustomerOrder({
+        ...shared,
+        order: {
+          ...orderRecord(),
+          status: "needs_review",
+          reviewReason: "translation_timeout",
+          updatedAt: "2026-10-12T00:19:00.000Z",
+          progress: { step: "done", pagesRead: 2, pagesTotal: 2 },
+        },
+      }).delayed,
+    ).toBe(true);
+    expect(
+      toCustomerOrder({
+        ...shared,
+        order: {
+          ...orderRecord(),
+          status: "needs_review",
+          reviewReason: "image_quality",
+          updatedAt: "2026-10-12T00:00:00.000Z",
+          progress: { step: "done", pagesRead: 2, pagesTotal: 2 },
+        },
+      }).delayed,
+    ).toBe(false);
     expect(toCustomerOrder({ ...shared, order: orderRecord() }).progress).not.toHaveProperty("retries");
   });
 
