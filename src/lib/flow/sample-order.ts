@@ -5,6 +5,7 @@ import type { CustomerOrder } from "@/lib/orders/view";
 export function sampleCustomerOrder(): CustomerOrder {
   return {
     orderId: "CP-24817",
+    email: "maria.ruiz@email.com",
     status: "quoted",
     sourceLanguage: "es",
     sourceLanguageConfidence: 0.94,

@@ -199,12 +199,26 @@ const mockClient: FlowClient = {
       original: {
         url: "/samples/birth-certificate-es.pdf",
         pageCount: 3,
-        pages: [1, 2, 3].map((number) => ({ number, widthPt: 612, heightPt: 792 })),
+        pages: [1, 2, 3].map((number) => ({
+          number,
+          widthPt: 612,
+          heightPt: 792,
+          documentId: "acta",
+          documentIndex: 0,
+          documentName: "acta-nacimiento.pdf",
+        })),
       },
       translation: {
         url: "/samples/birth-certificate-en.pdf",
         pageCount: 3,
-        pages: [1, 2, 3].map((number) => ({ number, widthPt: 612, heightPt: 792 })),
+        pages: [1, 2, 3].map((number) => ({
+          number,
+          widthPt: 612,
+          heightPt: 792,
+          documentId: "acta",
+          documentIndex: 0,
+          documentName: "acta-nacimiento.pdf",
+        })),
         version: 1,
       },
       corrections: [],

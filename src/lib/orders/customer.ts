@@ -34,6 +34,7 @@ import { CONFIRMATION_FIELD_KEYS, normalizeDateFormat, type ConfirmationFieldKey
 import { appOrigin } from "./email";
 import { normalizeLanguage } from "./languages";
 import { loadCustomerOrder } from "./pipeline";
+import { originalDownloadResponse, originalTargets } from "./originals";
 import { previewSignedTargets } from "./preview-targets";
 import { serviceDb, signedObjectUrl, type Db } from "./storage";
 import { assertOrderTokenShape, hashOrderToken } from "./token";
@@ -142,6 +143,7 @@ export async function getPreview(token: string): Promise<PreviewResponse> {
 
   const documents = await listDocuments(db, order.id);
   const pages = previewPages(
+    documents,
     withCombinedNumbers(documents, await listPages(db, documents.map((document) => document.id))),
   );
   const targets = previewSignedTargets({
@@ -179,9 +181,14 @@ export async function getPreview(token: string): Promise<PreviewResponse> {
   };
 }
 
-export async function downloadOrderFile(token: string, file: string | null) {
+export async function downloadOrderFile(
+  token: string,
+  file: string | null,
+  documentId: string | null = null,
+) {
+  if (file === "original") return downloadOriginals(token, documentId);
   if (file !== "translation" && file !== "certification") {
-    throw new HttpError("file must be translation or certification", 400);
+    throw new HttpError("file must be translation, certification, or original", 400);
   }
   const { db, order } = await orderForToken(token);
   const payment = await settledPayment(db, order.id);
@@ -197,6 +204,25 @@ export async function downloadOrderFile(token: string, file: string | null) {
   const url = await signedObjectUrl(db, FINALS_BUCKET, path, DOWNLOAD_URL_SECONDS);
   await insertEvent(db, order.id, "downloaded", { file });
   return { url, expiresInSeconds: DOWNLOAD_URL_SECONDS };
+}
+
+/** The customer's own uploads. The token is enough at any status; payment is not required. */
+async function downloadOriginals(token: string, documentId: string | null) {
+  const { db, order } = await orderForToken(token);
+  const targets = originalTargets(await listDocuments(db, order.id), documentId);
+  const signed = await Promise.all(
+    targets.map(async (target) => ({
+      documentId: target.documentId,
+      documentIndex: target.documentIndex,
+      documentName: target.documentName,
+      url: await signedObjectUrl(db, target.bucket, target.path, DOWNLOAD_URL_SECONDS),
+    })),
+  );
+  await insertEvent(db, order.id, "downloaded", {
+    file: "original",
+    documentIds: signed.map((item) => item.documentId),
+  });
+  return originalDownloadResponse(signed, DOWNLOAD_URL_SECONDS, documentId);
 }
 
 export async function startCheckout(token: string) {

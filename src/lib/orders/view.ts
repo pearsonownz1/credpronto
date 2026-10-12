@@ -4,6 +4,7 @@ import type { ConfirmationRecord, DocumentRecord, OrderRecord, PageRecord } from
 
 export type CustomerOrder = {
   orderId: string;
+  email: string | null;
   status: string;
   sourceLanguage: string | null;
   sourceLanguageConfidence: number | null;
@@ -41,6 +42,7 @@ export function toCustomerOrder(input: {
   previewVersion: number | null;
   paymentStatus: string | null;
   deliveryStatus: string | null;
+  email: string | null;
 }): CustomerOrder {
   const confidences = input.documents
     .map((document) => document.confidence)
@@ -48,6 +50,7 @@ export function toCustomerOrder(input: {
 
   return {
     orderId: input.order.id,
+    email: input.email,
     status: input.order.status,
     sourceLanguage: input.order.sourceLanguage,
     sourceLanguageConfidence: confidences.length > 0 ? Math.min(...confidences) : null,
@@ -82,7 +85,14 @@ export function toCustomerOrder(input: {
   };
 }
 
-export type PreviewPage = { number: number; widthPt: number; heightPt: number };
+export type PreviewPage = {
+  number: number;
+  widthPt: number;
+  heightPt: number;
+  documentId: string;
+  documentIndex: number;
+  documentName: string;
+};
 
 export type PreviewResponse = {
   status: string;
@@ -102,10 +112,29 @@ export type PreviewResponse = {
   }>;
 };
 
-export function previewPages(pages: Array<PageRecord & { number: number }>): PreviewPage[] {
-  return pages.map((page) => ({
-    number: page.number,
-    widthPt: page.widthPt ?? LETTER_WIDTH_PT,
-    heightPt: page.heightPt ?? LETTER_HEIGHT_PT,
-  }));
+export function previewPages(
+  documents: Array<Pick<DocumentRecord, "id" | "filename" | "position">>,
+  pages: Array<PageRecord & { number: number }>,
+): PreviewPage[] {
+  const ordered = [...documents].sort(
+    (a, b) => a.position - b.position || a.filename.localeCompare(b.filename),
+  );
+  const meta = new Map(
+    ordered.map((document, index) => [
+      document.id,
+      { documentIndex: index, documentName: document.filename },
+    ]),
+  );
+
+  return pages.map((page) => {
+    const document = meta.get(page.documentId);
+    return {
+      number: page.number,
+      widthPt: page.widthPt ?? LETTER_WIDTH_PT,
+      heightPt: page.heightPt ?? LETTER_HEIGHT_PT,
+      documentId: page.documentId,
+      documentIndex: document?.documentIndex ?? 0,
+      documentName: document?.documentName ?? "",
+    };
+  });
 }

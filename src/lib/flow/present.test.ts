@@ -19,6 +19,7 @@ import {
 function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
   return {
     orderId: "order-1",
+    email: "ada@example.com",
     status: "quoted",
     sourceLanguage: "es",
     sourceLanguageConfidence: 0.9,
@@ -130,16 +131,44 @@ describe("preview mapping", () => {
         url: "https://files.example/original",
         pageCount: 2,
         pages: [
-          { number: 1, widthPt: 612, heightPt: 792 },
-          { number: 2, widthPt: 500, heightPt: 700 },
+          {
+            number: 1,
+            widthPt: 612,
+            heightPt: 792,
+            documentId: "doc-a",
+            documentIndex: 0,
+            documentName: "a.pdf",
+          },
+          {
+            number: 2,
+            widthPt: 500,
+            heightPt: 700,
+            documentId: "doc-a",
+            documentIndex: 0,
+            documentName: "a.pdf",
+          },
         ],
       },
       translation: {
         url: "https://files.example/preview",
         pageCount: 2,
         pages: [
-          { number: 1, widthPt: 612, heightPt: 792 },
-          { number: 2, widthPt: 500, heightPt: 700 },
+          {
+            number: 1,
+            widthPt: 612,
+            heightPt: 792,
+            documentId: "doc-a",
+            documentIndex: 0,
+            documentName: "a.pdf",
+          },
+          {
+            number: 2,
+            widthPt: 500,
+            heightPt: 700,
+            documentId: "doc-a",
+            documentIndex: 0,
+            documentName: "a.pdf",
+          },
         ],
         version: 1,
       },
