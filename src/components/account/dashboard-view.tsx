@@ -15,6 +15,7 @@ import {
   type OrderPresentation,
 } from "@/lib/account/present";
 import { browserJson, publicMockMode } from "@/lib/api/browser";
+import { pageLabel } from "@/lib/flow/pricing";
 import type { CustomerOrder } from "@/lib/api/types";
 
 function openDownload(href: string) {
@@ -246,7 +247,7 @@ export function DashboardView() {
                     </div>
                     <p className="font-semibold">{view.documents}</p>
                     <p className="text-[13px] text-ink-muted">
-                      {view.pair} · {view.pages ?? "—"} pages · {view.placed} · {view.total}
+                      {view.pair} · {view.pages == null ? "— pages" : pageLabel(view.pages)} · {view.placed} · {view.total}
                     </p>
                     <div className="text-right">
                       <NextStep order={order} view={view} onDownload={download} />

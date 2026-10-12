@@ -7,6 +7,7 @@ import {
   addonStripeLines,
   chargeCents,
   expeditedFlagForAddons,
+  offeredAddonOptions,
   parseCheckoutBody,
   serviceCents,
 } from "./addons";
@@ -38,6 +39,15 @@ describe("checkout add-ons", () => {
     expect(chargeCents(2985, addonOptions(3, evaluation), ["notarization", "expedited"])).toBe(7765);
     expect(chargeCents(2985, addonOptions(null, evaluation), ["expedited"])).toBeNull();
     expect(chargeCents(2985, addonOptions(3, translation), ["expedited"])).toBeNull();
+    expect(addonOptions(null)[2]?.totalCents).toBeNull();
+    expect(chargeCents(2985, addonOptions(3), ["notarization", "expedited"])).toBe(7765);
+    expect(chargeCents(2985, addonOptions(null), ["expedited"])).toBeNull();
+    expect(offeredAddonOptions(1, "translation").map((option) => option.id)).toEqual(["notarization", "mail"]);
+    expect(offeredAddonOptions(1, "evaluation").map((option) => option.id)).toEqual([
+      "notarization",
+      "mail",
+      "expedited",
+    ]);
   });
 
   it("keeps the service price separate from add-ons", () => {

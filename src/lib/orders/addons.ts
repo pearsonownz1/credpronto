@@ -23,7 +23,9 @@ export function offersExpedited(order: AddonOrderContext): boolean {
 }
 
 function offeredCatalog(order: AddonOrderContext) {
-  return offersExpedited(order) ? ADDON_CATALOG : ADDON_CATALOG.filter((item) => item.id !== "expedited");
+  const specified = order.serviceType != null || order.orderType != null || order.service != null;
+  if (!specified || offersExpedited(order)) return ADDON_CATALOG;
+  return ADDON_CATALOG.filter((item) => item.id !== "expedited");
 }
 
 export const US_STATE_CODES = [
@@ -92,6 +94,19 @@ export function expeditedFlagForAddons(order: AddonOrderContext, addons: readonl
   const chosen = addons.some((item) => item.id === "expedited");
   if (chosen && !offersExpedited(order)) throw new HttpError("Expedited is no longer offered", 400);
   return chosen;
+}
+
+/** Evaluations still offer Expedited. Translation orders do not. */
+export function offeredAddonOptions(
+  billablePages: number | null,
+  orderType: string | null | undefined,
+): AddonOption[] {
+  return withoutExpedited(addonOptions(billablePages), orderType !== "evaluation");
+}
+
+export function withoutExpedited<T extends { id: string }>(options: readonly T[], hide: boolean): T[] {
+  if (!hide) return [...options];
+  return options.filter((item) => item.id !== "expedited");
 }
 
 export function serviceCents(order: {

@@ -83,6 +83,8 @@ describe("evaluation checkout", () => {
     expect(html).toContain('data-testid="addon-expedited"');
     expect(html).not.toContain("$29.90");
     expect(html).not.toContain("Certificate of accuracy");
+    expect(html).toContain("1 page");
+    expect(html).not.toContain("1 pages");
   });
 
   it("shows $29.90 after translation is included", () => {
@@ -90,6 +92,8 @@ describe("evaluation checkout", () => {
     const html = renderToStaticMarkup(createElement(CheckoutView, { token: "token-1" }));
     expect(html).toContain("$29.90");
     expect(html).toContain("Certified translation");
+    expect(html).toContain("1 billable page");
     expect(html).toContain("Pay $29.90");
+    expect(html).not.toContain("1 pages");
   });
 });
