@@ -10,9 +10,9 @@ The watermark is drawn in a separate render pass on every preview page: a repeat
 
 ## `GET /api/orders/[token]/preview`
 
-Signed URLs expire in 10 minutes. `translation.url` is the watermarked preview only.
+Signed URLs expire in 10 minutes. `translation.url` is a watermarked preview only. On a translation order that object is `preview-v`. On an evaluation it is `translation-preview-v` when that file exists, and otherwise the watermarked report. `report` is `{ url, pageCount }` for the evaluation report (`report-v`, or `preview-v` on older orders) and null on a translation order. When the two URLs match, the Translation link is omitted.
 
-{ status, totalCents, unitPriceCents, billablePages, original: { url (10-min signed), pageCount, pages: [{ number, widthPt, heightPt, documentId, documentIndex, documentName }] }, translation: { url (10-min signed, watermarked preview only), pageCount, pages: [{ number, widthPt, heightPt, documentId, documentIndex, documentName }], version }, corrections: [{ id, documentId, page, quote, note, status, createdAt }] }
+{ status, totalCents, unitPriceCents, billablePages, original: { url (10-min signed), pageCount, pages: [{ number, widthPt, heightPt, documentId, documentIndex, documentName }] }, translation: { url (10-min signed, watermarked preview only), pageCount, pages: [{ number, widthPt, heightPt, documentId, documentIndex, documentName }], version }, report: { url, pageCount } | null, corrections: [{ id, documentId, page, quote, note, status, createdAt }] }
 
 ```json
 {
@@ -246,7 +246,7 @@ Stripe session:
 
 The Checkout line is `CredPronto certified translation (N pages)`. `price_data.product_data.description` names the languages, the documents, and the billable pages, for example `French → English · fr_diplome-licence.pdf · 1 page`. Language codes are shown as names (`fr` → French, `en` → English). The first document name follows upload order. Further documents are `+N more` (`acta.pdf` plus two others → `acta.pdf +2 more`). One billable page reads `1 page`; any other count reads `N pages`.
 
-`price_data.product_data.images[0]` is a signed URL, valid for 25 hours, for a PNG of page 1 of the watermarked translation preview. The PNG's longer side is about 1000px. It is stored in the private `previews` bucket at `checkout-previews/<orderId>/<random>.png`. A later checkout for the same order reuses that PNG and signs a new URL. The object is the watermarked preview in `previews`, whose key starts with `preview-`. If rendering or signing fails, the session is still created without `images`, and the error is logged.
+`price_data.product_data.images[0]` is a signed URL, valid for 25 hours, for a PNG of page 1 of the watermarked preview. The PNG's longer side is about 1000px. It is stored in the private `previews` bucket at `checkout-previews/<orderId>/<random>.png`. A later checkout for the same order reuses that PNG and signs a new URL. The object is a watermarked file in `previews` named `preview-….pdf`, `report-v<N>.pdf`, or `translation-preview-v<N>.pdf`. Clean files in `finals` are not used. If rendering or signing fails, the session is still created without `images`, and the error is logged.
 
 `CHECKOUT_PLACEHOLDER=1` does not call Stripe. The payment row status is `paid_test`, the order status is `paid`, and a pending delivery is created.
 
@@ -606,7 +606,11 @@ A course-by-course evaluation uses the description `Course-by-course evaluation`
 
 Upload, then a watermarked preview of the evaluation report, then payment, then staff approval before the clean report is released. The statuses are `draft` → `preview_ready` or `needs_review` → `paid` → `approved` → `delivered`. Checkout is allowed only at `preview_ready`, the same gate as a translation. There is no 10-minute preview promise and no one-hour delivery promise. `etaAt` is null.
 
-The watermark is the same diagonal `PREVIEW · CREDPRONTO · NOT FOR OFFICIAL USE` used on translation previews. `preview.report` is that watermarked PDF (`url`, `pageCount`). It is null before the report exists. `GET /api/orders/[token]/download?file=evaluation` returns the clean report only after payment and staff approval, the same gate as `file=translation`.
+The watermarked report is stored in `previews` as `<orderId>/report-v<N>.pdf`. Orders created before that name keep `<orderId>/preview-v<N>.pdf`, and the preview API still treats that object as the report. The watermark is the same diagonal `PREVIEW · CREDPRONTO · NOT FOR OFFICIAL USE` used on translation previews. `preview.report` is that watermarked PDF (`url`, `pageCount`). It is null before the report exists.
+
+When the source language is not English, the same preview pass used for translation orders also stores `<orderId>/translation-preview-v<N>.pdf` beside that report, with the same `N`. That file is watermarked and has no certification cover. `preview.translation.url` is that object when it exists. When it does not (English source, or the translation preview failed), `preview.translation.url` is the report, and the Translation link is omitted because the two URLs match. A failed translation preview does not hold the evaluation report or clear `preview_ready`.
+
+`GET /api/orders/[token]/download?file=evaluation` returns the clean report only after payment and staff approval, the same gate as `file=translation`.
 
 `needs_review` is used when a course grade cannot be mapped, or when the diploma cannot be read. A diploma whose printed credential has no U.S. equivalent still reaches `preview_ready`. Its equivalency field is `Pending staff review`, `reviewReason` is exactly `equivalency_unmapped`, and checkout is allowed. The clean report is not stored until staff send `equivalencies` on resolve-review. Approval returns `409` `{ "error": "The U.S. equivalency is still pending staff review" }` until then. The order stays on the staff review queue, including after payment.
 

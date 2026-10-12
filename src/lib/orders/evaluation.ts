@@ -14,15 +14,50 @@ import {
 } from "./db";
 import { sendPreviewReady } from "./email";
 import { AiUnavailableError, HttpError } from "./errors";
-import { evaluationQuote } from "./evaluation-price";
+import { evaluationQuote, needsBundledTranslation } from "./evaluation-price";
 import { EQUIVALENCY_UNMAPPED, PENDING_EQUIVALENCY, diplomaEquivalencyPending } from "./equivalency";
 import { gradeScaleText, scoreCourses, usEquivalency, type RawCourse } from "./grades";
 import { IMAGE_QUALITY_REASON } from "./image-quality";
 import { evaluationIssuedLabel, evaluationReportId, renderEvaluationPdfs } from "./pdf/evaluation";
 import { uploadObject } from "./storage";
+import { watermarkedTranslationPreview } from "./translation";
 import type { EvaluationResult, OrderRecord, StoredPageOrder } from "./types";
 
 export const UNMAPPED_REASON = "The credential or a grade could not be mapped to a U.S. equivalent.";
+
+/** Watermarked evaluation report and the certified-translation preview beside it. Same version in both names. */
+export function evaluationPreviewObjects(orderId: string, version: number): {
+  reportPath: string;
+  translationPreviewPath: string;
+} {
+  return {
+    reportPath: `${orderId}/report-v${version}.pdf`,
+    translationPreviewPath: `${orderId}/translation-preview-v${version}.pdf`,
+  };
+}
+
+/**
+ * Preview rows are unique on (order_id, version), so the translation object
+ * cannot share the report's row. The filename still uses the report version.
+ */
+export function translationPreviewRecord(input: {
+  orderId: string;
+  reportVersion: number;
+  rowVersion: number;
+}): { version: number; previewPath: string } {
+  if (input.rowVersion <= input.reportVersion) {
+    throw new Error("A translation preview needs its own preview version");
+  }
+  return {
+    version: input.rowVersion,
+    previewPath: evaluationPreviewObjects(input.orderId, input.reportVersion).translationPreviewPath,
+  };
+}
+
+/** Bytes stored as `translation-preview-v`. The watermarked pass only; never the clean file. */
+export function translationPreviewBytes(files: { watermarkedPreview: Uint8Array }): Uint8Array {
+  return files.watermarkedPreview;
+}
 const LANGUAGE_REASON = "The source language could not be confirmed.";
 const READ_REASON = "The evaluation could not be read.";
 
@@ -146,22 +181,22 @@ export async function publishDiplomaEquivalency(
   if (!next) throw new HttpError("Each credential needs a U.S. equivalency", 400);
 
   const version = await nextPreviewVersion(db, order.id);
-  const previewPath = `${order.id}/preview-v${version}.pdf`;
-  const inserted = await insertPreview(db, { orderId: order.id, version, previewPath });
+  const { reportPath } = evaluationPreviewObjects(order.id, version);
+  const inserted = await insertPreview(db, { orderId: order.id, version, previewPath: reportPath });
   if (inserted === "exists") return;
 
   const files = await renderEvaluationPdfs(next, {
     reportId: evaluationReportId(order.id),
     issued: evaluationIssuedLabel(order.createdAt),
   });
-  const reportPath = `${order.id}/evaluation-v${version}.pdf`;
-  await uploadObject(db, FINALS_BUCKET, reportPath, files.clean, "application/pdf");
-  await uploadObject(db, PREVIEWS_BUCKET, previewPath, files.preview, "application/pdf");
+  const cleanPath = `${order.id}/evaluation-v${version}.pdf`;
+  await uploadObject(db, FINALS_BUCKET, cleanPath, files.clean, "application/pdf");
+  await uploadObject(db, PREVIEWS_BUCKET, reportPath, files.preview, "application/pdf");
   await updateOrder(db, order.id, {
     review_reason: null,
     evaluation_result: { ...next, pageCount: files.pageCount },
-    final_translation_path: reportPath,
-    certification_path: reportPath,
+    final_translation_path: cleanPath,
+    certification_path: cleanPath,
   });
   await markPreview(db, order.id, version, "ready");
 }
@@ -270,6 +305,57 @@ type EvaluationContext = {
   token: string | null;
 };
 
+/**
+ * Best-effort watermarked translation next to the report. A failure here does
+ * not mark the evaluation report failed or move the order to needs_review.
+ * English sources are not translated. Staff republish of a diploma does not
+ * call this; the existing translation-preview object stays.
+ */
+async function storeTranslationPreview(
+  db: Db,
+  order: OrderRecord,
+  reportVersion: number,
+  sourceLanguage: string | null,
+): Promise<void> {
+  if (!needsBundledTranslation(sourceLanguage) || !sourceLanguage) return;
+  let rowVersion: number | null = null;
+  let insertedTranslation = false;
+  try {
+    rowVersion = await nextPreviewVersion(db, order.id);
+    const record = translationPreviewRecord({
+      orderId: order.id,
+      reportVersion,
+      rowVersion,
+    });
+    const inserted = await insertPreview(db, {
+      orderId: order.id,
+      version: record.version,
+      previewPath: record.previewPath,
+    });
+    if (inserted === "exists") return;
+    insertedTranslation = true;
+    const bytes = translationPreviewBytes({
+      watermarkedPreview: await watermarkedTranslationPreview(db, {
+        orderId: order.id,
+        sourceLanguage,
+        targetLanguage: order.targetLanguage,
+        customerId: order.customerId,
+      }),
+    });
+    await uploadObject(db, PREVIEWS_BUCKET, record.previewPath, bytes, "application/pdf");
+    await markPreview(db, order.id, record.version, "ready");
+  } catch (error) {
+    if (insertedTranslation && rowVersion != null) {
+      try {
+        await markPreview(db, order.id, rowVersion, "failed");
+      } catch (markError) {
+        console.error("evaluation translation preview status failed", markError);
+      }
+    }
+    console.error("evaluation translation preview failed", error);
+  }
+}
+
 function languageConfirmed(input: EvaluationContext, language: string | null): boolean {
   return Boolean(
     language &&
@@ -327,8 +413,8 @@ export async function completeEvaluation(
   }
 
   const version = await nextPreviewVersion(db, order.id);
-  const previewPath = `${order.id}/preview-v${version}.pdf`;
-  const inserted = await insertPreview(db, { orderId: order.id, version, previewPath });
+  const { reportPath } = evaluationPreviewObjects(order.id, version);
+  const inserted = await insertPreview(db, { orderId: order.id, version, previewPath: reportPath });
   if (inserted === "exists") return;
 
   try {
@@ -354,9 +440,9 @@ export async function completeEvaluation(
       issued: evaluationIssuedLabel(order.createdAt),
     });
     const stored: EvaluationResult = { ...result, pageCount: files.pageCount };
-    const reportPath = `${order.id}/evaluation-v${version}.pdf`;
-    if (!pending) await uploadObject(db, FINALS_BUCKET, reportPath, files.clean, "application/pdf");
-    await uploadObject(db, PREVIEWS_BUCKET, previewPath, files.preview, "application/pdf");
+    const cleanPath = `${order.id}/evaluation-v${version}.pdf`;
+    if (!pending) await uploadObject(db, FINALS_BUCKET, cleanPath, files.clean, "application/pdf");
+    await uploadObject(db, PREVIEWS_BUCKET, reportPath, files.preview, "application/pdf");
     const quote = quoteFor(language);
     await updateOrder(db, order.id, {
       status: "preview_ready",
@@ -375,11 +461,12 @@ export async function completeEvaluation(
       ...(pending
         ? {}
         : {
-            final_translation_path: reportPath,
-            certification_path: reportPath,
+            final_translation_path: cleanPath,
+            certification_path: cleanPath,
           }),
     });
     await markPreview(db, order.id, version, "ready");
+    await storeTranslationPreview(db, order, version, language);
     await insertEvent(db, order.id, "preview_ready", { version, pageCount: files.pageCount });
     const email = await customerEmail(db, order.customerId);
     if (email) {

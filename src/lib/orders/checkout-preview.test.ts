@@ -76,8 +76,22 @@ describe("watermarked checkout preview", () => {
     });
   });
 
+  it("also accepts the evaluation report and its translation preview", () => {
+    expect(watermarkedPreviewObject("order-1/report-v2.pdf")).toEqual({
+      bucket: PREVIEWS_BUCKET,
+      path: "order-1/report-v2.pdf",
+    });
+    expect(watermarkedPreviewObject("order-1/translation-preview-v2.pdf")).toEqual({
+      bucket: PREVIEWS_BUCKET,
+      path: "order-1/translation-preview-v2.pdf",
+    });
+  });
+
   it("refuses the clean final", () => {
     expect(() => watermarkedPreviewObject("order-1/translation-v3.pdf")).toThrow(
+      /watermarked preview/,
+    );
+    expect(() => watermarkedPreviewObject("order-1/evaluation-v2.pdf")).toThrow(
       /watermarked preview/,
     );
     expect(() => watermarkedPreviewObject("finals/preview-v1.pdf")).toThrow(/watermarked preview/);

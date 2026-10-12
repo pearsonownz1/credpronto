@@ -364,3 +364,71 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
     }
   }
 }
+
+/**
+ * Watermarked certified-translation preview for an evaluation.
+ * Same preview pass as a translation order: watermark on, certification cover off.
+ * The clean translation and the certification page are not stored.
+ */
+export async function watermarkedTranslationPreview(
+  db: Db,
+  input: {
+    orderId: string;
+    sourceLanguage: string;
+    targetLanguage: string;
+    customerId: string;
+  },
+): Promise<Uint8Array> {
+  const documents = inReadingOrder(await listDocuments(db, input.orderId));
+  const pages = withCombinedNumbers(
+    documents,
+    await listPages(
+      db,
+      documents.map((document) => document.id),
+    ),
+  );
+  if (pages.length === 0) throw new Error("The original pages are not ready to translate.");
+
+  const confirmations = await listConfirmations(db, input.orderId);
+  const clientEmail = await customerEmail(db, input.customerId);
+  const renderedPages: RenderPage[] = [];
+  const translatedCounts = new Map<string, number>();
+  for (const document of documents) {
+    const documentPages = pages.filter((page) => page.documentId === document.id);
+    if (documentPages.length === 0) continue;
+    const translated = await translateDocument({
+      filename: document.filename,
+      sourceLanguage: input.sourceLanguage,
+      fields: confirmations.filter((field) => field.documentId === document.id),
+      pages: documentPages,
+      corrections: [],
+      qaIssues: [],
+    });
+    translatedCounts.set(document.id, translated.length);
+    for (const page of translated) {
+      const source = documentPages.find((item) => item.number === page.pageNumber);
+      renderedPages.push({
+        combinedPageNumber: page.pageNumber,
+        widthPt: source?.widthPt ?? 612,
+        heightPt: source?.heightPt ?? 792,
+        paragraphs: blocksToParagraphs(page.blocks),
+        blocks: page.blocks,
+      });
+    }
+  }
+  if (renderedPages.length === 0) throw new Error("The original pages are not ready to translate.");
+
+  const configuredSignature = loadTranslatorSignature();
+  const files = await renderOrderPdfs({
+    orderId: input.orderId,
+    sourceLanguage: input.sourceLanguage,
+    targetLanguage: input.targetLanguage,
+    date: new Date().toISOString().slice(0, 10),
+    pages: renderedPages,
+    clientName: coverClientName(confirmations, clientEmail),
+    documents: coverDocuments(documents, pages, translatedCounts),
+    translatorName: coverTranslatorName(null),
+    signature: coverSignature(null, configuredSignature),
+  });
+  return files.watermarkedPreview;
+}
