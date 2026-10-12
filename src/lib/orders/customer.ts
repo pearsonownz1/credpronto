@@ -34,6 +34,7 @@ import { CONFIRMATION_FIELD_KEYS, normalizeDateFormat, type ConfirmationFieldKey
 import { appOrigin } from "./email";
 import { normalizeLanguage } from "./languages";
 import { loadCustomerOrder } from "./pipeline";
+import { orderDownloadFilename } from "./download-name";
 import { originalDownloadResponse, originalTargets } from "./originals";
 import { previewSignedTargets } from "./preview-targets";
 import { serviceDb, signedObjectUrl, type Db } from "./storage";
@@ -201,9 +202,15 @@ export async function downloadOrderFile(
 
   const path = file === "translation" ? delivery?.finalPath : delivery?.certificationPath;
   if (!path) throw new HttpError("That file is not ready", 404);
-  const url = await signedObjectUrl(db, FINALS_BUCKET, path, DOWNLOAD_URL_SECONDS);
+  const documents = await listDocuments(db, order.id);
+  const filename = orderDownloadFilename(
+    file,
+    documents.map((document) => document.filename),
+    order.targetLanguage,
+  );
+  const url = await signedObjectUrl(db, FINALS_BUCKET, path, DOWNLOAD_URL_SECONDS, { download: filename });
   await insertEvent(db, order.id, "downloaded", { file });
-  return { url, expiresInSeconds: DOWNLOAD_URL_SECONDS };
+  return { url, filename, expiresInSeconds: DOWNLOAD_URL_SECONDS };
 }
 
 /** The customer's own uploads. The token is enough at any status; payment is not required. */
@@ -215,7 +222,10 @@ async function downloadOriginals(token: string, documentId: string | null) {
       documentId: target.documentId,
       documentIndex: target.documentIndex,
       documentName: target.documentName,
-      url: await signedObjectUrl(db, target.bucket, target.path, DOWNLOAD_URL_SECONDS),
+      filename: target.filename,
+      url: await signedObjectUrl(db, target.bucket, target.path, DOWNLOAD_URL_SECONDS, {
+        download: target.filename,
+      }),
     })),
   );
   await insertEvent(db, order.id, "downloaded", {

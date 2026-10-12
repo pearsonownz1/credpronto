@@ -234,12 +234,28 @@ HTTP 503.
 | settled | `approved` or `delivered` | `200` |
 
 ```json
-{ "url": "https://…", "expiresInSeconds": 300 }
+{
+  "url": "https://…",
+  "filename": "fr_diplome-licence-EN-certified.pdf",
+  "expiresInSeconds": 300
+}
 ```
 
-The URL is a 5-minute signed URL for the object in `finals` (`translation` → clean translated PDF, `certification` → certification page). A `downloaded` event is recorded. The URL is not stored.
+The URL is a 5-minute signed URL for the object in `finals` (`translation` → clean translated PDF, `certification` → certification page). `createSignedUrl` is called with `download` set to `filename`, so the response carries `Content-Disposition` and the browser saves that name. A `downloaded` event is recorded. The URL is not stored.
 
-`file=original` returns the customer's own uploads from the private `originals` bucket (`documents.original_path`, not the combined PDF). The token is enough at any order status. Payment and certification are not checked. Each URL expires in 5 minutes (`expiresInSeconds` 300). A `downloaded` event is recorded with `file` set to `original` and `documentIds` listing the files that were signed. The response does not include storage paths.
+`filename` is built from the source document name (`documentName`, the upload's `documents.filename`):
+
+| File | Name |
+| --- | --- |
+| `translation` | `{base}-{TARGET}-certified.pdf` |
+| `certification` | `{base}-certificate.pdf` |
+| `original` | the original `documentName`, kept as safe ASCII |
+
+`base` is that name without its extension. `fr_diplome-licence.pdf` with target language `en` becomes `fr_diplome-licence-EN-certified.pdf`, `fr_diplome-licence-certificate.pdf`, and `fr_diplome-licence.pdf`. `{TARGET}` is the order's target language code in uppercase (`en` → `EN`). Characters outside ASCII letters, digits, `.`, `_`, and `-` are folded or replaced. Accents fold (`diplôme` → `diplome`). A name with no safe stem uses `document`. A sample name such as `birth-certificate` is used only when that is the uploaded name.
+
+A multi-document order names each original from its own document. The translation and the certification are still one PDF each; their base joins every document stem in upload order (`fr_diplome-licence.pdf` and `releve.pdf` → `fr_diplome-licence-releve-EN-certified.pdf`).
+
+`file=original` returns the customer's own uploads from the private `originals` bucket (`documents.original_path`, not the combined PDF). The token is enough at any order status. Payment and certification are not checked. Each URL expires in 5 minutes (`expiresInSeconds` 300) and is signed with `download` set to that file's `filename`. A `downloaded` event is recorded with `file` set to `original` and `documentIds` listing the files that were signed. The response does not include storage paths.
 
 Pass `documentId` to sign one upload. When `documentId` is omitted and the order has one document, the body is that same single-file object. When `documentId` is omitted and the order has more than one document, the body is a list in upload order. `documentIndex` and `documentName` match the preview page fields (`documentName` is `documents[].filename`).
 
@@ -248,6 +264,7 @@ One file (`documentId` set, or the only upload):
 ```json
 {
   "url": "https://…",
+  "filename": "diploma.pdf",
   "expiresInSeconds": 300,
   "documentId": "…",
   "documentIndex": 0,
@@ -267,12 +284,14 @@ Several uploads, no `documentId`:
       "documentId": "…",
       "documentIndex": 0,
       "documentName": "diploma.pdf",
+      "filename": "diploma.pdf",
       "url": "https://…"
     },
     {
       "documentId": "…",
       "documentIndex": 1,
       "documentName": "transcript.pdf",
+      "filename": "transcript.pdf",
       "url": "https://…"
     }
   ]
@@ -344,12 +363,20 @@ Approval copies the clean translation and certification keys onto the delivery a
 {
   "status": "delivered",
   "email": "sent",
-  "translation": { "url": "https://…", "expiresInSeconds": 300 },
-  "certification": { "url": "https://…", "expiresInSeconds": 300 }
+  "translation": {
+    "url": "https://…",
+    "filename": "fr_diplome-licence-EN-certified.pdf",
+    "expiresInSeconds": 300
+  },
+  "certification": {
+    "url": "https://…",
+    "filename": "fr_diplome-licence-certificate.pdf",
+    "expiresInSeconds": 300
+  }
 }
 ```
 
-`email` is `sent`, `skipped`, or `failed`. When email fails the delivery stays `approved` and the signed URLs are still returned. The delivery email tells the customer to open the order link from the earlier message. The raw token is not stored, so that email cannot contain a new copy of it.
+`filename` follows the same rules as `GET /api/orders/[token]/download`. Each signed URL is created with the Supabase Storage `download` option set to that filename (`Content-Disposition`). `email` is `sent`, `skipped`, or `failed`. When email fails the delivery stays `approved` and the signed URLs are still returned. The delivery email tells the customer to open the order link from the earlier message. The raw token is not stored, so that email cannot contain a new copy of it.
 
 A `paid_test` refund returns `{ "paymentStatus": "refunded", "mode": "paid_test", "duplicate": false }`. A Stripe test refund also returns `refundId`. `409` when the payment cannot be refunded or the Stripe key is not a test key. `503` `{ "error": "Payments not configured" }` when a real `paid` row has no Stripe secret.
 
