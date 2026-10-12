@@ -34,7 +34,7 @@ function encodeAccount(account: Account): string {
   return Buffer.from(JSON.stringify(account), "utf8").toString("base64url");
 }
 
-function decodeAccount(value: string | undefined): Account | null {
+export function readMockAccount(value: string | undefined): Account | null {
   if (!value) return null;
   try {
     const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as Partial<Account>;
@@ -73,7 +73,7 @@ async function readIsAdmin(userId: string): Promise<boolean> {
 
 export async function getAccount(): Promise<Account | null> {
   const cookieStore = await cookies();
-  if (isMockMode()) return decodeAccount(cookieStore.get(MOCK_COOKIE)?.value);
+  if (isMockMode()) return readMockAccount(cookieStore.get(MOCK_COOKIE)?.value);
 
   try {
     const supabase = await createClient();
