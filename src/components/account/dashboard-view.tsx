@@ -14,17 +14,14 @@ import {
   type DashboardTab,
   type OrderPresentation,
 } from "@/lib/account/present";
-import { browserJson, publicMockMode } from "@/lib/api/browser";
 import { pageLabel } from "@/lib/flow/pricing";
 import type { CustomerOrder } from "@/lib/api/types";
 
-function openDownload(href: string) {
-  const anchor = document.createElement("a");
-  anchor.href = href;
-  anchor.target = "_blank";
-  anchor.rel = "noopener";
-  anchor.click();
-}
+const ROW_GRID =
+  "grid grid-cols-[minmax(0,1.15fr)_minmax(0,1.45fr)_minmax(0,1.25fr)_minmax(0,0.55fr)_minmax(0,1.35fr)_minmax(0,0.7fr)_minmax(0,0.7fr)_minmax(0,1.15fr)] items-center";
+
+const ROW_LINK =
+  "cursor-pointer hover:bg-[#eef3fb] focus-visible:bg-[#eef3fb] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-[-2px]";
 
 const TONE: Record<ChipTone, string> = {
   blue: "bg-[#eaf0ff] text-primary",
@@ -38,7 +35,6 @@ export function DashboardView() {
   const { orders, ordersError, query, setQuery, now } = useAccountShell();
   const [tab, setTab] = useState<DashboardTab>("all");
   const [page, setPage] = useState(0);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
   const waiting = previewWaiting(orders, now);
   const searched = orders.filter((order) => orderMatches(order, query, now));
   const visible = ordersInTab(searched, tab, now);
@@ -46,25 +42,6 @@ export function DashboardView() {
   const pages = Math.max(1, Math.ceil(visible.length / pageSize));
   const current = Math.min(page, pages - 1);
   const rows = visible.slice(current * pageSize, current * pageSize + pageSize);
-
-  async function download(order: CustomerOrder) {
-    const token = order.orderToken;
-    if (!token || !order.downloadAvailable) return;
-    setDownloadError(null);
-    const href = publicMockMode() ? "/samples/birth-certificate-en.pdf" : null;
-    if (!href) {
-      const result = await browserJson<{ url?: string }>(
-        `/api/orders/${encodeURIComponent(token)}/download?file=translation`,
-      );
-      if (!result.ok || !result.data.url) {
-        setDownloadError(result.ok ? "The file is not ready to download." : result.error);
-        return;
-      }
-      openDownload(result.data.url);
-      return;
-    }
-    openDownload(href);
-  }
 
   return (
     <div data-testid="dashboard">
@@ -140,11 +117,6 @@ export function DashboardView() {
           {ordersError}
         </p>
       ) : null}
-      {downloadError ? (
-        <p role="alert" className="mb-3 text-sm text-[#b45309]">
-          {downloadError}
-        </p>
-      ) : null}
       <div className="overflow-hidden rounded-[var(--cp-radius)] border border-line bg-white">
         <div className="flex items-center gap-4 overflow-x-auto border-b border-line px-[18px] py-3 text-[13.5px]" role="tablist">
           {DASHBOARD_TABS.map((item) => {
@@ -199,59 +171,64 @@ export function DashboardView() {
           <p className="px-6 py-12 text-center text-sm text-ink-muted">Nothing in this tab yet.</p>
         ) : (
           <>
-            <div className="hidden md:block">
-              <table className="w-full border-collapse text-[13.5px]">
-                <thead>
-                  <tr className="bg-[#fafbfc] text-left text-[12.5px] font-medium text-ink-muted">
-                    <th className="px-[18px] py-2.5">Order</th>
-                    <th className="px-[18px] py-2.5">Documents</th>
-                    <th className="px-[18px] py-2.5">Language</th>
-                    <th className="px-[18px] py-2.5">Pages</th>
-                    <th className="px-[18px] py-2.5">Status</th>
-                    <th className="px-[18px] py-2.5">Placed</th>
-                    <th className="px-[18px] py-2.5">Total</th>
-                    <th className="px-[18px] py-2.5 text-right">Next step</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((order) => {
-                    const view = presentOrder(order, now);
-                    return (
-                      <tr key={order.id} className="border-t border-line" data-testid={`order-${order.id}`}>
-                        <td className="px-[18px] py-[13px] font-mono text-[12.5px]">{order.id}</td>
-                        <td className="px-[18px] py-[13px] font-semibold">{view.documents}</td>
-                        <td className="px-[18px] py-[13px]">{view.pair}</td>
-                        <td className="px-[18px] py-[13px]">{view.pages ?? "—"}</td>
-                        <td className="px-[18px] py-[13px]">
-                          <Chip view={view} />
-                        </td>
-                        <td className="px-[18px] py-[13px]">{view.placed}</td>
-                        <td className="px-[18px] py-[13px]">{view.total}</td>
-                        <td className="px-[18px] py-[13px] text-right">
-                          <NextStep order={order} view={view} onDownload={download} />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="hidden text-[13.5px] md:block">
+              <div className={`${ROW_GRID} bg-[#fafbfc] text-left text-[12.5px] font-medium text-ink-muted`}>
+                {["Order", "Documents", "Language", "Pages", "Status", "Placed", "Total"].map((label) => (
+                  <div key={label} className="px-[18px] py-2.5">
+                    {label}
+                  </div>
+                ))}
+                <div className="px-[18px] py-2.5 text-right">Next step</div>
+              </div>
+              {rows.map((order) => {
+                const view = presentOrder(order, now);
+                return (
+                  <OrderLink
+                    key={order.id}
+                    order={order}
+                    view={view}
+                    testId={`order-${order.id}`}
+                    className={`${ROW_GRID} border-t border-line ${ROW_LINK}`}
+                  >
+                    <span className="px-[18px] py-[13px] font-mono text-[12.5px]">{order.id}</span>
+                    <span className="px-[18px] py-[13px] font-semibold">{view.documents}</span>
+                    <span className="px-[18px] py-[13px]">{view.pair}</span>
+                    <span className="px-[18px] py-[13px]">{view.pages ?? "—"}</span>
+                    <span className="px-[18px] py-[13px]">
+                      <Chip view={view} />
+                    </span>
+                    <span className="px-[18px] py-[13px]">{view.placed}</span>
+                    <span className="px-[18px] py-[13px]">{view.total}</span>
+                    <span className="px-[18px] py-[13px] text-right">
+                      <NextStep view={view} />
+                    </span>
+                  </OrderLink>
+                );
+              })}
             </div>
             <ul className="divide-y divide-line md:hidden">
               {rows.map((order) => {
                 const view = presentOrder(order, now);
                 return (
-                  <li key={order.id} className="grid gap-2 px-4 py-4" data-testid={`order-card-${order.id}`}>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-mono text-[12.5px]">{order.id}</span>
-                      <Chip view={view} />
-                    </div>
-                    <p className="font-semibold">{view.documents}</p>
-                    <p className="text-[13px] text-ink-muted">
-                      {view.pair} · {view.pages == null ? "— pages" : pageLabel(view.pages)} · {view.placed} · {view.total}
-                    </p>
-                    <div className="text-right">
-                      <NextStep order={order} view={view} onDownload={download} />
-                    </div>
+                  <li key={order.id}>
+                    <OrderLink
+                      order={order}
+                      view={view}
+                      testId={`order-card-${order.id}`}
+                      className={`grid gap-2 px-4 py-4 ${ROW_LINK}`}
+                    >
+                      <span className="flex items-center justify-between gap-3">
+                        <span className="font-mono text-[12.5px]">{order.id}</span>
+                        <Chip view={view} />
+                      </span>
+                      <span className="font-semibold">{view.documents}</span>
+                      <span className="text-[13px] text-ink-muted">
+                        {view.pair} · {view.pages == null ? "— pages" : pageLabel(view.pages)} · {view.placed} · {view.total}
+                      </span>
+                      <span className="text-right">
+                        <NextStep view={view} />
+                      </span>
+                    </OrderLink>
                   </li>
                 );
               })}
@@ -292,46 +269,54 @@ function Chip({ view }: { view: OrderPresentation }) {
   );
 }
 
-function NextStep({
+function OrderLink({
   order,
   view,
-  onDownload,
+  testId,
+  className,
+  children,
 }: {
   order: CustomerOrder;
   view: OrderPresentation;
-  onDownload: (order: CustomerOrder) => void;
+  testId: string;
+  className: string;
+  children: React.ReactNode;
 }) {
+  if (!view.rowHref) {
+    return (
+      <div data-testid={testId} className={className}>
+        {children}
+      </div>
+    );
+  }
+  const action = view.action.label === "—" ? "Open order" : view.action.label;
+  return (
+    <Link
+      href={view.rowHref}
+      data-testid={testId}
+      aria-label={`${order.id}, ${view.documents}, ${view.chip.label}. ${action}`}
+      className={className}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function NextStep({ view }: { view: OrderPresentation }) {
   const { action } = view;
-  if ((action.kind === "review" || action.kind === "confirm") && action.href) {
-    return (
-      <Link
-        href={action.href}
-        data-emphasis={action.emphasis}
-        className={
-          action.emphasis === "primary"
-            ? "inline-flex items-center rounded-[var(--cp-radius)] bg-primary px-3 py-1.5 text-[13px] font-semibold text-white"
-            : "font-semibold text-primary"
-        }
-      >
-        {action.label}
-      </Link>
-    );
-  }
-  if (action.kind === "download" && action.href) {
-    return (
-      <button
-        type="button"
-        data-emphasis="link"
-        className="font-semibold text-primary"
-        onClick={() => onDownload(order)}
-      >
-        {action.label}
-      </button>
-    );
-  }
   if (action.emphasis === "primary") {
     return (
-      <span data-emphasis="primary" className="inline-flex items-center rounded-[var(--cp-radius)] bg-primary px-3 py-1.5 text-[13px] font-semibold text-white">
+      <span
+        data-emphasis="primary"
+        className="inline-flex items-center rounded-[var(--cp-radius)] bg-primary px-3 py-1.5 text-[13px] font-semibold text-white"
+      >
+        {action.label}
+      </span>
+    );
+  }
+  if (action.emphasis === "link") {
+    return (
+      <span data-emphasis="link" className="font-semibold text-primary">
         {action.label}
       </span>
     );
