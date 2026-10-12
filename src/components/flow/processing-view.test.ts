@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({
   status: "processing",
   orderType: "translation",
   progressStep: "translating",
+  previewVersion: null as number | null,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -23,6 +24,7 @@ vi.mock("./use-order", () => ({
       delayed: state.delayed,
       documents: [],
       billablePages: 2,
+      previewVersion: state.previewVersion,
       progress: { step: state.progressStep, pagesRead: 2, pagesTotal: 2 },
     },
     error: null,
@@ -52,8 +54,7 @@ describe("processing view", () => {
     expect(markup).not.toContain("Your preview is ready");
     expect(markup).not.toContain('data-testid="view-preview"');
     const value = Number(markup.match(/aria-valuenow="(\d+)"/)?.[1]);
-    expect(value).toBeGreaterThan(0);
-    expect(value).toBeLessThan(100);
+    expect(value).toBe(95);
   });
 
   it("tells the customer when a preview is taking longer than usual", () => {
@@ -65,9 +66,22 @@ describe("processing view", () => {
     expect(markup).not.toContain('data-testid="view-preview"');
   });
 
+  it("shows the preview button as soon as the watermarked preview version exists", () => {
+    state.delayed = false;
+    state.status = "processing";
+    state.previewVersion = 1;
+    state.progressStep = "translating";
+    const markup = html();
+    expect(markup).toContain("Your preview is ready");
+    expect(markup).toContain('data-testid="view-preview"');
+    expect(markup).not.toContain('data-testid="preview-steps"');
+    state.previewVersion = null;
+  });
+
   it("shows the preview button only after the preview exists", () => {
     state.delayed = false;
     state.status = "preview_ready";
+    state.previewVersion = null;
     state.progressStep = "translating";
     const markup = html();
     expect(markup).toContain("Your preview is ready");

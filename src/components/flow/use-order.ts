@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { getFlowClient, flowUsesMock } from "@/lib/flow/client";
+import { FlowApiError, getFlowClient, flowUsesMock } from "@/lib/flow/client";
+import { previewPollContinues, previewPollDelay } from "@/lib/flow/preview-progress";
 import { downloadPhase } from "@/lib/flow/present";
 import {
   EMAIL_KEY,
@@ -47,7 +48,7 @@ const WORKING = new Set(["draft", "confirmed", "processing", "correction_request
 
 export function useCustomerOrder(
   token: string,
-  mode: "once" | "while-working" | "until-download" = "once",
+  mode: "once" | "while-working" | "until-download" | "until-preview" = "once",
 ) {
   const [snapshot, setSnapshot] = useState<{
     token: string;
@@ -63,6 +64,72 @@ export function useCustomerOrder(
 
     let cancelled = false;
     let timer = 0;
+    let stopped = false;
+    let polls = 0;
+    let running = false;
+    let queued = false;
+
+    function hidden() {
+      return typeof document !== "undefined" && document.visibilityState === "hidden";
+    }
+
+    function arm(delay: number) {
+      window.clearTimeout(timer);
+      if (cancelled || stopped || hidden()) return;
+      timer = window.setTimeout(() => void loadPreview(), delay);
+    }
+
+    async function loadPreview() {
+      window.clearTimeout(timer);
+      if (cancelled || stopped || hidden()) return;
+      if (running) {
+        queued = true;
+        return;
+      }
+      running = true;
+      let order: Awaited<ReturnType<ReturnType<typeof getFlowClient>["getOrder"]>> | null = null;
+      let httpStatus: number | null = null;
+      try {
+        order = await getFlowClient().getOrder(token);
+        if (!cancelled) setSnapshot({ token, order, error: null });
+      } catch (cause) {
+        if (!cancelled) {
+          httpStatus = cause instanceof FlowApiError ? cause.status : null;
+          const message = cause instanceof Error ? cause.message : "Could not load this order";
+          if (!previewPollContinues(null, httpStatus)) {
+            stopped = true;
+            setSnapshot({ token, order: null, error: message });
+          } else {
+            setSnapshot((current) => {
+              if (current?.token === token && current.order) return current;
+              return { token, order: null, error: message };
+            });
+          }
+        }
+      } finally {
+        running = false;
+      }
+      if (cancelled || stopped || hidden()) return;
+      if (queued) {
+        queued = false;
+        void loadPreview();
+        return;
+      }
+      if (!previewPollContinues(order, httpStatus)) {
+        stopped = true;
+        return;
+      }
+      polls += 1;
+      arm(previewPollDelay(polls));
+    }
+
+    function onVisibility() {
+      if (hidden()) {
+        window.clearTimeout(timer);
+        return;
+      }
+      void loadPreview();
+    }
 
     async function load() {
       try {
@@ -82,6 +149,18 @@ export function useCustomerOrder(
           error: cause instanceof Error ? cause.message : "Could not load this order",
         });
       }
+    }
+
+    if (mode === "until-preview") {
+      document.addEventListener("visibilitychange", onVisibility);
+      window.addEventListener("focus", onVisibility);
+      void loadPreview();
+      return () => {
+        cancelled = true;
+        window.clearTimeout(timer);
+        document.removeEventListener("visibilitychange", onVisibility);
+        window.removeEventListener("focus", onVisibility);
+      };
     }
 
     void load();
