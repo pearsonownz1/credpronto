@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { Logo } from "@/components/logo";
 import { statusLabel, type PreviewOrder } from "./preview-order";
 
 export function PreviewShell({
@@ -23,11 +24,8 @@ export function PreviewShell({
       className="preview-theme flex h-dvh flex-col bg-bg text-ink"
     >
       <header className="flex h-[54px] shrink-0 items-center justify-between gap-5 border-b border-line bg-bg px-4 md:h-[60px] md:justify-start md:px-6">
-        <Link href="/" className="flex items-center gap-2 text-lg font-bold tracking-[-0.4px] md:text-[18px]">
-          <span className="relative inline-block size-[22px] shrink-0 rounded-[3px] bg-primary" aria-hidden>
-            <span className="absolute top-[5px] left-[6px] h-[11px] w-2 rounded-r-[6px] border-[2.5px] border-l-0 border-white" />
-          </span>
-          CredPronto
+        <Link href="/" className="inline-flex shrink-0 items-center">
+          <Logo priority />
         </Link>
         {order ? (
           <>
