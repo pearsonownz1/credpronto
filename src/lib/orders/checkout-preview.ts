@@ -74,7 +74,7 @@ export function checkoutLineProduct(input: {
   imageUrl: string | null;
 }): { name: string; description: string; images?: string[] } {
   const product: { name: string; description: string; images?: string[] } = {
-    name: `CredPronto certified translation (${input.billablePages} pages)`,
+    name: `CredPronto certified translation (${pageLabel(input.billablePages)})`,
     description: input.description,
   };
   if (input.imageUrl) product.images = [input.imageUrl];

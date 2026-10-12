@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { HttpError } from "./errors";
-import { addonOptions, addonStripeLines, chargeCents, parseCheckoutBody, serviceCents } from "./addons";
+import { addonOptions, addonStripeLines, chargeCents, offeredAddonOptions, parseCheckoutBody, serviceCents } from "./addons";
 
 const address = {
   name: "Ada Lovelace",
@@ -24,6 +24,12 @@ describe("checkout add-ons", () => {
     expect(addonOptions(null)[2]?.totalCents).toBeNull();
     expect(chargeCents(2985, addonOptions(3), ["notarization", "expedited"])).toBe(7765);
     expect(chargeCents(2985, addonOptions(null), ["expedited"])).toBeNull();
+    expect(offeredAddonOptions(1, "translation").map((option) => option.id)).toEqual(["notarization", "mail"]);
+    expect(offeredAddonOptions(1, "evaluation").map((option) => option.id)).toEqual([
+      "notarization",
+      "mail",
+      "expedited",
+    ]);
   });
 
   it("keeps the service price separate from add-ons", () => {

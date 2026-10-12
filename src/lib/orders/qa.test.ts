@@ -68,7 +68,7 @@ describe("translation QA", () => {
     expect(result.issues[0]).toMatchObject({
       type: "layout",
       page: null,
-      original: "1 pages",
+      original: "1 page",
       translated: "0 pages",
     });
     expect(result.issues[1]).toMatchObject({ type: "missing_text", page: 1, translated: "" });

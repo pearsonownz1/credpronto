@@ -1,4 +1,4 @@
-import { ADDON_CATALOG, addonOptions, type AddonOption } from "./addons";
+import { ADDON_CATALOG, offeredAddonOptions, type AddonOption } from "./addons";
 import { lineItemForStoredPage, pageRuleForLanguages, type PageLineItem } from "./billing";
 import { asOrderProgress, publicOrderProgress, UPLOADED_PROGRESS, type OrderProgress } from "./reading-progress";
 import { isPreviewDelayed } from "./translation-watch";
@@ -190,7 +190,7 @@ export function toCustomerOrder(input: {
           ADDON_CATALOG.findIndex((item) => item.id === b.id),
       )
       .map((item) => item.id),
-    addonOptions: addonOptions(input.order.billablePages),
+    addonOptions: offeredAddonOptions(input.order.billablePages, input.order.orderType),
     shippingAddress: input.order.shippingAddress,
     totalCents: input.order.totalCents,
     currency: input.order.currency,

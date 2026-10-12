@@ -3,14 +3,14 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
-import { formatMoney } from "@/lib/flow/pricing";
+import { formatMoney, pageLabel } from "@/lib/flow/pricing";
 import {
   checkoutFailureMessage,
   languageLine,
   servicePriceLines,
   totalLabel,
 } from "@/lib/flow/present";
-import { US_STATE_CODES, chargeCents, serviceCents } from "@/lib/orders/addons";
+import { US_STATE_CODES, chargeCents, serviceCents, withoutExpedited } from "@/lib/orders/addons";
 import type { AddonId, ShippingAddress } from "@/lib/orders/types";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
@@ -53,7 +53,13 @@ function CheckoutForm({
   const router = useRouter();
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [selected, setSelected] = useState<AddonId[]>(order.addons);
+  const evaluationOrder = order.orderType === "evaluation" || order.service != null;
+  const [selected, setSelected] = useState<AddonId[]>(() =>
+    withoutExpedited(
+      order.addons.map((id) => ({ id })),
+      !evaluationOrder,
+    ).map((item) => item.id),
+  );
   const [address, setAddress] = useState({
     name: order.shippingAddress?.name ?? "",
     line1: order.shippingAddress?.line1 ?? "",
@@ -65,8 +71,9 @@ function CheckoutForm({
 
   const notReady = order.status !== "preview_ready";
   const evaluation = order.orderType === "evaluation" || order.service != null;
+  const options = withoutExpedited(order.addonOptions, !evaluation);
   const service = serviceCents(order);
-  const due = chargeCents(service, order.addonOptions, selected);
+  const due = chargeCents(service, options, selected);
   const mail = selected.includes("mail");
   const priceLines = servicePriceLines(order);
 
@@ -95,7 +102,7 @@ function CheckoutForm({
     setNotice(null);
     try {
       const result = await getFlowClient().checkout(token, {
-        addons: selected,
+        addons: evaluation ? selected : selected.filter((id) => id !== "expedited"),
         ...(mail ? { shippingAddress: shippingAddress() } : {}),
       });
       if ("url" in result && result.url) {
@@ -144,7 +151,7 @@ function CheckoutForm({
         </label>
         <fieldset className="mt-6 grid gap-3" data-testid="checkout-addons">
           <legend className="mb-1 text-[13px] font-semibold">Add-ons</legend>
-          {order.addonOptions.map((option) => {
+          {options.map((option) => {
             const unavailable = option.totalCents == null;
             const price =
               option.per === "page" && option.totalCents != null
@@ -269,7 +276,7 @@ function CheckoutForm({
           <div className="text-sm">
             <b>{order.documents[0]?.filename ?? "Document"}</b>
             <div className="text-[13px] text-ink-muted">
-              {languageLine(order)} · {order.billablePages ?? 0} pages
+              {languageLine(order)} · {pageLabel(order.billablePages ?? 0)}
             </div>
             <div className="mt-1 text-[12.5px] text-[var(--cp-ok)]">✓ Reviewed</div>
           </div>
@@ -294,7 +301,7 @@ function CheckoutForm({
               label={evaluation ? "Evaluation report" : "Certificate of accuracy"}
               value="Included"
             />
-            {order.addonOptions
+            {options
               .filter((option) => selected.includes(option.id) && option.totalCents != null)
               .map((option) => (
                 <SummaryRow

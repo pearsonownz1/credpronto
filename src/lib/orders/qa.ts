@@ -285,6 +285,10 @@ export function scoreIssues(issues: QaIssue[]): number {
   return Math.max(0, 100 - penalty);
 }
 
+function pageCountLabel(count: number): string {
+  return count === 1 ? "1 page" : `${count} pages`;
+}
+
 export function assessTranslation(input: {
   originalPages: Array<{ number: number; text: string }>;
   translatedPages: Array<{ number: number; text: string }>;
@@ -300,8 +304,8 @@ export function assessTranslation(input: {
       issue(
         "layout",
         null,
-        `${input.originalPages.length} pages`,
-        `${input.translatedPages.length} pages`,
+        pageCountLabel(input.originalPages.length),
+        pageCountLabel(input.translatedPages.length),
         "The translation page count does not match the original.",
       ),
     );

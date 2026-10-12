@@ -173,5 +173,16 @@ describe("email templates", () => {
       "Diploma evaluation · 2 × $19.95",
       "Certified translation · 2 pages × $9.95",
     ]);
+    expect(
+      receiptLineItems({
+        service: null,
+        degreeCount: null,
+        evaluationCents: null,
+        translationCents: null,
+        billablePages: 1,
+        unitPriceCents: UNIT_PRICE_CENTS,
+        addons: [],
+      }).map((line) => line.label),
+    ).toEqual(["Certified translation · 1 page × $9.95"]);
   });
 });

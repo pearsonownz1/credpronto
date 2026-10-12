@@ -115,6 +115,7 @@ describe("preview step progress", () => {
     expect(work.displayPercent).not.toBe(75);
 
     expect(translatingStatusLabel({ pagesDone: 3 })).toBe("Translating… 3 pages done");
+    expect(translatingStatusLabel({ pagesDone: 1 })).toBe("Translating… 1 page done");
     expect(translatingStatusLabel({})).toBe("Translating and laying out");
     const eased = previewWork({
       status: "processing",

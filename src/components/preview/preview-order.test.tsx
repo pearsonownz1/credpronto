@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { checkoutPayload } from "./addon-panel";
-import { OrderRail } from "./preview-chrome";
+import { withoutExpedited } from "@/lib/orders/addons";
+import { MobileBuyBar, OrderRail } from "./preview-chrome";
 import type { AddonPanelState } from "./addon-panel";
 import {
   CERTIFICATE_PREVIEW,
@@ -95,6 +96,58 @@ describe("preview order", () => {
     expect(html).toContain("shipping-address");
     expect(html).toContain("Mail requires a US shipping address");
     expect(html).toContain("Buy &amp; download — $30.65");
+  });
+
+  it("drops Expedited from a translation preview and still sends notarization", () => {
+    const options = withoutExpedited(CERTIFICATE_PREVIEW.addonOptions ?? [], true);
+    expect(options.map((option) => option.label)).toEqual(["Notarization", "USPS Priority hard copy"]);
+    const html = renderToStaticMarkup(
+      <OrderRail
+        order={{ ...CERTIFICATE_PREVIEW, pageCount: 1, pricing: { ...CERTIFICATE_PREVIEW.pricing, pages: 1, totalCents: 995 }, addonOptions: options }}
+        corrections={[]}
+        panel={panel({ options, selected: ["notarization"], totalCents: 995 + 1795 })}
+      />,
+    );
+    expect(html).toContain("1 page × $9.95");
+    expect(html).toContain("Notarization");
+    expect(html).toContain("USPS Priority hard copy");
+    expect(html).not.toContain("Expedited");
+    expect(
+      checkoutPayload(options, ["expedited", "notarization"], {
+        name: "Ada",
+        line1: "1 Main",
+        line2: "",
+        city: "Austin",
+        state: "TX",
+        postalCode: "78701",
+        country: "US",
+      }),
+    ).toEqual({ addons: ["notarization"] });
+    expect(withoutExpedited(CERTIFICATE_PREVIEW.addonOptions ?? [], false).map((option) => option.id)).toContain(
+      "expedited",
+    );
+  });
+
+  it("pluralizes a one-page sidebar price and the mobile count", () => {
+    const order: PreviewOrder = {
+      ...CERTIFICATE_PREVIEW,
+      pageCount: 1,
+      pricing: { ...CERTIFICATE_PREVIEW.pricing, pages: 1, totalCents: 995 },
+    };
+    const rail = renderToStaticMarkup(
+      <OrderRail order={order} corrections={[]} panel={panel({ options: [], selected: [], totalCents: 995 })} />,
+    );
+    expect(rail).toContain("1 page × $9.95");
+    expect(rail).not.toContain("1 pages");
+    const bar = renderToStaticMarkup(
+      <MobileBuyBar
+        order={order}
+        onFlag={() => undefined}
+        panel={panel({ options: [], selected: [], totalCents: 995 })}
+      />,
+    );
+    expect(bar).toContain("1 page · certified");
+    expect(bar).not.toContain("1 pages");
   });
 
   it("hides the add-on panel when the order returns none", () => {

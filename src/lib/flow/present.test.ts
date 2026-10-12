@@ -227,6 +227,9 @@ describe("quote language", () => {
     expect(servicePriceLines(order({ billablePages: 3, totalCents: 2985 }))).toEqual([
       { label: "3 pages × $9.95", amountCents: 2985 },
     ]);
+    expect(servicePriceLines(order({ billablePages: 1, totalCents: 995 }))).toEqual([
+      { label: "1 page × $9.95", amountCents: 995 },
+    ]);
   });
 });
 
@@ -573,7 +576,8 @@ describe("preview mapping", () => {
       documentId: "doc-a",
     });
     expect(mapped.pricing.totalCents).toBe(2985);
-    expect(mapped.addonOptions?.map((option) => option.totalCents)).toEqual([1795, 1295, 2985]);
+    expect(mapped.addonOptions?.map((option) => option.id)).toEqual(["notarization", "mail"]);
+    expect(mapped.addonOptions?.map((option) => option.totalCents)).toEqual([1795, 1295]);
     expect(mapped.pricing.lines).toEqual([
       { label: "3 pages × $9.95", amountCents: 2985 },
     ]);
