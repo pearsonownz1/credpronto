@@ -80,9 +80,9 @@ describe("quote step actions", () => {
     expect(CJK_PAGE_RULE).not.toContain("400 units");
   });
 
-  it("keeps the turnaround in the sidebar after the quote is ready", () => {
+  it("keeps the green turnaround beside the file name after the quote is ready", () => {
     const html = htmlFor(sampleCustomerOrder());
-    expect(html).not.toContain('data-testid="file-turnaround"');
+    expect(html).toContain('data-testid="file-turnaround"');
     expect(html).toContain("Ready in a few minutes");
     expect(html).not.toContain("10 minutes");
     expect(html).toContain("text-[var(--cp-ok)]");
