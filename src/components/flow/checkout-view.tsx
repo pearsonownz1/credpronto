@@ -6,17 +6,17 @@ import { FlowApiError, getFlowClient } from "@/lib/flow/client";
 import { formatMoney } from "@/lib/flow/pricing";
 import {
   checkoutFailureMessage,
+  customerEmail,
   languageLine,
   totalLabel,
 } from "@/lib/flow/present";
 import { FlowHeader } from "./flow-header";
 import { FlowStatus } from "./status";
-import { useCustomerOrder, useStoredEmail, useStoredToken } from "./use-order";
+import { useCustomerOrder, useStoredToken } from "./use-order";
 import { Checks, FlowColumns, Summary, SummaryRow, buttonClasses, fieldClass } from "./ui";
 
 export function CheckoutView({ token: pathToken }: { token?: string }) {
   const token = useStoredToken(pathToken);
-  const email = useStoredEmail();
   const router = useRouter();
   const { order, error, loading } = useCustomerOrder(token, "once");
   const [notice, setNotice] = useState<string | null>(null);
@@ -83,7 +83,7 @@ export function CheckoutView({ token: pathToken }: { token?: string }) {
                   data-testid="email"
                   type="email"
                   readOnly
-                  value={email}
+                  value={customerEmail(order)}
                   className={fieldClass}
                 />
               </label>

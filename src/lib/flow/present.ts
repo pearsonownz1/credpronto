@@ -116,6 +116,10 @@ export function joinParents(father: string, mother: string): string {
   return [father.trim(), mother.trim()].filter(Boolean).join("; ");
 }
 
+export function customerEmail(order: { email: string | null | undefined }): string {
+  return order.email?.trim() ?? "";
+}
+
 export function documentIdForPage(
   documents: Array<{ id: string; pageCount: number | null }>,
   page: number,
@@ -139,6 +143,9 @@ export function toPreviewOrder(
       page: page.number,
       widthPt: page.widthPt,
       heightPt: page.heightPt,
+      documentId: page.documentId,
+      documentIndex: page.documentIndex,
+      documentName: page.documentName,
     }));
 
   return {
@@ -171,14 +178,21 @@ export function toPreviewOrder(
     included: PREVIEW_INCLUDED,
     corrections: preview.corrections
       .filter((correction) => correction.page != null)
-      .map((correction) => ({
-        id: correction.id,
-        page: correction.page ?? 1,
-        passage: correction.quote,
-        note: correction.note ?? "",
-        status: "sent" as const,
-        label: correction.note?.trim() || "Correction",
-        detail: correction.status,
-      })),
+      .map((correction) => {
+        const page = preview.original.pages.find(
+          (item) => item.number === correction.page,
+        );
+        return {
+          id: correction.id,
+          page: correction.page ?? 1,
+          documentId: correction.documentId ?? page?.documentId ?? null,
+          documentName: page?.documentName,
+          passage: correction.quote,
+          note: correction.note ?? "",
+          status: "sent" as const,
+          label: correction.note?.trim() || "Correction",
+          detail: correction.status,
+        };
+      }),
   };
 }

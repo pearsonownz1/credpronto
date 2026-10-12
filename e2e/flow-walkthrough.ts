@@ -47,6 +47,7 @@ export async function walkCustomerFlow(
   await expect(shown(page, "file-list")).toContainText("IMG_4021.HEIC");
   await expect(shown(page, "file-list")).toContainText("1 page");
   await expect(shown(page, "quote-total")).toContainText("$19.90");
+  await expect(shown(page, "order-email")).toContainText("maria.ruiz@email.com");
   await expect(page.getByText("Free", { exact: true }).filter({ visible: true })).toBeVisible();
   await expect(shown(page, "page-rule")).toHaveText(WORD_PAGE_RULE);
   await expect(shown(page, "flow-stepper").locator("[data-state=current]")).toContainText(
@@ -106,6 +107,15 @@ export async function walkCustomerFlow(
   await expect(shown(page, "download-certification")).toHaveAttribute(
     "download",
     "certification.pdf",
+  );
+  await expect(shown(page, "download-original-acta")).toHaveText("Download original");
+  await expect(shown(page, "download-original-acta")).toHaveAttribute(
+    "download",
+    "acta-nacimiento.pdf",
+  );
+  await expect(shown(page, "download-original-back")).toHaveAttribute(
+    "download",
+    "IMG_4021.HEIC",
   );
   await expect(shown(page, "email-note")).toContainText("maria.ruiz@email.com");
   await expect(shown(page, "email-note")).toContainText("CP-24817");

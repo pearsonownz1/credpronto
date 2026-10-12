@@ -3,6 +3,7 @@ import {
   CERTIFICATE_PREVIEW,
   LONG_PREVIEW,
   buyLabel,
+  documentGroups,
   formatMoney,
   pagesAlign,
 } from "./preview-order";
@@ -23,5 +24,50 @@ describe("preview order", () => {
       widthPt: 612,
       heightPt: 792,
     });
+  });
+
+  it("groups labeled pages by document in upload order", () => {
+    expect(documentGroups(CERTIFICATE_PREVIEW.original.pages)).toEqual([]);
+    expect(
+      documentGroups([
+        {
+          page: 3,
+          widthPt: 612,
+          heightPt: 792,
+          documentId: "back",
+          documentIndex: 1,
+          documentName: "IMG_4021.HEIC",
+        },
+        {
+          page: 1,
+          widthPt: 612,
+          heightPt: 792,
+          documentId: "acta",
+          documentIndex: 0,
+          documentName: "acta-nacimiento.pdf",
+        },
+        {
+          page: 2,
+          widthPt: 612,
+          heightPt: 792,
+          documentId: "acta",
+          documentIndex: 0,
+          documentName: "acta-nacimiento.pdf",
+        },
+      ]),
+    ).toEqual([
+      {
+        documentId: "acta",
+        documentIndex: 0,
+        documentName: "acta-nacimiento.pdf",
+        firstPage: 1,
+      },
+      {
+        documentId: "back",
+        documentIndex: 1,
+        documentName: "IMG_4021.HEIC",
+        firstPage: 3,
+      },
+    ]);
   });
 });

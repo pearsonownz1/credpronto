@@ -9,11 +9,17 @@ export type PreviewPageSize = {
   page: number;
   widthPt: number;
   heightPt: number;
+  /** Present on live and flow-mock previews. Demo fixtures omit them. */
+  documentId?: string;
+  documentIndex?: number;
+  documentName?: string;
 };
 
 export type PreviewCorrection = {
   id: string;
   page: number;
+  documentId?: string | null;
+  documentName?: string;
   /** Set when the reader selected text. Null while pages are images. */
   passage: string | null;
   note: string;
@@ -21,6 +27,31 @@ export type PreviewCorrection = {
   label: string;
   detail: string;
 };
+
+export type DocumentGroup = {
+  documentId: string;
+  documentIndex: number;
+  documentName: string;
+  firstPage: number;
+};
+
+/** Unique source documents in upload order, with the first PDF page of each. */
+export function documentGroups(pages: PreviewPageSize[]): DocumentGroup[] {
+  const groups: DocumentGroup[] = [];
+  for (const page of pages) {
+    if (!page.documentId) continue;
+    if (groups.some((group) => group.documentId === page.documentId)) continue;
+    groups.push({
+      documentId: page.documentId,
+      documentIndex: page.documentIndex ?? groups.length,
+      documentName: page.documentName ?? "",
+      firstPage: page.page,
+    });
+  }
+  return groups.sort(
+    (a, b) => a.documentIndex - b.documentIndex || a.firstPage - b.firstPage,
+  );
+}
 
 export type PreviewDocument = {
   url: string;
@@ -151,7 +182,9 @@ export function pagesAlign(order: PreviewOrder) {
         page.page === index + 1 &&
         match?.page === page.page &&
         match.widthPt === page.widthPt &&
-        match.heightPt === page.heightPt
+        match.heightPt === page.heightPt &&
+        (match.documentId ?? null) === (page.documentId ?? null) &&
+        (match.documentName ?? null) === (page.documentName ?? null)
       );
     })
   );

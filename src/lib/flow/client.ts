@@ -1,5 +1,5 @@
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
-import { sampleCustomerOrder } from "./sample-order";
+import { sampleCustomerOrder, samplePreviewPages } from "./sample-order";
 import {
   EMAIL_KEY,
   MOCK_TOKEN,
@@ -39,6 +39,35 @@ export type CheckoutResult =
   | { url: string; sessionId: string }
   | { mode: "paid_test"; paymentStatus: "paid_test"; orderStatus: "paid" };
 
+export type DownloadFile = "translation" | "certification" | "original";
+
+export type OriginalFile = {
+  documentId: string;
+  documentIndex: number;
+  documentName: string;
+  url: string;
+};
+
+export type DownloadResult =
+  | {
+      url: string;
+      expiresInSeconds: number;
+      documentId?: string;
+      documentIndex?: number;
+      documentName?: string;
+    }
+  | { expiresInSeconds: number; originals: OriginalFile[] };
+
+export function orderDownloadPath(
+  token: string,
+  file: DownloadFile,
+  documentId?: string,
+): string {
+  const params = new URLSearchParams({ file });
+  if (file === "original" && documentId) params.set("documentId", documentId);
+  return `/api/orders/${encodeURIComponent(token)}/download?${params.toString()}`;
+}
+
 export type FlowClient = {
   upload(input: { email: string; files: File[] }): Promise<{
     orderToken: string;
@@ -55,8 +84,9 @@ export type FlowClient = {
   checkout(token: string): Promise<CheckoutResult>;
   download(
     token: string,
-    file: "translation" | "certification",
-  ): Promise<{ url: string; expiresInSeconds: number }>;
+    file: DownloadFile,
+    documentId?: string,
+  ): Promise<DownloadResult>;
   /** Mock walk-through moves a quoted order to preview_ready before checkout. */
   markPreviewReady(token: string): Promise<void>;
 };
@@ -120,10 +150,8 @@ const liveClient: FlowClient = {
   checkout(token) {
     return request(`/api/orders/${encodeURIComponent(token)}/checkout`, { method: "POST" });
   },
-  download(token, file) {
-    return request(
-      `/api/orders/${encodeURIComponent(token)}/download?file=${file}`,
-    );
+  download(token, file, documentId) {
+    return request(orderDownloadPath(token, file, documentId));
   },
   async markPreviewReady() {},
 };
@@ -151,6 +179,32 @@ function readMockOrder(): CustomerOrder {
 function writeMockOrder(order: CustomerOrder) {
   sessionStorage.setItem(MOCK_ORDER_KEY, JSON.stringify(order));
   window.dispatchEvent(new Event(ORDER_EVENT));
+}
+
+function mockOriginalDownload(documentId?: string): DownloadResult {
+  const documents = readMockOrder().documents;
+  if (documents.length === 0) {
+    throw new FlowApiError("That file is not ready", 404);
+  }
+  const selected = documentId
+    ? documents.filter((document) => document.id === documentId)
+    : documents;
+  if (selected.length === 0) {
+    throw new FlowApiError("Unknown document.", 404);
+  }
+  const fileFor = (document: (typeof documents)[number]) => ({
+    url: "/samples/birth-certificate-es.pdf",
+    documentId: document.id,
+    documentIndex: documents.findIndex((item) => item.id === document.id),
+    documentName: document.filename,
+  });
+  if (documentId || documents.length === 1) {
+    return { ...fileFor(selected[0]), expiresInSeconds: 300 };
+  }
+  return {
+    expiresInSeconds: 300,
+    originals: selected.map(fileFor),
+  };
 }
 
 const mockClient: FlowClient = {
@@ -191,6 +245,7 @@ const mockClient: FlowClient = {
   },
   async preview() {
     const order = readMockOrder();
+    const pages = samplePreviewPages();
     return {
       status: "preview_ready",
       totalCents: order.totalCents,
@@ -198,27 +253,13 @@ const mockClient: FlowClient = {
       billablePages: order.billablePages,
       original: {
         url: "/samples/birth-certificate-es.pdf",
-        pageCount: 3,
-        pages: [1, 2, 3].map((number) => ({
-          number,
-          widthPt: 612,
-          heightPt: 792,
-          documentId: "acta",
-          documentIndex: 0,
-          documentName: "acta-nacimiento.pdf",
-        })),
+        pageCount: pages.length,
+        pages,
       },
       translation: {
         url: "/samples/birth-certificate-en.pdf",
-        pageCount: 3,
-        pages: [1, 2, 3].map((number) => ({
-          number,
-          widthPt: 612,
-          heightPt: 792,
-          documentId: "acta",
-          documentIndex: 0,
-          documentName: "acta-nacimiento.pdf",
-        })),
+        pageCount: pages.length,
+        pages,
         version: 1,
       },
       corrections: [],
@@ -241,12 +282,9 @@ const mockClient: FlowClient = {
       sessionId: "cs_mock",
     };
   },
-  async download(_token, file) {
-    const href =
-      file === "translation"
-        ? "/samples/birth-certificate-en.pdf"
-        : "/samples/birth-certificate-en.pdf";
-    return { url: href, expiresInSeconds: 300 };
+  async download(_token, file, documentId) {
+    if (file === "original") return mockOriginalDownload(documentId);
+    return { url: "/samples/birth-certificate-en.pdf", expiresInSeconds: 300 };
   },
   async markPreviewReady() {
     writeMockOrder({ ...readMockOrder(), status: "preview_ready" });

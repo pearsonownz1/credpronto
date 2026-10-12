@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useState } from "react";
 import { flowUsesMock, getFlowClient } from "@/lib/flow/client";
-import { downloadPhase, totalLabel } from "@/lib/flow/present";
+import { DOWNLOADS } from "@/lib/flow/mock-data";
+import { customerEmail, downloadPhase, totalLabel } from "@/lib/flow/present";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
 import { FlowStatus } from "./status";
-import { useCustomerOrder, useStoredEmail, useStoredToken } from "./use-order";
+import { useCustomerOrder, useStoredToken } from "./use-order";
 import { buttonClasses } from "./ui";
 
 const MOCK_FILES = {
@@ -23,8 +24,8 @@ const MOCK_FILES = {
 
 export function DownloadStates({ token: pathToken }: { token?: string }) {
   const token = useStoredToken(pathToken);
-  const email = useStoredEmail();
   const { order, error, loading } = useCustomerOrder(token, "until-download");
+  const email = order ? customerEmail(order) : "";
   const phase = order ? downloadPhase(order) : "confirming";
 
   return (
@@ -102,6 +103,9 @@ function Ready({
           title="Certification page"
           testId="download-certification"
         />
+        {order.documents.map((document) => (
+          <OriginalRow key={document.id} token={token} document={document} />
+        ))}
       </div>
       <p className="mt-5 text-[13.5px] leading-relaxed text-ink-muted">
         Bookmark this page or use the link in your email to come back. Need another
@@ -162,7 +166,7 @@ function FileRow({
             void getFlowClient()
               .download(token, file)
               .then((result) => {
-                window.location.assign(result.url);
+                if ("url" in result) window.location.assign(result.url);
               })
               .catch((cause: unknown) => {
                 setError(cause instanceof Error ? cause.message : "Download isn't ready.");
@@ -170,6 +174,56 @@ function FileRow({
           }}
         >
           {primary ? "Download PDF" : "Download"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function OriginalRow({
+  token,
+  document,
+}: {
+  token: string;
+  document: CustomerOrder["documents"][number];
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const mock = flowUsesMock();
+  const className = buttonClasses("secondary", "h-10 shrink-0 px-[18px] text-[15px]");
+
+  return (
+    <div className="flex flex-col gap-3 border-t border-line px-[18px] py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <b>{document.filename}</b>
+        <div className="text-[13px] text-ink-muted">Original upload</div>
+        {error ? <p className="mt-1 text-xs text-[var(--cp-warn)]">{error}</p> : null}
+      </div>
+      {mock ? (
+        <a
+          data-testid={`download-original-${document.id}`}
+          href={DOWNLOADS.original.href}
+          download={document.filename}
+          className={className}
+        >
+          Download original
+        </a>
+      ) : (
+        <button
+          type="button"
+          data-testid={`download-original-${document.id}`}
+          className={className}
+          onClick={() => {
+            void getFlowClient()
+              .download(token, "original", document.id)
+              .then((result) => {
+                if ("url" in result) window.location.assign(result.url);
+              })
+              .catch((cause: unknown) => {
+                setError(cause instanceof Error ? cause.message : "Download isn't ready.");
+              });
+          }}
+        >
+          Download original
         </button>
       )}
     </div>

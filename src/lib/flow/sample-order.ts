@@ -1,5 +1,5 @@
 import { WORD_PAGE_RULE } from "@/lib/orders/billing";
-import type { CustomerOrder } from "@/lib/orders/view";
+import type { CustomerOrder, PreviewPage } from "@/lib/orders/view";
 
 /** Designer sample, shaped like GET /api/orders/[token]. */
 export function sampleCustomerOrder(): CustomerOrder {
@@ -50,6 +50,37 @@ export function sampleCustomerOrder(): CustomerOrder {
     payment: null,
     delivery: null,
   };
+}
+
+/**
+ * The sample PDF is three pages. The order has two one-page uploads, so the
+ * extra PDF page stays on the second file and every page still has a label.
+ */
+export function samplePreviewPages(): PreviewPage[] {
+  const letter = { widthPt: 612, heightPt: 792 };
+  return [
+    {
+      number: 1,
+      ...letter,
+      documentId: "acta",
+      documentIndex: 0,
+      documentName: "acta-nacimiento.pdf",
+    },
+    {
+      number: 2,
+      ...letter,
+      documentId: "back",
+      documentIndex: 1,
+      documentName: "IMG_4021.HEIC",
+    },
+    {
+      number: 3,
+      ...letter,
+      documentId: "back",
+      documentIndex: 1,
+      documentName: "IMG_4021.HEIC",
+    },
+  ];
 }
 
 function field(

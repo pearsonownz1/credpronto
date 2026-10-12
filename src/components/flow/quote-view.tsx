@@ -5,6 +5,7 @@ import { useState } from "react";
 import { formatMoney, pageLabel } from "@/lib/flow/pricing";
 import {
   canSetSourceLanguage,
+  customerEmail,
   displayedPageRule,
   languageChoices,
   languageLine,
@@ -82,9 +83,14 @@ function QuoteBody({ order }: { order: CustomerOrder }) {
     <FlowColumns>
       <div>
         <h1 className="text-[32px] font-bold tracking-[-0.6px]">Here’s your exact price.</h1>
-        <p className="mt-2 mb-6 text-[15px] text-ink-muted">
+        <p className="mt-2 text-[15px] text-ink-muted">
           We read your files. Check the language and pages, then continue. You won’t be
           charged now.
+        </p>
+        <p data-testid="order-email" className="mt-2 mb-6 text-[15px] text-ink-muted">
+          {customerEmail(order)
+            ? `We'll email ${customerEmail(order)} when the preview is ready.`
+            : "We'll email you when the preview is ready."}
         </p>
         <div>
           <span className="mb-1.5 block text-[13px] font-semibold">Detected language</span>

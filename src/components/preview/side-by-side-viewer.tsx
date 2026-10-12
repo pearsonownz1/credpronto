@@ -36,7 +36,11 @@ import {
   OrderRail,
 } from "./preview-chrome";
 import { PreviewShell } from "./preview-shell";
-import type { PreviewCorrection, PreviewOrder } from "./preview-order";
+import {
+  documentGroups,
+  type PreviewCorrection,
+  type PreviewOrder,
+} from "./preview-order";
 import { anchorsMatch, visibleAnchor, type ScrollAnchor } from "./scroll-anchor";
 import { TranslationWatermark } from "./translation-watermark";
 
@@ -80,7 +84,11 @@ export function SideBySideViewer({
 }: {
   order: PreviewOrder;
   onBuy?: () => void;
-  onCorrect?: (input: { page: number; note: string }) => Promise<void>;
+  onCorrect?: (input: {
+    page: number;
+    note: string;
+    documentId: string | null;
+  }) => Promise<void>;
   notice?: string;
   noticeTestId?: string;
 }) {
@@ -208,7 +216,11 @@ function ViewerWorkspace({
 }: {
   order: PreviewOrder;
   onBuy?: () => void;
-  onCorrect?: (input: { page: number; note: string }) => Promise<void>;
+  onCorrect?: (input: {
+    page: number;
+    note: string;
+    documentId: string | null;
+  }) => Promise<void>;
   notice?: string;
   noticeTestId?: string;
 }) {
@@ -434,6 +446,10 @@ function ViewerWorkspace({
   const pageNumber = leadScroll.currentPage || 0;
   const totalPages = leadScroll.totalPages || 0;
   const zoomPercent = Math.round((leadZoom.currentZoomLevel || 0) * 100);
+  const groups = documentGroups(order.original.pages);
+  const pageDocument = (page: number) =>
+    order.original.pages.find((item) => item.page === page);
+  const currentDocument = pageDocument(pageNumber);
   const visibleRoles: Role[] = isMobile
     ? [role]
     : ["original", "translation"];
@@ -457,12 +473,16 @@ function ViewerWorkspace({
   async function sendCorrection() {
     const note = correctionNote.trim();
     if (!note) return;
+    const source = pageDocument(flagPage);
+    const documentId = source?.documentId ?? null;
     if (!onCorrect) {
       setCorrections((current) => [
         ...current,
         {
           id: `draft-${flagPage}-${current.length + 1}`,
           page: flagPage,
+          documentId,
+          documentName: source?.documentName,
           passage: null,
           note,
           status: "sent",
@@ -476,7 +496,7 @@ function ViewerWorkspace({
     }
     setCorrectionError(null);
     try {
-      await onCorrect({ page: flagPage, note });
+      await onCorrect({ page: flagPage, note, documentId });
       setCorrectionNote("");
       setCorrectionOpen(false);
     } catch (cause) {
@@ -489,6 +509,7 @@ function ViewerWorkspace({
   const popover = correctionOpen ? (
     <CorrectionPopover
       page={flagPage}
+      documentName={pageDocument(flagPage)?.documentName}
       note={correctionNote}
       onNote={setCorrectionNote}
       onSend={() => void sendCorrection()}
@@ -551,6 +572,9 @@ function ViewerWorkspace({
                 Page {pageNumber || "–"}
               </span>{" "}
               of {totalPages || "–"}
+              {currentDocument?.documentName
+                ? ` · ${currentDocument.documentName}`
+                : null}
               {isMobile ? " · same spot kept" : null}
             </p>
             <IconButton
@@ -632,6 +656,34 @@ function ViewerWorkspace({
               ) : null}
             </div>
           </div>
+          {groups.length > 1 ? (
+            <div
+              data-testid="document-groups"
+              className="flex flex-wrap items-center gap-1.5 px-4 pb-2 md:px-5"
+              role="group"
+              aria-label="Source documents"
+            >
+              {groups.map((group) => {
+                const pressed = currentDocument?.documentId === group.documentId;
+                return (
+                  <button
+                    key={group.documentId}
+                    type="button"
+                    data-testid={`document-${group.documentId}`}
+                    aria-pressed={pressed}
+                    className={`inline-flex h-7 max-w-full items-center truncate rounded-[var(--cp-radius)] border px-2.5 text-[12.5px] ${
+                      pressed
+                        ? "border-primary bg-primary font-semibold text-primary-ink"
+                        : "border-line bg-bg text-ink"
+                    }`}
+                    onClick={() => jumpBoth(group.firstPage, lead)}
+                  >
+                    {group.documentName || `Document ${group.documentIndex + 1}`}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
           {popover && isMobile ? (
             <div className="fixed inset-x-4 bottom-28 z-30">{popover}</div>
           ) : null}

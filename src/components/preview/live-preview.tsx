@@ -94,13 +94,13 @@ export function LivePreview() {
         writeToken(token);
         router.push("/checkout");
       }}
-      onCorrect={async ({ page, note }) => {
-        const documentId = documentIdForPage(order.documents, page);
-        if (!documentId) {
+      onCorrect={async ({ page, note, documentId }) => {
+        const resolved = documentId ?? documentIdForPage(order.documents, page);
+        if (!resolved) {
           throw new Error("This page isn't tied to a document yet.");
         }
         await getFlowClient().correct(token, {
-          documentId,
+          documentId: resolved,
           page,
           note,
           passage: null,
