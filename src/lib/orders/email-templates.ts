@@ -320,6 +320,8 @@ ${button("Open in the studio", input.studioUrl)}`,
     `Total: ${total}`,
     "",
     `Open in the studio: ${input.studioUrl}`,
+    "",
+    BRAND_FOOTER,
   ].join("\n");
   const subject = input.urgent ? "URGENT: CredPronto order still waiting" : "CredPronto order paid";
   return { subject, text, html };
