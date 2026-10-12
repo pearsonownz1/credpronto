@@ -59,15 +59,30 @@ describe("processing view", () => {
     expect(value).toBe(75);
   });
 
-  it("keeps the working copy when the API marks the order delayed before 15 minutes", () => {
+  it("shows the delayed line from the order flag", () => {
     state.delayed = true;
     state.status = "processing";
     state.progressStep = "translating";
     const markup = html();
-    expect(markup).not.toContain("Taking longer than usual");
-    expect(markup).not.toContain('data-testid="translation-delayed"');
+    expect(markup).toContain("Taking longer than usual, we&#x27;re on it.");
+    expect(markup).toContain('data-testid="translation-delayed"');
     expect(markup).toContain("Translating your document");
     expect(markup).not.toContain('data-testid="view-preview"');
+  });
+
+  it("keeps the delayed line and the bar when review starts before a preview exists", () => {
+    state.delayed = true;
+    state.status = "needs_review";
+    state.progressStep = "done";
+    const markup = html();
+    expect(markup).toContain("Taking longer than usual, we&#x27;re on it.");
+    expect(markup).toContain('data-testid="translation-delayed"');
+    expect(markup).toContain("Translating your document");
+    expect(markup).not.toContain("Your preview is ready");
+    expect(markup).not.toContain('data-testid="view-preview"');
+    expect(markup).toContain('aria-valuenow="75"');
+    state.status = "processing";
+    state.progressStep = "translating";
   });
 
   it("shows the preview button when progress.step is done, before the status field catches up", () => {

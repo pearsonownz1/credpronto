@@ -4,7 +4,6 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { trackPreviewReady } from "@/lib/analytics/gtag-events";
 import { orderHubStep } from "@/lib/flow/present";
-import { previewIsReady } from "@/lib/flow/preview-progress";
 import { writeToken } from "@/lib/flow/session";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { GoogleAdsConversion } from "@/components/google-ads-conversion";
@@ -14,7 +13,6 @@ import { ProcessingView } from "./processing-view";
 import { QuoteView } from "./quote-view";
 import { FlowStatus } from "./status";
 import { useCustomerOrder } from "./use-order";
-import { usePreviewLate } from "./use-preview-late";
 
 export function OrderHub() {
   const params = useParams<{ token: string }>();
@@ -30,7 +28,8 @@ export function OrderHub() {
     setTrackedToken(token);
     setLatest(null);
   }
-  const view = orderHubStep(checkout, (latest ?? order)?.status);
+  const current = latest ?? order;
+  const view = orderHubStep(checkout, current?.status, current);
 
   const reportPreviewReady = useCallback((next: CustomerOrder) => {
     setLatest(next);
@@ -56,8 +55,6 @@ export function OrderHub() {
     }
   }, [view, token, router, order]);
 
-  const current = latest ?? order;
-  const previewLate = usePreviewLate(token, current?.progress?.step, previewIsReady(current));
   let body: ReactNode;
   if (view === "cancel") {
     body = <FlowStatus title="Payment canceled" body="Taking you back to the preview." />;
@@ -90,7 +87,6 @@ export function OrderHub() {
         message={orderLiveMessage({
           loading: loading && !current,
           error,
-          late: previewLate,
           order: current,
         })}
       />

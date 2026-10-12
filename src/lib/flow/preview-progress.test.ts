@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  PREVIEW_LONG_WAIT_MS,
   PREVIEW_POLL_MS,
   previewIsReady,
   previewPollContinues,
   previewPollDelay,
   previewWork,
-  translatingTooLong,
 } from "./preview-progress";
 
 describe("preview step progress", () => {
@@ -48,6 +46,11 @@ describe("preview step progress", () => {
     expect(previewIsReady({ status: "confirmed", progressStep: "done" })).toBe(true);
     expect(previewIsReady({ status: "preview_ready", progress: { step: "translating" } })).toBe(true);
     expect(previewIsReady({ status: "approved", progress: { step: "translating" } })).toBe(false);
+    expect(previewIsReady({ status: "needs_review", progress: { step: "done" } })).toBe(false);
+    const held = previewWork({ status: "needs_review", progressStep: "done" });
+    expect(held.phase).toBe("working");
+    expect(held.displayPercent).toBe(75);
+    expect(held.steps.find((step) => step.id === "translating")?.state).toBe("current");
     const ready = previewWork({ status: "processing", progressStep: "done" });
     expect(ready.phase).toBe("ready");
     expect(ready.displayPercent).toBe(100);
@@ -64,23 +67,11 @@ describe("preview step progress", () => {
     expect(previewPollContinues(waiting, null)).toBe(true);
     expect(previewPollContinues(waiting, 500)).toBe(true);
     expect(previewPollContinues({ status: "needs_review", progress: { step: "translating" } }, 200)).toBe(true);
+    expect(previewPollContinues({ status: "needs_review", progress: { step: "done" } }, 200)).toBe(true);
     expect(previewPollContinues({ status: "processing", progress: { step: "done" } }, 200)).toBe(false);
     expect(previewPollContinues({ status: "preview_ready", progress: { step: "translating" } }, 200)).toBe(false);
     expect(previewPollContinues({ status: "failed", progress: { step: "translating" } }, 200)).toBe(false);
     expect(previewPollContinues(null, 404)).toBe(false);
-  });
-
-  it("flags a translation that is still translating after 15 minutes", () => {
-    const started = Date.parse("2026-10-12T12:00:00.000Z");
-    expect(
-      translatingTooLong({ progressStep: "translating", startedAt: started, now: started + PREVIEW_LONG_WAIT_MS - 1 }),
-    ).toBe(false);
-    expect(
-      translatingTooLong({ progressStep: "translating", startedAt: started, now: started + PREVIEW_LONG_WAIT_MS }),
-    ).toBe(true);
-    expect(
-      translatingTooLong({ progressStep: "done", startedAt: started, now: started + PREVIEW_LONG_WAIT_MS }),
-    ).toBe(false);
   });
 
   it("names the report step for an evaluation", () => {

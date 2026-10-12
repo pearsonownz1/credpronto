@@ -9,7 +9,6 @@ import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
 import { FlowStatus } from "./status";
 import { useCustomerOrder, useStoredToken } from "./use-order";
-import { usePreviewLate } from "./use-preview-late";
 import { buttonClasses } from "./ui";
 
 export function ProcessingView({
@@ -23,7 +22,7 @@ export function ProcessingView({
   const router = useRouter();
   const { order, error, loading, reload } = useCustomerOrder(token, "until-preview");
   const ready = previewIsReady(order);
-  const takingLong = usePreviewLate(token, order?.progress?.step, ready);
+  const takingLong = Boolean(order?.delayed) && !ready;
   useEffect(() => {
     if (order) onOrder?.(order);
   }, [order, onOrder]);

@@ -26,9 +26,6 @@ const STEP_PERCENT: Record<Exclude<PreviewWorkStepId, "ready">, number> = {
 /** One interval for the whole wait. No backoff. */
 export const PREVIEW_POLL_MS = 3_000;
 
-/** A translation still on `progress.step === "translating"` after this is late. */
-export const PREVIEW_LONG_WAIT_MS = 15 * 60 * 1000;
-
 export type PreviewReadyOrder = {
   status?: string | null;
   /** Customer payload shape from `GET /api/orders/[token]`. */
@@ -51,6 +48,8 @@ function orderProgressStep(order: PreviewReadyOrder): string | null {
  */
 export function previewIsReady(order: PreviewReadyOrder | null | undefined): boolean {
   if (!order) return false;
+  // A timed-out translation is `needs_review` with step `done` and no preview.
+  if (order.status === "needs_review") return false;
   if (order.status === "preview_ready") return true;
   return orderProgressStep(order) === "done";
 }
@@ -70,15 +69,6 @@ export function previewPollContinues(
   return true;
 }
 
-export function translatingTooLong(input: {
-  progressStep?: string | null;
-  startedAt: number | null;
-  now: number;
-}): boolean {
-  if (input.progressStep !== "translating" || input.startedAt == null) return false;
-  return input.now - input.startedAt >= PREVIEW_LONG_WAIT_MS;
-}
-
 function currentStep(status: string, progressStep: string | null | undefined): Exclude<PreviewWorkStepId, "ready"> {
   if (progressStep === "uploaded") return "received";
   if (
@@ -93,7 +83,8 @@ function currentStep(status: string, progressStep: string | null | undefined): E
     progressStep === "translating" ||
     status === "confirmed" ||
     status === "processing" ||
-    status === "correction_requested"
+    status === "correction_requested" ||
+    status === "needs_review"
   ) {
     return "translating";
   }

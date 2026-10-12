@@ -639,6 +639,10 @@ describe("order hub", () => {
     expect(orderHubStep("cancel", "preview_ready")).toBe("cancel");
     expect(orderHubStep(null, "quoted")).toBe("quote");
     expect(orderHubStep(null, "needs_review")).toBe("quote");
+    expect(orderHubStep(null, "needs_review", { delayed: true, reviewReason: "translation_timeout" })).toBe(
+      "processing",
+    );
+    expect(orderHubStep(null, "needs_review", { reviewReason: "image_quality" })).toBe("quote");
     expect(orderHubStep(null, "draft")).toBe("quote");
     expect(orderHubStep(null, "processing")).toBe("processing");
     expect(orderHubStep(null, "correction_requested")).toBe("processing");
