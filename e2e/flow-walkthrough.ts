@@ -10,6 +10,11 @@ async function expectNoHorizontalOverflow(page: Page) {
   expect(overflows).toBe(false);
 }
 
+/** Next keeps the previous route mounted and hidden. Match the page on screen. */
+function shown(page: Page, testId: string) {
+  return page.getByTestId(testId).filter({ visible: true });
+}
+
 export async function walkCustomerFlow(
   page: Page,
   options?: { checkOverflow?: boolean },
@@ -23,38 +28,36 @@ export async function walkCustomerFlow(
     page.getByRole("heading", { level: 1, name: /Your documents/ }),
   ).toBeVisible();
   await expect(page.getByText("No account, no card.")).toBeVisible();
-  await expect(page.getByTestId("upload-drop")).toBeVisible();
-  await expect(page.getByTestId("email")).toHaveValue("maria.ruiz@email.com");
-  await expect(page.getByTestId("file-list")).toContainText("acta-nacimiento.pdf");
-  await expect(page.getByTestId("file-list")).toContainText("IMG_4021.HEIC");
+  await expect(shown(page, "upload-drop")).toBeVisible();
+  await expect(shown(page, "email")).toHaveValue("maria.ruiz@email.com");
+  await expect(shown(page, "file-list")).toContainText("acta-nacimiento.pdf");
+  await expect(shown(page, "file-list")).toContainText("IMG_4021.HEIC");
   await check();
 
   await page.getByRole("link", { name: "Get your free preview" }).click();
   await expect(page).toHaveURL(/\/translate$/);
-  await expect(
-    page.getByTestId("flow-stepper").locator("[data-state=current]"),
-  ).toContainText("Upload");
-  await expect(page.locator("main")).not.toContainText(/sign in|account/i);
-  await check();
-
-  await page.getByTestId("get-quote").click();
-  await expect(page).toHaveURL(/\/quote$/);
-  await expect(page.getByTestId("detected-language")).toContainText(
-    "Spanish → English",
+  await expect(shown(page, "flow-stepper").locator("[data-state=current]")).toContainText(
+    "Upload",
   );
-  await expect(page.getByTestId("file-list")).toContainText("acta-nacimiento.pdf");
-  await expect(page.getByTestId("file-list")).toContainText("IMG_4021.HEIC");
-  await expect(page.getByTestId("file-list")).toContainText("182 words");
-  await expect(page.getByTestId("file-list")).toContainText("96 words");
-  await expect(page.getByTestId("quote-total")).toContainText("$19.90");
-  await expect(page.getByText("Free", { exact: true })).toBeVisible();
-  await expect(page.getByTestId("page-rule")).toHaveText(PAGE_RULE);
-  await expect(
-    page.getByTestId("flow-stepper").locator("[data-state=current]"),
-  ).toContainText("Quote");
+  await expect(page.getByRole("main")).not.toContainText(/sign in|account/i);
   await check();
 
-  await page.getByTestId("continue").click();
+  await shown(page, "get-quote").click();
+  await expect(page).toHaveURL(/\/quote$/);
+  await expect(shown(page, "detected-language")).toContainText("Spanish → English");
+  await expect(shown(page, "file-list")).toContainText("acta-nacimiento.pdf");
+  await expect(shown(page, "file-list")).toContainText("IMG_4021.HEIC");
+  await expect(shown(page, "file-list")).toContainText("182 words");
+  await expect(shown(page, "file-list")).toContainText("96 words");
+  await expect(shown(page, "quote-total")).toContainText("$19.90");
+  await expect(page.getByText("Free", { exact: true }).filter({ visible: true })).toBeVisible();
+  await expect(shown(page, "page-rule")).toHaveText(PAGE_RULE);
+  await expect(shown(page, "flow-stepper").locator("[data-state=current]")).toContainText(
+    "Quote",
+  );
+  await check();
+
+  await shown(page, "continue").click();
   await expect(page).toHaveURL(/\/confirm$/);
   await expect(page.getByLabel("Full name on document")).toHaveValue(
     "María Fernanda Ruiz Delgado",
@@ -69,53 +72,47 @@ export async function walkCustomerFlow(
   await expect(page.getByText("03/14/1994")).toBeVisible();
   await check();
 
-  await page.getByTestId("start-preview").click();
+  await shown(page, "start-preview").click();
   await expect(page).toHaveURL(/\/processing$/);
-  await expect(page.getByTestId("progress-bar")).toBeVisible();
-  await expect(page.getByText("Files received")).toBeVisible();
-  await expect(page.getByText("278 words")).toBeVisible();
-  await expect(page.getByText("~4 min left")).toBeVisible();
-  await expect(page.getByTestId("add-documents")).toBeVisible();
-  await expect(
-    page.getByTestId("flow-stepper").locator("[data-state=current]"),
-  ).toContainText("Preview");
-  await check();
-
-  await page.getByTestId("preview-ready").click();
-  await expect(page).toHaveURL(/\/checkout$/);
-  await expect(page.getByTestId("email")).toHaveValue("maria.ruiz@email.com");
-  await expect(page.getByTestId("card-number")).toHaveValue(
-    "4242 4242 4242 4242",
+  await expect(shown(page, "progress-bar")).toBeVisible();
+  await expect(page.getByText("Files received").filter({ visible: true })).toBeVisible();
+  await expect(page.getByText("278 words").filter({ visible: true })).toBeVisible();
+  await expect(page.getByText("~4 min left").filter({ visible: true })).toBeVisible();
+  await expect(shown(page, "add-documents")).toBeVisible();
+  await expect(shown(page, "flow-stepper").locator("[data-state=current]")).toContainText(
+    "Preview",
   );
-  await expect(page.getByTestId("wallet-apple")).toBeVisible();
-  await expect(page.getByTestId("wallet-google")).toBeVisible();
-  await expect(page.getByTestId("wallet-link")).toBeVisible();
-  await expect(page.getByTestId("order-total")).toContainText("$19.90");
-  await expect(
-    page.getByTestId("flow-stepper").locator("[data-state=current]"),
-  ).toContainText("Preview");
-  await page.getByTestId("wallet-apple").click();
+  await check();
+
+  await shown(page, "preview-ready").click();
+  await expect(page).toHaveURL(/\/checkout$/);
+  await expect(shown(page, "email")).toHaveValue("maria.ruiz@email.com");
+  await expect(shown(page, "card-number")).toHaveValue("4242 4242 4242 4242");
+  await expect(shown(page, "wallet-apple")).toBeVisible();
+  await expect(shown(page, "wallet-google")).toBeVisible();
+  await expect(shown(page, "wallet-link")).toBeVisible();
+  await expect(shown(page, "order-total")).toContainText("$19.90");
+  await expect(shown(page, "flow-stepper").locator("[data-state=current]")).toContainText(
+    "Preview",
+  );
+  await shown(page, "wallet-apple").click();
   await expect(page).toHaveURL(/\/checkout$/);
   await check();
 
-  await page.getByTestId("pay-button").click();
+  await shown(page, "pay-button").click();
   await expect(page).toHaveURL(/\/download$/);
-  await expect(page.getByTestId("download-certified")).toBeVisible();
-  await expect(page.getByTestId("download-certified")).toHaveAttribute(
+  await expect(shown(page, "download-certified")).toBeVisible();
+  await expect(shown(page, "download-certified")).toHaveAttribute(
     "download",
     "birth-certificate-EN-certified.pdf",
   );
-  await expect(page.getByTestId("download-original")).toHaveAttribute(
+  await expect(shown(page, "download-original")).toHaveAttribute(
     "download",
     "acta-nacimiento.pdf",
   );
-  await expect(page.getByTestId("email-note")).toContainText(
-    "maria.ruiz@email.com",
-  );
-  await expect(page.getByTestId("email-note")).toContainText("CP-24817");
-  await expect(page.getByTestId("email-note")).toContainText("$19.90");
-  await expect(
-    page.getByTestId("flow-stepper").locator("[data-state=done]"),
-  ).toHaveCount(5);
+  await expect(shown(page, "email-note")).toContainText("maria.ruiz@email.com");
+  await expect(shown(page, "email-note")).toContainText("CP-24817");
+  await expect(shown(page, "email-note")).toContainText("$19.90");
+  await expect(shown(page, "flow-stepper").locator("[data-state=done]")).toHaveCount(5);
   await check();
 }

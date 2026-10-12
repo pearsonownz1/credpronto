@@ -8,14 +8,24 @@ const STEPS: { id: FlowStep; label: string }[] = [
   { id: "download", label: "Download" },
 ];
 
-export function Stepper({ current }: { current: FlowStep }) {
+export function Stepper({
+  current,
+  compact = false,
+}: {
+  current: FlowStep;
+  compact?: boolean;
+}) {
   const currentIndex = STEPS.findIndex((step) => step.id === current);
 
   return (
     <div
       data-testid="flow-stepper"
       aria-label="Order progress"
-      className="flex w-max gap-4 text-[13px] md:mx-auto md:gap-7"
+      className={
+        compact
+          ? "flex w-max gap-1.5 text-[12px]"
+          : "flex w-max gap-4 text-[13px] md:mx-auto md:gap-7"
+      }
     >
       {STEPS.map((step, index) => {
         const state =
@@ -30,10 +40,10 @@ export function Stepper({ current }: { current: FlowStep }) {
             data-state={state}
             data-step={step.id}
             aria-current={state === "current" ? "step" : undefined}
-            className={`inline-flex shrink-0 items-center gap-2 ${state === "upcoming" ? "text-ink-muted" : "text-ink"}`}
+            className={`inline-flex shrink-0 items-center ${compact ? "gap-1" : "gap-2"} ${state === "upcoming" ? "text-ink-muted" : "text-ink"}`}
           >
             <span
-              className={`inline-flex size-5 items-center justify-center rounded-full border text-[11px] ${
+              className={`inline-flex items-center justify-center rounded-full border ${compact ? "size-4 text-[10px]" : "size-5 text-[11px]"} ${
                 state === "current"
                   ? "border-primary bg-primary text-white"
                   : state === "done"

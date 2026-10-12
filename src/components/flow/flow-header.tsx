@@ -38,12 +38,21 @@ export function MarketingHeader() {
 
 export function FlowHeader({ current }: { current: FlowStep }) {
   return (
-    <header className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-line px-4 py-3 md:h-16 md:px-10 md:py-0">
-      <Logo />
-      <div className="min-w-0 overflow-x-auto">
-        <Stepper current={current} />
+    <header className="border-b border-line">
+      <div className="flex items-center justify-between px-4 py-3 md:hidden">
+        <Logo />
+        <span className="text-sm text-ink-muted">Help</span>
       </div>
-      <span className="text-sm text-ink-muted">Help</span>
+      <div className="overflow-x-auto px-4 pb-3 md:hidden">
+        <Stepper current={current} compact />
+      </div>
+      <div className="hidden h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-10 md:grid">
+        <Logo />
+        <div className="min-w-0 overflow-x-auto">
+          <Stepper current={current} />
+        </div>
+        <span className="text-sm text-ink-muted">Help</span>
+      </div>
     </header>
   );
 }
