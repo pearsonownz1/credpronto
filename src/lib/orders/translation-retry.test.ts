@@ -644,7 +644,8 @@ describe("retry a translation that failed to dispatch", () => {
 function exhaustQa(database: MemoryDb, status: string): void {
   seedTranslation(database, status, null);
   const run = database.tables.translation_runs[0];
-  run.status = "assembling";
+  // Assemble claims a running row. A fresh assembling row belongs to another worker.
+  run.status = "running";
   run.round = 2;
   for (const job of database.tables.translation_page_jobs) {
     job.status = "ready";
