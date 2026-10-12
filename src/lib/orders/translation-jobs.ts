@@ -215,20 +215,47 @@ const TRANSLATION_STATUSES = [
   "paid",
 ] as const;
 
-async function claimOrder(db: Db, order: OrderRecord, pagesTranslateTotal: number): Promise<boolean> {
+async function claimOrder(
+  db: Db,
+  order: OrderRecord,
+  pagesTranslateTotal: number,
+  retryFailure = false,
+): Promise<boolean> {
   const progress = checkedProgress(order.progress, {
     step: "translating",
     pagesDone: 0,
     pagesTranslateTotal,
   });
+  const patch: Record<string, unknown> = { status: "processing", progress };
+  if (retryFailure) {
+    patch.review_reason = null;
+    const { data, error } = await db
+      .from("orders")
+      .update(patch)
+      .eq("id", order.id)
+      .eq("status", "failed")
+      .select("id");
+    fail(error);
+    return (data ?? []).length > 0;
+  }
   const { data, error } = await db
     .from("orders")
-    .update({ status: "processing", progress })
+    .update(patch)
     .eq("id", order.id)
     .in("status", [...TRANSLATION_STATUSES])
     .select("id");
   fail(error);
   return (data ?? []).length > 0;
+}
+
+/** Drop an open run so in-flight page jobs cannot assemble or fail the order. */
+async function supersedeOpenRuns(db: Db, orderId: string): Promise<void> {
+  const { error } = await db
+    .from("translation_runs")
+    .update({ status: "failed", updated_at: new Date().toISOString() })
+    .eq("order_id", orderId)
+    .in("status", ["running", "assembling"]);
+  fail(error);
 }
 
 async function insertRun(
@@ -357,15 +384,16 @@ export async function beginTranslation(
   db: Db,
   order: OrderRecord,
   token: string | null,
-  input: { round: number; qaIssues: QaIssue[] },
+  input: { round: number; qaIssues: QaIssue[]; retryFailure?: boolean },
 ): Promise<void> {
   const { pages } = await loadOrderPages(db, order.id);
   if (pages.length === 0 || !order.combinedOriginalPath) {
     throw new Error("The original pages are not ready to translate.");
   }
   const billable = pagesToTranslate(pages);
-  const claimed = await claimOrder(db, order, billable.length);
+  const claimed = await claimOrder(db, order, billable.length, input.retryFailure === true);
   if (!claimed) return;
+  if (input.retryFailure) await supersedeOpenRuns(db, order.id);
 
   const version = await nextPreviewVersion(db, order.id);
   const previewPath = `${order.id}/preview-v${version}.pdf`;
@@ -451,6 +479,8 @@ export async function claimAssemble(db: Db, orderId: string, version: number): P
 export async function claimPageJob(db: Db, jobId: string): Promise<PageJobRecord | null> {
   const current = await getJob(db, jobId);
   if (!current || current.status !== "pending" || current.attempts >= PAGE_ATTEMPT_LIMIT) return null;
+  const run = await getTranslationRun(db, current.orderId, current.version);
+  if (!run || run.status !== "running") return null;
   const { data, error } = await db
     .from("translation_page_jobs")
     .update({
@@ -540,6 +570,16 @@ export async function completePageJob(
 
 export async function failPageJob(db: Db, job: PageJobRecord, error: unknown): Promise<void> {
   const message = error instanceof Error ? error.message : "Translation failed.";
+  const run = await getTranslationRun(db, job.orderId, job.version);
+  if (!run || run.status !== "running") {
+    const { error: updateError } = await db
+      .from("translation_page_jobs")
+      .update({ status: "failed", error: message, updated_at: new Date().toISOString() })
+      .eq("id", job.id)
+      .eq("status", "running");
+    fail(updateError);
+    return;
+  }
   const result = pageAttemptResult(job.attempts, false);
   if (result === "retry") {
     const { error: updateError } = await db

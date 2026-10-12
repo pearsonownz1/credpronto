@@ -29,6 +29,7 @@ import { QA_REVIEW_REASON, assessTranslation, qaAttemptForRound, qaStatusForRun,
 import {
   TRANSLATION_DEADLINE_MS,
   TRANSLATION_PAGE_DEADLINE_MS,
+  canRetryFailedTranslation,
   decideTranslationFailure,
   isTemporaryTranslationError,
   raceWorkAgainstDeadline,
@@ -323,6 +324,13 @@ async function startPageTranslation(db: Db, orderId: string, token: string | nul
     throw new HttpError("Confirm the language and the name fields before translation.", 409);
   }
 
+  // The failed attempt leaves its run open. Resuming it finishes stale jobs and
+  // never clears status. A new version makes those jobs a no-op.
+  if (canRetryFailedTranslation(order)) {
+    await beginTranslation(db, order, token, { round: 0, qaIssues: [], retryFailure: true });
+    return;
+  }
+
   const openRun = await findOpenRun(db, orderId);
   if (openRun) {
     await resumeTranslation(db, openRun);
@@ -448,6 +456,8 @@ export async function runTranslationAssemble(
         await uploadObject(db, "finals", certificationPath, files.certification, "application/pdf");
         await uploadObject(db, "previews", previewPath, files.watermarkedPreview, "application/pdf");
         if (deadline.aborted) throw new AiUnavailableError("translation_timeout");
+        const active = await getTranslationRun(db, input.orderId, input.version);
+        if (!active || active.status === "failed" || active.status === "ready") return;
 
         const assessment = assessTranslation({
           originalPages: pages.map((page) => ({ number: page.number, text: page.ocrText ?? "" })),

@@ -7,6 +7,7 @@ import {
   TRANSLATION_PAGE_DEADLINE_MS,
   TRANSLATION_SHUTDOWN_MS,
   TRANSLATION_TIMEOUT_REASON,
+  canRetryFailedTranslation,
   decideTranslationFailure,
   raceWorkAgainstDeadline,
 } from "./translation-failure";
@@ -66,6 +67,53 @@ describe("translation failure", () => {
       reviewReason: "The translation did not return every page.",
       notifyFailed: true,
     });
+  });
+});
+
+describe("canRetryFailedTranslation", () => {
+  const dispatchFailure = "Translation dispatch failed (401): unauthorized";
+
+  it("allows a failed translation whose review reason is the dispatch error", () => {
+    expect(
+      canRetryFailedTranslation({
+        status: "failed",
+        languageConfirmed: true,
+        reviewReason: dispatchFailure,
+      }),
+    ).toBe(true);
+    expect(
+      canRetryFailedTranslation({
+        status: "failed",
+        languageConfirmed: true,
+        reviewReason: "The translation did not return every page.",
+      }),
+    ).toBe(true);
+  });
+
+  it("refuses paid and released orders, and failures that are not translations", () => {
+    for (const status of ["paid", "approved", "delivered"] as const) {
+      expect(
+        canRetryFailedTranslation({
+          status,
+          languageConfirmed: true,
+          reviewReason: dispatchFailure,
+        }),
+      ).toBe(false);
+    }
+    expect(
+      canRetryFailedTranslation({
+        status: "failed",
+        languageConfirmed: true,
+        reviewReason: "image_quality",
+      }),
+    ).toBe(false);
+    expect(
+      canRetryFailedTranslation({
+        status: "failed",
+        languageConfirmed: false,
+        reviewReason: dispatchFailure,
+      }),
+    ).toBe(false);
   });
 });
 
