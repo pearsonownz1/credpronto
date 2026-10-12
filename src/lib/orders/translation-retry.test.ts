@@ -5,6 +5,7 @@ import type { Db } from "./storage";
 import { claimPageJob, completePageJob, failPageJob, listPageJobs } from "./translation-jobs";
 import { TRANSLATION_ASSEMBLE_PATH, TRANSLATION_PAGE_PATH } from "./translation-dispatch";
 import * as dispatch from "./translation-dispatch";
+import * as email from "./email";
 import { runTranslationAssemble, translateOrder } from "./translation";
 
 const orderId = "28492f38-3333-4333-8333-333333333333";
@@ -55,6 +56,20 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string; co
   in(column: string, values: readonly unknown[]) {
     const allowed = new Set(values);
     this.filters.push((row) => allowed.has(row[column]));
+    return this;
+  }
+
+  lte(column: string, value: unknown) {
+    this.filters.push((row) => {
+      const current = row[column];
+      if (current == null || value == null) return false;
+      return current <= (value as string | number);
+    });
+    return this;
+  }
+
+  is(column: string, value: unknown) {
+    this.filters.push((row) => row[column] === value);
     return this;
   }
 
@@ -270,6 +285,106 @@ function seedTranslation(db: MemoryDb, status: string, reviewReason: string | nu
   ];
 }
 
+function seedOnePage(
+  db: MemoryDb,
+  options: {
+    pagesDone?: number;
+    ocrText?: string;
+    jobStatus?: string;
+    runStatus?: string;
+    includeRun?: boolean;
+    updatedAt?: string;
+  } = {},
+): void {
+  const pagesDone = options.pagesDone ?? 1;
+  const jobStatus = options.jobStatus ?? "ready";
+  db.tables.orders = [
+    orderRow({
+      status: "processing",
+      review_reason: null,
+      billable_pages: 1,
+      total_cents: 995,
+      staff_alert_sent_at: null,
+      progress: {
+        step: "translating",
+        pagesRead: 1,
+        pagesTotal: 1,
+        pagesDone,
+        pagesTranslateTotal: 1,
+      },
+    }),
+  ];
+  db.tables.documents = [
+    {
+      id: "doc-1",
+      order_id: orderId,
+      original_path: `${orderId}/acta.pdf`,
+      filename: "acta.pdf",
+      mime: "application/pdf",
+      size: 10,
+      page_count: 1,
+      status: "ready",
+      position: 0,
+    },
+  ];
+  db.tables.document_pages = [
+    {
+      id: "page-1",
+      document_id: "doc-1",
+      page_number: 1,
+      ocr_text: options.ocrText ?? "Hello",
+      word_count: 1,
+      billable_units: 1,
+      billing_basis: "words",
+    },
+  ];
+  if (options.includeRun === false) return;
+  const updatedAt = options.updatedAt ?? new Date().toISOString();
+  db.tables.translation_runs = [
+    {
+      order_id: orderId,
+      version: 1,
+      status: options.runStatus ?? "running",
+      page_count: 1,
+      round: 0,
+      token: "token-1",
+      qa_issues: [],
+      updated_at: updatedAt,
+    },
+  ];
+  db.tables.translation_page_jobs = [
+    {
+      id: "job-v1-1",
+      order_id: orderId,
+      version: 1,
+      document_id: "doc-1",
+      page_id: "page-1",
+      page_number: 1,
+      combined_page_number: 1,
+      status: jobStatus,
+      attempts: 1,
+      output: jobStatus === "ready" ? pageOutput : null,
+      error: null,
+      updated_at: updatedAt,
+    },
+  ];
+  db.tables.previews = [
+    {
+      id: "preview-1",
+      order_id: orderId,
+      version: 1,
+      preview_path: `${orderId}/preview-v1.pdf`,
+      status: "pending",
+    },
+  ];
+}
+
+function pageDispatches(): unknown[][] {
+  return vi
+    .mocked(dispatch.dispatchTranslation)
+    .mock.calls.filter((call) => call[0] === TRANSLATION_PAGE_PATH);
+}
+
 function orderStatus(db: MemoryDb): { status: unknown; reviewReason: unknown; progress: Row } {
   const row = db.tables.orders[0];
   return {
@@ -386,5 +501,104 @@ describe("retry a translation that failed to dispatch", () => {
     expect(orderStatus(db)).toMatchObject({ status: "failed", reviewReason: "image_quality" });
     expect(db.tables.translation_runs).toHaveLength(1);
     expect(db.tables.translation_runs[0]?.status).toBe("running");
+  });
+
+  it("keeps pagesDone when the same page is stored twice and a late failure arrives", async () => {
+    seedOnePage(db, { pagesDone: 0, jobStatus: "running" });
+    const handle = db as unknown as Db;
+    const [job] = await listPageJobs(handle, orderId, 1);
+
+    await completePageJob(handle, job, pageOutput);
+    expect(orderStatus(db).progress).toMatchObject({ pagesDone: 1, pagesTranslateTotal: 1 });
+
+    const pagesBefore = pageDispatches().length;
+    await completePageJob(handle, job, pageOutput);
+    await failPageJob(handle, job, new Error("late failure after success"));
+
+    expect(orderStatus(db).status).toBe("processing");
+    expect(orderStatus(db).progress).toMatchObject({ pagesDone: 1, pagesTranslateTotal: 1 });
+    expect(pageDispatches()).toHaveLength(pagesBefore);
+    expect(db.tables.translation_page_jobs[0]?.status).toBe("ready");
+  });
+
+  it("does not paint 1/1 back to 0/1 when assemble starts another round", async () => {
+    seedOnePage(db, { pagesDone: 0, jobStatus: "running", ocrText: "Folio 0007" });
+    const handle = db as unknown as Db;
+    const [job] = await listPageJobs(handle, orderId, 1);
+
+    await completePageJob(handle, job, pageOutput);
+    expect(orderStatus(db).progress.pagesDone).toBe(1);
+
+    await runTranslationAssemble(handle, { orderId, version: 1 });
+
+    expect(orderStatus(db)).toMatchObject({
+      status: "processing",
+      reviewReason: null,
+      progress: { step: "translating", pagesDone: 1, pagesTranslateTotal: 1 },
+    });
+    expect(db.tables.translation_runs.map((run) => [run.version, run.status])).toEqual([
+      [1, "failed"],
+      [2, "running"],
+    ]);
+    expect(pageDispatches().some((call) => (call[1] as { version?: number }).version === 2)).toBe(true);
+
+    await failPageJob(handle, job, new Error("stale success raced a retry"));
+    expect(orderStatus(db).progress.pagesDone).toBe(1);
+    expect(orderStatus(db).status).toBe("processing");
+  });
+
+  it("does not run a second assemble or lower pagesDone while the first claim is fresh", async () => {
+    seedOnePage(db, {
+      pagesDone: 1,
+      jobStatus: "ready",
+      runStatus: "assembling",
+      updatedAt: new Date().toISOString(),
+    });
+    const handle = db as unknown as Db;
+
+    await runTranslationAssemble(handle, { orderId, version: 1 });
+
+    expect(pdf.renderOrderPdfs).not.toHaveBeenCalled();
+    expect(orderStatus(db).status).toBe("processing");
+    expect(orderStatus(db).progress).toMatchObject({ pagesDone: 1, pagesTranslateTotal: 1 });
+    expect(db.tables.translation_runs[0]?.status).toBe("assembling");
+  });
+
+  it("flags needs_review and alerts staff when assemble throws, without lowering pagesDone", async () => {
+    seedOnePage(db, { pagesDone: 1, jobStatus: "ready" });
+    const previousAlerts = process.env.STAFF_ALERT_EMAILS;
+    process.env.STAFF_ALERT_EMAILS = "staff@example.com";
+    vi.mocked(pdf.renderOrderPdfs).mockRejectedValue(new Error("preview render failed"));
+    vi.spyOn(email, "sendStaffOrderAlert").mockResolvedValue({ sent: true, skipped: false });
+    const handle = db as unknown as Db;
+
+    try {
+      await runTranslationAssemble(handle, { orderId, version: 1 });
+    } finally {
+      if (previousAlerts == null) delete process.env.STAFF_ALERT_EMAILS;
+      else process.env.STAFF_ALERT_EMAILS = previousAlerts;
+    }
+
+    expect(orderStatus(db)).toMatchObject({
+      status: "needs_review",
+      reviewReason: "preview render failed",
+    });
+    expect(orderStatus(db).progress.pagesDone).toBe(1);
+    expect(email.sendStaffOrderAlert).toHaveBeenCalledTimes(1);
+    expect(typeof db.tables.orders[0]?.staff_alert_sent_at).toBe("string");
+  });
+
+  it("does not zero pagesDone when translation starts again with no open run", async () => {
+    seedOnePage(db, { pagesDone: 1, includeRun: false });
+    const handle = db as unknown as Db;
+
+    await translateOrder(handle, orderId, "token-1");
+
+    expect(orderStatus(db)).toMatchObject({
+      status: "processing",
+      progress: { step: "translating", pagesDone: 1, pagesTranslateTotal: 1 },
+    });
+    expect(db.tables.translation_runs).toHaveLength(1);
+    expect(pageDispatches().length).toBeGreaterThan(0);
   });
 });
