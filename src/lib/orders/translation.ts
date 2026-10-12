@@ -539,11 +539,17 @@ export async function runTranslationAssemble(
             return;
           }
           if (deadline.aborted) throw new AiUnavailableError("translation_timeout");
-          await updateOrder(db, input.orderId, {
-            status: "needs_review",
-            review_reason: QA_REVIEW_REASON,
-            progress: checkedProgress(order.progress, { step: "done" }),
-          });
+          const wrote = await updateOrder(
+            db,
+            input.orderId,
+            {
+              status: "needs_review",
+              review_reason: QA_REVIEW_REASON,
+              progress: checkedProgress(order.progress, { step: "done" }),
+            },
+            { statuses: OPEN_TRANSLATION_STATUSES },
+          );
+          if (wrote === false && !keepPaid) return;
           if (keepPaid || current?.paidAt) {
             const { settlePaidOrder } = await import("./paid-release");
             await settlePaidOrder(db, input.orderId);

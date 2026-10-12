@@ -5,6 +5,7 @@ import type { Db } from "./storage";
 import { claimPageJob, completePageJob, failPageJob, listPageJobs } from "./translation-jobs";
 import { TRANSLATION_ASSEMBLE_PATH, TRANSLATION_PAGE_PATH } from "./translation-dispatch";
 import * as dispatch from "./translation-dispatch";
+import { QA_REVIEW_REASON } from "./qa";
 import { runTranslationAssemble, translateOrder } from "./translation";
 
 const orderId = "28492f38-3333-4333-8333-333333333333";
@@ -20,6 +21,8 @@ const UNIQUE: Record<string, string[][]> = {
 
 class MemoryDb {
   tables: Record<string, Row[]> = {};
+  /** The next orders update first moves this id to cancelled, then applies its filters. */
+  cancelBeforeOrderUpdate: string | null = null;
 
   from(table: string) {
     if (!this.tables[table]) this.tables[table] = [];
@@ -77,6 +80,13 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string; co
   update(patch: Row) {
     this.op = "update";
     this.patch = patch;
+    if (this.table === "orders" && this.db.cancelBeforeOrderUpdate) {
+      const id = this.db.cancelBeforeOrderUpdate;
+      this.db.cancelBeforeOrderUpdate = null;
+      for (const row of this.db.tables.orders ?? []) {
+        if (row.id === id) row.status = "cancelled";
+      }
+    }
     return this;
   }
 
@@ -387,4 +397,44 @@ describe("retry a translation that failed to dispatch", () => {
     expect(db.tables.translation_runs).toHaveLength(1);
     expect(db.tables.translation_runs[0]?.status).toBe("running");
   });
+
+  it("flags a processing order when QA retranslation is exhausted", async () => {
+    exhaustQa(db, "processing");
+    await runTranslationAssemble(db as unknown as Db, { orderId, version: 1 });
+    expect(orderStatus(db)).toMatchObject({
+      status: "needs_review",
+      reviewReason: QA_REVIEW_REASON,
+    });
+  });
+
+  it("does not overwrite a cancelled order when QA retranslation is exhausted", async () => {
+    for (const status of ["cancelled", "delivered", "paid", "approved", "preview_ready"]) {
+      db = new MemoryDb();
+      exhaustQa(db, status);
+      await runTranslationAssemble(db as unknown as Db, { orderId, version: 1 });
+      expect(orderStatus(db).status).toBe(status);
+      expect(orderStatus(db).reviewReason).toBeNull();
+    }
+
+    db = new MemoryDb();
+    exhaustQa(db, "processing");
+    db.cancelBeforeOrderUpdate = orderId;
+    await runTranslationAssemble(db as unknown as Db, { orderId, version: 1 });
+    expect(orderStatus(db).status).toBe("cancelled");
+    expect(orderStatus(db).reviewReason).toBeNull();
+  });
 });
+
+function exhaustQa(database: MemoryDb, status: string): void {
+  seedTranslation(database, status, null);
+  const run = database.tables.translation_runs[0];
+  run.status = "assembling";
+  run.round = 2;
+  for (const job of database.tables.translation_page_jobs) {
+    job.status = "ready";
+    job.output = pageOutput;
+  }
+  for (const page of database.tables.document_pages) {
+    page.ocr_text = "Acta 1990";
+  }
+}
