@@ -26,12 +26,19 @@ export type OrderReadProgress = {
   pagesTotal?: number;
 };
 
-/** Progress stored on the order. `translating` is the post-quote job. `retries` stays off the public payload. */
+/**
+ * Progress stored on the order. `translating` is the post-quote job.
+ * `pagesRead` and `pagesTotal` stay the OCR counts.
+ * `pagesDone` and `pagesTranslateTotal` count billable pages during translation.
+ * `retries` stays off the public payload.
+ */
 export type OrderProgress = {
   step: ReadingStep | "translating";
   pagesRead: number;
   pagesTotal: number;
   retries?: number;
+  pagesDone?: number;
+  pagesTranslateTotal?: number;
 };
 
 export const UPLOADED_PROGRESS: OrderProgress = { step: "uploaded", pagesRead: 0, pagesTotal: 0 };
@@ -46,6 +53,22 @@ function storedRetries(value: unknown): number | undefined {
   return value;
 }
 
+function translationCounts(row: Record<string, unknown>): {
+  pagesDone?: number;
+  pagesTranslateTotal?: number;
+} {
+  const pagesDone = integerCount(row.pagesDone);
+  const pagesTranslateTotal = integerCount(row.pagesTranslateTotal);
+  const done = pagesDone != null && pagesDone >= 0 ? pagesDone : undefined;
+  const total = pagesTranslateTotal != null && pagesTranslateTotal >= 0 ? pagesTranslateTotal : undefined;
+  if (done == null && total == null) return {};
+  if (done != null && total != null && done > total) return { pagesDone: total, pagesTranslateTotal: total };
+  return {
+    ...(done != null ? { pagesDone: done } : {}),
+    ...(total != null ? { pagesTranslateTotal: total } : {}),
+  };
+}
+
 /** Full progress object, or null when the payload is missing a step or an integer count. */
 export function asOrderProgress(value: unknown): OrderProgress | null {
   if (!value || typeof value !== "object") return null;
@@ -54,7 +77,10 @@ export function asOrderProgress(value: unknown): OrderProgress | null {
   const pagesTotal = integerCount(row.pagesTotal);
   if (pagesRead == null || pagesTotal == null || pagesRead < 0 || pagesTotal < 0) return null;
   const retries = storedRetries(row.retries);
-  const extra = retries == null ? {} : { retries };
+  const extra = {
+    ...(retries == null ? {} : { retries }),
+    ...translationCounts(row),
+  };
   if (row.step === "translating") return { step: "translating", pagesRead, pagesTotal, ...extra };
   if (typeof row.step !== "string" || !STEP_SET.has(row.step)) return null;
   return { step: row.step as ReadingStep, pagesRead, pagesTotal, ...extra };

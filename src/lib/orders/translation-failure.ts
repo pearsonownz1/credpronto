@@ -3,6 +3,11 @@ import { AiUnavailableError } from "./errors";
 export const TRANSLATION_TIMEOUT_REASON = "translation_timeout";
 /** One translateDocument call, including its single retry, stays under this. */
 export const TRANSLATION_DEADLINE_MS = 300_000;
+/**
+ * One billable page runs in its own function (`maxDuration` 300).
+ * Stop about 45 seconds early so a failed attempt can be saved before the platform kills the function.
+ */
+export const TRANSLATION_PAGE_DEADLINE_MS = 255_000;
 
 export function isTemporaryTranslationError(error: unknown): boolean {
   if (error instanceof AiUnavailableError) return true;

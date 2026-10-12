@@ -1031,6 +1031,7 @@ export async function insertQaRun(
     score: input.score,
     issues: input.issues,
   });
+  if (error?.code === "23505") return;
   fail(error);
 }
 

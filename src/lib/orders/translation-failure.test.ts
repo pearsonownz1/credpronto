@@ -3,6 +3,7 @@ import { AiUnavailableError } from "./errors";
 import { AI_ATTEMPT_TIMEOUT_MS, AI_MAX_RETRIES } from "./ai";
 import {
   TRANSLATION_DEADLINE_MS,
+  TRANSLATION_PAGE_DEADLINE_MS,
   TRANSLATION_TIMEOUT_REASON,
   decideTranslationFailure,
 } from "./translation-failure";
@@ -12,6 +13,7 @@ describe("translation failure", () => {
     expect(AI_ATTEMPT_TIMEOUT_MS).toBe(150_000);
     expect(AI_MAX_RETRIES).toBe(2);
     expect(TRANSLATION_DEADLINE_MS).toBe(300_000);
+    expect(TRANSLATION_PAGE_DEADLINE_MS).toBe(300_000 - 45_000);
   });
 
   it("sends a timeout to review without order.failed", () => {

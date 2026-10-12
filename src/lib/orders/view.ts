@@ -219,7 +219,13 @@ export function toCustomerOrder(input: {
 }
 
 function publicProgress(progress: OrderProgress): OrderProgress {
-  return { step: progress.step, pagesRead: progress.pagesRead, pagesTotal: progress.pagesTotal };
+  return {
+    step: progress.step,
+    pagesRead: progress.pagesRead,
+    pagesTotal: progress.pagesTotal,
+    ...(progress.pagesDone != null ? { pagesDone: progress.pagesDone } : {}),
+    ...(progress.pagesTranslateTotal != null ? { pagesTranslateTotal: progress.pagesTranslateTotal } : {}),
+  };
 }
 
 function publicEvaluation(result: EvaluationResult | null): EvaluationResult | null {

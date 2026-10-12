@@ -51,6 +51,8 @@ export type CheckedProgress = {
   pagesRead: number;
   pagesTotal: number;
   retries?: number;
+  pagesDone?: number;
+  pagesTranslateTotal?: number;
 };
 
 export function progressStep(progress: unknown): string | null {
@@ -72,24 +74,41 @@ function nonNegativeInt(value: unknown): number {
   return 0;
 }
 
+function optionalCount(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) return undefined;
+  return value;
+}
+
 /**
  * Full `orders.progress` object. Keeps page counts inside `orders_progress_chk`
  * and stores `retries` only when it is a positive integer.
  */
 export function checkedProgress(
   progress: unknown,
-  patch: { step: CheckedProgress["step"]; retries?: number },
+  patch: {
+    step: CheckedProgress["step"];
+    retries?: number;
+    pagesDone?: number;
+    pagesTranslateTotal?: number;
+  },
 ): CheckedProgress {
   const row = progress && typeof progress === "object" ? (progress as Record<string, unknown>) : {};
   const pagesTotal = nonNegativeInt(row.pagesTotal);
   const pagesRead = Math.min(nonNegativeInt(row.pagesRead), pagesTotal);
   const retries = patch.retries ?? progressRetries(progress);
   const step = PROGRESS_STEPS.has(patch.step) ? patch.step : "done";
+  const pagesTranslateTotal = patch.pagesTranslateTotal ?? optionalCount(row.pagesTranslateTotal);
+  let pagesDone = patch.pagesDone ?? optionalCount(row.pagesDone);
+  if (pagesDone != null && pagesTranslateTotal != null && pagesDone > pagesTranslateTotal) {
+    pagesDone = pagesTranslateTotal;
+  }
   return {
     step,
     pagesRead,
     pagesTotal,
     ...(Number.isInteger(retries) && retries > 0 ? { retries } : {}),
+    ...(pagesDone != null ? { pagesDone } : {}),
+    ...(pagesTranslateTotal != null ? { pagesTranslateTotal } : {}),
   };
 }
 
