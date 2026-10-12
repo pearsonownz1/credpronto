@@ -628,7 +628,7 @@ On failure the order is retranslated, up to 2 times (3 QA runs total). Prior iss
 
 `page` is the combined page number, or `null` for a layout issue that covers the whole order. `checkedAt` is the latest run's timestamp. `attempts` is how many runs exist for the order.
 
-The clean translation in `finals` (`file=translation`) starts with the certification cover page, then the translated pages. The watermarked preview does not include the cover. The separate certification object (`file=certification`) is still the cover alone. The cover text is the existing translator certification (order id, date, source language to English).
+The clean translation in `finals` (`file=translation`) starts with the certification cover page, then the translated pages. The watermarked preview does not include the cover and has no certification footer. The separate certification object (`file=certification`) is still the cover alone. The cover names the order, the issue date, the client, the language pair, and each document with its page count. The statement says the translator is competent in both languages and that the translation is complete and accurate. The signature block uses the approving staff member's name, or `CREDPRONTO_TRANSLATOR_NAME` when nobody has approved yet, plus a signature image when `CREDPRONTO_TRANSLATOR_SIGNATURE` is set for that same translator. Every page of the final PDF ends with the CredPronto address (2520 Venture Oaks Way, Suite 120, Sacramento, CA 95833), the order number, and page X of Y.
 
 ### Tables
 

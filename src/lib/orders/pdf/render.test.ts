@@ -68,12 +68,18 @@ describe("translated pdf renders", () => {
     expect(PREVIEW_WATERMARK_OPACITY).toBeCloseTo(0.16);
     expect(previewWatermarkRgb()).toEqual({ r: 0x1f / 255, g: 0x5e / 255, b: 0xff / 255 });
     expect(preview.text).toContain(PREVIEW_WATERMARK);
-    expect(preview.text).not.toContain("Translator certification");
+    expect(preview.text).not.toContain("Certificate of Translation Accuracy");
+    expect(preview.text).not.toContain("2520 Venture Oaks Way");
     expect(clean.text).toContain("Hello diploma");
-    expect(clean.text).toContain("Translator certification");
+    expect(clean.text).toContain("Certificate of Translation Accuracy");
+    expect(clean.text).toContain("2520 Venture Oaks Way");
+    expect(clean.text).toContain("Page 2 of 2");
     expect(clean.text).not.toContain("PREVIEW");
-    expect(certification.text).toContain("Translator certification");
+    expect(certification.text).toContain("Certificate of Translation Accuracy");
+    expect(certification.text).toContain("competent to translate");
+    expect(certification.text).toContain("complete and accurate");
     expect(certification.text).toContain("order-1");
+    expect(certification.text).toContain("Page 1 of 2");
   });
 });
 

@@ -3,6 +3,7 @@ import { generateObject, translationModelId } from "./ai";
 import { inReadingOrder } from "./page-order";
 import { CONFIRMATION_FIELD_KEYS } from "./fields";
 import type { RenderBlock, RenderPage } from "./pdf/layout";
+import { coverClientName, coverDocuments, coverSignature, coverTranslatorName, loadTranslatorSignature } from "./pdf/cover";
 import { renderOrderPdfs } from "./pdf/render";
 import { blocksFromModel, blocksToParagraphs, type ModelBlock } from "./pdf/structure";
 import {
@@ -209,6 +210,7 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
     }
 
     const confirmations = await listConfirmations(db, orderId);
+    const clientEmail = await customerEmail(db, order.customerId);
     const version = await nextPreviewVersion(db, orderId);
     const previewPath = `${orderId}/preview-v${version}.pdf`;
     const inserted = await insertPreview(db, { orderId, version, previewPath });
@@ -216,6 +218,7 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
 
     try {
       const renderedPages: RenderPage[] = [];
+      const translatedCounts = new Map<string, number>();
       const model = translationModelId();
       for (const document of documents) {
         const documentPages = pages.filter((page) => page.documentId === document.id);
@@ -242,6 +245,7 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
             })),
           },
         });
+        translatedCounts.set(document.id, translated.length);
         for (const page of translated) {
           const source = documentPages.find((item) => item.number === page.pageNumber);
           renderedPages.push({
@@ -255,11 +259,17 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
       }
 
       const today = new Date().toISOString().slice(0, 10);
+      const configuredSignature = loadTranslatorSignature();
       const files = await renderOrderPdfs({
         orderId,
         sourceLanguage: order.sourceLanguage,
+        targetLanguage: order.targetLanguage,
         date: today,
         pages: renderedPages,
+        clientName: coverClientName(confirmations, clientEmail),
+        documents: coverDocuments(documents, pages, translatedCounts),
+        translatorName: coverTranslatorName(null),
+        signature: coverSignature(null, configuredSignature),
       });
       const translationPath = `${orderId}/translation-v${version}.pdf`;
       const certificationPath = `${orderId}/certification-v${version}.pdf`;
@@ -301,8 +311,7 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
       await markPreview(db, orderId, version, "ready");
       await resolveCorrections(db, open.map((correction) => correction.id), version);
 
-      const email = await customerEmail(db, order.customerId);
-      if (email) await sendPreviewReady(email, token);
+      if (clientEmail) await sendPreviewReady(clientEmail, token);
       if (!(await latestReadyPreview(db, orderId))) {
         throw new HttpError("Preview did not save.", 500);
       }

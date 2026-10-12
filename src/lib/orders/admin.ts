@@ -1,4 +1,5 @@
 import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET } from "./constants";
+import { approverDisplayName, stampApprovedCover } from "./certification";
 import { notifyOrder } from "./webhook-delivery";
 import { orderDownloadFilename } from "./download-name";
 import {
@@ -158,6 +159,7 @@ export async function approveOrder(orderId: string) {
   }
 
   await ensureStaffRow(db, userId);
+  await stampApprovedCover(db, order, await approverDisplayName(db, userId));
   const now = new Date().toISOString();
   if (delivery.status !== "approved") {
     await updateDelivery(db, order.id, {
