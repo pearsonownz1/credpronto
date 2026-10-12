@@ -19,3 +19,25 @@ body {
   color: var(--cp-ink);
   font-family: var(--font-sans);
 }
+
+.toolbar-button {
+  display: inline-flex;
+  height: 2rem;
+  shrink: 0;
+  align-items: center;
+  border-radius: var(--cp-radius);
+  border: 1px solid var(--cp-line);
+  background: var(--cp-bg);
+  padding-inline: 0.625rem;
+  font-size: 0.875rem;
+  color: var(--cp-ink);
+}
+
+.toolbar-button:disabled {
+  color: var(--cp-ink-muted);
+}
+
+.toolbar-button[aria-pressed="true"] {
+  border-color: var(--cp-primary);
+  color: var(--cp-primary);
+}
