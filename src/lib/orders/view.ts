@@ -174,8 +174,9 @@ export function toCustomerOrder(input: {
 
 function publicEvaluation(result: EvaluationResult | null): EvaluationResult | null {
   if (!result) return null;
-  const { pageCount: _pageCount, ...rest } = result;
-  return rest;
+  const copy = { ...result };
+  delete copy.pageCount;
+  return copy;
 }
 
 export type PreviewPage = {
