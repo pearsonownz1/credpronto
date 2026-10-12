@@ -161,6 +161,79 @@ describe("billable page math", () => {
     );
   });
 
+  it("quotes a 9-page bilingual CHESICC report per page, skipping English translations", () => {
+    const chinese = (chars: number, mark: string) =>
+      [
+        "CHESICC Verification Report",
+        "教育部学历证书电子注册备案表",
+        "课".repeat(chars),
+        "姓名 颜开 性别 男 出生日期",
+        mark,
+      ].join("\n");
+    const english = (mark: string) =>
+      [
+        "China Higher Education Student Information and Career Center (CHESICC)",
+        "Verification Report of China Higher Education Student's Academic Transcript",
+        "This is to certify that the following student record is true and complete.",
+        "The holder completed the program and the courses listed in this report.",
+        "Name: Yan Kai. Date of birth: 3 June 1998. Gender: Male.",
+        "The record was checked against the registry and the degree was conferred.",
+        mark,
+      ].join("\n");
+
+    const pages = [
+      chinese(400, "第 1 页 , 共 2 页"),
+      english("第 1 页 , 共 2 页"),
+      chinese(800, "第 2 页 , 共 2 页"),
+      english("第 2 页 , 共 2 页"),
+      chinese(500, "第 1 页 , 共 2 页"),
+      english("第 1 页 , 共 2 页"),
+      chinese(700, "第 2 页 , 共 2 页"),
+      english("第 2 页 , 共 2 页"),
+      "1/1",
+    ];
+    const englishPage = quotePage({ text: pages[1] ?? "", pageIndex: 1, targetLanguage: "en" });
+    expect(countCjkChars(pages[1] ?? "")).toBeGreaterThan(0);
+    expect(englishPage).toMatchObject({ skip: true, skipReason: "english", billableUnits: 0 });
+    expect(quotePage({ text: pages[1] ?? "", pageIndex: 1, targetLanguage: "es" }).skip).toBe(false);
+    expect(quotePage({ text: pages[0] ?? "", pageIndex: 0, targetLanguage: "en" })).toMatchObject({
+      skip: false,
+      billingBasis: "cjk",
+      billableUnits: 1,
+    });
+    expect(quotePage({ text: "1/1", pageIndex: 8, targetLanguage: "en" })).toMatchObject({
+      skip: true,
+      skipReason: "blank",
+    });
+    expect(quotePage({ text: "第 2 页 , 共 2 页", pageIndex: 0, targetLanguage: "en" })).toMatchObject({
+      skip: true,
+      skipReason: "blank",
+    });
+    expect(
+      quotePage({
+        text: "顺丰\n运单号 SF1234567890123\n收件人 上海",
+        pageIndex: 0,
+        targetLanguage: "en",
+      }),
+    ).toMatchObject({ skip: true, skipReason: "label" });
+
+    const quote = quotePages(pages, "en");
+    expect(quote.lineItems).toEqual([
+      { pageIndex: 0, billableUnits: 1, skip: false, skipReason: null },
+      { pageIndex: 1, billableUnits: 0, skip: true, skipReason: "english" },
+      { pageIndex: 2, billableUnits: 1, skip: false, skipReason: null },
+      { pageIndex: 3, billableUnits: 0, skip: true, skipReason: "english" },
+      { pageIndex: 4, billableUnits: 1, skip: false, skipReason: null },
+      { pageIndex: 5, billableUnits: 0, skip: true, skipReason: "english" },
+      { pageIndex: 6, billableUnits: 1, skip: false, skipReason: null },
+      { pageIndex: 7, billableUnits: 0, skip: true, skipReason: "english" },
+      { pageIndex: 8, billableUnits: 0, skip: true, skipReason: "blank" },
+    ]);
+    expect(quote.billablePages).toBe(4);
+    expect(quote.totalCents).toBe(4 * UNIT_PRICE_CENTS);
+    expect(quote.totalCents).toBe(3980);
+  });
+
   it("stores a word count the database check can accept", () => {
     const samples = [
       quotePage({ text: "", pageIndex: 0 }),
