@@ -5,6 +5,9 @@ import type { EvaluationLine, EvaluationResult, EvaluationService } from "./type
 export const DIPLOMA_UNIT_CENTS = 1995;
 export const COURSE_BY_COURSE_UNIT_CENTS = 3995;
 
+/** Stored on a paid credential evaluation while staff prepare the report. */
+export const EVALUATION_REVIEW_REASON = "Credential evaluation is reviewed by staff.";
+
 export function evaluationUnitCents(service: EvaluationService): number {
   return service === "diploma" ? DIPLOMA_UNIT_CENTS : COURSE_BY_COURSE_UNIT_CENTS;
 }
@@ -12,6 +15,31 @@ export function evaluationUnitCents(service: EvaluationService): number {
 /** Known at upload, before language detection or a page count. */
 export function evaluationFeeCents(service: EvaluationService, degreeCount: number): number {
   return degreeCount * evaluationUnitCents(service);
+}
+
+export type EvaluationPrice = {
+  unitPriceCents: number;
+  evaluationCents: number;
+  translationCents: 0;
+  totalCents: number;
+};
+
+/** Flat diploma or course-by-course price. The translation page rate is not part of it. */
+export function evaluationPrice(order: {
+  service: EvaluationService | string | null;
+  degreeCount?: number | null;
+  addonCents?: number;
+}): EvaluationPrice | null {
+  if (order.service !== "diploma" && order.service !== "course_by_course") return null;
+  if (order.degreeCount == null || !Number.isInteger(order.degreeCount) || order.degreeCount < 1) return null;
+  const unitPriceCents = evaluationUnitCents(order.service);
+  const evaluationCents = evaluationFeeCents(order.service, order.degreeCount);
+  return {
+    unitPriceCents,
+    evaluationCents,
+    translationCents: 0,
+    totalCents: evaluationCents + (order.addonCents ?? 0),
+  };
 }
 
 export function evaluationServiceDescription(service: EvaluationService): string {

@@ -3,7 +3,7 @@ import { lineItemForStoredPage, pageRuleForLanguages, type PageLineItem } from "
 import { asOrderProgress, publicOrderProgress, UPLOADED_PROGRESS, type OrderProgress } from "./reading-progress";
 import { isPreviewDelayed } from "./translation-watch";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
-import { lineItemsForOrder, translationOfferCents } from "./evaluation-price";
+import { evaluationPrice, lineItemsForOrder, translationOfferCents } from "./evaluation-price";
 import { customerEvaluationResult, customerReviewReason } from "./equivalency";
 import { fulfillmentState, type FulfillmentState } from "./release-decision";
 import { compareCombinedPages } from "./page-order";
@@ -140,6 +140,10 @@ export function toCustomerOrder(input: {
     }),
   );
   const stored = input.order.pageOrder;
+  const priced = evaluationPrice(input.order);
+  const evaluationCents = priced?.evaluationCents ?? input.order.evaluationCents;
+  const translationCents = priced ? 0 : input.order.translationCents;
+  const unitPriceCents = priced?.unitPriceCents ?? input.order.unitPriceCents;
 
   return {
     orderId: input.order.id,
@@ -182,9 +186,9 @@ export function toCustomerOrder(input: {
       ...(typeof page.skip === "boolean" ? { skip: page.skip } : {}),
       ...(page.skipReason ? { skipReason: page.skipReason } : {}),
     })),
-    pageLineItems,
+    pageLineItems: priced ? [] : pageLineItems,
     billablePages: input.order.billablePages,
-    unitPriceCents: input.order.unitPriceCents,
+    unitPriceCents,
     addons: [...(input.addons ?? [])]
       .sort(
         (a, b) =>
@@ -195,7 +199,7 @@ export function toCustomerOrder(input: {
     addonOptions: addonOptions(input.order.billablePages, input.order),
     expeditedUnit: EXPEDITED_UNIT,
     shippingAddress: input.order.shippingAddress,
-    totalCents: input.order.totalCents,
+    totalCents: priced?.totalCents ?? input.order.totalCents,
     currency: input.order.currency,
     pageRule: pageRuleForLanguages([
       input.order.sourceLanguage,
@@ -215,11 +219,17 @@ export function toCustomerOrder(input: {
     orderType: input.order.orderType,
     service: input.order.service,
     degreeCount: input.order.degreeCount,
-    evaluationCents: input.order.evaluationCents,
-    translationCents: input.order.translationCents,
-    includeTranslation: input.order.includeTranslation,
-    translationOfferCents: translationOfferCents(input.order),
-    lineItems: lineItemsForOrder(input.order),
+    evaluationCents,
+    translationCents,
+    includeTranslation: priced ? false : input.order.includeTranslation,
+    translationOfferCents: priced ? null : translationOfferCents(input.order),
+    lineItems: lineItemsForOrder({
+      service: input.order.service,
+      degreeCount: input.order.degreeCount,
+      evaluationCents,
+      translationCents,
+      billablePages: input.order.billablePages,
+    }),
     evaluation: publicEvaluation(input.order.evaluationResult),
     progress: publicOrderProgress(asOrderProgress(input.order.progress) ?? UPLOADED_PROGRESS),
     paidAt: input.order.paidAt,

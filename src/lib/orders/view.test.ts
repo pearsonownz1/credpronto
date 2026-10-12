@@ -135,9 +135,22 @@ describe("customer order", () => {
     expect(order.expeditedUnit).toBe("order");
     expect(order.evaluationCents).toBe(1995);
     expect(order.degreeCount).toBe(1);
-    expect(order.lineItems.map((item) => item.kind)).toEqual(["evaluation", "translation"]);
-    expect(order.includeTranslation).toBe(true);
-    expect(order.translationOfferCents).toBe(995);
+    expect(order.unitPriceCents).toBe(1995);
+    expect(order.translationCents).toBe(0);
+    expect(order.totalCents).toBe(1995);
+    expect(order.lineItems).toEqual([
+      {
+        kind: "evaluation",
+        description: "Diploma evaluation",
+        quantity: 1,
+        unitAmountCents: 1995,
+        amountCents: 1995,
+      },
+    ]);
+    expect(order.includeTranslation).toBe(false);
+    expect(order.translationOfferCents).toBeNull();
+    expect(order.unitPriceCents).not.toBe(995);
+    expect(order.lineItems.some((item) => item.unitAmountCents === 995)).toBe(false);
     expect(order.evaluation).toBeNull();
     expect(order).not.toHaveProperty("edge");
     expect(order).not.toHaveProperty("edgeCredentialId");
@@ -167,9 +180,11 @@ describe("customer order", () => {
       email: "ada@example.com",
     });
     expect(order.includeTranslation).toBe(false);
-    expect(order.translationOfferCents).toBe(995);
+    expect(order.translationOfferCents).toBeNull();
+    expect(order.unitPriceCents).toBe(1995);
     expect(order.totalCents).toBe(1995);
     expect(order.lineItems.map((item) => item.kind)).toEqual(["evaluation"]);
+    expect(order.lineItems.some((item) => item.unitAmountCents === 995)).toBe(false);
   });
 
   it("returns the selected add-ons in catalog order with the stored address", () => {

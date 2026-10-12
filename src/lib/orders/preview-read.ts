@@ -1,4 +1,5 @@
 import { PREVIEW_URL_SECONDS } from "./constants";
+import { evaluationPrice } from "./evaluation-price";
 import {
   insertEvent,
   latestReadyPreview,
@@ -88,10 +89,11 @@ export async function getPreview(token: string): Promise<PreviewResponse> {
       signedUrls: previewPaths.length + 1,
     }),
   );
+  const priced = evaluationPrice(order);
   return {
     status: order.status,
-    totalCents: order.totalCents,
-    unitPriceCents: order.unitPriceCents,
+    totalCents: priced?.totalCents ?? order.totalCents,
+    unitPriceCents: priced?.unitPriceCents ?? order.unitPriceCents,
     billablePages: order.billablePages,
     original: { url: originalUrl, pageCount: pages.length, pages },
     translation: {

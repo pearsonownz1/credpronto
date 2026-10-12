@@ -217,6 +217,44 @@ describe("assemble evaluation", () => {
     });
   });
 
+  it("lets a diploma pay at the flat fee before a preview exists", () => {
+    expect(
+      checkoutBlockReason({
+        status: "draft",
+        languageConfirmed: false,
+        service: "diploma",
+        degreeCount: 1,
+        evaluationCents: 1995,
+        translationCents: null,
+        billablePages: null,
+        unitPriceCents: 995,
+      }),
+    ).toBeNull();
+    expect(
+      checkoutBlockReason({
+        status: "draft",
+        languageConfirmed: false,
+        service: "course_by_course",
+        degreeCount: 1,
+        evaluationCents: 3995,
+        translationCents: null,
+        billablePages: null,
+        unitPriceCents: 995,
+      }),
+    ).toBeNull();
+    expect(
+      checkoutBlockReason({
+        status: "draft",
+        languageConfirmed: false,
+        service: null,
+        evaluationCents: null,
+        translationCents: null,
+        billablePages: null,
+        unitPriceCents: 995,
+      }),
+    ).toBe("Preview is not ready");
+  });
+
   it("holds a transcript when a grade is off the scale", () => {
     expect(
       assembleCourse({

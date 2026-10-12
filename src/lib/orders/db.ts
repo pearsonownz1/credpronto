@@ -10,7 +10,7 @@ import {
   type EdgeEquivalencyRecord,
   type EdgeGradingScaleRecord,
 } from "./edge";
-import { parseEvaluationResult } from "./evaluation-price";
+import { evaluationPrice, parseEvaluationResult } from "./evaluation-price";
 import { parseStoredPageOrder, compareCombinedPages } from "./page-order";
 import { asOrderProgress, type OrderProgress } from "./reading-progress";
 import type { Db } from "./storage";
@@ -268,6 +268,9 @@ export async function insertOrder(
     degreeCount?: number | null;
     includeTranslation?: boolean;
     evaluationCents?: number | null;
+    translationCents?: number | null;
+    totalCents?: number | null;
+    unitPriceCents?: number | null;
     externalRef?: string | null;
     apiKeyId?: string | null;
     sourceLanguage?: string | null;
@@ -286,6 +289,9 @@ export async function insertOrder(
       degree_count: input.degreeCount ?? null,
       include_translation: input.includeTranslation === true,
       ...(input.evaluationCents != null ? { evaluation_cents: input.evaluationCents } : {}),
+      ...(input.translationCents != null ? { translation_cents: input.translationCents } : {}),
+      ...(input.totalCents != null ? { total_cents: input.totalCents } : {}),
+      ...(input.unitPriceCents != null ? { unit_price_cents: input.unitPriceCents } : {}),
       status: "draft",
       expedited: false,
       utm_source: input.utmSource,
@@ -1223,6 +1229,37 @@ export async function listOrders(
   return { orders, total: count ?? orders.length };
 }
 
+/** Paid credential evaluations still waiting for the staff report. Oldest payment first. */
+export async function listEvaluationQueueOrders(
+  db: Db,
+  page: { limit: number; offset: number },
+): Promise<{
+  rows: Array<{ id: string; service: string | null; email: string | null; paidAt: string | null }>;
+  total: number;
+}> {
+  const { data, error, count } = await db
+    .from("orders")
+    .select("id, service, paid_at, customers(email)", { count: "exact" })
+    .eq("order_type", "evaluation")
+    .in("service", ["diploma", "course_by_course"])
+    .in("status", ["paid", "needs_review"])
+    .not("paid_at", "is", null)
+    .order("paid_at", { ascending: true })
+    .range(page.offset, page.offset + page.limit - 1);
+  fail(error);
+  const rows = ((data ?? []) as Row[]).map((row) => {
+    const customer = row.customers as { email?: string } | { email?: string }[] | null;
+    const email = Array.isArray(customer) ? customer[0]?.email : customer?.email;
+    return {
+      id: String(row.id),
+      service: str(row.service),
+      email: email ?? null,
+      paidAt: str(row.paid_at),
+    };
+  });
+  return { rows, total: count ?? rows.length };
+}
+
 export async function listTranslations(db: Db, documentIds: string[]): Promise<TranslationRecord[]> {
   if (documentIds.length === 0) return [];
   const { data, error } = await db
@@ -1293,21 +1330,29 @@ export async function listOwnedOrderRows(db: Db, userId: string): Promise<OwnedO
   const { data, error } = await db
     .from("orders")
     .select(
-      "id, status, service_type, billable_pages, unit_price_cents, total_cents, currency, created_at",
+      "id, status, service_type, service, degree_count, addon_cents, billable_pages, unit_price_cents, total_cents, currency, created_at",
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
   fail(error);
-  return ((data ?? []) as Row[]).map((row) => ({
-    id: String(row.id),
-    status: String(row.status),
-    serviceType: String(row.service_type),
-    billablePages: num(row.billable_pages),
-    unitPriceCents: num(row.unit_price_cents) ?? 995,
-    totalCents: num(row.total_cents),
-    currency: str(row.currency) ?? "usd",
-    createdAt: str(row.created_at) ?? new Date().toISOString(),
-  }));
+  return ((data ?? []) as Row[]).map((row) => {
+    const service = row.service === "diploma" || row.service === "course_by_course" ? row.service : null;
+    const priced = evaluationPrice({
+      service,
+      degreeCount: num(row.degree_count),
+      addonCents: num(row.addon_cents) ?? 0,
+    });
+    return {
+      id: String(row.id),
+      status: String(row.status),
+      serviceType: String(row.service_type),
+      billablePages: num(row.billable_pages),
+      unitPriceCents: priced?.unitPriceCents ?? num(row.unit_price_cents) ?? 995,
+      totalCents: priced?.totalCents ?? num(row.total_cents),
+      currency: str(row.currency) ?? "usd",
+      createdAt: str(row.created_at) ?? new Date().toISOString(),
+    };
+  });
 }
 
 export async function listReadyPreviewOrderIds(db: Db, orderIds: string[]): Promise<Set<string>> {

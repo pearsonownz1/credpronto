@@ -251,7 +251,9 @@ The order moves to `correction_requested`. Translation and a new watermarked pre
 
 ## `POST /api/orders/[token]/checkout`
 
-Allowed from `preview_ready`. The body may be empty. A JSON body selects add-ons (see Checkout add-ons). The Stripe session total is the service price plus those add-ons, and that sum is stored as `totalCents` before the session is created. Paying again after an expired session replaces the stored selection instead of stacking it.
+A translation is allowed from `preview_ready`. A credential evaluation (`service` `diploma` or `course_by_course`) is allowed as soon as the upload has a type and degree count, including `draft`, with no confirmed language and no preview. The body may be empty. A JSON body selects add-ons (see Checkout add-ons). The Stripe session total is the service price plus those add-ons, and that sum is stored as `totalCents` before the session is created. Paying again after an expired session replaces the stored selection instead of stacking it.
+
+An evaluation Checkout line is `Diploma evaluation` or `Course-by-course evaluation` at `1995` or `3995` cents per degree. It does not use the translation page rate. A translation Checkout line stays `CredPronto certified translation (N pages)`.
 
 Stripe session:
 
@@ -259,7 +261,7 @@ Stripe session:
 { "url": "https://checkout.stripe.com/…", "sessionId": "cs_…" }
 ```
 
-The Checkout line is `CredPronto certified translation (N pages)`. `price_data.product_data.description` names the languages, the documents, and the billable pages, for example `French → English · fr_diplome-licence.pdf · 1 page`. Language codes are shown as names (`fr` → French, `en` → English). The first document name follows upload order. Further documents are `+N more` (`acta.pdf` plus two others → `acta.pdf +2 more`). One billable page reads `1 page`; any other count reads `N pages`.
+On a translation, the Checkout line is `CredPronto certified translation (N pages)`. `price_data.product_data.description` names the languages, the documents, and the billable pages, for example `French → English · fr_diplome-licence.pdf · 1 page`. Language codes are shown as names (`fr` → French, `en` → English). The first document name follows upload order. Further documents are `+N more` (`acta.pdf` plus two others → `acta.pdf +2 more`). One billable page reads `1 page`; any other count reads `N pages`.
 
 `price_data.product_data.images[0]` is a signed URL, valid for 25 hours, for a PNG of page 1 of the watermarked preview. The PNG's longer side is about 1000px. It is stored in the private `previews` bucket at `checkout-previews/<orderId>/<random>.png`. A later checkout for the same order reuses that PNG and signs a new URL. The object is a watermarked file in `previews` named `preview-….pdf`, `report-v<N>.pdf`, or `translation-preview-v<N>.pdf`. Clean files in `finals` are not used. If rendering or signing fails, the session is still created without `images`, and the error is logged.
 
@@ -509,6 +511,8 @@ These routes require a signed-in Supabase user who has a `staff` row or `profile
 | Method | Path | Body | Result |
 | --- | --- | --- | --- |
 | `GET` | `/api/admin/orders?status=&reviewReason=&limit=&offset=` | | `{ "orders": [ { id, status, serviceType, sourceLanguage, billablePages, totalCents, currency, createdAt, paidAt, reviewReason, email, expedited, fulfillment } ], "page": { "limit", "offset", "total" } }`. `limit` defaults to 50 and cannot exceed 100. `offset` defaults to 0. `reviewReason` filters to that exact reason, including `equivalency_unmapped`. `expedited` is true when that add-on was purchased. `paidAt` is the checkout timestamp or null. `fulfillment` is `released`, `awaiting_review`, or null. Rows are oldest `paid_at` first (nulls last). Expedited comes first only when `paid_at` ties, then `created_at` descending. |
+| `GET` | `/api/admin/orders?queue=evaluation` | | Staff review queue. `{ "orders": [ { id, type, customerEmail, paidAt, waitMinutes } ], "page": { "limit", "offset", "total" } }`. `type` is `diploma` or `course_by_course`. `paidAt` is the checkout timestamp. `waitMinutes` is whole minutes since `paidAt` at request time. Rows are paid credential evaluations in `paid` or `needs_review`, oldest payment first. Delivered orders are omitted. Any other `queue` value is `400` `{ "error": "Unknown queue" }`. |
+| `POST` | `/api/admin/orders/[id]/evaluation` | `multipart/form-data` with a PDF in `file` | Stores the PDF as the order deliverable in `finals` at `<orderId>/evaluation.pdf`, sets the order and delivery to `delivered`, and emails the customer that the evaluation is ready. `{ "status": "delivered", "email": "sent" \| "skipped" \| "failed" }`. A second upload replaces the PDF and does not send another email (`email` `skipped`). `400` when `file` is missing or empty. `415` `{ "error": "Upload a PDF" }` when the bytes are not a PDF. `409` when the order is not a credential evaluation, is not paid, or is cancelled. |
 | `GET` | `/api/admin/orders/[id]` | | Order, documents, pages (source text and the latest ready AI translation paragraphs per page), confirmations, corrections, payment, delivery, and `fulfillment` (see Checkout add-ons). Includes storage keys for staff. |
 | `PATCH` | `/api/admin/orders/[id]` | `{ "pages": [ { "documentId", "pageNumber", "paragraphs": ["…"] } ] }` | Replaces those pages' translation text, writes a new translation version (`model` `staff-edit`), and regenerates the watermarked preview, clean translation, and certification page the same way the pipeline renders them. Other pages keep their current text. Allowed from `preview_ready`, `correction_requested`, `paid`, `approved`, and `delivered`. The order status does not move backward. An approved or delivered row's file keys are updated. Records `translation_edited`. |
 | `POST` | `/api/admin/orders/[id]/resolve-review` | `{ "sourceLanguage": "es" }` | `needs_review` → `quoted`. `sourceLanguage` optional when the order already has one. When `reviewReason` is `equivalency_unmapped`, `{ "equivalencies": ["Bachelor's degree"], "countries": ["Mexico"], "fields": ["Administración de Empresas"], "dates": ["18 de junio de 2019"] }` (one string per credential; `countries`, `fields`, and `dates` are required only for values still marked `Pending staff review`) writes those values, stores the clean report, and clears the reason. The status stays `preview_ready` or `paid`. `400` `{ "error": "Each credential needs a U.S. equivalency" }` when a value is missing or still `Pending staff review`. |
@@ -582,20 +586,21 @@ An evaluation is an order whose `orderType` is `evaluation`. `service` is `diplo
 
 ### Price
 
-Amounts are integer cents. The evaluation fee and, when the source is not English, the translation fee are separate Stripe line items on one Checkout session.
+Amounts are integer cents. A credential evaluation is the flat fee for the chosen type. Customer price fields do not use the $9.95 translation page rate.
 
-| `service` | Per degree |
+| `service` | `unitPriceCents` |
 | --- | --- |
 | `diploma` | `1995` ($19.95) |
 | `course_by_course` | `3995` ($39.95) |
 
-`evaluationCents` is `degreeCount` times that unit. It is stored when the order is created, before the source language or page count is known. `includeTranslation` is stored on the order at the same time (`false` when omitted). `translationCents` and `totalCents` stay null until that quote exists, and `lineItems` stays empty until then. When `sourceLanguage` is `en`, there is no translation line and `translationCents` is `0`. Otherwise, when `includeTranslation` is `true`, the translation uses the same billable-page rule as a translation order (`unitPriceCents` `995`) and `translationCents` is `billablePages * 995`. `totalCents` is `evaluationCents + translationCents`. It is not `billablePages * unitPriceCents`. The quote can turn `includeTranslation` on or off later; both line items and the total follow that flag.
+`evaluationCents` is `degreeCount` times that unit. It is stored when the order is created, together with `translationCents` `0`, `totalCents` equal to `evaluationCents`, and `unitPriceCents` of `1995` or `3995`. `GET /api/orders/[token]` reports those amounts on every status, including `draft`. `translationCents` is `0`, `translationOfferCents` is null, and `lineItems` has only the evaluation line. `includeTranslation` on the customer payload is false. Checkout charges `evaluationCents` plus any add-ons.
 
 ```json
 {
+  "unitPriceCents": 1995,
   "evaluationCents": 1995,
-  "translationCents": 1990,
-  "totalCents": 3985,
+  "translationCents": 0,
+  "totalCents": 1995,
   "lineItems": [
     {
       "kind": "evaluation",
@@ -603,33 +608,18 @@ Amounts are integer cents. The evaluation fee and, when the source is not Englis
       "quantity": 1,
       "unitAmountCents": 1995,
       "amountCents": 1995
-    },
-    {
-      "kind": "translation",
-      "description": "Certified translation",
-      "quantity": 2,
-      "unitAmountCents": 995,
-      "amountCents": 1990
     }
   ]
 }
 ```
 
-A course-by-course evaluation uses the description `Course-by-course evaluation` and `unitAmountCents` `3995`. The translation line is omitted when `translationCents` is `0`. `lineItems` is an empty array until the quote exists.
+A course-by-course evaluation uses the description `Course-by-course evaluation` and `unitAmountCents` `3995`.
 
 ### Flow
 
-Upload, then a watermarked preview of the evaluation report, then payment, then staff approval before the clean report is released. The statuses are `draft` → `preview_ready` or `needs_review` → `paid` → `approved` → `delivered`. Checkout is allowed only at `preview_ready`, the same gate as a translation. There is no 10-minute preview promise and no one-hour delivery promise. `etaAt` is null.
+Upload, choose diploma or course-by-course, pay the flat fee, then wait while staff review the documents. There is no extraction step, no confirm step, and no automatic preview. Checkout is allowed from `draft`. On `checkout.session.completed` the order stays `paid`, `reviewReason` becomes `Credential evaluation is reviewed by staff.`, and staff receive an email with a link to `/admin/orders/<id>`. `GET /api/admin/orders?queue=evaluation` lists those orders. `POST /api/admin/orders/[id]/evaluation` stores the finished PDF and sets the order to `delivered`, which opens the order page on Download. There is no 10-minute preview promise and no one-hour delivery promise. `etaAt` is null.
 
-When a credential matches an internal EDGE reference for that country, the U.S. equivalency is the model's confident proposal from the EDGE level and grading rows, or the reference row's own U.S. equivalency when that is one of the five labels. The order country is slugified the same way as the loaded country name. An exact slug wins; otherwise one stored slug that contains the order slug on a hyphen boundary matches, so South Korea or Korea can match a longer official-name slug. Two matches stay unmatched. A grading-scale title is its section, name, and qualifier joined with ` — `, and the original entry stays on `raw`. If neither is confident, the order stays on the `equivalency_unmapped` path: the preview says `Pending staff review`, checkout stays open, and the clean report waits for staff. A course grade uses an EDGE grading row when the printed grade matches `indigenous_grade`; otherwise it keeps the 10-point, 20-point, or letter scale. Semester hours stay the printed credits. Customer responses do not include EDGE titles, content, urls, or grading rows. Staff review shows the matched entry.
-
-The watermarked report is stored in `previews` as `<orderId>/report-v<N>.pdf`. Orders created before that name keep `<orderId>/preview-v<N>.pdf`, and the preview API still treats that object as the report. The watermark is the same diagonal `PREVIEW · CREDPRONTO · NOT FOR OFFICIAL USE` used on translation previews. `preview.report` is that watermarked PDF (`url`, `pageCount`). It is null before the report exists.
-
-When the source language is not English, the same preview pass used for translation orders also stores `<orderId>/translation-preview-v<N>.pdf` beside that report, with the same `N`. That file is watermarked and has no certification cover. `preview.translation.url` is that object when it exists. When it does not (English source, or the translation preview failed), `preview.translation.url` is the report, and the Translation link is omitted because the two URLs match. A failed translation preview does not hold the evaluation report or clear `preview_ready`.
-
-`GET /api/orders/[token]/download?file=evaluation` returns the clean report only after payment and staff approval, the same gate as `file=translation`.
-
-`needs_review` is used when a course grade cannot be mapped, or when the diploma cannot be read. A diploma whose printed credential has no U.S. equivalent still reaches `preview_ready`. Its equivalency field is `Pending staff review`, `reviewReason` is exactly `equivalency_unmapped`, and checkout is allowed. The clean report is not stored until staff send `equivalencies` on resolve-review. Approval returns `409` `{ "error": "The U.S. equivalency is still pending staff review" }` until then. The order stays on the staff review queue, including after payment.
+`GET /api/orders/[token]/download?file=evaluation` returns that staff PDF after payment and delivery (`delivered`). The same payment and delivery gate used for `file=translation` applies. `evaluation` on the order payload stays null until an older order already has a stored result. New orders do not fill it.
 
 ### Diploma result
 

@@ -27,6 +27,8 @@ export type ReleaseInput = {
   openCorrections: boolean;
   finalsReady: boolean;
   enabled: boolean;
+  /** Paid credential evaluation. Staff uploads the report; nothing is generated automatically. */
+  manualEvaluation?: boolean;
 };
 
 const UNAPPROVED = new Set(["paid", "needs_review", "correction_requested"]);
@@ -85,6 +87,7 @@ function flagged(input: ReleaseInput): boolean {
 export function releaseAction(input: ReleaseInput): ReleaseAction {
   if (input.status === "approved" || input.status === "delivered") return "release";
   if (!UNAPPROVED.has(input.status)) return "wait";
+  if (input.manualEvaluation) return "staff";
   if (!input.enabled) return "staff";
   const held = flagged(input);
   if (input.status === "paid" && !held && input.finalsReady && qaHighConfidence(input.qa)) return "release";

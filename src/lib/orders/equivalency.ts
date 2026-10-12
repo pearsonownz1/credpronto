@@ -1,4 +1,5 @@
 import { serviceCents } from "./addons";
+import { evaluationPrice } from "./evaluation-price";
 import type { EvaluationResult } from "./types";
 
 export const PENDING_EQUIVALENCY = "Pending staff review";
@@ -84,22 +85,27 @@ export function diplomaEquivalencyPending(
   );
 }
 
-/** Checkout stays open for a priced preview. The equivalency flag does not add a 409. */
+const EVALUATION_NOT_PAYABLE = new Set(["paid", "approved", "delivered", "cancelled"]);
+
+/**
+ * A credential evaluation can pay at its flat fee as soon as the type is chosen.
+ * A translation still waits for a confirmed preview.
+ */
 export function checkoutBlockReason(
   order: Parameters<typeof serviceCents>[0] & {
     status: string;
     languageConfirmed: boolean;
+    degreeCount?: number | null;
+    addonCents?: number;
   },
 ): "Preview is not ready" | "This order is not ready to pay" | null {
+  if (evaluationPrice(order)) {
+    if (EVALUATION_NOT_PAYABLE.has(order.status)) return "This order is not ready to pay";
+    return null;
+  }
   if (order.status !== "preview_ready") return "Preview is not ready";
   const base = serviceCents(order);
-  if (
-    !order.languageConfirmed ||
-    base == null ||
-    (order.service != null && (order.evaluationCents == null || order.translationCents == null))
-  ) {
-    return "This order is not ready to pay";
-  }
+  if (!order.languageConfirmed || base == null) return "This order is not ready to pay";
   return null;
 }
 
