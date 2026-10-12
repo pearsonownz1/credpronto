@@ -7,6 +7,12 @@ import { wrapLines, type CoverDocument, type RenderInput } from "./layout";
 
 export const COVER_ADDRESS = "2520 Venture Oaks Way, Suite 120, Sacramento, CA 95833";
 
+/** Printed word for word. Do not edit, shorten, or interpolate this statement. */
+export const CERTIFICATION_STATEMENTS = [
+  "As an authorized representative of CredPronto, a professional translation services agency, I hereby certify that the above-mentioned document has been translated by an experienced, qualified and competent professional translator, fluent in the above-mentioned language pair and that, in my best judgment, the translated text truly reflects the content, meaning, and style of the original text and constitutes in every respect a complete and accurate translation of the original document. This document has not been translated for a family member, friend, or business associate.",
+  "This is to certify the correctness of the translation only. I do not make any claims or guarantees about the authenticity or content of the original document. Further, CredPronto assumes no liability for the way in which the translation is used by the customer or any third party, including end-users of the translation.",
+] as const;
+
 const INK = rgb(11 / 255, 18 / 255, 32 / 255);
 const MUTED = rgb(91 / 255, 100 / 255, 116 / 255);
 const BLUE = rgb(31 / 255, 94 / 255, 255 / 255);
@@ -30,7 +36,7 @@ export type ResolvedCover = {
   targetLanguage: string;
   pair: string;
   summary: string;
-  statement: string;
+  statements: readonly string[];
   documents: CoverDocument[];
   sourceTotal: number;
   translatedTotal: number;
@@ -153,7 +159,7 @@ export function resolveCover(input: RenderInput): ResolvedCover {
     targetLanguage: targetLabel,
     pair,
     summary: `${pair} · ${documentLabel} · ${pageLabel}`,
-    statement: `I, ${translatorName}, certify that I am competent to translate from ${sourceLabel} into ${targetLabel}, and that the attached ${targetLabel} translation of the documents listed above is complete and accurate to the best of my knowledge and ability.`,
+    statements: CERTIFICATION_STATEMENTS,
     documents,
     sourceTotal,
     translatedTotal,
@@ -188,7 +194,7 @@ export async function drawCertificationPage(doc: PDFDocument, input: RenderInput
   const cover = resolveCover(input);
   const sample = [
     cover.clientName,
-    cover.statement,
+    ...cover.statements,
     cover.summary,
     cover.translatorName,
     ...cover.documents.map((document) => document.name),
@@ -202,9 +208,20 @@ export async function drawCertificationPage(doc: PDFDocument, input: RenderInput
   y = drawTitle(page, faces, cover, y);
   y = drawSummary(page, faces, cover, y);
   y = drawOrderBox(page, faces, cover, y);
-  y = drawTable(page, faces, cover, y);
-  y = drawStatement(page, faces, cover, y);
-  drawSignature(page, faces, cover, signature, y);
+  const footerClearance = 50;
+  const signatureBlock = 54;
+  const statementGap = 16;
+  let statementSize = 8.5;
+  let measured = measureStatements(faces, cover.statements, statementSize);
+  let tableFloor = footerClearance + signatureBlock + statementGap + measured.height + 12;
+  while (y - tableFloor < 36 && statementSize > 7) {
+    statementSize -= 0.25;
+    measured = measureStatements(faces, cover.statements, statementSize);
+    tableFloor = footerClearance + signatureBlock + statementGap + measured.height + 12;
+  }
+  y = drawTable(page, faces, cover, y, tableFloor);
+  y = drawStatements(page, faces, measured, y);
+  drawSignature(page, faces, cover, signature, y - statementGap);
   drawFinalFooter(page, faces.regular, {
     orderId: cover.orderId,
     pageNumber: 1,
@@ -428,13 +445,13 @@ function drawOrderBox(page: PDFPage, faces: Faces, cover: ResolvedCover, y: numb
   return bottom - 12;
 }
 
-function drawTable(page: PDFPage, faces: Faces, cover: ResolvedCover, y: number): number {
-  const signatureFloor = 148;
+function drawTable(page: PDFPage, faces: Faces, cover: ResolvedCover, y: number, floor: number): number {
   const header = 16;
   const natural = 14;
-  const room = y - signatureFloor - header - natural;
-  const rowHeight = Math.max(11, Math.min(natural, room / Math.max(cover.documents.length, 1)));
-  const height = header + rowHeight * (cover.documents.length + 1);
+  const count = cover.documents.length + 1;
+  const maxHeight = Math.max(header + count * 8, y - floor);
+  const rowHeight = Math.min(natural, Math.max(8, (maxHeight - header) / count));
+  const height = header + rowHeight * count;
   const bottom = y - height;
   page.drawRectangle({
     x: MARGIN_X,
@@ -478,18 +495,31 @@ function drawTable(page: PDFPage, faces: Faces, cover: ResolvedCover, y: number)
   return bottom - 12;
 }
 
-function drawStatement(page: PDFPage, faces: Faces, cover: ResolvedCover, y: number): number {
-  const inner = 10;
-  const textWidthLimit = CONTENT_W - inner * 2;
-  const lines = wrapLines(cover.statement, (line) => textWidth(line, 9, false, faces), textWidthLimit);
+type MeasuredStatements = {
+  size: number;
+  lineHeight: number;
+  paragraphs: string[][];
+  height: number;
+};
+
+function measureStatements(faces: Faces, statements: readonly string[], size: number): MeasuredStatements {
+  const limit = CONTENT_W - 20;
+  const lineHeight = size * 1.55;
+  const gap = 6;
+  const paragraphs = statements.map((text) => wrapLines(text, (line) => textWidth(line, size, false, faces), limit));
+  const textHeight =
+    paragraphs.reduce((sum, lines) => sum + lines.length * lineHeight, 0) + gap * Math.max(0, paragraphs.length - 1);
+  return { size, lineHeight, paragraphs, height: 16 + 8 + textHeight + 4 };
+}
+
+function drawStatements(page: PDFPage, faces: Faces, measured: MeasuredStatements, y: number): number {
   const header = 16;
-  const height = header + 8 + lines.length * 12 + 6;
-  const bottom = Math.max(118, y - height);
+  const bottom = y - measured.height;
   page.drawRectangle({
     x: MARGIN_X,
     y: bottom,
     width: CONTENT_W,
-    height: y - bottom,
+    height: measured.height,
     borderColor: LINE,
     borderWidth: 1,
     color: WHITE,
@@ -497,12 +527,14 @@ function drawStatement(page: PDFPage, faces: Faces, cover: ResolvedCover, y: num
   page.drawRectangle({ x: MARGIN_X, y: y - header, width: CONTENT_W, height: header, color: SOFT });
   drawText(page, "CERTIFICATION", MARGIN_X + 10, y - 11, 8, INK, false, faces);
   let lineY = y - header - 14;
-  for (const line of lines) {
-    if (lineY < bottom + 6) break;
-    drawText(page, line, MARGIN_X + inner, lineY, 9, INK, false, faces);
-    lineY -= 12;
-  }
-  return bottom - 16;
+  measured.paragraphs.forEach((lines, index) => {
+    for (const line of lines) {
+      drawText(page, line, MARGIN_X + 10, lineY, measured.size, INK, false, faces);
+      lineY -= measured.lineHeight;
+    }
+    if (index < measured.paragraphs.length - 1) lineY -= 6;
+  });
+  return bottom;
 }
 
 function drawSignature(
@@ -512,12 +544,10 @@ function drawSignature(
   signature: PDFImage | null,
   y: number,
 ): void {
-  const floor = 64;
-  const top = Math.max(floor + 36, Math.min(y, 130));
   const gap = 24;
   const leftWidth = CONTENT_W * 0.58;
   const rightX = MARGIN_X + leftWidth + gap;
-  const lineY = top - 26;
+  const lineY = y - 22;
   if (signature) {
     const maxWidth = leftWidth - 8;
     const maxHeight = 22;
@@ -536,7 +566,7 @@ function drawSignature(
   });
   drawWrapped(
     page,
-    `${cover.translatorName}, Certified Translator, CredPronto`,
+    `${cover.translatorName}, Authorized Representative, CredPronto`,
     MARGIN_X,
     lineY - 12,
     8,

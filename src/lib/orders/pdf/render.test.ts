@@ -9,6 +9,7 @@ import { PREVIEW_WATERMARK, PREVIEW_WATERMARK_OPACITY, previewWatermarkRgb } fro
 import { buildCombinedOriginal } from "./combine";
 import { faceForCodePoint } from "./font";
 import { translationRenderPasses, wrapLines } from "./layout";
+import { CERTIFICATION_STATEMENTS } from "./cover";
 import { renderOrderPdfs } from "./render";
 import { collapseLetterSpacing, structurePage, structurePositioned, type TextItem } from "./structure";
 
@@ -76,8 +77,12 @@ describe("translated pdf renders", () => {
     expect(clean.text).toContain("Page 2 of 2");
     expect(clean.text).not.toContain("PREVIEW");
     expect(certification.text).toContain("Certificate of Translation Accuracy");
-    expect(certification.text).toContain("competent to translate");
-    expect(certification.text).toContain("complete and accurate");
+    const certificationText = certification.text.replace(/\s+/g, " ");
+    expect(certificationText).toContain(CERTIFICATION_STATEMENTS[0]);
+    expect(certificationText).toContain(CERTIFICATION_STATEMENTS[1]);
+    expect(certificationText).toContain("Authorized Representative, CredPronto");
+    expect(certificationText).not.toContain("Intended use");
+    expect(certificationText).not.toContain("Certified Translator");
     expect(certification.text).toContain("order-1");
     expect(certification.text).toContain("Page 1 of 2");
   });

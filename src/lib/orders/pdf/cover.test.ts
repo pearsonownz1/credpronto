@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CERTIFICATION_STATEMENTS,
   COVER_ADDRESS,
   coverClientName,
   coverDocuments,
@@ -55,8 +56,14 @@ describe("certification cover", () => {
       ],
     });
     expect(cover.summary).toBe("Spanish to English · 2 documents · 3 pages");
-    expect(cover.statement).toContain("competent to translate from Spanish into English");
-    expect(cover.statement).toContain("complete and accurate");
+    expect(cover.statements).toEqual(CERTIFICATION_STATEMENTS);
+    expect(cover.statements[0]).toBe(
+      "As an authorized representative of CredPronto, a professional translation services agency, I hereby certify that the above-mentioned document has been translated by an experienced, qualified and competent professional translator, fluent in the above-mentioned language pair and that, in my best judgment, the translated text truly reflects the content, meaning, and style of the original text and constitutes in every respect a complete and accurate translation of the original document. This document has not been translated for a family member, friend, or business associate.",
+    );
+    expect(cover.statements[1]).toBe(
+      "This is to certify the correctness of the translation only. I do not make any claims or guarantees about the authenticity or content of the original document. Further, CredPronto assumes no liability for the way in which the translation is used by the customer or any third party, including end-users of the translation.",
+    );
+    expect(cover.statements.join(" ")).not.toContain("Intended use");
     expect(cover.issued).toBe("October 11, 2026");
     expect(cover.pageCount).toBe(4);
     expect(COVER_ADDRESS).toContain("Sacramento, CA 95833");
