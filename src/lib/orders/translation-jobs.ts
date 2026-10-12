@@ -67,6 +67,7 @@ export type TranslationRunRecord = {
   round: number;
   token: string | null;
   qaIssues: QaIssue[];
+  updatedAt: string;
 };
 
 export type NumberedPage = PageRecord & { number: number };
@@ -122,6 +123,7 @@ function mapRun(row: Row): TranslationRunRecord {
     round: num(row.round) ?? 0,
     token: str(row.token),
     qaIssues: parseQaIssues(row.qa_issues),
+    updatedAt: str(row.updated_at) ?? "",
   };
 }
 
@@ -221,9 +223,10 @@ async function claimOrder(
   pagesTranslateTotal: number,
   retryFailure = false,
 ): Promise<boolean> {
+  // A later round must not paint 1/1 back to 0/1. The check clamps a count above the new total.
   const progress = checkedProgress(order.progress, {
     step: "translating",
-    pagesDone: 0,
+    pagesDone: order.progress.pagesDone ?? 0,
     pagesTranslateTotal,
   });
   const patch: Record<string, unknown> = { status: "processing", progress };
@@ -413,7 +416,10 @@ export async function beginTranslation(
 
   await insertJobs(db, order.id, version, billable);
   const preview = await insertPreview(db, { orderId: order.id, version, previewPath });
-  if (preview === "exists") return;
+  if (preview === "exists") {
+    await fillTranslationSlots(db, order.id, version);
+    return;
+  }
   if (billable.length === 0) {
     await dispatchAssemble(order.id, version);
     return;
@@ -457,23 +463,39 @@ export async function resumeTranslation(db: Db, run: TranslationRunRecord, now =
     return;
   }
   if (refreshed.every((job) => job.status === "ready")) {
-    const claimed = await claimAssemble(db, run.orderId, run.version);
-    if (claimed) await dispatchAssemble(run.orderId, run.version);
+    await dispatchAssemble(run.orderId, run.version);
     return;
   }
   await fillTranslationSlots(db, run.orderId, run.version);
 }
 
-export async function claimAssemble(db: Db, orderId: string, version: number): Promise<boolean> {
+export async function claimAssemble(db: Db, orderId: string, version: number, now = Date.now()): Promise<boolean> {
+  const at = new Date(now).toISOString();
   const { data, error } = await db
     .from("translation_runs")
-    .update({ status: "assembling", updated_at: new Date().toISOString() })
+    .update({ status: "assembling", updated_at: at })
     .eq("order_id", orderId)
     .eq("version", version)
     .eq("status", "running")
     .select("order_id");
   fail(error);
-  return (data ?? []).length > 0;
+  if ((data ?? []).length > 0) return true;
+
+  // A second after() sees assembling. Only a dead worker, older than the stuck window, may enter.
+  const run = await getTranslationRun(db, orderId, version);
+  if (run?.status !== "assembling" || !run.updatedAt) return false;
+  const updated = Date.parse(run.updatedAt);
+  if (!Number.isFinite(updated) || now - updated < TRANSLATION_JOB_STUCK_MS) return false;
+  const reclaimed = await db
+    .from("translation_runs")
+    .update({ updated_at: at })
+    .eq("order_id", orderId)
+    .eq("version", version)
+    .eq("status", "assembling")
+    .eq("updated_at", run.updatedAt)
+    .select("order_id");
+  fail(reclaimed.error);
+  return (reclaimed.data ?? []).length > 0;
 }
 
 export async function claimPageJob(db: Db, jobId: string): Promise<PageJobRecord | null> {
@@ -536,11 +558,30 @@ export async function loadPageWork(db: Db, jobId: string): Promise<PageWork | nu
   };
 }
 
+async function publishReadyPages(db: Db, job: PageJobRecord): Promise<void> {
+  const run = await getTranslationRun(db, job.orderId, job.version);
+  if (!run || (run.status !== "running" && run.status !== "assembling")) return;
+  const jobs = await listPageJobs(db, job.orderId, job.version);
+  const pagesDone = jobs.filter((item) => item.status === "ready").length;
+  await bumpTranslationProgress(db, job.orderId, pagesDone, jobs.length);
+  if (jobs.length > 0 && jobs.every((item) => item.status === "ready")) {
+    await dispatchAssemble(job.orderId, job.version);
+    return;
+  }
+  await fillTranslationSlots(db, job.orderId, job.version);
+}
+
+/** Stores the page once. A second success does not lower pagesDone or start another assemble claim. */
 export async function completePageJob(
   db: Db,
   job: PageJobRecord,
   output: PageJobOutput,
 ): Promise<void> {
+  const current = await getJob(db, job.id);
+  if (current?.status === "ready" && current.output) {
+    await publishReadyPages(db, current);
+    return;
+  }
   const saved = await db
     .from("translation_page_jobs")
     .update({
@@ -553,56 +594,56 @@ export async function completePageJob(
     .eq("status", "running")
     .select("id");
   fail(saved.error);
-  if ((saved.data ?? []).length === 0) return;
-
-  const run = await getTranslationRun(db, job.orderId, job.version);
-  if (!run || run.status !== "running") return;
-  const jobs = await listPageJobs(db, job.orderId, job.version);
-  const pagesDone = jobs.filter((item) => item.status === "ready").length;
-  await bumpTranslationProgress(db, job.orderId, pagesDone, jobs.length);
-  if (jobs.length > 0 && jobs.every((item) => item.status === "ready")) {
-    const claimed = await claimAssemble(db, job.orderId, job.version);
-    if (claimed) await dispatchAssemble(job.orderId, job.version);
+  if ((saved.data ?? []).length === 0) {
+    const again = await getJob(db, job.id);
+    if (again?.status === "ready") await publishReadyPages(db, again);
     return;
   }
-  await fillTranslationSlots(db, job.orderId, job.version);
+  await publishReadyPages(db, job);
 }
 
 export async function failPageJob(db: Db, job: PageJobRecord, error: unknown): Promise<void> {
+  const latest = await getJob(db, job.id);
+  if (!latest || latest.status === "ready" || latest.status === "failed") return;
   const message = error instanceof Error ? error.message : "Translation failed.";
-  const run = await getTranslationRun(db, job.orderId, job.version);
+  const run = await getTranslationRun(db, latest.orderId, latest.version);
   if (!run || run.status !== "running") {
-    const { error: updateError } = await db
+    const closed = await db
       .from("translation_page_jobs")
       .update({ status: "failed", error: message, updated_at: new Date().toISOString() })
-      .eq("id", job.id)
-      .eq("status", "running");
-    fail(updateError);
+      .eq("id", latest.id)
+      .eq("status", "running")
+      .select("id");
+    fail(closed.error);
     return;
   }
-  const result = pageAttemptResult(job.attempts, false);
+  const result = pageAttemptResult(latest.attempts, false);
   if (result === "retry") {
-    const { error: updateError } = await db
+    const requeued = await db
       .from("translation_page_jobs")
       .update({ status: "pending", error: message, updated_at: new Date().toISOString() })
-      .eq("id", job.id)
-      .eq("status", "running");
-    fail(updateError);
+      .eq("id", latest.id)
+      .eq("status", "running")
+      .select("id");
+    fail(requeued.error);
+    if ((requeued.data ?? []).length === 0) return;
     await dispatchTranslation(TRANSLATION_PAGE_PATH, {
-      orderId: job.orderId,
-      version: job.version,
-      jobId: job.id,
+      orderId: latest.orderId,
+      version: latest.version,
+      jobId: latest.id,
     });
     return;
   }
 
-  const { error: updateError } = await db
+  const failed = await db
     .from("translation_page_jobs")
     .update({ status: "failed", error: message, updated_at: new Date().toISOString() })
-    .eq("id", job.id)
-    .eq("status", "running");
-  fail(updateError);
-  await failTranslationOrder(db, { orderId: job.orderId, version: job.version, error });
+    .eq("id", latest.id)
+    .eq("status", "running")
+    .select("id");
+  fail(failed.error);
+  if ((failed.data ?? []).length === 0) return;
+  await failTranslationOrder(db, { orderId: latest.orderId, version: latest.version, error });
 }
 
 export async function markRunReady(db: Db, orderId: string, version: number): Promise<void> {

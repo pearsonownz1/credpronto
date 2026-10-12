@@ -1,10 +1,11 @@
-import { generateObject, translationFallbackModelId, translationModelId } from "./ai";
+import { z } from "zod";
+import { generateObject, translationModelId } from "./ai";
 import { inReadingOrder } from "./page-order";
 import { CONFIRMATION_FIELD_KEYS } from "./fields";
 import type { RenderBlock, RenderPage } from "./pdf/layout";
 import { coverClientName, coverDocuments, coverSignature, coverTranslatorName, loadTranslatorSignature } from "./pdf/cover";
 import { renderOrderPdfs } from "./pdf/render";
-import { blocksFromModel, blocksToParagraphs } from "./pdf/structure";
+import { blocksFromModel, blocksToParagraphs, type ModelBlock } from "./pdf/structure";
 import {
   claimOrderColumn,
   clearOrderColumn,
@@ -25,8 +26,8 @@ import {
   type Db,
 } from "./db";
 import { adminStudioLink, sendPreviewReady, sendStaffOrderAlert } from "./email";
-import { AiUnavailableError, HttpError } from "./errors";
 import { humanReviewReason } from "./review-reason";
+import { AiUnavailableError, HttpError } from "./errors";
 import { QA_REVIEW_REASON, assessTranslation, qaAttemptForRound, qaStatusForRun, qaWillRetry, type QaIssue } from "./qa";
 import {
   TRANSLATION_DEADLINE_MS,
@@ -35,7 +36,6 @@ import {
   TRANSLATION_TIMEOUT_REASON,
   decideTranslationFailure,
   isTemporaryTranslationError,
-  isUnreadableModelOutput,
   raceWorkAgainstDeadline,
 } from "./translation-failure";
 import { checkedProgress } from "./translation-watch";
@@ -56,19 +56,37 @@ import {
   resumeTranslation,
   type PageJobOutput,
 } from "./translation-jobs";
-import { isSkippedTranslationPage, pageAttemptResult, passThroughBlocks } from "./translation-pages";
+import { isSkippedTranslationPage, passThroughBlocks } from "./translation-pages";
 import { staffAlertRecipients } from "./release-decision";
 import { uploadObject } from "./storage";
-import {
-  translationBlockRules,
-  translationDocumentSchema,
-  translationGenerateOptions,
-  translationPageSchema,
-  type TranslationPageOutput,
-} from "./translation-output";
 import type { ConfirmationRecord, CorrectionRecord, PageRecord } from "./types";
 
-type ModelPage = TranslationPageOutput;
+const modelBlockSchema = z.object({
+  type: z.string(),
+  text: z.string().optional(),
+  level: z.number().optional(),
+  electronic: z.boolean().optional(),
+  rows: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
+  lines: z.array(z.string()).optional(),
+});
+
+const modelPageSchema = z.object({
+  pageNumber: z.number(),
+  blocks: z.array(modelBlockSchema).optional(),
+  lines: z.array(z.string()).optional(),
+  paragraphs: z.array(z.string()).optional(),
+});
+
+const translationSchema = z.object({
+  pages: z.array(modelPageSchema),
+});
+
+type ModelPage = {
+  pageNumber: number;
+  blocks?: ModelBlock[];
+  lines?: string[];
+  paragraphs?: string[];
+};
 
 function pageHasContent(blocks: RenderBlock[]): boolean {
   return blocks.some((block) => {
@@ -103,13 +121,11 @@ function alignPages(expected: number[], returned: ModelPage[]): Array<{ pageNumb
   if (returned.length === expected.length && returned.every((page) => pageHasContent(blocksFromModel(page)))) {
     return expected.map((number, index) => ({
       pageNumber: number,
-      blocks: blocksFromModel(returned[index] ?? { pageNumber: number, blocks: [] }),
+      blocks: blocksFromModel(returned[index] ?? {}),
     }));
   }
   return null;
 }
-
-const STRICT_PAGE_RULES = `Retry rules: Do not repeat text inside seals or stamps. One short description per seal. Keep every block concise. Return valid JSON only.`;
 
 async function translateDocument(
   input: {
@@ -139,13 +155,7 @@ async function translateDocument(
     .map((item) => `Page ${item.page ?? "all"} (${item.type}): ${item.note} Original: ${item.original}`)
     .join("\n");
 
-  const expected = input.pages.map((page) => page.number);
-  const deadline = signal ?? AbortSignal.timeout(TRANSLATION_DEADLINE_MS);
-  let last: ModelPage[] = [];
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    if (deadline.aborted) throw new AiUnavailableError("translation_timeout");
-    const strict = attempt === 1;
-    const prompt = `Translate this document into English, one original page to one translated page.
+  const prompt = `Translate this document into English, one original page to one translated page.
 Source language: ${input.sourceLanguage}.
 File: ${input.filename}.
 
@@ -159,15 +169,31 @@ ${notes.length ? `The customer asked for these corrections:\n${notes.join("\n")}
 
 ${qaNotes ? `A previous translation failed QA. Fix every item and keep confirmed names, dates, and numbers:\n${qaNotes}` : "There are no QA notes."}
 
-Return one object per page number.
-${translationBlockRules()}
-${strict ? `${STRICT_PAGE_RULES}\n` : ""}${pageText}`;
+Return one object per page number, with blocks in the original top-to-bottom order.
+Keep names, CURPs, and place spellings exactly as printed or confirmed. Do not join a label and its value into a paragraph.
+
+For a form, use type "fields" and rows of {label, value}. Translate labels into English. One row per field, in the original order. A line-broken reading (type "lines", one label or value per line) is acceptable when you cannot split a row.
+
+For prose, use type "paragraph" and preserve paragraph breaks.
+
+For a seal, stamp, coat of arms, or letter-spaced ring such as "C I V I L  R E G I S T R Y", use type "seal" and set text to a short place description such as "Civil Registry of Jalisco". Do not copy ring text, and do not letter-space it.
+
+For a handwritten signature, use type "signature" with electronic false.
+For an electronic signature, firma electrónica, or a long unbroken signature token, use type "signature" with electronic true. Do not copy the signature string.
+
+For a section title, use type "heading".
+${pageText}`;
+
+  const expected = input.pages.map((page) => page.number);
+  const deadline = signal ?? AbortSignal.timeout(TRANSLATION_DEADLINE_MS);
+  let last: ModelPage[] = [];
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (deadline.aborted) throw new AiUnavailableError("translation_timeout");
     try {
       const result = await generateObject(
-        translationDocumentSchema,
+        translationSchema,
         [{ role: "user", content: [{ type: "text", text: prompt }] }],
         deadline,
-        translationGenerateOptions(),
       );
       last = result.pages;
       const aligned = alignPages(expected, result.pages);
@@ -181,17 +207,15 @@ ${strict ? `${STRICT_PAGE_RULES}\n` : ""}${pageText}`;
   throw new HttpError("The translation did not return every page.", 502);
 }
 
-function pagePrompt(
-  input: {
-    filename: string;
-    sourceLanguage: string;
-    fields: ConfirmationRecord[];
-    page: PageRecord & { number: number };
-    corrections: CorrectionRecord[];
-    qaIssues: QaIssue[];
-  },
-  strict: boolean,
-): string {
+/** One billable page. The caller retries the invocation once; this call does not. */
+async function translateOnePage(input: {
+  filename: string;
+  sourceLanguage: string;
+  fields: ConfirmationRecord[];
+  page: PageRecord & { number: number };
+  corrections: CorrectionRecord[];
+  qaIssues: QaIssue[];
+}): Promise<RenderBlock[]> {
   const notes = input.corrections
     .filter((correction) => correction.pageNumber === input.page.number)
     .map((correction) => {
@@ -201,7 +225,7 @@ function pagePrompt(
   const qaNotes = input.qaIssues
     .map((item) => `Page ${item.page ?? "all"} (${item.type}): ${item.note} Original: ${item.original}`)
     .join("\n");
-  return `Translate this document into English, one original page to one translated page.
+  const prompt = `Translate this document into English, one original page to one translated page.
 Source language: ${input.sourceLanguage}.
 File: ${input.filename}.
 
@@ -215,48 +239,37 @@ ${notes.length ? `The customer asked for these corrections:\n${notes.join("\n")}
 
 ${qaNotes ? `A previous translation failed QA. Fix every item and keep confirmed names, dates, and numbers:\n${qaNotes}` : "There are no QA notes."}
 
-Return one page object for page ${input.page.number}.
-${translationBlockRules()}
-${strict ? `${STRICT_PAGE_RULES}\n` : ""}Page ${input.page.number}:
-${(input.page.ocrText ?? "").slice(0, 6000)}`;
-}
+Return one page object for page ${input.page.number}, with blocks in the original top-to-bottom order.
+Keep names, CURPs, and place spellings exactly as printed or confirmed. Do not join a label and its value into a paragraph.
 
-/** One billable page. Unreadable JSON is retried once with a stricter prompt. */
-async function translateOnePage(input: {
-  filename: string;
-  sourceLanguage: string;
-  fields: ConfirmationRecord[];
-  page: PageRecord & { number: number };
-  corrections: CorrectionRecord[];
-  qaIssues: QaIssue[];
-}): Promise<RenderBlock[]> {
+For a form, use type "fields" and rows of {label, value}. Translate labels into English. One row per field, in the original order. A line-broken reading (type "lines", one label or value per line) is acceptable when you cannot split a row.
+
+For prose, use type "paragraph" and preserve paragraph breaks.
+
+For a seal, stamp, coat of arms, or letter-spaced ring such as "C I V I L  R E G I S T R Y", use type "seal" and set text to a short place description such as "Civil Registry of Jalisco". Do not copy ring text, and do not letter-space it.
+
+For a handwritten signature, use type "signature" with electronic false.
+For an electronic signature, firma electrónica, or a long unbroken signature token, use type "signature" with electronic true. Do not copy the signature string.
+
+For a section title, use type "heading".
+Page ${input.page.number}:
+${(input.page.ocrText ?? "").slice(0, 6000)}`;
+
   const deadline = AbortSignal.timeout(TRANSLATION_PAGE_DEADLINE_MS);
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    if (deadline.aborted) throw new AiUnavailableError("translation_timeout");
-    const strict = attempt === 1;
-    const fallback = strict ? translationFallbackModelId() : null;
-    try {
-      const result = await raceWorkAgainstDeadline(
-        generateObject(
-          translationPageSchema,
-          [{ role: "user", content: [{ type: "text", text: pagePrompt(input, strict) }] }],
-          deadline,
-          translationGenerateOptions(fallback),
-        ),
-        deadline,
-      );
-      const page = result;
-      if (!page) throw new HttpError("The translation did not return the page.", 502);
-      const aligned = alignPages([input.page.number], [page]);
-      if (!aligned?.[0]) throw new HttpError("The translation did not return the page.", 502);
-      return aligned[0].blocks;
-    } catch (error) {
-      lastError = error;
-      if (!isUnreadableModelOutput(error) || strict || deadline.aborted) throw error;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new HttpError("The translation did not return the page.", 502);
+  const result = await raceWorkAgainstDeadline(
+    generateObject(
+      z.union([modelPageSchema, z.object({ pages: z.array(modelPageSchema).min(1) })]),
+      [{ role: "user", content: [{ type: "text", text: prompt }] }],
+      deadline,
+      { maxRetries: 0 },
+    ),
+    deadline,
+  );
+  const page = "pages" in result ? result.pages[0] : result;
+  if (!page) throw new HttpError("The translation did not return the page.", 502);
+  const aligned = alignPages([input.page.number], [page]);
+  if (!aligned?.[0]) throw new HttpError("The translation did not return the page.", 502);
+  return aligned[0].blocks;
 }
 
 /** Write a terminal status when a translation is still Processing or waiting on the first preview. */
@@ -352,13 +365,11 @@ export async function runTranslationPage(
     await completePageJob(db, claimed, output);
   } catch (error) {
     await failPageJob(db, claimed, error);
-    if (pageAttemptResult(claimed.attempts, false) === "fail") {
-      await ensurePageFailureReviewed(db, claimed.orderId, error);
-    }
+    await ensurePageFailureReviewed(db, claimed.orderId, error);
   }
 }
 
-/** A finished page job must not leave the order in processing. Staff are told at once. */
+/** A page or assemble failure, including unreadable JSON, flags the order at once. */
 async function ensurePageFailureReviewed(db: Db, orderId: string, error: unknown): Promise<void> {
   const order = await getOrderById(db, orderId);
   if (!order) return;
@@ -419,10 +430,8 @@ export async function runTranslationAssemble(
 ): Promise<void> {
   const run = await getTranslationRun(db, input.orderId, input.version);
   if (!run || run.status === "ready" || run.status === "failed") return;
-  if (run.status === "running") {
-    const claimed = await claimAssemble(db, input.orderId, input.version);
-    if (!claimed) return;
-  }
+  const claimed = await claimAssemble(db, input.orderId, input.version);
+  if (!claimed) return;
 
   const order = await getOrderById(db, input.orderId);
   if (!order?.sourceLanguage) return;
@@ -605,6 +614,7 @@ export async function runTranslationAssemble(
     );
   } catch (error) {
     await failTranslationOrder(db, { orderId: input.orderId, version: input.version, error });
+    await ensurePageFailureReviewed(db, input.orderId, error);
   }
 }
 

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as ai from "./ai";
 import * as db from "./db";
 import * as email from "./email";
@@ -40,6 +40,7 @@ function work(): PageWork {
       round: 0,
       token: null,
       qaIssues: [],
+      updatedAt: "2026-10-12T00:00:00.000Z",
     },
     order: {
       id: orderId,
@@ -79,95 +80,58 @@ function promptText(call: readonly unknown[]): string {
   return messages[0]?.content?.[0]?.text ?? "";
 }
 
-describe("runTranslationPage JSON parse", () => {
-  const previousFallback = process.env.TRANSLATION_FALLBACK_MODEL;
+function processingOrder(): OrderRecord {
+  return {
+    id: orderId,
+    status: "processing",
+    sourceLanguage: "es-mx",
+    targetLanguage: "en",
+    serviceType: "translation",
+    billablePages: 1,
+    totalCents: 2495,
+    progress: { step: "translating", pagesRead: 0, pagesTotal: 1 },
+    staffAlertSentAt: null,
+    reviewReason: null,
+  } as OrderRecord;
+}
 
+describe("runTranslationPage JSON parse", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    delete process.env.TRANSLATION_FALLBACK_MODEL;
     vi.spyOn(jobs, "loadPageWork").mockResolvedValue(work());
     vi.spyOn(jobs, "completePageJob").mockResolvedValue(undefined);
     vi.spyOn(jobs, "failPageJob").mockResolvedValue(undefined);
     vi.spyOn(db, "updateOrder").mockResolvedValue(undefined);
+    vi.spyOn(db, "getOrderById").mockResolvedValue(processingOrder());
     vi.spyOn(db, "claimOrderColumn").mockResolvedValue(true);
     vi.spyOn(db, "clearOrderColumn").mockResolvedValue(undefined);
     vi.spyOn(email, "sendStaffOrderAlert").mockResolvedValue({ sent: true, skipped: false });
   });
 
-  afterEach(() => {
-    if (previousFallback == null) delete process.env.TRANSLATION_FALLBACK_MODEL;
-    else process.env.TRANSLATION_FALLBACK_MODEL = previousFallback;
-  });
-
-  it("retries unreadable JSON with a stricter prompt and an optional fallback model", async () => {
-    process.env.TRANSLATION_FALLBACK_MODEL = "fallback/model";
+  it("stores a page that returns once", async () => {
     vi.spyOn(jobs, "claimPageJob").mockResolvedValue(claimed(1));
-    const generate = vi
-      .spyOn(ai, "generateObject")
-      .mockRejectedValueOnce(new Error(jsonFailure))
-      .mockResolvedValueOnce({
-        pageNumber: 1,
-        blocks: [{ type: "paragraph", text: "Birth certificate" }],
-      });
+    vi.spyOn(ai, "generateObject").mockResolvedValue({
+      pageNumber: 1,
+      blocks: [{ type: "paragraph", text: "Birth certificate" }],
+    });
 
     await runTranslationPage({} as Db, { orderId, version: 1, jobId });
 
-    expect(generate).toHaveBeenCalledTimes(2);
-    const first = generate.mock.calls[0] ?? [];
-    const second = generate.mock.calls[1] ?? [];
-    expect(promptText(first)).not.toContain("Retry rules");
-    expect(promptText(second)).toContain("Retry rules");
-    expect(promptText(second)).toContain("Do not repeat text inside seals");
-    expect(promptText(second)).toMatch(/concise/i);
-    expect(first[3]).toEqual({
-      maxRetries: 0,
-      maxOutputTokens: 65_536,
-      reasoning: "low",
-    });
-    expect(second[3]).toEqual({
-      maxRetries: 0,
-      maxOutputTokens: 65_536,
-      reasoning: "low",
-      model: "fallback/model",
-    });
-    expect(promptText(first)).toContain("at most 80 characters");
-    expect(promptText(first)).not.toContain("one label or value per line");
+    expect(ai.generateObject).toHaveBeenCalledTimes(1);
     expect(jobs.completePageJob).toHaveBeenCalled();
     expect(jobs.failPageJob).not.toHaveBeenCalled();
-    expect(db.updateOrder).not.toHaveBeenCalled();
-  });
-
-  it("leaves the order translating when the page job can still retry", async () => {
-    vi.spyOn(jobs, "claimPageJob").mockResolvedValue(claimed(1));
-    vi.spyOn(ai, "generateObject").mockRejectedValue(new Error(jsonFailure));
-
-    await runTranslationPage({} as Db, { orderId, version: 1, jobId });
-
-    expect(ai.generateObject).toHaveBeenCalledTimes(2);
-    expect(jobs.failPageJob).toHaveBeenCalledTimes(1);
     expect(db.updateOrder).not.toHaveBeenCalled();
     expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
   });
 
-  it("moves a finished page failure to needs_review and alerts staff", async () => {
-    vi.spyOn(jobs, "claimPageJob").mockResolvedValue(claimed(2));
+  it("flags needs_review and alerts staff on the first unreadable JSON response", async () => {
+    vi.spyOn(jobs, "claimPageJob").mockResolvedValue(claimed(1));
     vi.spyOn(ai, "generateObject").mockRejectedValue(new Error(jsonFailure));
-    vi.spyOn(db, "getOrderById").mockResolvedValue({
-      id: orderId,
-      status: "processing",
-      sourceLanguage: "es-mx",
-      targetLanguage: "en",
-      serviceType: "translation",
-      billablePages: 1,
-      totalCents: 2495,
-      progress: { step: "translating", pagesRead: 0, pagesTotal: 1 },
-      staffAlertSentAt: null,
-      reviewReason: null,
-    } as OrderRecord);
 
     await runTranslationPage({} as Db, { orderId, version: 1, jobId });
 
-    expect(ai.generateObject).toHaveBeenCalledTimes(2);
+    expect(ai.generateObject).toHaveBeenCalledTimes(1);
+    expect(promptText(vi.mocked(ai.generateObject).mock.calls[0] ?? [])).not.toContain("Retry rules");
     expect(jobs.failPageJob).toHaveBeenCalledTimes(1);
     expect(db.updateOrder).toHaveBeenCalledWith(
       expect.anything(),
@@ -187,5 +151,23 @@ describe("runTranslationPage JSON parse", () => {
         studioUrl: expect.stringContaining(orderId),
       }),
     );
+  });
+
+  it("flags needs_review and alerts staff on any other page failure", async () => {
+    vi.spyOn(jobs, "claimPageJob").mockResolvedValue(claimed(1));
+    vi.spyOn(ai, "generateObject").mockRejectedValue(new Error("schema mismatch"));
+
+    await runTranslationPage({} as Db, { orderId, version: 1, jobId });
+
+    expect(jobs.failPageJob).toHaveBeenCalledTimes(1);
+    expect(db.updateOrder).toHaveBeenCalledWith(
+      expect.anything(),
+      orderId,
+      expect.objectContaining({
+        status: "needs_review",
+        review_reason: "schema mismatch",
+      }),
+    );
+    expect(email.sendStaffOrderAlert).toHaveBeenCalledTimes(1);
   });
 });
