@@ -38,12 +38,25 @@ export type RenderPage = {
   blocks?: RenderBlock[];
 };
 
+export type CoverDocument = {
+  name: string;
+  sourcePages: number;
+  translatedPages: number;
+};
+
 export type RenderInput = {
   orderId: string;
   sourceLanguage: string;
   /** ISO date (YYYY-MM-DD) printed on the certification page. */
   date: string;
   pages: RenderPage[];
+  targetLanguage?: string | null;
+  clientName?: string | null;
+  documents?: CoverDocument[];
+  /** Approving staff member, or the configured translator when nobody has approved yet. Printed as an authorized representative. */
+  translatorName?: string | null;
+  /** PNG or JPEG of the translator signature. Omitted when none is on file. */
+  signature?: Uint8Array | null;
 };
 
 export function assertContiguousPages(pages: { combinedPageNumber: number }[]): void {

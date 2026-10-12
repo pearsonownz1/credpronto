@@ -9,6 +9,7 @@ import { PREVIEW_WATERMARK, PREVIEW_WATERMARK_OPACITY, previewWatermarkRgb } fro
 import { buildCombinedOriginal } from "./combine";
 import { faceForCodePoint } from "./font";
 import { translationRenderPasses, wrapLines } from "./layout";
+import { CERTIFICATION_STATEMENTS } from "./cover";
 import { renderOrderPdfs } from "./render";
 import { collapseLetterSpacing, structurePage, structurePositioned, type TextItem } from "./structure";
 
@@ -23,10 +24,10 @@ function copyBytes(bytes: Uint8Array): Uint8Array {
   return new Uint8Array(bytes);
 }
 
-async function pdfText(bytes: Uint8Array): Promise<{ text: string; pageCount: number }> {
+async function pdfText(bytes: Uint8Array): Promise<{ text: string; pages: string[]; pageCount: number }> {
   const proxy = await getDocumentProxy(copyBytes(bytes));
   const extracted = await extractText(proxy, { mergePages: false });
-  return { text: extracted.text.join("\n"), pageCount: extracted.totalPages };
+  return { text: extracted.text.join("\n"), pages: extracted.text, pageCount: extracted.totalPages };
 }
 
 describe("translated pdf renders", () => {
@@ -68,12 +69,25 @@ describe("translated pdf renders", () => {
     expect(PREVIEW_WATERMARK_OPACITY).toBeCloseTo(0.16);
     expect(previewWatermarkRgb()).toEqual({ r: 0x1f / 255, g: 0x5e / 255, b: 0xff / 255 });
     expect(preview.text).toContain(PREVIEW_WATERMARK);
-    expect(preview.text).not.toContain("Translator certification");
+    expect(preview.text).not.toContain("Certificate of Translation Accuracy");
+    expect(preview.text).not.toContain("2520 Venture Oaks Way");
     expect(clean.text).toContain("Hello diploma");
-    expect(clean.text).toContain("Translator certification");
+    expect(clean.text).toContain("Certificate of Translation Accuracy");
+    expect(clean.pages[0]).toContain("2520 Venture Oaks Way");
+    expect(clean.pages[0]).toContain("Sacramento, CA 95833");
+    expect(clean.pages[1]).not.toContain("2520 Venture Oaks Way");
+    expect(clean.pages[1]).toContain("Page 2 of 2");
+    expect(clean.pages[1]).toContain("order-1");
     expect(clean.text).not.toContain("PREVIEW");
-    expect(certification.text).toContain("Translator certification");
+    expect(certification.text).toContain("Certificate of Translation Accuracy");
+    const certificationText = certification.text.replace(/\s+/g, " ");
+    expect(certificationText).toContain(CERTIFICATION_STATEMENTS[0]);
+    expect(certificationText).toContain(CERTIFICATION_STATEMENTS[1]);
+    expect(certificationText).toContain("Authorized Representative, CredPronto");
+    expect(certificationText).not.toContain("Intended use");
+    expect(certificationText).not.toContain("Certified Translator");
     expect(certification.text).toContain("order-1");
+    expect(certification.text).toContain("Page 1 of 2");
   });
 });
 

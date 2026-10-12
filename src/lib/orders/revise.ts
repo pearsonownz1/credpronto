@@ -1,10 +1,13 @@
 import { requireStaff } from "./staff";
+import { approverDisplayName } from "./certification";
 import {
+  customerEmail,
   getDelivery,
   getOrderById,
   insertEvent,
   insertPreview,
   insertTranslation,
+  listConfirmations,
   listDocuments,
   listPages,
   listTranslations,
@@ -15,6 +18,7 @@ import {
   updateOrder,
   withCombinedNumbers,
 } from "./db";
+import { coverClientName, coverDocuments, coverSignature, coverTranslatorName, loadTranslatorSignature } from "./pdf/cover";
 import { HttpError } from "./errors";
 import { renderOrderPdfs } from "./pdf/render";
 import { uploadObject } from "./storage";
@@ -115,11 +119,23 @@ export async function editOrderTranslation(orderId: string, body: unknown) {
       });
     }
 
+    const translatedCounts = new Map<string, number>();
+    for (const page of merged.pages) {
+      const source = pages.find((item) => item.number === page.combinedPageNumber);
+      if (!source) continue;
+      translatedCounts.set(source.documentId, (translatedCounts.get(source.documentId) ?? 0) + 1);
+    }
+    const approver = await approverDisplayName(db, userId);
     const files = await renderOrderPdfs({
       orderId: order.id,
       sourceLanguage: order.sourceLanguage,
+      targetLanguage: order.targetLanguage,
       date: new Date().toISOString().slice(0, 10),
       pages: merged.pages,
+      clientName: coverClientName(await listConfirmations(db, order.id), await customerEmail(db, order.customerId)),
+      documents: coverDocuments(documents, pages, translatedCounts),
+      translatorName: coverTranslatorName(approver),
+      signature: coverSignature(approver, loadTranslatorSignature()),
     });
     const translationPath = `${order.id}/translation-v${version}.pdf`;
     const certificationPath = `${order.id}/certification-v${version}.pdf`;

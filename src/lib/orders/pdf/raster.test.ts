@@ -41,7 +41,7 @@ describe("preview page png", () => {
     });
     expect(PREVIEW_WATERMARK).toContain("PREVIEW");
     const preview = await renderPdfPagePng(rendered.watermarkedPreview);
-    const clean = await renderPdfPagePng(rendered.cleanTranslation);
+    const clean = await renderPdfPagePng(rendered.cleanTranslation, 1);
     const previewTint = await blueTint(preview);
     const cleanTint = await blueTint(clean);
     expect(previewTint).toBeGreaterThan(500);
@@ -53,10 +53,14 @@ describe("preview page png", () => {
 async function blueTint(png: Uint8Array): Promise<number> {
   const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   let tinted = 0;
-  for (let i = 0; i < data.length; i += info.channels) {
-    const red = data[i] ?? 0;
-    const blue = data[i + 2] ?? 0;
-    if (blue > red + 8 && blue > 180 && red < 250) tinted += 1;
+  const footer = Math.floor(info.height * 0.9);
+  for (let y = 0; y < footer; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      const i = (y * info.width + x) * info.channels;
+      const red = data[i] ?? 0;
+      const blue = data[i + 2] ?? 0;
+      if (blue > red + 8 && blue > 180 && red < 250) tinted += 1;
+    }
   }
   return tinted;
 }

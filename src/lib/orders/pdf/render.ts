@@ -11,6 +11,7 @@ import {
   type RenderInput,
   type RenderPage,
 } from "./layout";
+import { drawCertificationPage, drawFinalFooter } from "./cover";
 import { blocksToParagraphs, finalizeBlocks, structurePage } from "./structure";
 
 export type { RenderInput, RenderPage } from "./layout";
@@ -238,13 +239,13 @@ function drawBody(
   page: PDFPage,
   faces: { upright: ReadyFace[]; italic: ReadyFace | null; regular: PDFFont },
   pageSpec: RenderPage,
-  pageCount: number,
+  options: { orderId: string; translationPages: number; certified: boolean },
 ): void {
   const { widthPt, heightPt } = pageSize(pageSpec);
   const margin = Math.min(48, widthPt * 0.08, heightPt * 0.08);
   const maxWidth = Math.max(40, widthPt - margin * 2);
   const blocks = blocksFor(pageSpec);
-  const footer = Math.max(28, margin * 0.7);
+  const footer = options.certified ? 48 : Math.max(28, margin * 0.7);
   let chosen: Paint[] = [];
   let size = 11;
   while (size >= 8) {
@@ -260,7 +261,16 @@ function drawBody(
     drawStyled(page, paint.text, paint.x, paint.y, paint.size, paint.color, paint.italic, faces.upright, faces.italic);
   }
 
-  page.drawText(`Page ${pageSpec.combinedPageNumber} of ${pageCount}`, {
+  if (options.certified) {
+    drawFinalFooter(page, faces.regular, {
+      orderId: options.orderId,
+      pageNumber: pageSpec.combinedPageNumber + 1,
+      pageCount: options.translationPages + 1,
+      width: widthPt,
+    });
+    return;
+  }
+  page.drawText(`Page ${pageSpec.combinedPageNumber} of ${options.translationPages}`, {
     x: margin,
     y: Math.max(16, margin / 2),
     size: 8,
@@ -280,7 +290,11 @@ async function renderTranslationPdf(input: RenderInput, watermark: boolean): Pro
     const { widthPt, heightPt } = pageSize(pageSpec);
     const page = doc.addPage([widthPt, heightPt]);
     const pageFaces = faces;
-    drawBody(page, pageFaces, { ...pageSpec, blocks: pageBlocks[index] }, ordered.length);
+    drawBody(page, pageFaces, { ...pageSpec, blocks: pageBlocks[index] }, {
+      orderId: input.orderId,
+      translationPages: ordered.length,
+      certified: !watermark,
+    });
     if (watermark) drawWatermark(page, faces.regular, widthPt, heightPt);
   });
 
@@ -289,36 +303,22 @@ async function renderTranslationPdf(input: RenderInput, watermark: boolean): Pro
 
 export async function renderCertificationPdf(input: RenderInput): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
-  doc.registerFontkit(stableFontkit());
-  const font = await doc.embedFont(fontFace("regular").bytes, { subset: true });
-  const page = doc.addPage([612, 792]);
-  const lines = [
-    "CredPronto",
-    "",
-    "Translator certification",
-    "",
-    `Order: ${input.orderId}`,
-    `Date: ${input.date}`,
-    `Language: ${input.sourceLanguage} to English`,
-    "",
-    "I certify that this English translation of the document submitted",
-    "with the order above was prepared by CredPronto's certified",
-    "translation process and, to the best of that process, is complete",
-    "and accurate. Names and dates follow the spellings the customer",
-    "confirmed.",
-    "",
-    "Signature: ______________________________",
-  ];
-
-  let y = 720;
-  for (const line of lines) {
-    if (line) {
-      page.drawText(line, { x: 64, y, size: 12, font, color: INK });
-    }
-    y -= 22;
-  }
-
+  await drawCertificationPage(doc, input);
   return doc.save();
+}
+
+/** Swap page 1 of a certified final for a newly drawn cover. Later pages stay. */
+export async function replaceCoverPage(cleanPdf: Uint8Array, cover: Uint8Array): Promise<Uint8Array> {
+  const merged = await PDFDocument.create();
+  const coverDoc = await PDFDocument.load(cover);
+  const bodyDoc = await PDFDocument.load(cleanPdf);
+  const bodyIndices = bodyDoc.getPageIndices().slice(bodyDoc.getPageCount() > 1 ? 1 : bodyDoc.getPageCount());
+  const pages = [
+    ...(await merged.copyPages(coverDoc, [0])),
+    ...(await merged.copyPages(bodyDoc, bodyIndices)),
+  ];
+  for (const page of pages) merged.addPage(page);
+  return merged.save();
 }
 
 /**

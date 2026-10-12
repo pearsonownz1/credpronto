@@ -21,6 +21,7 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/**": [
       "./src/lib/orders/pdf/NotoSans-Regular.ttf",
+      "./src/lib/orders/pdf/ata-logo.png",
       "./node_modules/@embedpdf/pdfium/**",
       "./node_modules/sharp/**",
       "./node_modules/@img/sharp-linux-x64/**",
