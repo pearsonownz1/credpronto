@@ -1,5 +1,6 @@
 import { analyzeOrder } from "./analysis";
 import {
+  customerEmail,
   getDelivery,
   getOrderById,
   latestPayment,
@@ -13,12 +14,13 @@ import { serviceDb, type Db } from "./storage";
 import type { OrderRecord } from "./types";
 
 export async function loadCustomerOrder(db: Db, order: OrderRecord): Promise<CustomerOrder> {
-  const [documents, confirmations, preview, payment, delivery] = await Promise.all([
+  const [documents, confirmations, preview, payment, delivery, email] = await Promise.all([
     listDocuments(db, order.id),
     listConfirmations(db, order.id),
     latestReadyPreview(db, order.id),
     latestPayment(db, order.id),
     getDelivery(db, order.id),
+    customerEmail(db, order.customerId),
   ]);
 
   return toCustomerOrder({
@@ -28,6 +30,7 @@ export async function loadCustomerOrder(db: Db, order: OrderRecord): Promise<Cus
     previewVersion: preview?.version ?? null,
     paymentStatus: payment?.status ?? null,
     deliveryStatus: delivery?.status ?? null,
+    email,
   });
 }
 

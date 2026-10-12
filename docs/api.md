@@ -12,7 +12,7 @@ The watermark is drawn in a separate render pass on every preview page: a repeat
 
 Signed URLs expire in 10 minutes. `translation.url` is the watermarked preview only.
 
-{ status, totalCents, unitPriceCents, billablePages, original: { url (10-min signed), pageCount, pages: [{ number, widthPt, heightPt }] }, translation: { url (10-min signed, watermarked preview only), pageCount, pages: [{ number, widthPt, heightPt }], version }, corrections: [{ id, documentId, page, quote, note, status, createdAt }] }
+{ status, totalCents, unitPriceCents, billablePages, original: { url (10-min signed), pageCount, pages: [{ number, widthPt, heightPt, documentId, documentIndex, documentName }] }, translation: { url (10-min signed, watermarked preview only), pageCount, pages: [{ number, widthPt, heightPt, documentId, documentIndex, documentName }], version }, corrections: [{ id, documentId, page, quote, note, status, createdAt }] }
 
 ```json
 {
@@ -23,12 +23,30 @@ Signed URLs expire in 10 minutes. `translation.url` is the watermarked preview o
   "original": {
     "url": "https://…",
     "pageCount": 3,
-    "pages": [{ "number": 1, "widthPt": 612, "heightPt": 792 }]
+    "pages": [
+      {
+        "number": 1,
+        "widthPt": 612,
+        "heightPt": 792,
+        "documentId": "…",
+        "documentIndex": 0,
+        "documentName": "diploma.pdf"
+      }
+    ]
   },
   "translation": {
     "url": "https://…",
     "pageCount": 3,
-    "pages": [{ "number": 1, "widthPt": 612, "heightPt": 792 }],
+    "pages": [
+      {
+        "number": 1,
+        "widthPt": 612,
+        "heightPt": 792,
+        "documentId": "…",
+        "documentIndex": 0,
+        "documentName": "diploma.pdf"
+      }
+    ],
     "version": 1
   },
   "corrections": [
@@ -46,6 +64,8 @@ Signed URLs expire in 10 minutes. `translation.url` is the watermarked preview o
 ```
 
 `page` on a correction is the combined PDF page number (`number` above). `quote` is the passage the customer highlighted. `404` when the token is unknown. `409` `{ "error": "Preview is not ready" }` before a preview exists.
+
+`documentId` is the upload that page came from. `documentIndex` is the 0-based index of that upload in `documents` on `GET /api/orders/[token]` (upload order). `documentName` is that document's `filename`. Original and translation pages share `number`, `documentId`, `documentIndex`, and `documentName`, because page N of the watermarked preview is page N of the combined original.
 
 ## `POST /api/orders`
 
@@ -76,6 +96,7 @@ Idempotent retry of analysis or translation. Safe to call more than once. Return
 ```json
 {
   "orderId": "…",
+  "email": "ada@example.com",
   "status": "quoted",
   "sourceLanguage": "es",
   "sourceLanguageConfidence": 0.92,
@@ -111,7 +132,7 @@ Idempotent retry of analysis or translation. Safe to call more than once. Return
 }
 ```
 
-`confirmations` has one row per document for each of `full_name`, `date_of_birth`, `parent_names`, `place_of_birth`, and `date_format`. `originalValue` is what the model read. `confirmedValue` is null until the customer confirms. `payment.status` is `pending`, `paid`, `paid_test`, `failed`, `canceled`, `expired`, or `refunded`. `delivery.status` is `pending`, `approved`, `delivered`, or `failed`.
+`email` is the customer address stored for the order. It is `null` only when that customer row is missing. `confirmations` has one row per document for each of `full_name`, `date_of_birth`, `parent_names`, `place_of_birth`, and `date_format`. `originalValue` is what the model read. `confirmedValue` is null until the customer confirms. `payment.status` is `pending`, `paid`, `paid_test`, `failed`, `canceled`, `expired`, or `refunded`. `delivery.status` is `pending`, `approved`, `delivered`, or `failed`.
 
 `sourceLanguageConfidence` is the lowest document confidence, from 0 to 1.
 
@@ -202,7 +223,9 @@ HTTP 503.
 
 `400` invalid signature. `503` `{ "error": "Payments not configured" }` when Stripe env is missing.
 
-## `GET /api/orders/[token]/download?file=translation|certification`
+## `GET /api/orders/[token]/download?file=translation|certification|original`
+
+`translation` and `certification` are the clean files in `finals`.
 
 | Payment | Delivery | Result |
 | --- | --- | --- |
@@ -215,6 +238,48 @@ HTTP 503.
 ```
 
 The URL is a 5-minute signed URL for the object in `finals` (`translation` → clean translated PDF, `certification` → certification page). A `downloaded` event is recorded. The URL is not stored.
+
+`file=original` returns the customer's own uploads from the private `originals` bucket (`documents.original_path`, not the combined PDF). The token is enough at any order status. Payment and certification are not checked. Each URL expires in 5 minutes (`expiresInSeconds` 300). A `downloaded` event is recorded with `file` set to `original` and `documentIds` listing the files that were signed. The response does not include storage paths.
+
+Pass `documentId` to sign one upload. When `documentId` is omitted and the order has one document, the body is that same single-file object. When `documentId` is omitted and the order has more than one document, the body is a list in upload order. `documentIndex` and `documentName` match the preview page fields (`documentName` is `documents[].filename`).
+
+One file (`documentId` set, or the only upload):
+
+```json
+{
+  "url": "https://…",
+  "expiresInSeconds": 300,
+  "documentId": "…",
+  "documentIndex": 0,
+  "documentName": "diploma.pdf"
+}
+```
+
+`documentIndex` stays the index in the full order. Asking for the second upload returns `"documentIndex": 1`.
+
+Several uploads, no `documentId`:
+
+```json
+{
+  "expiresInSeconds": 300,
+  "originals": [
+    {
+      "documentId": "…",
+      "documentIndex": 0,
+      "documentName": "diploma.pdf",
+      "url": "https://…"
+    },
+    {
+      "documentId": "…",
+      "documentIndex": 1,
+      "documentName": "transcript.pdf",
+      "url": "https://…"
+    }
+  ]
+}
+```
+
+`404` `{ "error": "Unknown document." }` when `documentId` is not on the order. `404` `{ "error": "That file is not ready" }` when the order has no uploads. `400` `{ "error": "file must be translation, certification, or original" }` for any other `file`.
 
 ## Auth
 
