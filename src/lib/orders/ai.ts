@@ -23,6 +23,9 @@ export async function generateObject<T>(
     return result.output;
   } catch (error) {
     const message = error instanceof Error ? error.message : "The model did not respond";
+    const cause =
+      error instanceof Error && error.cause instanceof Error ? ` (cause: ${error.cause.message})` : "";
+    console.error(`AI model ${translationModelId()} failed: ${message}${cause}`, error);
     throw new AiUnavailableError(message);
   }
 }
