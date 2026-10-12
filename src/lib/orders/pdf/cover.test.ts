@@ -13,11 +13,11 @@ import {
 } from "./cover";
 
 describe("certification cover", () => {
-  it("uses the approving staff member, then the configured translator", () => {
-    expect(coverTranslatorName("Ada Lovelace", "Configured")).toBe("Ada Lovelace");
-    expect(coverTranslatorName("  ", "Configured")).toBe("Configured");
+  it("prints the certification team, never a person or an email", () => {
+    expect(coverTranslatorName("Ada Lovelace", "Configured")).toBe("CredPronto Certification Team");
+    expect(coverTranslatorName("  ", "Configured")).toBe("CredPronto Certification Team");
     expect(coverTranslatorName(null, "  ")).toBe("CredPronto Certification Team");
-    expect(coverTranslatorName("guyp+cpadmin@mail.grokbot.com", "")).toBe("CredPronto Certification Team");
+    expect(coverTranslatorName("staff+cpadmin@mail.example.com", "")).toBe("CredPronto Certification Team");
   });
 
   it("keeps a signature only for the configured translator", () => {

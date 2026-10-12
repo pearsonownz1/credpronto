@@ -1,9 +1,12 @@
-import { PDFDocument, StandardFonts, degrees, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { PDFDocument, StandardFonts, degrees, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
+import { BRAND_FOOTER, BRAND_SIGNER } from "../brand";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT, PREVIEW_WATERMARK, PREVIEW_WATERMARK_OPACITY, previewWatermarkRgb } from "../constants";
 import { usEquivalency } from "../grades";
 import type { DiplomaCredential, EvaluationResult } from "../types";
+import { loadAtaLogo, loadBrandLogo } from "./cover";
 import { faceForCodePoint, fontFace, stableFontkit, type FontFaceId } from "./font";
 import { wrapLines } from "./layout";
+import { applyCredProntoPdfMetadata } from "./metadata";
 
 const BLUE = rgb(31 / 255, 94 / 255, 255 / 255);
 const BLUE_LIGHT = rgb(234 / 255, 240 / 255, 255 / 255);
@@ -179,31 +182,43 @@ function fit(kit: Kit, text: string, size: number, weight: Weight, maxWidth: num
   return `${cut}…`;
 }
 
-function drawHeader(page: PDFPage, kit: Kit, meta: EvaluationReportMeta, kind: string): number {
-  const top = LETTER_HEIGHT_PT - 46;
-  page.drawRectangle({ x: MARGIN, y: top - 12, width: 14, height: 14, color: BLUE });
-  page.drawLine({
-    start: { x: MARGIN + 4, y: top - 1 },
-    end: { x: MARGIN + 10, y: top - 1 },
-    thickness: 1.2,
-    color: WHITE,
+type Logos = { brand: PDFImage; ata: PDFImage };
+
+async function loadLogos(doc: PDFDocument): Promise<Logos> {
+  const brand = await doc.embedPng(loadBrandLogo());
+  const ata = await doc.embedPng(loadAtaLogo());
+  return { brand, ata };
+}
+
+function drawHeader(page: PDFPage, kit: Kit, meta: EvaluationReportMeta, kind: string, logos: Logos): number {
+  const contentTop = LETTER_HEIGHT_PT - 40;
+  const brandHeight = 22;
+  const brandWidth = brandHeight * (logos.brand.width / logos.brand.height);
+  page.drawImage(logos.brand, {
+    x: MARGIN,
+    y: contentTop - brandHeight,
+    width: brandWidth,
+    height: brandHeight,
   });
-  page.drawLine({
-    start: { x: MARGIN + 10, y: top - 1 },
-    end: { x: MARGIN + 10, y: top - 8 },
-    thickness: 1.2,
-    color: WHITE,
+
+  const ataHeight = 24;
+  const ataWidth = ataHeight * (logos.ata.width / logos.ata.height);
+  const ataBottom = contentTop - ataHeight;
+  page.drawImage(logos.ata, {
+    x: LETTER_WIDTH_PT - MARGIN - ataWidth,
+    y: ataBottom,
+    width: ataWidth,
+    height: ataHeight,
   });
-  kit.draw(page, "CredPronto", MARGIN + 20, top - 10, 13, INK, "bold");
 
   const lines = [`Report ${meta.reportId}`, kind, `Issued ${meta.issued}`];
-  let y = top - 1;
+  let y = ataBottom - 14;
   for (const line of lines) {
     const size = 8;
     kit.draw(page, line, LETTER_WIDTH_PT - MARGIN - kit.width(line, size, "regular"), y, size, MUTED, "regular");
     y -= 11;
   }
-  const rule = top - 32;
+  const rule = Math.min(contentTop - brandHeight - 10, y + 4);
   page.drawLine({
     start: { x: MARGIN, y: rule },
     end: { x: LETTER_WIDTH_PT - MARGIN, y: rule },
@@ -213,33 +228,41 @@ function drawHeader(page: PDFPage, kit: Kit, meta: EvaluationReportMeta, kind: s
   return rule - 26;
 }
 
-function drawFooter(page: PDFPage, kit: Kit, reportId: string, pageNumber: number, pageCount: number): void {
-  const y = 42;
+function drawFooter(page: PDFPage, kit: Kit): void {
+  const footerY = 28;
+  const ruleY = footerY + 16;
   page.drawLine({
-    start: { x: MARGIN, y: y + 28 },
-    end: { x: LETTER_WIDTH_PT - MARGIN, y: y + 28 },
+    start: { x: MARGIN, y: ruleY },
+    end: { x: LETTER_WIDTH_PT - MARGIN, y: ruleY },
     thickness: 0.6,
     color: LINE,
   });
-  kit.draw(page, "[Evaluator signature]", MARGIN, y + 14, 9, INK, "bold");
-  kit.draw(page, "Credential Evaluator, CredPronto", MARGIN, y, 8, MUTED, "regular");
-  const verify = "Verify at credpronto.com/verify";
-  const pageLabel = `${reportId} · Page ${pageNumber} of ${pageCount}`;
-  kit.draw(page, verify, LETTER_WIDTH_PT - MARGIN - kit.width(verify, 8, "regular"), y + 14, 8, MUTED, "regular");
-  kit.draw(page, pageLabel, LETTER_WIDTH_PT - MARGIN - kit.width(pageLabel, 8, "regular"), y, 8, MUTED, "regular");
+  kit.draw(page, BRAND_SIGNER, MARGIN, ruleY + 8, 8, INK, "bold");
+  let size = 8;
+  let width = kit.width(BRAND_FOOTER, size, "regular");
+  while (width > CONTENT_W && size > 6) {
+    size -= 0.25;
+    width = kit.width(BRAND_FOOTER, size, "regular");
+  }
+  const x = MARGIN + Math.max(0, (CONTENT_W - width) / 2);
+  kit.draw(page, BRAND_FOOTER, x, footerY, size, MUTED, "regular");
 }
 
-function stampFooters(doc: PDFDocument, kit: Kit, reportId: string): void {
-  const pages = doc.getPages();
-  pages.forEach((page, index) => drawFooter(page, kit, reportId, index + 1, pages.length));
+function stampFooters(doc: PDFDocument, kit: Kit): void {
+  for (const page of doc.getPages()) drawFooter(page, kit);
 }
 
-async function finish(doc: PDFDocument, kit: Kit, reportId: string, watermark: boolean): Promise<Uint8Array> {
-  stampFooters(doc, kit, reportId);
+function kitSample(result: unknown, meta: EvaluationReportMeta): string {
+  return `${JSON.stringify(result)} ${meta.reportId} ${meta.issued} ${EVALUATION_ADVISORY} ${BRAND_FOOTER} ${BRAND_SIGNER}`;
+}
+
+async function finish(doc: PDFDocument, kit: Kit, watermark: boolean): Promise<Uint8Array> {
+  stampFooters(doc, kit);
   if (watermark) {
     const font = await doc.embedFont(StandardFonts.Helvetica);
     for (const page of doc.getPages()) drawWatermark(page, font);
   }
+  applyCredProntoPdfMetadata(doc);
   return doc.save();
 }
 
@@ -281,8 +304,8 @@ function drawFacts(
   return bottom - 12;
 }
 
-function diplomaPage(page: PDFPage, kit: Kit, credential: DiplomaCredential, meta: EvaluationReportMeta): void {
-  let y = drawHeader(page, kit, meta, "Diploma evaluation");
+function diplomaPage(page: PDFPage, kit: Kit, credential: DiplomaCredential, meta: EvaluationReportMeta, logos: Logos): void {
+  let y = drawHeader(page, kit, meta, "Diploma evaluation", logos);
   kit.draw(page, "Educational Credential Evaluation", MARGIN, y, 16, INK, "bold");
   y -= 18;
   kit.draw(page, `Prepared for ${credential.applicant}`, MARGIN, y, 10, MUTED, "regular");
@@ -383,11 +406,12 @@ type CourseCursor = {
   y: number;
   kit: Kit;
   meta: EvaluationReportMeta;
+  logos: Logos;
 };
 
 function newCoursePage(cursor: CourseCursor, repeatColumns: boolean): void {
   cursor.page = cursor.doc.addPage([LETTER_WIDTH_PT, LETTER_HEIGHT_PT]);
-  cursor.y = drawHeader(cursor.page, cursor.kit, cursor.meta, "Course-by-course evaluation");
+  cursor.y = drawHeader(cursor.page, cursor.kit, cursor.meta, "Course-by-course evaluation", cursor.logos);
   if (repeatColumns) cursor.y = drawCourseColumns(cursor.page, cursor.kit, cursor.y);
 }
 
@@ -418,14 +442,15 @@ async function renderDiploma(
   watermark: boolean,
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
-  const kit = await makeKit(doc, `${JSON.stringify(result)} ${meta.reportId} ${meta.issued} ${EVALUATION_ADVISORY}`);
+  const logos = await loadLogos(doc);
+  const kit = await makeKit(doc, kitSample(result, meta));
   const credentials = result.credentials.length > 0 ? result.credentials : [];
   for (const credential of credentials) {
     const page = doc.addPage([LETTER_WIDTH_PT, LETTER_HEIGHT_PT]);
-    diplomaPage(page, kit, credential, meta);
+    diplomaPage(page, kit, credential, meta, logos);
   }
   if (doc.getPageCount() === 0) doc.addPage([LETTER_WIDTH_PT, LETTER_HEIGHT_PT]);
-  return finish(doc, kit, meta.reportId, watermark);
+  return finish(doc, kit, watermark);
 }
 
 async function renderCourses(
@@ -434,15 +459,17 @@ async function renderCourses(
   watermark: boolean,
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
-  const kit = await makeKit(doc, `${JSON.stringify(result)} ${meta.reportId} ${meta.issued} ${EVALUATION_ADVISORY}`);
+  const logos = await loadLogos(doc);
+  const kit = await makeKit(doc, kitSample(result, meta));
   const cursor: CourseCursor = {
     doc,
     page: doc.addPage([LETTER_WIDTH_PT, LETTER_HEIGHT_PT]),
     y: 0,
     kit,
     meta,
+    logos,
   };
-  cursor.y = drawHeader(cursor.page, kit, meta, "Course-by-course evaluation");
+  cursor.y = drawHeader(cursor.page, kit, meta, "Course-by-course evaluation", logos);
   kit.draw(cursor.page, "Course-by-Course Evaluation", MARGIN, cursor.y, 16, INK, "bold");
   cursor.y -= 18;
   const subject = `${result.applicant} · ${result.institution}, ${result.country}`;
@@ -473,7 +500,7 @@ async function renderCourses(
 
   const columns = columnStarts();
   const courseCol = columns[0];
-  if (!courseCol) return finish(doc, kit, meta.reportId, watermark);
+  if (!courseCol) return finish(doc, kit, watermark);
 
   const paintCells = (cells: string[], strong: boolean, rowH: number) => {
     ensureRoom(cursor, rowH + 4);
@@ -550,7 +577,7 @@ async function renderCourses(
     cursor.y -= 11;
   }
 
-  return finish(doc, kit, meta.reportId, watermark);
+  return finish(doc, kit, watermark);
 }
 
 function pageYear(cursor: CourseCursor, label: string): void {

@@ -1,11 +1,12 @@
 import { ADDON_CATALOG } from "./addons";
+import { BRAND_ADDRESS, BRAND_FOOTER } from "./brand";
 import { lineItemsForOrder } from "./evaluation-price";
 import { languageLabel } from "./languages";
 import type { AddonId, EvaluationService } from "./types";
 
 /** Hosted wordmark. Email clients do not render SVG. */
 export const EMAIL_LOGO_URL = "https://www.credpronto.com/logo-1080.png";
-export const EMAIL_FOOTER_ADDRESS = "2520 Venture Oaks Way, Suite 120, Sacramento, CA 95833";
+export const EMAIL_FOOTER_ADDRESS = BRAND_ADDRESS;
 export const EMAIL_SUPPORT = "support@credpronto.com";
 
 const FONT = "Geist,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif";
@@ -272,7 +273,7 @@ function layout(input: { preheader: string; body: string }): string {
 <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="width:560px;max-width:100%">
 <tr><td style="padding:0 4px 18px"><img src="${EMAIL_LOGO_URL}" width="26" height="26" alt="CredPronto" style="display:block;border:0;height:26px;width:26px"></td></tr>
 <tr><td style="background:#fff;border:1px solid #E5E8EE;border-radius:4px;padding:32px 36px;color:#0B1220;font-size:15px;line-height:1.6">${input.body}</td></tr>
-<tr><td style="padding:20px 4px;color:#5B6575;font-size:12px;line-height:1.6">Questions? Just reply to this email or write to <a href="mailto:${EMAIL_SUPPORT}" style="color:#5B6575">${EMAIL_SUPPORT}</a>.<br>CredPronto · ${EMAIL_FOOTER_ADDRESS}</td></tr>
+<tr><td style="padding:20px 4px;color:#5B6575;font-size:12px;line-height:1.6">Questions? Just reply to this email or write to <a href="mailto:${EMAIL_SUPPORT}" style="color:#5B6575">${EMAIL_SUPPORT}</a>.<br>${BRAND_FOOTER}</td></tr>
 </table></td></tr></table></body></html>`;
 }
 

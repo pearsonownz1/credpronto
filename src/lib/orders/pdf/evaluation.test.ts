@@ -90,7 +90,9 @@ describe("evaluation PDFs", () => {
     expect(label).toBeLessThan(equivalency);
     expect(clean).toContain("DOCUMENTS REVIEWED");
     expect(clean).toContain("fr_diplome-licence.pdf");
-    expect(clean).toContain("Credential Evaluator, CredPronto");
+    expect(clean).toContain("CredPronto Certification Team");
+    expect(clean).toContain("CredPronto · credpronto.com · 2520 Venture Oaks Way, Suite 120, Sacramento, CA 95833");
+    expect(clean).not.toContain("Credential Evaluator");
     expect(clean).not.toContain(PREVIEW_WATERMARK);
     const painted = pdfOperators(files.clean);
     const equivalencyAt = painted.indexOf("Bachelor");

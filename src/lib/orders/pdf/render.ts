@@ -12,6 +12,7 @@ import {
   type RenderPage,
 } from "./layout";
 import { drawCertificationPage, drawFinalFooter } from "./cover";
+import { applyCredProntoPdfMetadata } from "./metadata";
 import { blocksToParagraphs, finalizeBlocks, structurePage } from "./structure";
 
 export type { RenderInput, RenderPage } from "./layout";
@@ -298,12 +299,14 @@ async function renderTranslationPdf(input: RenderInput, watermark: boolean): Pro
     if (watermark) drawWatermark(page, faces.regular, widthPt, heightPt);
   });
 
+  applyCredProntoPdfMetadata(doc);
   return doc.save();
 }
 
 export async function renderCertificationPdf(input: RenderInput): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   await drawCertificationPage(doc, input);
+  applyCredProntoPdfMetadata(doc);
   return doc.save();
 }
 
@@ -318,6 +321,7 @@ export async function replaceCoverPage(cleanPdf: Uint8Array, cover: Uint8Array):
     ...(await merged.copyPages(bodyDoc, bodyIndices)),
   ];
   for (const page of pages) merged.addPage(page);
+  applyCredProntoPdfMetadata(merged);
   return merged.save();
 }
 
@@ -335,6 +339,7 @@ async function prependPdf(cover: Uint8Array, body: Uint8Array): Promise<Uint8Arr
     ...(await merged.copyPages(bodyDoc, bodyDoc.getPageIndices())),
   ];
   for (const page of pages) merged.addPage(page);
+  applyCredProntoPdfMetadata(merged);
   return merged.save();
 }
 
