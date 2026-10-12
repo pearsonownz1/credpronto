@@ -130,7 +130,6 @@ describe("partner orders", () => {
       externalRef: "crm-1842",
       billablePages: 3,
       unitPriceCents: 995,
-      expeditedUnit: "order",
       totalCents: 2985,
       currency: "usd",
       payment: { status: "paid" },
@@ -221,25 +220,29 @@ describe("partner orders", () => {
     expect(ready.delayed).toBe(false);
   });
 
-  it("rejects expedited on a translation API order and accepts it for an evaluation", () => {
-    const translation = new FormData();
-    translation.set("addons", JSON.stringify(["expedited"]));
-    expect(() => readPartnerAddonBody(translation, "translation")).toThrow(HttpError);
-    expect(() => readPartnerAddonBody(translation, "translation")).toThrow("Expedited is no longer offered");
+  it("rejects expedited on every API order", () => {
+    for (const service of ["translation", "evaluation"] as const) {
+      const form = new FormData();
+      form.set("addons", JSON.stringify(["expedited"]));
+      expect(() => readPartnerAddonBody(form, service)).toThrow(HttpError);
+      expect(() => readPartnerAddonBody(form, service)).toThrow("Expedited is no longer offered");
+    }
 
     const diploma = new FormData();
     diploma.set("addons", JSON.stringify(["notarization", "expedited"]));
-    expect(readPartnerAddonBody(diploma, "evaluation")).toMatchObject({
-      addons: ["notarization", "expedited"],
-    });
+    expect(() => readPartnerAddonBody(diploma, "evaluation")).toThrow("Expedited is no longer offered");
 
     const course = new FormData();
     course.append("addons", "expedited");
-    expect(readPartnerAddonBody(course, "evaluation")?.addons).toEqual(["expedited"]);
-    expect(toPartnerOrder({ order: order({ serviceType: "evaluation" }), paymentStatus: null, detail: false, qa: null }).expeditedUnit).toBe(
-      "order",
-    );
-    expect(() => readPartnerAddonBody(course, "translation")).toThrow("Expedited is no longer offered");
-    expect(readPartnerAddonBody(new FormData(), "translation")).toBeNull();
+    expect(() => readPartnerAddonBody(course, "evaluation")).toThrow("Expedited is no longer offered");
+    const quoted = toPartnerOrder({
+      order: order({ serviceType: "evaluation", service: "diploma", totalCents: 1995 }),
+      paymentStatus: null,
+      detail: false,
+      qa: null,
+    });
+    expect(quoted).not.toHaveProperty("expeditedUnit");
+    expect(quoted.totalCents).toBe(1995);
+    expect(readPartnerAddonBody(new FormData(), "evaluation")).toBeNull();
   });
 });

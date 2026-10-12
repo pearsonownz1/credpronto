@@ -1,7 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { checkoutPayload } from "./addon-panel";
-import { withoutExpedited } from "@/lib/orders/addons";
 import { MobileBuyBar, OrderRail } from "./preview-chrome";
 import type { AddonPanelState } from "./addon-panel";
 import {
@@ -98,8 +97,8 @@ describe("preview order", () => {
     expect(html).toContain("Buy &amp; download — $30.65");
   });
 
-  it("drops Expedited from a translation preview and still sends notarization", () => {
-    const options = withoutExpedited(CERTIFICATE_PREVIEW.addonOptions ?? [], true);
+  it("offers notarization and mail without Expedited", () => {
+    const options = CERTIFICATE_PREVIEW.addonOptions ?? [];
     expect(options.map((option) => option.label)).toEqual(["Notarization", "USPS Priority hard copy"]);
     const html = renderToStaticMarkup(
       <OrderRail
@@ -123,9 +122,6 @@ describe("preview order", () => {
         country: "US",
       }),
     ).toEqual({ addons: ["notarization"] });
-    expect(withoutExpedited(CERTIFICATE_PREVIEW.addonOptions ?? [], false).map((option) => option.id)).toContain(
-      "expedited",
-    );
   });
 
   it("pluralizes a one-page sidebar price and the mobile count", () => {

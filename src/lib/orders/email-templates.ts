@@ -130,7 +130,7 @@ export function receiptLineItems(input: {
 
   for (const addon of input.addons) {
     const catalog = ADDON_CATALOG.find((item) => item.id === addon.id);
-    const name = catalog?.label ?? addon.id;
+    const name = catalog?.label ?? (addon.id === "expedited" ? "Expedited" : addon.id);
     const detail = addon.quantity > 1 ? ` · ${addon.quantity} × ${formatEmailMoney(addon.unitCents)}` : "";
     lines.push({ label: `${name}${detail}`, amountCents: addon.totalCents });
   }

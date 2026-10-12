@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { withoutExpedited } from "@/lib/orders/addons";
 import type { ShippingAddress } from "@/lib/orders/types";
 import {
   formatMoney,
@@ -87,7 +86,7 @@ export function useAddonPanel(
   order: PreviewOrder,
   onBuy?: (body: CheckoutBody) => void | Promise<void>,
 ): AddonPanelState {
-  const options = withoutExpedited(order.addonOptions ?? [], order.product !== "evaluation");
+  const options = order.addonOptions ?? [];
   const [selected, setSelected] = useState<string[]>(() =>
     (order.addons ?? []).filter((id) => options.some((option) => option.id === id)),
   );

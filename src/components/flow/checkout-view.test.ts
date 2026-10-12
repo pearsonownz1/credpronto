@@ -79,8 +79,8 @@ describe("evaluation checkout", () => {
     expect(html).toContain("Evaluation report");
     expect(html).toContain("CredPronto Certification Team");
     expect(html).toContain("Pay $19.95");
-    expect(html).toContain("Expedited");
-    expect(html).toContain('data-testid="addon-expedited"');
+    expect(html).not.toContain("Expedited");
+    expect(html).not.toContain('data-testid="addon-expedited"');
     expect(html).not.toContain("$29.90");
     expect(html).not.toContain("Certificate of accuracy");
     expect(html).toContain("1 page");
