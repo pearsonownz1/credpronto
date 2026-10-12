@@ -343,9 +343,12 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
       const stillOpen = (await listCorrections(db, orderId)).filter((correction) => correction.status === "open");
       if (stillOpen.length === 0) {
         await updateOrder(db, orderId, { status: "preview_ready", review_reason: null });
-        return;
+      } else {
+        await updateOrder(db, orderId, { status: "correction_requested" });
       }
-      await updateOrder(db, orderId, { status: "correction_requested" });
+      const { notifyLifecycle } = await import("./webhook-delivery");
+      await notifyLifecycle(db, orderId, "order.preview_ready");
+      return;
     } catch (error) {
       await markPreview(db, orderId, version, "failed");
       const decision = decideTranslationFailure({

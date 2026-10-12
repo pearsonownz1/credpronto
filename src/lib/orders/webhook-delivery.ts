@@ -8,11 +8,25 @@ import {
   webhookEndpointForUser,
   type WebhookEndpointRow,
 } from "./integrations-db";
-import { credProntoSignature, nextRetrySeconds, webhookBody, type WebhookEvent } from "./outbound-webhook";
+import { HttpError } from "./errors";
+import {
+  credProntoSignature,
+  nextRetrySeconds,
+  webhookBody,
+  type LifecycleWebhookEvent,
+  type WebhookEvent,
+  type WebhookLastDelivery,
+} from "./outbound-webhook";
+
+export const WEBHOOK_TIMEOUT_MS = 5_000;
 
 type Attempt = { ok: boolean; status: number | null };
 
-async function postWebhook(endpoint: WebhookEndpointRow, body: string): Promise<Attempt> {
+export async function postSignedWebhook(
+  endpoint: WebhookEndpointRow,
+  body: string,
+  timeoutMs?: number,
+): Promise<Attempt> {
   const timestamp = Math.floor(Date.now() / 1000);
   try {
     const response = await fetch(endpoint.url, {
@@ -22,6 +36,7 @@ async function postWebhook(endpoint: WebhookEndpointRow, body: string): Promise<
         "CredPronto-Signature": credProntoSignature(endpoint.signingSecret, timestamp, body),
       },
       body,
+      signal: timeoutMs == null ? undefined : AbortSignal.timeout(timeoutMs),
     });
     return { ok: response.ok, status: response.status };
   } catch {
@@ -44,7 +59,7 @@ async function sendBody(
   attempt: number,
   existingId: string | null,
 ): Promise<void> {
-  const result = await postWebhook(endpoint, body);
+  const result = await postSignedWebhook(endpoint, body);
   const status = result.ok ? "succeeded" : nextRetrySeconds(attempt) == null ? "failed" : "pending";
   const nextRetryAt = result.ok ? null : retryAt(attempt);
   if (existingId) {
@@ -101,6 +116,69 @@ export async function retryDueWebhooks(db: Db): Promise<void> {
     });
     await sendBody(db, endpoint, order.id, row.event, body, nextAttempt, row.id);
   }
+}
+
+/** One signed POST with a short timeout. The last result is stored. Failures stay in the caller. */
+export async function notifyLifecycle(db: Db, orderId: string, event: LifecycleWebhookEvent): Promise<void> {
+  try {
+    const order = await getOrderById(db, orderId);
+    if (!order?.userId) return;
+    const endpoint = await webhookEndpointForUser(db, order.userId);
+    if (!endpoint) return;
+    const createdAt = new Date().toISOString();
+    const body = webhookBody({
+      id: `evt_${randomUUID()}`,
+      type: event,
+      createdAt,
+      orderId: order.id,
+      status: order.status,
+      externalRef: order.externalRef,
+    });
+    const result = await postSignedWebhook(endpoint, body, WEBHOOK_TIMEOUT_MS);
+    await insertWebhookDelivery(db, {
+      endpointId: endpoint.id,
+      orderId: order.id,
+      event,
+      attempt: 1,
+      status: result.ok ? "succeeded" : "failed",
+      responseStatus: result.status,
+      nextRetryAt: null,
+    });
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "webhook delivery failed");
+  }
+}
+
+/** Signed test ping to the saved URL. The full secret is not returned. */
+export async function sendTestWebhook(db: Db, userId: string): Promise<WebhookLastDelivery> {
+  const endpoint = await webhookEndpointForUser(db, userId);
+  if (!endpoint) throw new HttpError("Save a webhook URL first", 404, "not_found");
+  const createdAt = new Date().toISOString();
+  const body = webhookBody({
+    id: `evt_${randomUUID()}`,
+    type: "webhook.test",
+    createdAt,
+    orderId: null,
+    status: "test",
+    externalRef: null,
+  });
+  const result = await postSignedWebhook(endpoint, body, WEBHOOK_TIMEOUT_MS);
+  const delivery: WebhookLastDelivery = {
+    status: result.ok ? "succeeded" : "failed",
+    event: "webhook.test",
+    at: createdAt,
+    responseStatus: result.status,
+  };
+  await insertWebhookDelivery(db, {
+    endpointId: endpoint.id,
+    orderId: null,
+    event: "webhook.test",
+    attempt: 1,
+    status: result.ok ? "succeeded" : "failed",
+    responseStatus: result.status,
+    nextRetryAt: null,
+  });
+  return delivery;
 }
 
 export async function notifyOrder(db: Db, orderId: string, event: WebhookEvent): Promise<void> {

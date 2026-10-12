@@ -18,11 +18,11 @@ test("integrations shows keys, webhook, card, orders, and quick start", async ({
 
   await expect(page.getByTestId("event-order.quoted")).toBeVisible();
   await expect(page.getByTestId("event-order.quoted")).toHaveAttribute("data-available", "true");
-  await expect(page.getByTestId("event-order.preview_ready")).toHaveAttribute("data-available", "false");
-  await expect(page.getByTestId("event-order.paid")).toBeVisible();
-  await expect(page.getByTestId("event-order.completed")).toBeVisible();
+  await expect(page.getByTestId("event-order.preview_ready")).toHaveAttribute("data-available", "true");
+  await expect(page.getByTestId("event-order.paid")).toHaveAttribute("data-available", "true");
+  await expect(page.getByTestId("event-order.completed")).toHaveAttribute("data-available", "true");
   await expect(page.getByTestId("event-order.delivered")).toHaveCount(0);
-  await expect(page.getByTestId("webhook-events-soon")).toContainText("coming soon");
+  await expect(page.getByTestId("webhook-events-soon")).toHaveCount(0);
   await expect(page.getByTestId("quick-start")).toContainText("Authorization: Bearer <key>");
   await expect(page.getByTestId("quick-start")).toContainText("curl https://www.credpronto.com/api/v1/orders");
   await expect(page.getByTestId("quick-start")).toContainText("CredPronto-Signature");
