@@ -4,6 +4,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { orderHubStep } from "@/lib/flow/present";
 import { writeToken } from "@/lib/flow/session";
+import { GoogleAdsConversion } from "@/components/google-ads-conversion";
 import { DownloadStates } from "./download-states";
 import { ProcessingView } from "./processing-view";
 import { QuoteView } from "./quote-view";
@@ -40,7 +41,12 @@ export function OrderHub() {
   }
 
   if (checkout === "success" || (order && view === "download")) {
-    return <DownloadStates token={token} />;
+    return (
+      <>
+        <GoogleAdsConversion token={token} enabled={checkout === "success"} />
+        <DownloadStates token={token} />
+      </>
+    );
   }
 
   if (loading && !order) {
