@@ -147,6 +147,21 @@ function paragraphsOf(value: unknown): string[] {
   return paragraphs.filter((item): item is string => typeof item === "string");
 }
 
+function equivalencyCredentials(value: unknown): StaffDetail["equivalencyCredentials"] {
+  if (!value || typeof value !== "object") return [];
+  const result = value as Record<string, unknown>;
+  if (result.kind !== "diploma" || !Array.isArray(result.credentials)) return [];
+  return result.credentials.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const credential = entry as Record<string, unknown>;
+    const name = text(credential.credential);
+    const field = text(credential.field);
+    const usEquivalency = text(credential.usEquivalency);
+    if (!name || !field || !usEquivalency) return [];
+    return [{ credential: name, field, usEquivalency }];
+  });
+}
+
 export function parseStaffDetail(body: unknown): StaffDetail | null {
   if (!body || typeof body !== "object") return null;
   const row = body as Record<string, unknown>;
@@ -211,6 +226,7 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
     currency: text(row.currency) ?? "usd",
     createdAt,
     reviewReason: text(row.reviewReason),
+    equivalencyCredentials: equivalencyCredentials(row.evaluationResult),
     filename,
     pages,
     corrections,

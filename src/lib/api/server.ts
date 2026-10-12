@@ -5,9 +5,15 @@ import { errorMessage, type AdminList, type ApiResult, type CustomerOrder, type 
 import { mockAdminList, mockNotes, mockOrdersFor, mockStaffDetail } from "@/lib/account/mock-data";
 import { currentOrigin, getAccount, isMockMode } from "@/lib/account/session";
 
-export function adminOrdersPath(query: { status?: string | null; limit?: number; offset?: number } = {}): string {
+export function adminOrdersPath(query: {
+  status?: string | null;
+  reviewReason?: string | null;
+  limit?: number;
+  offset?: number;
+} = {}): string {
   const params = new URLSearchParams();
   if (query.status) params.set("status", query.status);
+  if (query.reviewReason) params.set("reviewReason", query.reviewReason);
   if (query.limit != null) params.set("limit", String(query.limit));
   if (query.offset != null) params.set("offset", String(query.offset));
   const qs = params.toString();
@@ -52,6 +58,7 @@ export async function listMyOrders(): Promise<ApiResult<{ orders: CustomerOrder[
 
 export async function listAdminOrders(query: {
   status?: string | null;
+  reviewReason?: string | null;
   limit?: number;
   offset?: number;
 } = {}): Promise<ApiResult<AdminList>> {

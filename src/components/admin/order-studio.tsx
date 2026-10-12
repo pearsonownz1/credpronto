@@ -8,6 +8,7 @@ import { activityFor } from "@/lib/account/activity";
 import { formatOrderDate, formatOrderMoney } from "@/lib/account/present";
 import {
   addNote,
+  assignEquivalency,
   approveOrder,
   notarizeOrder,
   patchOrderTranslation,
@@ -17,6 +18,7 @@ import {
   shipOrder,
 } from "@/lib/api/mutations";
 import type { StaffDetail, StaffNote } from "@/lib/api/types";
+import { EQUIVALENCY_UNMAPPED, PENDING_EQUIVALENCY } from "@/lib/orders/equivalency";
 import { languageLabel } from "@/lib/orders/languages";
 import type { PreviewOrder, PreviewPageSize } from "@/components/preview/preview-order";
 import { humanStatus } from "@/components/admin/orders-board";
@@ -47,6 +49,13 @@ export function OrderStudio({
   const [thread, setThread] = useState(notes);
   const [note, setNote] = useState("");
   const [language, setLanguage] = useState(detail.sourceLanguage ?? "");
+  const [equivalencies, setEquivalencies] = useState(() =>
+    detail.equivalencyCredentials.length > 0
+      ? detail.equivalencyCredentials.map((item) =>
+          item.usEquivalency === PENDING_EQUIVALENCY ? "" : item.usEquivalency,
+        )
+      : [""],
+  );
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -213,6 +222,51 @@ export function OrderStudio({
         pending={pending}
         setPending={setPending}
       />
+
+      {detail.reviewReason === EQUIVALENCY_UNMAPPED ? (
+        <form
+          className="grid gap-3 rounded-[var(--cp-radius)] border border-line bg-white p-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void run("equivalency", async () => {
+              const result = await assignEquivalency(detail.id, equivalencies);
+              return result.ok
+                ? { ok: true, message: "Equivalency saved. The clean report is ready for approval." }
+                : { ok: false, error: result.error };
+            });
+          }}
+        >
+          <p className="text-sm font-semibold">U.S. equivalency</p>
+          <p className="text-sm text-ink-muted">
+            The preview says pending staff review. Set each credential before the clean report can be released.
+          </p>
+          {equivalencies.map((value, index) => {
+            const credential = detail.equivalencyCredentials[index];
+            return (
+              <label key={`${credential?.credential ?? "degree"}-${index}`} className="grid gap-1 text-sm">
+                {credential ? `${credential.credential} · ${credential.field}` : `Degree ${index + 1}`}
+                <input
+                  value={value}
+                  onChange={(event) => {
+                    const next = [...equivalencies];
+                    next[index] = event.target.value;
+                    setEquivalencies(next);
+                  }}
+                  placeholder="Bachelor's degree"
+                  className="h-9 rounded-[var(--cp-radius)] border border-line px-2"
+                />
+              </label>
+            );
+          })}
+          <button
+            type="submit"
+            disabled={pending !== null}
+            className="h-9 justify-self-start rounded-[var(--cp-radius)] bg-primary px-3 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {pending === "equivalency" ? "Saving…" : "Save equivalency"}
+          </button>
+        </form>
+      ) : null}
 
       {detail.status === "needs_review" ? (
         <form

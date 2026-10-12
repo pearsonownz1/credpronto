@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { assembleCourse, assembleDiploma } from "./evaluation";
+import { applyDiplomaEquivalency, assembleCourse, assembleDiploma } from "./evaluation";
+import {
+  EQUIVALENCY_UNMAPPED,
+  PENDING_EQUIVALENCY,
+  approvalBlockReason,
+  checkoutBlockReason,
+  onStaffReviewQueue,
+} from "./equivalency";
 import { GRADE_SCALE_20 } from "./grades";
 
 describe("assemble evaluation", () => {
@@ -37,20 +44,48 @@ describe("assemble evaluation", () => {
     });
   });
 
-  it("holds a diploma when the degree count or the credential does not map", () => {
-    const extracted = {
-      credentials: [
-        {
-          applicant: "Ada Lovelace",
-          institution: "Université de Paris",
-          country: "France",
-          credential: "Certificado",
-          field: "Mathematics",
-          dates: "2016–2019",
-        },
-      ],
+  it("prints a pending equivalency and keeps checkout open when the credential does not map", () => {
+    const result = assembleDiploma({
+      degreeCount: 1,
+      documentsReviewed: ["a.pdf"],
+      extracted: {
+        credentials: [
+          {
+            applicant: "Ada Lovelace",
+            institution: "Université de Paris",
+            country: "France",
+            credential: "Certificado",
+            field: "Mathematics",
+            dates: "2016–2019",
+          },
+        ],
+      },
+    });
+    expect(result?.kind).toBe("diploma");
+    if (result?.kind !== "diploma") return;
+    expect(result.credentials[0]?.usEquivalency).toBe(PENDING_EQUIVALENCY);
+    const order = {
+      status: "preview_ready" as const,
+      languageConfirmed: true,
+      service: "diploma",
+      degreeCount: 1,
+      evaluationCents: 1995,
+      translationCents: 0,
+      billablePages: 1,
+      unitPriceCents: 995,
+      reviewReason: EQUIVALENCY_UNMAPPED,
     };
-    expect(assembleDiploma({ degreeCount: 1, documentsReviewed: ["a.pdf"], extracted })).toBeNull();
+    expect(checkoutBlockReason(order)).toBeNull();
+    expect(approvalBlockReason(order)).toBe("The U.S. equivalency is still pending staff review");
+    expect(onStaffReviewQueue(order)).toBe(true);
+    expect(onStaffReviewQueue({ status: "paid", reviewReason: EQUIVALENCY_UNMAPPED })).toBe(true);
+    const filled = applyDiplomaEquivalency(result, ["Bachelor's degree"]);
+    expect(filled?.credentials[0]?.usEquivalency).toBe("Bachelor's degree");
+    expect(applyDiplomaEquivalency(result, [PENDING_EQUIVALENCY])).toBeNull();
+    expect(applyDiplomaEquivalency(result, [])).toBeNull();
+  });
+
+  it("holds a diploma when the degree count does not match", () => {
     expect(
       assembleDiploma({
         degreeCount: 2,

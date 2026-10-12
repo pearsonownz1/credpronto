@@ -5,11 +5,14 @@ export const ADMIN_PAGE_MAX = 100;
 
 export function parseAdminListQuery(params: URLSearchParams): {
   status: string | null;
+  reviewReason: string | null;
   limit: number;
   offset: number;
 } {
+  const reviewReason = params.get("reviewReason")?.trim() ?? "";
   return {
     status: params.get("status"),
+    reviewReason: reviewReason ? reviewReason.slice(0, 200) : null,
     limit: parseBound(params.get("limit"), "limit", ADMIN_PAGE_DEFAULT, 1, ADMIN_PAGE_MAX),
     offset: parseBound(params.get("offset"), "offset", 0, 0, Number.MAX_SAFE_INTEGER),
   };

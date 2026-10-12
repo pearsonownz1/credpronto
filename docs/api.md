@@ -494,12 +494,12 @@ These routes require a signed-in Supabase user who has a `staff` row or `profile
 
 | Method | Path | Body | Result |
 | --- | --- | --- | --- |
-| `GET` | `/api/admin/orders?status=&limit=&offset=` | | `{ "orders": [ { id, status, serviceType, sourceLanguage, billablePages, totalCents, currency, createdAt, reviewReason, email, expedited } ], "page": { "limit", "offset", "total" } }`. `limit` defaults to 50 and cannot exceed 100. `offset` defaults to 0. `expedited` is true when that add-on was purchased. Expedited rows come first, then `created_at` descending. |
+| `GET` | `/api/admin/orders?status=&reviewReason=&limit=&offset=` | | `{ "orders": [ { id, status, serviceType, sourceLanguage, billablePages, totalCents, currency, createdAt, reviewReason, email, expedited } ], "page": { "limit", "offset", "total" } }`. `limit` defaults to 50 and cannot exceed 100. `offset` defaults to 0. `reviewReason` filters to that exact reason, including `equivalency_unmapped`. `expedited` is true when that add-on was purchased. Expedited rows come first, then `created_at` descending. |
 | `GET` | `/api/admin/orders/[id]` | | Order, documents, pages (source text and the latest ready AI translation paragraphs per page), confirmations, corrections, payment, delivery, and `fulfillment` (see Checkout add-ons). Includes storage keys for staff. |
 | `PATCH` | `/api/admin/orders/[id]` | `{ "pages": [ { "documentId", "pageNumber", "paragraphs": ["…"] } ] }` | Replaces those pages' translation text, writes a new translation version (`model` `staff-edit`), and regenerates the watermarked preview, clean translation, and certification page the same way the pipeline renders them. Other pages keep their current text. Allowed from `preview_ready`, `correction_requested`, `paid`, `approved`, and `delivered`. The order status does not move backward. An approved or delivered row's file keys are updated. Records `translation_edited`. |
-| `POST` | `/api/admin/orders/[id]/resolve-review` | `{ "sourceLanguage": "es" }` | `needs_review` → `quoted`. `sourceLanguage` optional when the order already has one. |
+| `POST` | `/api/admin/orders/[id]/resolve-review` | `{ "sourceLanguage": "es" }` | `needs_review` → `quoted`. `sourceLanguage` optional when the order already has one. When `reviewReason` is `equivalency_unmapped`, `{ "equivalencies": ["Bachelor's degree"] }` (one string per credential) writes those values, stores the clean report, and clears the reason. The status stays `preview_ready` or `paid`. `400` `{ "error": "Each credential needs a U.S. equivalency" }` when a value is missing or still `Pending staff review`. |
 | `POST` | `/api/admin/orders/[id]/resolve-corrections` | `{ "action": "dismiss", "correctionIds": [] }` or `{ "action": "regenerate" }` | Dismiss open corrections, or regenerate the translation and preview. |
-| `POST` | `/api/admin/orders/[id]/approve` | | Restamp the certification cover first. On success, set `deliveries.approved_by` and `approved_at`, record `approved`, email the customer, set the order to `delivered`, and return 5-minute signed URLs for the clean translation and the certification page. If the cover stamp fails, the order status stays as it was, no delivery email is sent, and the response is `500` with the stamp error. |
+| `POST` | `/api/admin/orders/[id]/approve` | | Restamp the certification cover first. On success, set `deliveries.approved_by` and `approved_at`, record `approved`, email the customer, set the order to `delivered`, and return 5-minute signed URLs for the clean translation and the certification page. If the cover stamp fails, the order status stays as it was, no delivery email is sent, and the response is `500` with the stamp error. `409` `{ "error": "The U.S. equivalency is still pending staff review" }` while `reviewReason` is `equivalency_unmapped`. |
 | `POST` | `/api/admin/orders/[id]/refund` | | Stripe refund when the payment is `paid`, the secret key is `sk_test_…`, and a payment intent is stored. `paid_test` does not call Stripe: the row is marked `refunded` and a `refunded` event is recorded with `mode: "paid_test"`. A second call returns `{ "paymentStatus": "refunded", "duplicate": true }`. Downloads lock again. |
 | `POST` | `/api/admin/orders/[id]/ship` | `{ "trackingNumber": "…" }` | Marks the mail add-on shipped. See Checkout add-ons. |
 | `POST` | `/api/admin/orders/[id]/notarize` | | Marks the notarization add-on done. See Checkout add-ons. |
@@ -608,7 +608,7 @@ Upload, then a watermarked preview of the evaluation report, then payment, then 
 
 The watermark is the same diagonal `PREVIEW · CREDPRONTO · NOT FOR OFFICIAL USE` used on translation previews. `preview.report` is that watermarked PDF (`url`, `pageCount`). It is null before the report exists. `GET /api/orders/[token]/download?file=evaluation` returns the clean report only after payment and staff approval, the same gate as `file=translation`.
 
-`needs_review` is used when the credential or the grades cannot be mapped. Staff resolve it with the existing resolve-review route.
+`needs_review` is used when a course grade cannot be mapped, or when the diploma cannot be read. A diploma whose printed credential has no U.S. equivalent still reaches `preview_ready`. Its equivalency field is `Pending staff review`, `reviewReason` is exactly `equivalency_unmapped`, and checkout is allowed. The clean report is not stored until staff send `equivalencies` on resolve-review. Approval returns `409` `{ "error": "The U.S. equivalency is still pending staff review" }` until then. The order stays on the staff review queue, including after payment.
 
 ### Diploma result
 
@@ -632,7 +632,7 @@ The watermark is the same diagonal `PREVIEW · CREDPRONTO · NOT FOR OFFICIAL US
 }
 ```
 
-`dates` is the period as printed. `documentsReviewed` lists the uploaded filenames that support that degree. `usEquivalency` is one of `High school diploma`, `Associate degree`, `Bachelor's degree`, `Master's degree`, or `Doctoral degree`.
+`dates` is the period as printed. `documentsReviewed` lists the uploaded filenames that support that degree. A mapped `usEquivalency` is one of `High school diploma`, `Associate degree`, `Bachelor's degree`, `Master's degree`, or `Doctoral degree`.
 
 | Printed credential | `usEquivalency` |
 | --- | --- |
@@ -642,7 +642,7 @@ The watermark is the same diagonal `PREVIEW · CREDPRONTO · NOT FOR OFFICIAL US
 | master, maestría, maîtrise, master's | Master's degree |
 | doctor, doctorado, doctorat, doctoral | Doctoral degree |
 
-Anything else stays `needs_review`. The diploma PDF matches the sample report: a CredPronto header with the report id and issue date, the title `Educational Credential Evaluation`, a prepared-for line, then a light-blue (`#eaf0ff`) equivalency box whose `U.S. EQUIVALENCY` label is `#1F5EFF`. Applicant, credential, and documents-reviewed sections follow, then a short advisory and the evaluator signature. The watermark is only on the preview.
+Anything else is stored as `Pending staff review` and `reviewReason` `equivalency_unmapped` instead of stopping the order. The diploma PDF matches the sample report: a CredPronto header with the report id and issue date, the title `Educational Credential Evaluation`, a prepared-for line, then a light-blue (`#eaf0ff`) equivalency box whose `U.S. EQUIVALENCY` label is `#1F5EFF`. Applicant, credential, and documents-reviewed sections follow, then a short advisory and the evaluator signature. The watermark is only on the preview.
 
 ### Course-by-course result
 

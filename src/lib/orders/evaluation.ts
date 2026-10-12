@@ -13,8 +13,9 @@ import {
   type Db,
 } from "./db";
 import { sendPreviewReady } from "./email";
-import { AiUnavailableError } from "./errors";
+import { AiUnavailableError, HttpError } from "./errors";
 import { evaluationQuote } from "./evaluation-price";
+import { EQUIVALENCY_UNMAPPED, PENDING_EQUIVALENCY, diplomaEquivalencyPending } from "./equivalency";
 import { gradeScaleText, scoreCourses, usEquivalency, type RawCourse } from "./grades";
 import { IMAGE_QUALITY_REASON } from "./image-quality";
 import { evaluationIssuedLabel, evaluationReportId, renderEvaluationPdfs } from "./pdf/evaluation";
@@ -83,8 +84,6 @@ export function assembleDiploma(input: {
     const field = filled(item.field);
     const dates = filled(item.dates);
     if (!applicant || !institution || !country || !credential || !field || !dates) return null;
-    const equivalency = usEquivalency(credential);
-    if (!equivalency) return null;
     credentials.push({
       applicant,
       institution,
@@ -92,11 +91,59 @@ export function assembleDiploma(input: {
       credential,
       field,
       dates,
-      usEquivalency: equivalency,
+      usEquivalency: usEquivalency(credential) ?? PENDING_EQUIVALENCY,
       documentsReviewed: input.documentsReviewed,
     });
   }
   return { kind: "diploma", credentials };
+}
+
+export function applyDiplomaEquivalency(
+  result: Extract<EvaluationResult, { kind: "diploma" }>,
+  equivalencies: string[],
+): Extract<EvaluationResult, { kind: "diploma" }> | null {
+  if (equivalencies.length !== result.credentials.length) return null;
+  const credentials = [];
+  for (let index = 0; index < result.credentials.length; index += 1) {
+    const credential = result.credentials[index];
+    const value = equivalencies[index]?.trim() ?? "";
+    if (!credential || !value || value === PENDING_EQUIVALENCY) return null;
+    credentials.push({ ...credential, usEquivalency: value });
+  }
+  return { ...result, credentials };
+}
+
+export async function publishDiplomaEquivalency(
+  db: Db,
+  order: OrderRecord,
+  equivalencies: string[],
+): Promise<void> {
+  const current = order.evaluationResult;
+  if (order.reviewReason !== EQUIVALENCY_UNMAPPED || !current || current.kind !== "diploma") {
+    throw new HttpError("This order is not waiting for an equivalency", 409);
+  }
+  const next = applyDiplomaEquivalency(current, equivalencies);
+  if (!next) throw new HttpError("Each credential needs a U.S. equivalency", 400);
+
+  const version = await nextPreviewVersion(db, order.id);
+  const previewPath = `${order.id}/preview-v${version}.pdf`;
+  const inserted = await insertPreview(db, { orderId: order.id, version, previewPath });
+  if (inserted === "exists") return;
+
+  const files = await renderEvaluationPdfs(next, {
+    reportId: evaluationReportId(order.id),
+    issued: evaluationIssuedLabel(order.createdAt),
+  });
+  const reportPath = `${order.id}/evaluation-v${version}.pdf`;
+  await uploadObject(db, FINALS_BUCKET, reportPath, files.clean, "application/pdf");
+  await uploadObject(db, PREVIEWS_BUCKET, previewPath, files.preview, "application/pdf");
+  await updateOrder(db, order.id, {
+    review_reason: null,
+    evaluation_result: { ...next, pageCount: files.pageCount },
+    final_translation_path: reportPath,
+    certification_path: reportPath,
+  });
+  await markPreview(db, order.id, version, "ready");
 }
 
 export function assembleCourse(extracted: CourseExtract): EvaluationResult | null {
@@ -278,18 +325,19 @@ export async function completeEvaluation(
       return;
     }
 
+    const pending = result.kind === "diploma" && diplomaEquivalencyPending(result.credentials);
     const files = await renderEvaluationPdfs(result, {
       reportId: evaluationReportId(order.id),
       issued: evaluationIssuedLabel(order.createdAt),
     });
     const stored: EvaluationResult = { ...result, pageCount: files.pageCount };
     const reportPath = `${order.id}/evaluation-v${version}.pdf`;
-    await uploadObject(db, FINALS_BUCKET, reportPath, files.clean, "application/pdf");
+    if (!pending) await uploadObject(db, FINALS_BUCKET, reportPath, files.clean, "application/pdf");
     await uploadObject(db, PREVIEWS_BUCKET, previewPath, files.preview, "application/pdf");
     const quote = quoteFor(language);
     await updateOrder(db, order.id, {
       status: "preview_ready",
-      review_reason: null,
+      review_reason: pending ? EQUIVALENCY_UNMAPPED : null,
       eta_at: null,
       source_language: language,
       language_confirmed: true,
@@ -301,8 +349,12 @@ export async function completeEvaluation(
       translation_cents: quote?.translationCents ?? null,
       total_cents: quote?.totalCents ?? null,
       evaluation_result: stored,
-      final_translation_path: reportPath,
-      certification_path: reportPath,
+      ...(pending
+        ? {}
+        : {
+            final_translation_path: reportPath,
+            certification_path: reportPath,
+          }),
     });
     await markPreview(db, order.id, version, "ready");
     await insertEvent(db, order.id, "preview_ready", { version, pageCount: files.pageCount });

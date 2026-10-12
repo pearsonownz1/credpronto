@@ -26,7 +26,8 @@ import { fulfillmentFor, parseTrackingNumber } from "./fulfillment";
 import { HttpError } from "./errors";
 import { normalizeLanguage } from "./languages";
 import { evaluationQuote } from "./evaluation-price";
-import { retryEvaluation } from "./evaluation";
+import { publishDiplomaEquivalency, retryEvaluation } from "./evaluation";
+import { EQUIVALENCY_UNMAPPED, approvalBlockReason } from "./equivalency";
 import { etaFromNow } from "./quote";
 import { signedObjectUrl } from "./storage";
 import { ensureStaffRow, requireStaff } from "./staff";
@@ -42,9 +43,13 @@ export function parseStatus(value: string | null): OrderStatus | null {
   throw new HttpError("Unknown status", 400);
 }
 
-export async function listStaffOrders(status: string | null, page: { limit: number; offset: number }) {
+export async function listStaffOrders(
+  status: string | null,
+  page: { limit: number; offset: number },
+  reviewReason: string | null = null,
+) {
   const { db } = await requireStaff();
-  const listed = await listOrders(db, parseStatus(status), page);
+  const listed = await listOrders(db, parseStatus(status), page, reviewReason);
   return {
     orders: listed.orders,
     page: { limit: page.limit, offset: page.offset, total: listed.total },
@@ -150,6 +155,8 @@ export async function approveOrder(orderId: string) {
   if (order.status !== "paid" && order.status !== "approved") {
     throw new HttpError("Only a paid order can be certified", 409);
   }
+  const equivalencyBlock = approvalBlockReason(order);
+  if (equivalencyBlock) throw new HttpError(equivalencyBlock, 409);
   const payment = await settledPayment(db, order.id);
   if (!payment) throw new HttpError("Payment required", 402);
   const delivery = await getDelivery(db, order.id);
@@ -204,10 +211,23 @@ export async function approveOrder(orderId: string) {
   };
 }
 
+function stringList(body: unknown, key: string): string[] | null {
+  if (!body || typeof body !== "object") return null;
+  const value = (body as Record<string, unknown>)[key];
+  if (!Array.isArray(value) || value.length === 0 || !value.every((item) => typeof item === "string")) return null;
+  return value;
+}
+
 export async function resolveReview(orderId: string, body: unknown) {
   const { db } = await requireStaff();
   const order = await getOrderById(db, orderId);
   if (!order) throw new HttpError("Order not found", 404);
+  if (order.reviewReason === EQUIVALENCY_UNMAPPED) {
+    const equivalencies = stringList(body, "equivalencies");
+    if (!equivalencies) throw new HttpError("Each credential needs a U.S. equivalency", 400);
+    await publishDiplomaEquivalency(db, order, equivalencies);
+    return { status: order.status, reviewReason: null as string | null };
+  }
   if (order.status !== "needs_review") throw new HttpError("This order is not waiting for review", 409);
   if (!order.billablePages || order.billablePages < 1 || (!order.service && order.totalCents == null)) {
     throw new HttpError("There is no billable page count to quote", 409);
