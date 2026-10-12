@@ -67,7 +67,7 @@ Example: a two-sided diploma, 180 words on the first side and 400 on the second,
 
 1. `draft` — email captured, upload starting. Acquisition fields (`utm_source`, `utm_medium`, `utm_campaign`, `gclid`, `landing_path`) are written here.
 2. `quoted` — language and billable pages are known and `total_cents` is set. `quote_shown` is recorded.
-3. `needs_review` — detection confidence is low, a page is flagged (`document_pages.needs_review`), or a person has to look before a price is trustworthy. `review_reason` says why. Staff clear it back into `quoted` or `processing`.
+3. `needs_review` — detection confidence is low, a page is flagged (`document_pages.needs_review`), a photo failed the image-quality gate (`review_reason` is `image_quality`), or a person has to look before a price is trustworthy. `review_reason` says why. Staff clear it back into `quoted` or `processing`. `image_quality` can also be cleared by the customer uploading a replacement photo that passes the gate.
 4. `confirmed` — the customer has accepted the language pair (`language_confirmed`) and the name and date fields in `confirmations`.
 5. `processing` — a translation job is running.
 6. `preview_ready` — a watermarked preview version exists. The customer compares it with the original.
@@ -100,15 +100,17 @@ The buyer email captured at upload. `email` is `citext` and unique, so `Ada@exam
 
 ### `orders`
 
-One purchase of one `service_type`: `translation`, `evaluation`, or `expert_letter`. `target_language` defaults to `en`. `source_language` is filled by detection and then confirmed. `eta_at` is the promise shown with the quote. `public_token_hash` is the return-link secret described above. `user_id` is a nullable foreign key to `auth.users`. It stays null until a verified sign-in claims the order. Claim matches `customers.email` to the verified account email and only updates rows whose `user_id` is still null. `updated_at` is maintained by `private.set_updated_at` on every update.
+One purchase of one `service_type`: `translation`, `evaluation`, or `expert_letter`. `order_type` repeats that product and defaults to `translation`. A customer evaluation also sets `service` to `diploma` or `course_by_course` and `degree_count` to the number of degrees. `evaluation_cents` is `degree_count` times 1995 or 3995. `translation_cents` is 0 when the source is English and otherwise `billable_pages * unit_price_cents`. For those orders `total_cents` is the sum of the two fees, not the page product alone. `evaluation_result` is the diploma credentials or the course-by-course table. `target_language` defaults to `en`. `source_language` is filled by detection and then confirmed. `eta_at` is the promise shown with the quote. `public_token_hash` is the return-link secret described above. `user_id` is a nullable foreign key to `auth.users`. It stays null until a verified sign-in claims the order. Claim matches `customers.email` to the verified account email and only updates rows whose `user_id` is still null. `updated_at` is maintained by `private.set_updated_at` on every update.
 
 ### `documents`
 
-One uploaded file on an order. `original_path` is the object key in the `originals` bucket, not a URL and not prefixed with the bucket name. `size` is bytes. `page_count` is the number of sides. `detected_language` and `confidence` (0 through 1) come from detection. Deleting an order deletes its documents.
+One uploaded file on an order. `original_path` is the object key in the `originals` bucket, not a URL and not prefixed with the bucket name. `size` is bytes. `page_count` is the number of sides. `detected_language` and `confidence` (0 through 1) come from detection. `position` stays the upload order. `applied_position` is the order analysis used for the combined original; it stays null until then. Deleting an order deletes its documents.
 
 ### `document_pages`
 
-One side of a document. `page_number` starts at 1 and is unique per document. `ocr_text` is the text used for the word count and for the side-by-side review. `needs_review` marks a side a person must check (low confidence, unreadable scan, suspected wrong language). `billable_units` follows the rule above.
+One side of a document. `page_number` starts at 1 and is unique per document. After analysis it is the applied page inside that file, matching the combined original. `upload_page` is the page index in the uploaded file before that reorder. `logical_page` is the printed page number when the model saw one. `order_hint` is the cue (`page 1/2`, `suite`). `ocr_text` is the text used for the word count and for the side-by-side review. `needs_review` marks a side a person must check (low confidence, unreadable scan, suspected wrong language, or a failed image-quality gate). `quality_score` is legibility from 0 to 1. `quality_flags` is a subset of `blurry`, `cropped`, `glare`, `too_dark`, and `unreadable_fields`. `quality_message` is the retake text when a photo or scan is flagged, or when its score is below 0.6. Severe flags (`blurry`, `too_dark`, `unreadable_fields`, `cropped` when the crop cuts off text) cap `quality_score` below 0.6 and set `orders.review_reason` to `image_quality`. `billable_units` follows the rule above.
+
+`orders.page_order_basis` is `logical` or `upload`. `orders.page_order` is the recorded sequence: each page's upload position, applied position, upload page, applied page, logical page, hint, and confidence.
 
 ### `confirmations`
 

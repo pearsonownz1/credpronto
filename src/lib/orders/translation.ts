@@ -1,18 +1,23 @@
 import { z } from "zod";
 import { generateObject, translationModelId } from "./ai";
+import { inReadingOrder } from "./page-order";
 import { CONFIRMATION_FIELD_KEYS } from "./fields";
-import { renderOrderPdfs, type RenderPage } from "./pdf/render";
+import type { RenderBlock, RenderPage } from "./pdf/layout";
+import { renderOrderPdfs } from "./pdf/render";
+import { blocksFromModel, blocksToParagraphs, type ModelBlock } from "./pdf/structure";
 import {
   customerEmail,
   getOrderById,
   insertEvent,
   insertPreview,
+  insertQaRun,
   insertTranslation,
   latestReadyPreview,
   listConfirmations,
   listCorrections,
   listDocuments,
   listPages,
+  listQaRuns,
   markPreview,
   nextPreviewVersion,
   resolveCorrections,
@@ -22,6 +27,7 @@ import {
 } from "./db";
 import { sendPreviewReady } from "./email";
 import { HttpError } from "./errors";
+import { QA_REVIEW_REASON, assessTranslation, qaStatusForRun, qaWillRetry, type QaIssue } from "./qa";
 import { uploadObject } from "./storage";
 import type { ConfirmationRecord, CorrectionRecord, PageRecord } from "./types";
 
@@ -29,10 +35,38 @@ const translationSchema = z.object({
   pages: z.array(
     z.object({
       pageNumber: z.number(),
-      paragraphs: z.array(z.string()),
+      blocks: z
+        .array(
+          z.object({
+            type: z.string(),
+            text: z.string().optional(),
+            level: z.number().optional(),
+            electronic: z.boolean().optional(),
+            rows: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
+            lines: z.array(z.string()).optional(),
+          }),
+        )
+        .optional(),
+      lines: z.array(z.string()).optional(),
+      paragraphs: z.array(z.string()).optional(),
     }),
   ),
 });
+
+type ModelPage = {
+  pageNumber: number;
+  blocks?: ModelBlock[];
+  lines?: string[];
+  paragraphs?: string[];
+};
+
+function pageHasContent(blocks: RenderBlock[]): boolean {
+  return blocks.some((block) => {
+    if (block.type === "paragraph" || block.type === "note" || block.type === "heading") return block.text.trim().length > 0;
+    if (block.type === "fields") return block.rows.some((row) => row.label.trim() || row.value.trim());
+    return true;
+  });
+}
 
 function confirmedBlock(fields: ConfirmationRecord[]): string {
   return CONFIRMATION_FIELD_KEYS.map((key) => {
@@ -47,26 +81,20 @@ function dateFormatOf(fields: ConfirmationRecord[]): string {
   return format || "MM/DD/YYYY";
 }
 
-function alignPages(
-  expected: number[],
-  returned: Array<{ pageNumber: number; paragraphs: string[] }>,
-): Array<{ pageNumber: number; paragraphs: string[] }> | null {
-  const byNumber = new Map<number, string[]>();
+function alignPages(expected: number[], returned: ModelPage[]): Array<{ pageNumber: number; blocks: RenderBlock[] }> | null {
+  const byNumber = new Map<number, RenderBlock[]>();
   for (const page of returned) {
-    const paragraphs = page.paragraphs.map((paragraph) => paragraph.trim()).filter(Boolean);
-    byNumber.set(Math.round(page.pageNumber), paragraphs);
+    const blocks = blocksFromModel(page);
+    if (pageHasContent(blocks)) byNumber.set(Math.round(page.pageNumber), blocks);
   }
   if (expected.every((number) => byNumber.has(number))) {
-    return expected.map((number) => ({
-      pageNumber: number,
-      paragraphs: byNumber.get(number)?.length ? byNumber.get(number)! : [" "],
-    }));
+    return expected.map((number) => ({ pageNumber: number, blocks: byNumber.get(number) ?? [] }));
   }
-  if (returned.length === expected.length) {
-    return expected.map((number, index) => {
-      const paragraphs = returned[index]?.paragraphs.map((paragraph) => paragraph.trim()).filter(Boolean);
-      return { pageNumber: number, paragraphs: paragraphs?.length ? paragraphs : [" "] };
-    });
+  if (returned.length === expected.length && returned.every((page) => pageHasContent(blocksFromModel(page)))) {
+    return expected.map((number, index) => ({
+      pageNumber: number,
+      blocks: blocksFromModel(returned[index] ?? {}),
+    }));
   }
   return null;
 }
@@ -77,6 +105,7 @@ async function translateDocument(input: {
   fields: ConfirmationRecord[];
   pages: Array<PageRecord & { number: number }>;
   corrections: CorrectionRecord[];
+  qaIssues: QaIssue[];
 }) {
   const notes = input.corrections
     .map((correction) => {
@@ -91,6 +120,10 @@ async function translateDocument(input: {
     .map((page) => `Page ${page.number}:\n${(page.ocrText ?? "").slice(0, 6000)}`)
     .join("\n\n");
 
+  const qaNotes = input.qaIssues
+    .map((item) => `Page ${item.page ?? "all"} (${item.type}): ${item.note} Original: ${item.original}`)
+    .join("\n");
+
   const prompt = `Translate this document into English, one original page to one translated page.
 Source language: ${input.sourceLanguage}.
 File: ${input.filename}.
@@ -103,11 +136,25 @@ ${confirmedBlock(input.fields)}
 
 ${notes.length ? `The customer asked for these corrections:\n${notes.join("\n")}` : "There are no correction notes."}
 
-Return paragraphs of English for each page number listed below. Keep page numbers unchanged.
+${qaNotes ? `A previous translation failed QA. Fix every item and keep confirmed names, dates, and numbers:\n${qaNotes}` : "There are no QA notes."}
+
+Return one object per page number, with blocks in the original top-to-bottom order.
+Keep names, CURPs, and place spellings exactly as printed or confirmed. Do not join a label and its value into a paragraph.
+
+For a form, use type "fields" and rows of {label, value}. Translate labels into English. One row per field, in the original order. A line-broken reading (type "lines", one label or value per line) is acceptable when you cannot split a row.
+
+For prose, use type "paragraph" and preserve paragraph breaks.
+
+For a seal, stamp, coat of arms, or letter-spaced ring such as "C I V I L  R E G I S T R Y", use type "seal" and set text to a short place description such as "Civil Registry of Jalisco". Do not copy ring text, and do not letter-space it.
+
+For a handwritten signature, use type "signature" with electronic false.
+For an electronic signature, firma electrónica, or a long unbroken signature token, use type "signature" with electronic true. Do not copy the signature string.
+
+For a section title, use type "heading".
 ${pageText}`;
 
   const expected = input.pages.map((page) => page.number);
-  let last: Array<{ pageNumber: number; paragraphs: string[] }> = [];
+  let last: ModelPage[] = [];
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const result = await generateObject(translationSchema, [
       { role: "user", content: [{ type: "text", text: prompt }] },
@@ -122,12 +169,18 @@ ${pageText}`;
 }
 
 export async function translateOrder(db: Db, orderId: string, token: string | null): Promise<void> {
+  let pendingQa: QaIssue[] = [];
   for (let round = 0; round < 3; round += 1) {
     const order = await getOrderById(db, orderId);
     if (!order) return;
     const open = (await listCorrections(db, orderId)).filter((correction) => correction.status === "open");
     if (order.status === "preview_ready" && open.length === 0) return;
-    if (order.status === "paid" || order.status === "approved" || order.status === "delivered" || order.status === "cancelled") {
+    if (
+      order.status === "approved" ||
+      order.status === "delivered" ||
+      order.status === "cancelled" ||
+      (order.status === "paid" && order.finalTranslationPath)
+    ) {
       return;
     }
     if (!order.languageConfirmed || !order.sourceLanguage) {
@@ -138,12 +191,12 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
       .from("orders")
       .update({ status: "processing" })
       .eq("id", orderId)
-      .in("status", ["confirmed", "correction_requested", "failed", "preview_ready", "processing"])
+      .in("status", ["confirmed", "correction_requested", "failed", "preview_ready", "processing", "paid"])
       .select("id");
     if (claim.error) throw new Error(claim.error.message);
     if ((claim.data ?? []).length === 0) return;
 
-    const documents = await listDocuments(db, orderId);
+    const documents = inReadingOrder(await listDocuments(db, orderId));
     const pages = withCombinedNumbers(
       documents,
       await listPages(
@@ -173,6 +226,7 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
           fields,
           pages: documentPages,
           corrections: open,
+          qaIssues: pendingQa,
         });
         await insertTranslation(db, {
           documentId: document.id,
@@ -183,7 +237,8 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
             pages: translated.map((page) => ({
               pageNumber: documentPages.find((item) => item.number === page.pageNumber)?.pageNumber ?? page.pageNumber,
               combinedPageNumber: page.pageNumber,
-              paragraphs: page.paragraphs,
+              paragraphs: blocksToParagraphs(page.blocks),
+              blocks: page.blocks,
             })),
           },
         });
@@ -193,7 +248,8 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
             combinedPageNumber: page.pageNumber,
             widthPt: source?.widthPt ?? 612,
             heightPt: source?.heightPt ?? 792,
-            paragraphs: page.paragraphs,
+            paragraphs: blocksToParagraphs(page.blocks),
+            blocks: page.blocks,
           });
         }
       }
@@ -210,12 +266,40 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
       await uploadObject(db, "finals", translationPath, files.cleanTranslation, "application/pdf");
       await uploadObject(db, "finals", certificationPath, files.certification, "application/pdf");
       await uploadObject(db, "previews", previewPath, files.watermarkedPreview, "application/pdf");
-      await markPreview(db, orderId, version, "ready");
-      await resolveCorrections(db, open.map((correction) => correction.id), version);
       await updateOrder(db, orderId, {
         final_translation_path: translationPath,
         certification_path: certificationPath,
       });
+
+      const assessment = assessTranslation({
+        originalPages: pages.map((page) => ({ number: page.number, text: page.ocrText ?? "" })),
+        translatedPages: renderedPages.map((page) => ({
+          number: page.combinedPageNumber,
+          text: page.paragraphs.join("\n"),
+        })),
+        confirmations,
+      });
+      const attempt = (await listQaRuns(db, orderId)).length + 1;
+      const status = qaStatusForRun({ pass: assessment.pass, attempt });
+      await insertQaRun(db, {
+        orderId,
+        attempt,
+        status,
+        score: assessment.score,
+        issues: assessment.pass ? [] : assessment.issues,
+      });
+      if (!assessment.pass) {
+        await markPreview(db, orderId, version, "failed");
+        if (qaWillRetry({ pass: false, attempt })) {
+          pendingQa = assessment.issues;
+          continue;
+        }
+        await updateOrder(db, orderId, { status: "needs_review", review_reason: QA_REVIEW_REASON });
+        return;
+      }
+
+      await markPreview(db, orderId, version, "ready");
+      await resolveCorrections(db, open.map((correction) => correction.id), version);
 
       const email = await customerEmail(db, order.customerId);
       if (email) await sendPreviewReady(email, token);
@@ -234,6 +318,8 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
       await markPreview(db, orderId, version, "failed");
       const message = error instanceof Error ? error.message : "Translation failed.";
       await updateOrder(db, orderId, { status: "failed", review_reason: message });
+      const { notifyOrder } = await import("./webhook-delivery");
+      await notifyOrder(db, orderId, "order.failed");
       throw error;
     }
   }

@@ -1,6 +1,19 @@
 import { pageRuleForLanguages } from "./billing";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
-import type { ConfirmationRecord, DocumentRecord, OrderRecord, PageRecord } from "./types";
+import { lineItemsForOrder } from "./evaluation-price";
+import { compareCombinedPages } from "./page-order";
+import type {
+  ConfirmationRecord,
+  DocumentRecord,
+  EvaluationLine,
+  EvaluationResult,
+  EvaluationService,
+  OrderRecord,
+  OrderType,
+  PageOrderBasis,
+  PageRecord,
+  StoredPage,
+} from "./types";
 
 export type CustomerOrder = {
   orderId: string;
@@ -16,6 +29,22 @@ export type CustomerOrder = {
     pageCount: number | null;
     detectedLanguage: string | null;
     confidence: number | null;
+    uploadPosition: number;
+    appliedPosition: number;
+  }>;
+  pageOrder: {
+    basis: PageOrderBasis;
+    pages: Array<StoredPage & { filename: string }>;
+  } | null;
+  pages: Array<{
+    documentId: string;
+    pageNumber: number;
+    uploadPage: number | null;
+    logicalPage: number | null;
+    orderHint: string | null;
+    qualityScore: number | null;
+    qualityFlags: string[];
+    qualityMessage: string | null;
   }>;
   billablePages: number | null;
   unitPriceCents: number;
@@ -33,11 +62,19 @@ export type CustomerOrder = {
   previewVersion: number | null;
   payment: { status: string } | null;
   delivery: { status: string } | null;
+  orderType: OrderType;
+  service: EvaluationService | null;
+  degreeCount: number | null;
+  evaluationCents: number | null;
+  translationCents: number | null;
+  lineItems: EvaluationLine[];
+  evaluation: EvaluationResult | null;
 };
 
 export function toCustomerOrder(input: {
   order: OrderRecord;
   documents: DocumentRecord[];
+  pages?: PageRecord[];
   confirmations: ConfirmationRecord[];
   previewVersion: number | null;
   paymentStatus: string | null;
@@ -47,6 +84,12 @@ export function toCustomerOrder(input: {
   const confidences = input.documents
     .map((document) => document.confidence)
     .filter((confidence): confidence is number => confidence != null);
+  const documents = [...input.documents].sort(
+    (a, b) => a.position - b.position || a.filename.localeCompare(b.filename),
+  );
+  const filenames = new Map(documents.map((document) => [document.id, document.filename]));
+  const pages = [...(input.pages ?? [])].sort((a, b) => compareCombinedPages(documents, a, b));
+  const stored = input.order.pageOrder;
 
   return {
     orderId: input.order.id,
@@ -56,12 +99,33 @@ export function toCustomerOrder(input: {
     sourceLanguageConfidence: confidences.length > 0 ? Math.min(...confidences) : null,
     targetLanguage: input.order.targetLanguage,
     languageConfirmed: input.order.languageConfirmed,
-    documents: input.documents.map((document) => ({
+    documents: documents.map((document) => ({
       id: document.id,
       filename: document.filename,
       pageCount: document.pageCount,
       detectedLanguage: document.detectedLanguage,
       confidence: document.confidence,
+      uploadPosition: document.position,
+      appliedPosition: document.appliedPosition ?? document.position,
+    })),
+    pageOrder: stored
+      ? {
+          basis: stored.basis,
+          pages: stored.pages.map((page) => ({
+            ...page,
+            filename: filenames.get(page.documentId) ?? "",
+          })),
+        }
+      : null,
+    pages: pages.map((page) => ({
+      documentId: page.documentId,
+      pageNumber: page.pageNumber,
+      uploadPage: page.uploadPage,
+      logicalPage: page.logicalPage,
+      orderHint: page.orderHint,
+      qualityScore: page.qualityScore,
+      qualityFlags: page.qualityFlags,
+      qualityMessage: page.qualityMessage,
     })),
     billablePages: input.order.billablePages,
     unitPriceCents: input.order.unitPriceCents,
@@ -82,6 +146,13 @@ export function toCustomerOrder(input: {
     previewVersion: input.previewVersion,
     payment: input.paymentStatus ? { status: input.paymentStatus } : null,
     delivery: input.deliveryStatus ? { status: input.deliveryStatus } : null,
+    orderType: input.order.orderType,
+    service: input.order.service,
+    degreeCount: input.order.degreeCount,
+    evaluationCents: input.order.evaluationCents,
+    translationCents: input.order.translationCents,
+    lineItems: lineItemsForOrder(input.order),
+    evaluation: input.order.evaluationResult,
   };
 }
 

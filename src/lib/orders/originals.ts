@@ -1,4 +1,5 @@
 import { ORIGINALS_BUCKET } from "./constants";
+import { downloadFilename } from "./download-name";
 import { HttpError } from "./errors";
 
 export type OriginalSource = {
@@ -13,6 +14,7 @@ export type OriginalTarget = {
   documentId: string;
   documentIndex: number;
   documentName: string;
+  filename: string;
   bucket: typeof ORIGINALS_BUCKET;
   path: string;
 };
@@ -21,11 +23,13 @@ export type SignedOriginal = {
   documentId: string;
   documentIndex: number;
   documentName: string;
+  filename: string;
   url: string;
 };
 
 export type OriginalFileResponse = {
   url: string;
+  filename: string;
   expiresInSeconds: number;
   documentId: string;
   documentIndex: number;
@@ -68,6 +72,7 @@ export function originalTargets(documents: OriginalSource[], documentId: string 
       documentId: document.id,
       documentIndex: ordered.findIndex((item) => item.id === document.id),
       documentName: document.filename,
+      filename: downloadFilename("original", document.filename),
       bucket: ORIGINALS_BUCKET,
       path: document.originalPath,
     };
@@ -90,6 +95,7 @@ export function originalDownloadResponse(
     if (!file || signed.length !== 1) throw new HttpError("Unknown document.", 404);
     return {
       url: file.url,
+      filename: file.filename,
       expiresInSeconds,
       documentId: file.documentId,
       documentIndex: file.documentIndex,
@@ -103,6 +109,7 @@ export function originalDownloadResponse(
       documentId: file.documentId,
       documentIndex: file.documentIndex,
       documentName: file.documentName,
+      filename: file.filename,
       url: file.url,
     })),
   };

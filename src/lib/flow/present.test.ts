@@ -16,6 +16,9 @@ import {
   joinParents,
   languageLine,
   orderHubStep,
+  retakeDocumentIds,
+  retakeInstructions,
+  retakePages,
   splitParents,
   toPreviewOrder,
   totalLabel,
@@ -37,6 +40,8 @@ function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
         pageCount: 2,
         detectedLanguage: "es",
         confidence: 0.9,
+        uploadPosition: 1,
+        appliedPosition: 1,
       },
       {
         id: "doc-b",
@@ -44,8 +49,12 @@ function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
         pageCount: 1,
         detectedLanguage: "es",
         confidence: 0.9,
+        uploadPosition: 2,
+        appliedPosition: 2,
       },
     ],
+    pageOrder: null,
+    pages: [],
     billablePages: 3,
     unitPriceCents: 995,
     totalCents: 2985,
@@ -57,6 +66,13 @@ function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
     previewVersion: null,
     payment: null,
     delivery: null,
+    orderType: "translation",
+    service: null,
+    degreeCount: null,
+    evaluationCents: null,
+    translationCents: null,
+    lineItems: [],
+    evaluation: null,
     ...patch,
   };
 }
@@ -232,6 +248,100 @@ describe("preview mapping", () => {
     expect(customerEmail({ email: null })).toBe("");
     expect(documentIdForPage(order().documents, 2)).toBe("doc-a");
     expect(documentIdForPage(order().documents, 3)).toBe("doc-b");
+  });
+});
+
+describe("image quality retake", () => {
+  it("renders flags in pageOrder and ignores the pages array order", () => {
+    const pages = retakePages(
+      order({
+        reviewReason: "image_quality",
+        pageOrder: {
+          basis: "logical",
+          pages: [
+            {
+              documentId: "doc-b",
+              filename: "scan-page-1.jpg",
+              uploadPosition: 2,
+              appliedPosition: 1,
+              uploadPage: 1,
+              appliedPage: 1,
+              logicalPage: 1,
+              hint: "page 1/2",
+              confidence: 0.9,
+            },
+            {
+              documentId: "doc-a",
+              filename: "scan-page-2.jpg",
+              uploadPosition: 1,
+              appliedPosition: 2,
+              uploadPage: 1,
+              appliedPage: 1,
+              logicalPage: 2,
+              hint: "page 2/2",
+              confidence: 0.9,
+            },
+          ],
+        },
+        pages: [
+          {
+            documentId: "doc-a",
+            pageNumber: 1,
+            uploadPage: 1,
+            logicalPage: 2,
+            orderHint: "page 2/2",
+            qualityScore: 0.3,
+            qualityFlags: ["too_dark", "blurry", "not-a-flag"],
+            qualityMessage: "It looks blurry.",
+          },
+          {
+            documentId: "doc-b",
+            pageNumber: 1,
+            uploadPage: 1,
+            logicalPage: 1,
+            orderHint: "page 1/2",
+            qualityScore: 0.7,
+            qualityFlags: ["glare", "cropped"],
+            qualityMessage: "The crop cuts off the text.",
+          },
+        ],
+      }),
+    );
+
+    expect(pages.map((page) => page.filename)).toEqual(["scan-page-1.jpg", "scan-page-2.jpg"]);
+    expect(pages[0]?.flags).toEqual(["cropped", "glare"]);
+    expect(pages[0]?.detail).toContain("printed page 1");
+    expect(pages[0]?.detail).toContain("moved from the upload order");
+    expect(pages[1]?.flags).toEqual(["blurry", "too_dark"]);
+    expect(retakeInstructions(pages)).toEqual([
+      "The crop cuts off the text.",
+      "It looks blurry.",
+    ]);
+    expect(retakeDocumentIds(pages)).toEqual(["doc-b", "doc-a"]);
+  });
+
+  it("keeps analyzed pages when pageOrder is still empty", () => {
+    const pages = retakePages(
+      order({
+        pages: [
+          {
+            documentId: "doc-a",
+            pageNumber: 1,
+            uploadPage: 1,
+            logicalPage: null,
+            orderHint: null,
+            qualityScore: 0.4,
+            qualityFlags: ["unreadable_fields"],
+            qualityMessage: null,
+          },
+        ],
+      }),
+    );
+    expect(pages).toHaveLength(1);
+    expect(pages[0]?.filename).toBe("a.pdf");
+    expect(pages[0]?.flags).toEqual(["unreadable_fields"]);
+    expect(retakeInstructions(pages)[0]).toContain("even light");
+    expect(retakeDocumentIds(pages)).toEqual(["doc-a"]);
   });
 });
 

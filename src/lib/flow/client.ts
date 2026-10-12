@@ -87,6 +87,7 @@ export type FlowClient = {
     file: DownloadFile,
     documentId?: string,
   ): Promise<DownloadResult>;
+  replaceDocument(token: string, documentId: string, file: File): Promise<CustomerOrder>;
   /** Mock walk-through moves a quoted order to preview_ready before checkout. */
   markPreviewReady(token: string): Promise<void>;
 };
@@ -154,6 +155,14 @@ const liveClient: FlowClient = {
     return request(orderDownloadPath(token, file, documentId));
   },
   async markPreviewReady() {},
+  replaceDocument(token, documentId, file) {
+    const form = new FormData();
+    form.set("file", file);
+    return request(
+      `/api/orders/${encodeURIComponent(token)}/documents/${encodeURIComponent(documentId)}/replace`,
+      { method: "POST", body: form },
+    );
+  },
 };
 
 function readMockOrder(): CustomerOrder {
@@ -288,6 +297,19 @@ const mockClient: FlowClient = {
   },
   async markPreviewReady() {
     writeMockOrder({ ...readMockOrder(), status: "preview_ready" });
+  },
+  async replaceDocument(_token, documentId) {
+    const current = readMockOrder();
+    const next: CustomerOrder = {
+      ...current,
+      status: "draft",
+      reviewReason: null,
+      pages: current.pages.map((page) =>
+        page.documentId === documentId ? { ...page, qualityMessage: null, qualityFlags: [] } : page,
+      ),
+    };
+    writeMockOrder(next);
+    return next;
   },
 };
 

@@ -8,6 +8,11 @@ export const PREVIEW_URL_SECONDS = 10 * 60;
 export const DOWNLOAD_URL_SECONDS = 5 * 60;
 export const LOW_LANGUAGE_CONFIDENCE = 0.75;
 export const SPARSE_PAGE_WORDS = 20;
+/** Printed page numbers and continuation cues at or above this score can reorder a document. */
+export const ORDER_CONFIDENCE = 0.8;
+/** Visual pages below this legibility score are held for a retake. */
+export const MIN_LEGIBILITY = 0.6;
+export const IMAGE_QUALITY_REASON = "image_quality";
 export const DEFAULT_TRANSLATION_MODEL = "google/gemini-3.8-flash";
 
 /** Baked into every page of the watermarked preview. Not drawn on the clean file. */

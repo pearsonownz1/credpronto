@@ -4,35 +4,68 @@ import { Logo } from "./mark";
 import { Stepper } from "./stepper";
 import { buttonClasses } from "./ui";
 
-const SECTIONS = ["Translations", "Evaluations", "Expert letters", "Pricing"];
+const SECTIONS = [
+  { id: "translations", label: "Translations", href: "/" },
+  { id: "evaluations", label: "Evaluations", href: "/evaluations" },
+  { id: "pricing", label: "Pricing", href: "/#pricing" },
+] as const;
 
-export function MarketingHeader() {
+export function MarketingHeader({
+  section,
+}: {
+  section?: (typeof SECTIONS)[number]["id"];
+}) {
   return (
-    <header className="flex h-16 items-center gap-3 border-b border-line px-4 md:gap-7 md:px-10">
-      <Logo />
-      <nav
-        aria-label="Sections"
-        className="hidden items-center gap-7 text-sm text-ink-muted md:flex"
-      >
-        {SECTIONS.map((label) => (
-          <span key={label}>{label}</span>
-        ))}
-      </nav>
-      <div className="ml-auto flex items-center gap-7">
-        <span className="hidden text-sm text-ink-muted md:inline">
-          Find my order
-        </span>
-        <Link
-          href="/translate"
-          className={buttonClasses(
-            "primary",
-            "h-[38px] px-3 text-[13px] md:px-[18px] md:text-sm",
-          )}
-        >
-          Get your free preview
-        </Link>
+    <div className="border-b border-line">
+      <header className="flex h-16 items-center gap-3 px-4 md:gap-7 md:px-10">
+        <Logo />
+        <SectionNav
+          section={section}
+          className="hidden items-center gap-7 text-sm md:flex"
+        />
+        <div className="ml-auto flex items-center gap-7">
+          <span className="hidden text-sm text-ink-muted md:inline">Find my order</span>
+          <Link
+            href="/translate"
+            className={buttonClasses(
+              "primary",
+              "h-[38px] px-3 text-[13px] md:px-[18px] md:text-sm",
+            )}
+          >
+            Get your free preview
+          </Link>
+        </div>
+      </header>
+      <div className="px-4 pb-3 md:hidden">
+        <SectionNav
+          section={section}
+          className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm"
+        />
       </div>
-    </header>
+    </div>
+  );
+}
+
+function SectionNav({
+  section,
+  className,
+}: {
+  section?: (typeof SECTIONS)[number]["id"];
+  className: string;
+}) {
+  return (
+    <nav aria-label="Sections" className={className}>
+      {SECTIONS.map((item) => (
+        <Link
+          key={item.id}
+          href={item.href}
+          aria-current={item.id === section ? "page" : undefined}
+          className={item.id === section ? "font-semibold text-ink" : "text-ink-muted"}
+        >
+          {item.label}
+        </Link>
+      ))}
+    </nav>
   );
 }
 

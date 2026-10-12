@@ -84,7 +84,9 @@ export async function buildCombinedOriginal(files: SourceFile[]): Promise<{
       let src: PDFDocument;
       try {
         src = await PDFDocument.load(file.bytes, { ignoreEncryption: false });
-      } catch {
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        console.error(`Could not open PDF: ${detail}`, error);
         throw new HttpError(
           "A PDF is password-protected or could not be opened.",
           400,

@@ -1,16 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type ChangeEvent } from "react";
+import { FlowApiError, getFlowClient } from "@/lib/flow/client";
 import { formatMoney, pageLabel } from "@/lib/flow/pricing";
 import {
+  RETAKE_FLAG_LABEL,
   canSetSourceLanguage,
   customerEmail,
   displayedPageRule,
   languageChoices,
   languageLine,
+  retakeDocumentIds,
+  retakeInstructions,
+  retakePages,
   totalLabel,
 } from "@/lib/flow/present";
+import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
 import { FlowStatus } from "./status";
@@ -63,14 +69,22 @@ export function QuoteView({ token: pathToken }: { token?: string }) {
             }
           />
         ) : (
-          <QuoteBody order={order} />
+          <QuoteBody order={order} token={token} onReplaced={reload} />
         )}
       </main>
     </div>
   );
 }
 
-function QuoteBody({ order }: { order: CustomerOrder }) {
+function QuoteBody({
+  order,
+  token,
+  onReplaced,
+}: {
+  order: CustomerOrder;
+  token: string;
+  onReplaced: () => void;
+}) {
   const choices = languageChoices();
   const picker = canSetSourceLanguage(order);
   const [language, setLanguage] = useState(order.sourceLanguage ?? choices[0]?.code ?? "es");
@@ -78,14 +92,20 @@ function QuoteBody({ order }: { order: CustomerOrder }) {
     ? languageLine({ ...order, sourceLanguage: picker ? language : order.sourceLanguage })
     : languageLine(order);
   const pages = order.billablePages ?? 0;
+  const qualityHold = order.reviewReason === IMAGE_QUALITY_REASON;
+  const orderedPages = order.pageOrder && order.pageOrder.pages.length > 1 ? order.pageOrder : null;
+  const showPrice = !qualityHold;
 
   return (
     <FlowColumns>
-      <div>
-        <h1 className="text-[32px] font-bold tracking-[-0.6px]">Here’s your exact price.</h1>
+      <div className="min-w-0">
+        <h1 className="text-[32px] font-bold tracking-[-0.6px]">
+          {qualityHold ? "We need a clearer photo." : "Here’s your exact price."}
+        </h1>
         <p className="mt-2 text-[15px] text-ink-muted">
-          We read your files. Check the language and pages, then continue. You won’t be
-          charged now.
+          {qualityHold
+            ? "A photo was too hard to read, so this is not a quote yet. Retake it and upload a replacement. A reviewer can also accept the file you already sent."
+            : "We read your files. Check the language and pages, then continue. You won’t be charged now."}
         </p>
         <p data-testid="order-email" className="mt-2 mb-6 text-[15px] text-ink-muted">
           {customerEmail(order)
@@ -116,12 +136,15 @@ function QuoteBody({ order }: { order: CustomerOrder }) {
             ) : null}
           </div>
         </div>
-        {order.status === "needs_review" ? (
+        {order.status === "needs_review" && !qualityHold ? (
           <p data-testid="review-note" className="mt-3 text-[13px] text-ink-muted">
             {order.reviewReason ??
               "A reviewer will confirm the language before this price is final."}
           </p>
         ) : null}
+        {qualityHold ? (
+          <ImageQuality order={order} token={token} onReplaced={onReplaced} />
+        ) : (
         <div
           data-testid="file-list"
           className="mt-5 overflow-hidden rounded-[var(--cp-radius)] border border-line"
@@ -150,19 +173,47 @@ function QuoteBody({ order }: { order: CustomerOrder }) {
             </div>
           ))}
         </div>
+        )}
+        {orderedPages && !qualityHold ? (
+          <div data-testid="page-order" className="mt-4">
+            <p data-testid="page-order-basis" className="text-[13px] text-ink-muted">
+              {orderedPages.basis === "logical"
+                ? "We ordered these pages from the printed page numbers."
+                : "We kept the order you uploaded them."}
+            </p>
+            <ol className="mt-2 list-decimal space-y-1 pl-5 text-[13px]">
+              {orderedPages.pages.map((page) => (
+                <li key={`${page.documentId}-${page.uploadPage}-${page.appliedPage}`}>
+                  <span className="font-semibold">{page.filename || "Page"}</span>
+                  {page.logicalPage != null ? ` · printed page ${page.logicalPage}` : ""}
+                  {page.hint ? ` · ${page.hint}` : ""}
+                  {page.uploadPosition !== page.appliedPosition || page.uploadPage !== page.appliedPage
+                    ? " · moved from the upload order"
+                    : ""}
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
         <p data-testid="page-rule" className="mt-3 text-[12.5px] leading-normal text-ink-muted">
           {displayedPageRule(order)}
         </p>
       </div>
-      <div>
+      <div className="min-w-0">
         <Summary>
           <SummaryRow
             label={
-              pages > 0
+              showPrice && pages > 0
                 ? `${pages} pages × ${formatMoney(order.unitPriceCents)}`
                 : "Pages"
             }
-            value={pages > 0 ? formatMoney(pages * order.unitPriceCents) : "Pending"}
+            value={
+              showPrice && pages > 0
+                ? formatMoney(pages * order.unitPriceCents)
+                : pages > 0
+                  ? pageLabel(pages)
+                  : "Pending"
+            }
           />
           <SummaryRow label="Certification" value="Included" />
           <SummaryRow
@@ -172,8 +223,8 @@ function QuoteBody({ order }: { order: CustomerOrder }) {
           />
           <SummaryRow
             testId="quote-total"
-            label="Total if you buy"
-            value={totalLabel(order.totalCents)}
+            label={qualityHold ? "Price" : "Total if you buy"}
+            value={qualityHold ? "Not quoted yet" : totalLabel(order.totalCents)}
             emphasize
           />
         </Summary>
@@ -185,7 +236,7 @@ function QuoteBody({ order }: { order: CustomerOrder }) {
           >
             Continue
           </Link>
-        ) : (
+        ) : qualityHold ? null : (
           <p className="mt-4 text-[13.5px] text-ink-muted">
             We’ll confirm the language before the free preview starts. You don’t need to do
             anything else right now.
@@ -202,5 +253,133 @@ function QuoteBody({ order }: { order: CustomerOrder }) {
         </div>
       </div>
     </FlowColumns>
+  );
+}
+
+function ImageQuality({
+  order,
+  token,
+  onReplaced,
+}: {
+  order: CustomerOrder;
+  token: string;
+  onReplaced: () => void;
+}) {
+  const pages = retakePages(order);
+  const instructions = retakeInstructions(pages);
+  const uploads = retakeDocumentIds(pages);
+  const filenames = new Map(order.documents.map((document) => [document.id, document.filename]));
+  const basis = order.pageOrder?.basis;
+
+  return (
+    <section
+      data-testid="image-quality"
+      className="mt-5 rounded-[var(--cp-radius)] border border-line bg-bg px-4 py-4"
+    >
+      <div data-testid="retake-instructions" className="space-y-2 text-[13px] leading-normal text-ink-muted">
+        {instructions.map((message) => (
+          <p key={message}>{message}</p>
+        ))}
+      </div>
+      <div data-testid="page-order" className="mt-4">
+        {basis ? (
+          <p data-testid="page-order-basis" className="text-[13px] text-ink-muted">
+            {basis === "logical"
+              ? "We ordered these pages from the printed page numbers."
+              : "We kept the order you uploaded them."}
+          </p>
+        ) : null}
+        <ol className="mt-3 space-y-3">
+          {pages.map((page, index) => (
+            <li key={page.key} data-testid="retake-page" className="flex items-start gap-3">
+              <div
+                className="flex min-h-[108px] w-[92px] shrink-0 flex-col justify-between border border-line bg-[#fbf8ef] p-1.5"
+              >
+                <span className="font-mono text-[10px] text-ink-muted">{index + 1}</span>
+                {page.flags.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-1">
+                    {page.flags.map((flag) => (
+                      <span
+                        key={flag}
+                        data-testid={`quality-flag-${flag}`}
+                        className="rounded-full bg-bg px-1.5 py-0.5 text-[10px] leading-tight font-semibold text-[var(--cp-warn)] ring-1 ring-[var(--cp-warn)]/40"
+                      >
+                        {RETAKE_FLAG_LABEL[flag]}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <div className="min-w-0 pt-1">
+                <b className="block break-words text-sm">{page.filename}</b>
+                {page.detail ? (
+                  <p className="mt-1 text-[12.5px] text-ink-muted">{page.detail}</p>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ol>
+      </div>
+      <div className="mt-4 space-y-3">
+        {uploads.map((documentId) => (
+          <div key={documentId}>
+            {uploads.length > 1 ? (
+              <p className="mb-1.5 text-[13px] font-semibold">
+                {filenames.get(documentId) ??
+                  pages.find((page) => page.documentId === documentId)?.filename ??
+                  "Photo"}
+              </p>
+            ) : null}
+            <ReplacementUpload token={token} documentId={documentId} onReplaced={onReplaced} />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ReplacementUpload({
+  token,
+  documentId,
+  onReplaced,
+}: {
+  token: string;
+  documentId: string;
+  onReplaced: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  async function onChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setPending(true);
+    setError(null);
+    try {
+      await getFlowClient().replaceDocument(token, documentId, file);
+      onReplaced();
+    } catch (cause) {
+      setError(cause instanceof FlowApiError ? cause.message : "We couldn't upload that replacement.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="mt-3">
+      <label className={buttonClasses("secondary", "h-10 cursor-pointer px-3 text-[13px]")}>
+        <input
+          type="file"
+          className="sr-only"
+          accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif,.pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"
+          data-testid={`replace-${documentId}`}
+          disabled={pending || !token}
+          onChange={(event) => void onChange(event)}
+        />
+        {pending ? "Uploading…" : "Upload a clearer photo"}
+      </label>
+      {error ? <p className="mt-2 text-[13px] text-ink-muted">{error}</p> : null}
+    </div>
   );
 }

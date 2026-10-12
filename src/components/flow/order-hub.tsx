@@ -1,9 +1,12 @@
 "use client";
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
+import { trackPreviewReady } from "@/lib/analytics/gtag-events";
 import { orderHubStep } from "@/lib/flow/present";
 import { writeToken } from "@/lib/flow/session";
+import type { CustomerOrder } from "@/lib/orders/view";
+import { GoogleAdsConversion } from "@/components/google-ads-conversion";
 import { DownloadStates } from "./download-states";
 import { ProcessingView } from "./processing-view";
 import { QuoteView } from "./quote-view";
@@ -20,9 +23,17 @@ export function OrderHub() {
   const { order, error, loading } = useCustomerOrder(returned ? "" : token, "once");
   const view = orderHubStep(checkout, order?.status);
 
+  const reportPreviewReady = useCallback((next: CustomerOrder) => {
+    trackPreviewReady(next);
+  }, []);
+
   useEffect(() => {
     if (token) writeToken(token);
   }, [token]);
+
+  useEffect(() => {
+    if (order) trackPreviewReady(order);
+  }, [order]);
 
   useEffect(() => {
     if (!token) return;
@@ -40,7 +51,12 @@ export function OrderHub() {
   }
 
   if (checkout === "success" || (order && view === "download")) {
-    return <DownloadStates token={token} />;
+    return (
+      <>
+        <GoogleAdsConversion token={token} enabled={checkout === "success"} />
+        <DownloadStates token={token} />
+      </>
+    );
   }
 
   if (loading && !order) {
@@ -62,5 +78,5 @@ export function OrderHub() {
   }
 
   if (view === "quote") return <QuoteView token={token} />;
-  return <ProcessingView token={token} />;
+  return <ProcessingView token={token} onOrder={reportPreviewReady} />;
 }

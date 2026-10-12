@@ -75,14 +75,21 @@ function useIsMobile() {
   return mobile;
 }
 
+export type ViewerFocus = { page: number; nonce: number };
+
 export function SideBySideViewer({
   order,
+  chrome = "customer",
+  focusPage = null,
   onBuy,
   onCorrect,
   notice,
   noticeTestId,
 }: {
   order: PreviewOrder;
+  chrome?: "customer" | "staff";
+  /** Changes when staff asks the viewer to show a QA issue page. */
+  focusPage?: ViewerFocus | null;
   onBuy?: () => void;
   onCorrect?: (input: {
     page: number;
@@ -130,7 +137,7 @@ export function SideBySideViewer({
     return (
       <PreviewShell
         order={order}
-        rail={<OrderRail order={order} corrections={order.corrections} onBuy={onBuy} />}
+        rail={chrome === "staff" ? undefined : <OrderRail order={order} corrections={order.corrections} onBuy={onBuy} />}
         notice={notice}
         noticeTestId={noticeTestId}
         status="The preview engine failed to load. Refresh to try again."
@@ -142,8 +149,8 @@ export function SideBySideViewer({
     return (
       <PreviewShell
         order={order}
-        rail={<OrderRail order={order} corrections={order.corrections} onBuy={onBuy} />}
-        mobileBar={<MobileBuyBar order={order} onFlag={() => undefined} onBuy={onBuy} />}
+        rail={chrome === "staff" ? undefined : <OrderRail order={order} corrections={order.corrections} onBuy={onBuy} />}
+        mobileBar={chrome === "staff" ? undefined : <MobileBuyBar order={order} onFlag={() => undefined} onBuy={onBuy} />}
         notice={notice}
         noticeTestId={noticeTestId}
         status="Loading preview…"
@@ -159,6 +166,8 @@ export function SideBySideViewer({
     >
       <ViewerWorkspace
         order={order}
+        chrome={chrome}
+        focusPage={focusPage}
         onBuy={onBuy}
         onCorrect={onCorrect}
         notice={notice}
@@ -209,12 +218,16 @@ function usePageCount(documentId: string) {
 
 function ViewerWorkspace({
   order,
+  chrome,
+  focusPage,
   onBuy,
   onCorrect,
   notice,
   noticeTestId,
 }: {
   order: PreviewOrder;
+  chrome: "customer" | "staff";
+  focusPage: ViewerFocus | null;
   onBuy?: () => void;
   onCorrect?: (input: {
     page: number;
@@ -399,6 +412,12 @@ function ViewerWorkspace({
     }, 120);
   }
 
+  useEffect(() => {
+    if (!focusPage || !scrollCapability) return;
+    jumpBoth(focusPage.page, leadRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- jump when staff requests a page
+  }, [focusPage, scrollCapability]);
+
   function changeZoom(mode: "in" | "out" | "fit") {
     if (!zoomCapability) return;
     suppressSync.current = true;
@@ -523,12 +542,12 @@ function ViewerWorkspace({
       notice={notice}
       noticeTestId={noticeTestId}
       rail={
-        isMobile ? undefined : (
+        chrome === "staff" || isMobile ? undefined : (
           <OrderRail order={order} corrections={corrections} onBuy={onBuy} />
         )
       }
       mobileBar={
-        isMobile ? (
+        chrome === "customer" && isMobile ? (
           <MobileBuyBar order={order} onFlag={openCorrection} onBuy={onBuy} />
         ) : undefined
       }
@@ -640,6 +659,7 @@ function ViewerWorkspace({
               </span>
               Sync scrolling
             </button>
+            {chrome === "customer" ? (
             <div className="relative hidden shrink-0 md:block">
               <button
                 type="button"
@@ -655,6 +675,7 @@ function ViewerWorkspace({
                 </div>
               ) : null}
             </div>
+            ) : null}
           </div>
           {groups.length > 1 ? (
             <div

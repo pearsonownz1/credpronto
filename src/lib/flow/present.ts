@@ -160,6 +160,124 @@ export function documentIdForPage(
   return documents.length === 1 ? documents[0].id : null;
 }
 
+const RETAKE_FLAG_ORDER = ["blurry", "cropped", "glare", "too_dark", "unreadable_fields"] as const;
+
+export type RetakeFlag = (typeof RETAKE_FLAG_ORDER)[number];
+
+export const RETAKE_FLAG_LABEL: Record<RetakeFlag, string> = {
+  blurry: "Blurry",
+  cropped: "Cropped",
+  glare: "Glare",
+  too_dark: "Too dark",
+  unreadable_fields: "Unreadable fields",
+};
+
+export type RetakePage = {
+  key: string;
+  documentId: string;
+  filename: string;
+  detail: string;
+  flags: RetakeFlag[];
+  message: string | null;
+};
+
+const RETAKE_FALLBACK =
+  "This photo is hard to read. Retake it in even light, with the whole page in the frame and the text sharp, then upload a replacement.";
+
+function retakeFlags(flags: readonly string[]): RetakeFlag[] {
+  const present = new Set(flags);
+  return RETAKE_FLAG_ORDER.filter((flag) => present.has(flag));
+}
+
+function qualityPage(
+  pages: CustomerOrder["pages"],
+  documentId: string,
+  appliedPage: number,
+  uploadPage: number,
+) {
+  return (
+    pages.find((page) => page.documentId === documentId && page.pageNumber === appliedPage) ??
+    pages.find(
+      (page) =>
+        page.documentId === documentId && page.uploadPage != null && page.uploadPage === uploadPage,
+    )
+  );
+}
+
+/** Pages to show on an image-quality retake, in `pageOrder` when analysis stored one. */
+export function retakePages(order: CustomerOrder): RetakePage[] {
+  const filenames = new Map(order.documents.map((document) => [document.id, document.filename]));
+  if (order.pageOrder && order.pageOrder.pages.length > 0) {
+    return order.pageOrder.pages.map((page) => {
+      const quality = qualityPage(order.pages, page.documentId, page.appliedPage, page.uploadPage);
+      const moved =
+        page.uploadPosition !== page.appliedPosition || page.uploadPage !== page.appliedPage;
+      return {
+        key: `${page.documentId}-${page.uploadPage}-${page.appliedPage}`,
+        documentId: page.documentId,
+        filename: page.filename || filenames.get(page.documentId) || "Page",
+        detail: [
+          page.logicalPage != null ? `printed page ${page.logicalPage}` : "",
+          page.hint ?? "",
+          moved ? "moved from the upload order" : "",
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        flags: retakeFlags(quality?.qualityFlags ?? []),
+        message: quality?.qualityMessage ?? null,
+      };
+    });
+  }
+
+  if (order.pages.length > 0) {
+    return order.pages.map((page) => ({
+      key: `${page.documentId}-${page.pageNumber}`,
+      documentId: page.documentId,
+      filename: filenames.get(page.documentId) || "Page",
+      detail: [
+        page.logicalPage != null ? `printed page ${page.logicalPage}` : `page ${page.pageNumber}`,
+        page.orderHint ?? "",
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      flags: retakeFlags(page.qualityFlags),
+      message: page.qualityMessage,
+    }));
+  }
+
+  return order.documents.map((document) => ({
+    key: document.id,
+    documentId: document.id,
+    filename: document.filename,
+    detail: "",
+    flags: [],
+    message: null,
+  }));
+}
+
+export function retakeInstructions(pages: readonly RetakePage[]): string[] {
+  const seen = new Set<string>();
+  const messages: string[] = [];
+  for (const page of pages) {
+    const message = page.message?.trim();
+    if (!message || seen.has(message)) continue;
+    seen.add(message);
+    messages.push(message);
+  }
+  return messages.length > 0 ? messages : [RETAKE_FALLBACK];
+}
+
+/** Documents the clearer-photo button should replace, in thumbnail order. */
+export function retakeDocumentIds(pages: readonly RetakePage[]): string[] {
+  const ids: string[] = [];
+  for (const page of pages) {
+    if (page.flags.length === 0 && !page.message) continue;
+    if (!ids.includes(page.documentId)) ids.push(page.documentId);
+  }
+  if (ids.length === 0 && pages[0]) ids.push(pages[0].documentId);
+  return ids;
+}
+
 export function toPreviewOrder(
   order: CustomerOrder,
   preview: PreviewResponse,

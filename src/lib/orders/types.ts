@@ -40,12 +40,79 @@ export type OrderEventType =
   | "account_linked"
   | "translation_edited"
   | "note_added"
-  | "approved";
+  | "approved"
+  | "staff_notified";
+
+export type PageOrderBasis = "logical" | "upload";
+
+export type StoredPage = {
+  documentId: string;
+  uploadPosition: number;
+  appliedPosition: number;
+  uploadPage: number;
+  appliedPage: number;
+  logicalPage: number | null;
+  hint: string | null;
+  confidence: number | null;
+};
+
+export type StoredPageOrder = {
+  basis: PageOrderBasis;
+  pages: StoredPage[];
+};
+
+export type OrderType = "translation" | "evaluation" | "expert_letter";
+
+export type EvaluationService = "diploma" | "course_by_course";
+
+export type EvaluationLine = {
+  kind: "evaluation" | "translation";
+  description: string;
+  quantity: number;
+  unitAmountCents: number;
+  amountCents: number;
+};
+
+export type DiplomaCredential = {
+  applicant: string;
+  institution: string;
+  country: string;
+  credential: string;
+  field: string;
+  dates: string;
+  usEquivalency: string;
+  documentsReviewed: string[];
+};
+
+export type CourseRow = {
+  originalName: string;
+  englishName: string;
+  localCredits: number;
+  localGrade: string;
+  usSemesterHours: number;
+  usGrade: string;
+  gradePoints: number;
+};
+
+export type EvaluationResult =
+  | { kind: "diploma"; credentials: DiplomaCredential[] }
+  | {
+      kind: "course_by_course";
+      applicant: string;
+      institution: string;
+      country: string;
+      credential: string;
+      years: Array<{ year: string; courses: CourseRow[] }>;
+      totalHours: number;
+      gpa: number;
+      gradeScale: string;
+    };
 
 export type OrderRecord = {
   id: string;
   customerId: string;
   userId: string | null;
+  serviceType: string;
   status: OrderStatus;
   sourceLanguage: string | null;
   targetLanguage: string;
@@ -59,6 +126,15 @@ export type OrderRecord = {
   combinedOriginalPath: string | null;
   finalTranslationPath: string | null;
   certificationPath: string | null;
+  pageOrderBasis: PageOrderBasis | null;
+  pageOrder: StoredPageOrder | null;
+  externalRef: string | null;
+  orderType: OrderType;
+  service: EvaluationService | null;
+  degreeCount: number | null;
+  evaluationCents: number | null;
+  translationCents: number | null;
+  evaluationResult: EvaluationResult | null;
   createdAt: string;
 };
 
@@ -74,6 +150,7 @@ export type DocumentRecord = {
   detectedLanguage: string | null;
   confidence: number | null;
   position: number;
+  appliedPosition: number | null;
 };
 
 export type PageRecord = {
@@ -87,6 +164,12 @@ export type PageRecord = {
   needsReview: boolean;
   widthPt: number | null;
   heightPt: number | null;
+  uploadPage: number | null;
+  logicalPage: number | null;
+  orderHint: string | null;
+  qualityScore: number | null;
+  qualityFlags: string[];
+  qualityMessage: string | null;
 };
 
 export type ConfirmationRecord = {

@@ -95,7 +95,10 @@ export function LivePreview() {
         router.push("/checkout");
       }}
       onCorrect={async ({ page, note, documentId }) => {
-        const resolved = documentId ?? documentIdForPage(order.documents, page);
+        const resolved =
+          documentId ??
+          preview.original.pages.find((item) => item.page === page)?.documentId ??
+          documentIdForPage(order.documents, page);
         if (!resolved) {
           throw new Error("This page isn't tied to a document yet.");
         }

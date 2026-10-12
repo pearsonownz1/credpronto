@@ -17,6 +17,8 @@ export default defineConfig({
     timeout: 120_000,
     env: {
       ...process.env,
+      CREDPRONTO_MOCK: "1",
+      NEXT_PUBLIC_CREDPRONTO_MOCK: "1",
       NEXT_PUBLIC_FLOW_MOCK: "1",
     },
   },
