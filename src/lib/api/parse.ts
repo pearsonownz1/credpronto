@@ -227,8 +227,23 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
     translationUrl: text(row.translationUrl),
     qa: parseQa(row.qa),
     expedited: row.expedited === true,
+    finalVersions: parseFinalVersions(row.finalVersions),
     fulfillment: parseFulfillment(row.fulfillment),
   };
+}
+
+function parseFinalVersions(value: unknown): StaffDetail["finalVersions"] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const row = entry as Record<string, unknown>;
+    const path = text(row.path);
+    const uploadedBy = text(row.uploadedBy);
+    const uploadedAt = text(row.uploadedAt);
+    const version = amount(row.version);
+    if (!path || !uploadedBy || !uploadedAt || version == null) return [];
+    return [{ version, path, uploadedBy, uploadedAt, current: row.current === true }];
+  });
 }
 
 function parseFulfillment(value: unknown): StaffDetail["fulfillment"] {

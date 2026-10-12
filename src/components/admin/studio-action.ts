@@ -16,6 +16,14 @@ export function approveButtonLabel(pending: string | null): string {
   return pending === "approve" ? "Approving…" : "Approve and release";
 }
 
+/** Approve stays off until a staff upload is the current final. */
+export function approveButtonDisabled(
+  pending: string | null,
+  versions: readonly { current: boolean }[],
+): boolean {
+  return pending !== null || !versions.some((version) => version.current);
+}
+
 /** Apply one studio action. Status changes and a refresh happen only after ok. */
 export function settleStudioAction(result: StudioTaskResult | null | undefined): StudioSettlement {
   if (!result?.ok) {

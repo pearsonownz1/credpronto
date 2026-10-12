@@ -24,6 +24,7 @@ import {
 import { sendDeliveryReady } from "./email";
 import { fulfillmentFor, parseTrackingNumber } from "./fulfillment";
 import { HttpError } from "./errors";
+import { assertCurrentStaffFinal, listStaffFinals } from "./finals";
 import { normalizeLanguage } from "./languages";
 import { evaluationQuote } from "./evaluation-price";
 import { retryEvaluation } from "./evaluation";
@@ -114,6 +115,7 @@ export async function staffOrder(orderId: string) {
           issues: latestQa.issues,
         }
       : null,
+    finalVersions: await listStaffFinals(db, order.id, order.finalTranslationPath),
   };
 }
 
@@ -158,20 +160,22 @@ export async function approveOrder(orderId: string) {
     const files = await signedFinals(db, order, delivery.finalPath, delivery.certificationPath);
     return { status: "delivered" as const, ...files };
   }
-  if (!order.finalTranslationPath || !order.certificationPath) {
+  const staffFinal = await assertCurrentStaffFinal(db, order);
+  if (!order.certificationPath) {
     throw new HttpError("Translated files are not ready", 409);
   }
 
   await ensureStaffRow(db, userId);
   // Status and the delivery email run only after this returns. A throw leaves the order unchanged.
-  await stampApprovedCover(db, order, await approverDisplayName(db, userId));
+  const stampOrder = { ...order, finalTranslationPath: staffFinal.path };
+  await stampApprovedCover(db, stampOrder, await approverDisplayName(db, userId));
   const now = new Date().toISOString();
   if (delivery.status !== "approved") {
     await updateDelivery(db, order.id, {
       status: "approved",
       approved_by: userId,
       approved_at: now,
-      final_path: order.finalTranslationPath,
+      final_path: staffFinal.path,
       certification_path: order.certificationPath,
     });
     await updateOrder(db, order.id, { status: "approved" });
@@ -182,7 +186,7 @@ export async function approveOrder(orderId: string) {
 
   const email = await customerEmail(db, order.customerId);
   const sent = email ? await sendDeliveryReady(email) : { sent: false, skipped: true };
-  const files = await signedFinals(db, order, order.finalTranslationPath, order.certificationPath);
+  const files = await signedFinals(db, order, staffFinal.path, order.certificationPath);
   if (!sent.sent && !sent.skipped) {
     return { status: "approved" as const, email: "failed" as const, ...files };
   }
@@ -192,7 +196,7 @@ export async function approveOrder(orderId: string) {
     delivered_at: new Date().toISOString(),
     approved_by: delivery.approvedBy ?? userId,
     approved_at: delivery.approvedAt ?? now,
-    final_path: order.finalTranslationPath,
+    final_path: staffFinal.path,
     certification_path: order.certificationPath,
   });
   await updateOrder(db, order.id, { status: "delivered" });

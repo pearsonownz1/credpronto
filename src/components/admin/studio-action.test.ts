@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { approveButtonLabel, runStudioAction, settleStudioAction } from "./studio-action";
+import { approveButtonDisabled, approveButtonLabel, runStudioAction, settleStudioAction } from "./studio-action";
 
 describe("approve button", () => {
+  it("stays disabled until a staff-uploaded final is current", () => {
+    expect(approveButtonDisabled(null, [])).toBe(true);
+    expect(approveButtonDisabled(null, [{ current: false }])).toBe(true);
+    expect(approveButtonDisabled(null, [{ current: true }])).toBe(false);
+    expect(approveButtonDisabled("approve", [{ current: true }])).toBe(true);
+  });
+
   it("shows a loading label while the request is in flight", () => {
     expect(approveButtonLabel(null)).toBe("Approve and release");
     expect(approveButtonLabel("approve")).toBe("Approving…");

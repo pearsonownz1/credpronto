@@ -1,5 +1,5 @@
 import { browserJson, publicMockMode } from "@/lib/api/browser";
-import type { ApiResult, StaffNote } from "@/lib/api/types";
+import { errorMessage, type ApiResult, type StaffFinalVersion, type StaffNote } from "@/lib/api/types";
 
 export type PageEdit = { documentId: string; pageNumber: number; paragraphs: string[] };
 
@@ -25,6 +25,45 @@ export async function resolveReview(id: string, sourceLanguage: string): Promise
     method: "POST",
     body: JSON.stringify(sourceLanguage ? { sourceLanguage } : {}),
   });
+}
+
+export async function uploadStaffFinal(id: string, file: File): Promise<ApiResult<{ versions: StaffFinalVersion[] }>> {
+  if (publicMockMode()) {
+    return {
+      ok: true,
+      status: 201,
+      data: {
+        versions: [
+          {
+            version: 1,
+            path: "mock/staff-final/current.pdf",
+            uploadedBy: "you",
+            uploadedAt: new Date().toISOString(),
+            current: true,
+          },
+        ],
+      },
+    };
+  }
+  const body = new FormData();
+  body.set("file", file);
+  try {
+    const response = await fetch(`/api/admin/orders/${encodeURIComponent(id)}/final`, {
+      method: "POST",
+      body,
+      credentials: "include",
+      headers: { accept: "application/json" },
+    });
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) return { ok: false, status: response.status, error: errorMessage(payload, response.status) };
+    const versions =
+      payload && typeof payload === "object" && Array.isArray((payload as { versions?: unknown }).versions)
+        ? ((payload as { versions: StaffFinalVersion[] }).versions)
+        : [];
+    return { ok: true, status: response.status, data: { versions } };
+  } catch {
+    return { ok: false, status: 503, error: "Request failed" };
+  }
 }
 
 export async function approveOrder(id: string): Promise<ApiResult<unknown>> {

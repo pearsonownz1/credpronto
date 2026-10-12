@@ -145,6 +145,32 @@ describe("customer order presentation", () => {
     expect(detail?.filename).toBe("diploma.pdf");
     expect(detail?.originalUrl).toBeNull();
     expect(detail?.qa).toBeNull();
+    expect(detail?.finalVersions).toEqual([]);
+    expect(
+      parseStaffDetail({
+        id: "ord-1",
+        status: "paid",
+        createdAt: "2026-10-12T00:00:00.000Z",
+        finalVersions: [
+          {
+            version: 2,
+            path: "ord-1/staff-final/current.pdf",
+            uploadedBy: "staff-1",
+            uploadedAt: "2026-10-12T08:13:44.123Z",
+            current: true,
+          },
+          { version: 1, path: "skip" },
+        ],
+      })?.finalVersions,
+    ).toEqual([
+      {
+        version: 2,
+        path: "ord-1/staff-final/current.pdf",
+        uploadedBy: "staff-1",
+        uploadedAt: "2026-10-12T08:13:44.123Z",
+        current: true,
+      },
+    ]);
   });
 
   it("keeps a QA report only when the payload includes one", () => {

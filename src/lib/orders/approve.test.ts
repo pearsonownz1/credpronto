@@ -11,13 +11,16 @@ import type { DeliveryRecord, OrderRecord, PaymentRecord } from "./types";
 
 const orderId = "28492f38-1111-4111-8111-111111111111";
 const userId = "staff-1";
+const staffFinalName = "20261012T081300000Z--staff-1.pdf";
+const staffFinalPath = `${orderId}/staff-final/${staffFinalName}`;
+const aiFinalPath = `${orderId}/translation-v1.pdf`;
 
 const paidOrder = {
   id: orderId,
   customerId: "customer-1",
   status: "paid",
   targetLanguage: "en",
-  finalTranslationPath: "finals/translation.pdf",
+  finalTranslationPath: staffFinalPath,
   certificationPath: "finals/certification.pdf",
 } as OrderRecord;
 
@@ -52,6 +55,7 @@ describe("approveOrder cover stamp", () => {
     vi.spyOn(certification, "approverDisplayName").mockResolvedValue("Ada Lovelace");
     vi.spyOn(certification, "stampApprovedCover").mockResolvedValue(undefined);
     vi.spyOn(email, "sendDeliveryReady").mockResolvedValue({ sent: true, skipped: false });
+    vi.spyOn(storage, "listObjectNames").mockResolvedValue([staffFinalName]);
     vi.spyOn(storage, "signedObjectUrl").mockResolvedValue("https://files.example/signed");
     vi.spyOn(webhooks, "notifyOrder").mockResolvedValue(undefined);
   });
@@ -97,5 +101,31 @@ describe("approveOrder cover stamp", () => {
     expect(steps.indexOf("stamp")).toBeLessThan(steps.indexOf("email"));
     expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, { status: "approved" });
     expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, { status: "delivered" });
+    expect(certification.stampApprovedCover).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ finalTranslationPath: staffFinalPath }),
+      "Ada Lovelace",
+    );
+    expect(db.updateDelivery).toHaveBeenCalledWith(
+      expect.anything(),
+      orderId,
+      expect.objectContaining({ final_path: staffFinalPath }),
+    );
+  });
+
+  it("refuses approval and does not stamp the AI file until the staff upload is current", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue({
+      ...paidOrder,
+      finalTranslationPath: aiFinalPath,
+    });
+
+    const response = await run(async () => json(await approveOrder(orderId)));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "Upload the reviewed final PDF first" });
+    expect(certification.stampApprovedCover).not.toHaveBeenCalled();
+    expect(db.updateOrder).not.toHaveBeenCalled();
+    expect(db.updateDelivery).not.toHaveBeenCalled();
+    expect(email.sendDeliveryReady).not.toHaveBeenCalled();
   });
 });

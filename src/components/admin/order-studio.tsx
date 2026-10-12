@@ -15,13 +15,14 @@ import {
   regenerateOrder,
   resolveReview,
   shipOrder,
+  uploadStaffFinal,
 } from "@/lib/api/mutations";
 import type { StaffDetail, StaffNote } from "@/lib/api/types";
 import { languageLabel } from "@/lib/orders/languages";
 import type { PreviewOrder, PreviewPageSize } from "@/components/preview/preview-order";
 import { humanStatus } from "@/components/admin/orders-board";
 import { QaPanel } from "@/components/admin/qa-panel";
-import { approveButtonLabel, runStudioAction, type StudioTaskResult } from "@/components/admin/studio-action";
+import { approveButtonDisabled, approveButtonLabel, runStudioAction, type StudioTaskResult } from "@/components/admin/studio-action";
 import type { ViewerFocus } from "@/components/preview/side-by-side-viewer";
 
 const SideBySideViewer = dynamic(
@@ -53,7 +54,15 @@ export function OrderStudio({
   const [status, setStatus] = useState(detail.status);
   const [confirmRefund, setConfirmRefund] = useState(false);
   const [focusPage, setFocusPage] = useState<ViewerFocus | null>(null);
+  const versionKey = detail.finalVersions.map((version) => `${version.path}:${version.current}`).join("|");
+  const [finalVersions, setFinalVersions] = useState(detail.finalVersions);
+  const [versionKeySeen, setVersionKeySeen] = useState(versionKey);
+  if (versionKeySeen !== versionKey) {
+    setVersionKeySeen(versionKey);
+    setFinalVersions(detail.finalVersions);
+  }
   const focusNonce = useRef(0);
+  const finalFile = useRef<HTMLInputElement>(null);
   const preview = useMemo(() => staffPreview(detail), [detail]);
   const activity = activityFor(detail, thread);
   const canEdit = EDITABLE.has(detail.status);
@@ -150,7 +159,12 @@ export function OrderStudio({
                 type="button"
                 data-testid="approve-order"
                 aria-busy={pending === "approve"}
-                disabled={pending !== null}
+                disabled={approveButtonDisabled(pending, finalVersions)}
+                title={
+                  finalVersions.some((version) => version.current)
+                    ? undefined
+                    : "Upload the reviewed final PDF first"
+                }
                 onClick={() =>
                   void run("approve", async () => {
                     const result = await approveOrder(detail.id);
@@ -203,6 +217,67 @@ export function OrderStudio({
           </p>
         ) : null}
       </div>
+
+      <section
+        data-testid="replace-final"
+        className="rounded-[var(--cp-radius)] border border-line bg-white p-4"
+      >
+        <h2 className="text-sm font-semibold">Replace final PDF</h2>
+        <p className="mt-1 text-sm text-ink-muted">
+          Upload the corrected PDF. Approve stamps the cover onto this file.
+        </p>
+        <form
+          className="mt-3 flex flex-wrap items-center gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const file = finalFile.current?.files?.[0];
+            if (!file) {
+              setError("Upload a PDF");
+              setMessage(null);
+              return;
+            }
+            void run("final", async () => {
+              const result = await uploadStaffFinal(detail.id, file);
+              if (!result.ok) return { ok: false, error: result.error };
+              setFinalVersions(result.data.versions);
+              if (finalFile.current) finalFile.current.value = "";
+              return { ok: true, message: "Reviewed final PDF saved." };
+            });
+          }}
+        >
+          <input
+            ref={finalFile}
+            type="file"
+            accept="application/pdf,.pdf"
+            data-testid="final-pdf-file"
+            className="text-sm"
+          />
+          <button
+            type="submit"
+            data-testid="replace-final-pdf"
+            disabled={pending !== null}
+            className="inline-flex h-9 items-center rounded-[var(--cp-radius)] bg-primary px-3 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {pending === "final" ? "Uploading…" : "Upload"}
+          </button>
+        </form>
+        {finalVersions.length === 0 ? (
+          <p className="mt-3 text-sm text-ink-muted">No staff upload yet. Approve stays off until one is current.</p>
+        ) : (
+          <ul data-testid="final-versions" className="mt-3 grid gap-2">
+            {finalVersions.map((version) => (
+              <li key={version.path} className="text-sm">
+                <span className="font-semibold">Version {version.version}</span>
+                {version.current ? " · Current" : ""}
+                {" · "}
+                {formatFinalStamp(version.uploadedAt)}
+                {" · "}
+                <span className="font-mono text-xs">{version.uploadedBy}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <FulfillmentTasks
         key={detail.id}
@@ -556,6 +631,20 @@ function FulfillmentTasks({
       ) : null}
     </section>
   );
+}
+
+function formatFinalStamp(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "UTC",
+    timeZoneName: "short",
+  }).format(date);
 }
 
 function staffPreview(detail: StaffDetail): PreviewOrder | null {

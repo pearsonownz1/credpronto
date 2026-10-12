@@ -86,6 +86,14 @@ export type QaReport = {
   issues: QaIssue[];
 };
 
+export type StaffFinalVersion = {
+  version: number;
+  path: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  current: boolean;
+};
+
 export type StaffDetail = {
   id: string;
   status: string;
@@ -107,6 +115,7 @@ export type StaffDetail = {
   /** Absent until the order payload includes a QA report. */
   qa: QaReport | null;
   expedited: boolean;
+  finalVersions: StaffFinalVersion[];
   fulfillment: {
     mail: {
       status: "pending" | "shipped";
