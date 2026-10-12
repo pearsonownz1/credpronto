@@ -54,16 +54,19 @@ describe("checkout line product", () => {
         imageUrl: "https://files.example/preview.png",
       }),
     ).toEqual({
-      name: "CredPronto certified translation (1 pages)",
+      name: "CredPronto certified translation (1 page)",
       description,
       images: ["https://files.example/preview.png"],
     });
     expect(
       checkoutLineProduct({ billablePages: 1, description, imageUrl: null }),
     ).toEqual({
-      name: "CredPronto certified translation (1 pages)",
+      name: "CredPronto certified translation (1 page)",
       description,
     });
+    expect(checkoutLineProduct({ billablePages: 3, description, imageUrl: null }).name).toBe(
+      "CredPronto certified translation (3 pages)",
+    );
   });
 });
 

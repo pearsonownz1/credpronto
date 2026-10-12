@@ -2,6 +2,7 @@
 
 import type { FormEvent } from "react";
 import { AddonError, AddonPanel, AddonTotal, type AddonPanelState } from "./addon-panel";
+import { pageLabel } from "@/lib/flow/pricing";
 import {
   buyLabel,
   formatMoney,
@@ -25,7 +26,7 @@ export function OrderRail({
       ? pricing.lines
       : [
           {
-            label: `${pricing.pages} pages × ${formatMoney(pricing.perPageCents)}`,
+            label: `${pageLabel(pricing.pages)} × ${formatMoney(pricing.perPageCents)}`,
             amountCents: pricing.totalCents,
           },
         ];
@@ -149,7 +150,7 @@ export function MobileBuyBar({
           ⚑ Flag a correction
         </button>
         <span>
-          {order.pageCount} pages · certified
+          {pageLabel(order.pageCount)} · certified
         </span>
       </div>
       <button

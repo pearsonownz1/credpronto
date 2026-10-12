@@ -4,8 +4,17 @@ import {
   PRICE_PER_PAGE_CENTS,
   billablePages,
   formatMoney,
+  pageLabel,
   priceDraft,
 } from "./pricing";
+
+describe("page labels", () => {
+  it("uses the singular only for one page", () => {
+    expect(pageLabel(1)).toBe("1 page");
+    expect(pageLabel(0)).toBe("0 pages");
+    expect(pageLabel(3)).toBe("3 pages");
+  });
+});
 
 describe("billable pages", () => {
   it("counts one side of up to 250 words as one page", () => {

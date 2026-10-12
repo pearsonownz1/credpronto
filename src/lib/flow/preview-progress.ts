@@ -1,3 +1,5 @@
+import { pageLabel } from "./pricing";
+
 export const PREVIEW_WORK_STEPS = [
   { id: "received", label: "Files received" },
   { id: "read", label: "Text read" },
@@ -127,7 +129,7 @@ export function translatingStatusLabel(input: {
   if (input.orderType === "evaluation") return "Building the report";
   const done = input.pagesDone;
   if (typeof done === "number" && Number.isFinite(done) && done >= 0) {
-    return `Translating… ${Math.floor(done)} pages done`;
+    return `Translating… ${pageLabel(Math.floor(done))} done`;
   }
   return "Translating and laying out";
 }

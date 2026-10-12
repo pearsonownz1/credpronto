@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
-import { formatMoney } from "@/lib/flow/pricing";
+import { formatMoney, pageLabel } from "@/lib/flow/pricing";
 import {
   checkoutFailureMessage,
   languageLine,
@@ -269,7 +269,7 @@ function CheckoutForm({
           <div className="text-sm">
             <b>{order.documents[0]?.filename ?? "Document"}</b>
             <div className="text-[13px] text-ink-muted">
-              {languageLine(order)} · {order.billablePages ?? 0} pages
+              {languageLine(order)} · {pageLabel(order.billablePages ?? 0)}
             </div>
             <div className="mt-1 text-[12.5px] text-[var(--cp-ok)]">✓ Reviewed</div>
           </div>

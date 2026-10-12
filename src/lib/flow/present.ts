@@ -400,7 +400,7 @@ export function servicePriceLines(order: {
   if (pages <= 0) return [];
   return [
     {
-      label: `${pages} pages × ${formatMoney(order.unitPriceCents)}`,
+      label: billablePriceLabel(pages, order.unitPriceCents),
       amountCents: pages * order.unitPriceCents,
     },
   ];

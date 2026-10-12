@@ -227,6 +227,9 @@ describe("quote language", () => {
     expect(servicePriceLines(order({ billablePages: 3, totalCents: 2985 }))).toEqual([
       { label: "3 pages × $9.95", amountCents: 2985 },
     ]);
+    expect(servicePriceLines(order({ billablePages: 1, totalCents: 995 }))).toEqual([
+      { label: "1 page × $9.95", amountCents: 995 },
+    ]);
   });
 });
 
