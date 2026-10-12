@@ -40,6 +40,9 @@ yarn-error.log*
 /blob-report/
 /playwright/.cache/
 
+# copied from @embedpdf/pdfium by scripts/copy-pdfium.mjs
+/public/pdfium/
+
 # vercel
 .vercel
 

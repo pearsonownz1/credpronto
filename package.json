@@ -3,16 +3,30 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "postinstall": "node scripts/copy-pdfium.mjs",
+    "prebuild": "node scripts/copy-pdfium.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@embedpdf/core": "2.15.1",
+    "@embedpdf/engines": "2.15.1",
+    "@embedpdf/pdfium": "2.15.1",
+    "@embedpdf/plugin-document-manager": "2.15.1",
+    "@embedpdf/plugin-interaction-manager": "2.15.1",
+    "@embedpdf/plugin-render": "2.15.1",
+    "@embedpdf/plugin-scroll": "2.15.1",
+    "@embedpdf/plugin-thumbnail": "2.15.1",
+    "@embedpdf/plugin-viewport": "2.15.1",
+    "@embedpdf/plugin-zoom": "2.15.1",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.3",
+    "geist": "1.7.2",
     "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"
@@ -25,6 +39,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
+    "pdf-lib": "1.17.1",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^5.0.3"

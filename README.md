@@ -27,7 +27,8 @@ npm run build
 | Path | Purpose |
 | --- | --- |
 | `src/app/` | App Router routes and layouts |
-| `src/components/` | Shared UI |
+| `src/components/` | Shared UI. `src/components/preview/` is the EmbedPDF side-by-side viewer. |
+| `public/samples/` | Synthetic PDFs for the preview spike |
 | `src/lib/supabase/` | Browser and server Supabase clients (`@supabase/ssr`) |
 | `src/styles/tokens.css` | Light-theme CSS variables |
 | `src/proxy.ts` | Session refresh for Supabase Auth. Public pages stay open. |
