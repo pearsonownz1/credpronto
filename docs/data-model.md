@@ -1,0 +1,146 @@
+# CredPronto data model
+
+CredPronto sells a certified translation before the customer pays. The customer uploads documents and an email address, sees an exact price, checks a watermarked preview, and only then pays. Staff approve the certification, and the clean PDF plus the certification page are released by a short-lived signed link.
+
+There is no customer account. `customers` is an email address, not a row in `auth.users`. Later products (credential evaluation, expert letters) are additional `orders.service_type` values on this same model, not a second schema.
+
+The database is Postgres on Supabase. Files live in private Storage buckets. The Next.js server on Vercel is the only component that talks to Postgres for a customer, and it does so with the service role.
+
+## Access
+
+Row level security is enabled on every application table. There are no policies for `anon`. The only policies are `staff_all` on each table: an `authenticated` user may read and write a row when `private.is_staff()` is true.
+
+`private.is_staff()` is `security definer` and lives in the `private` schema, which the Data API does not expose. It returns true when `auth.uid()` matches `staff.user_id`. Because it runs as the owner, the staff policy can read `staff` without the policy calling itself. `search_path` is empty so the function cannot be redirected at a different table.
+
+Customers never hold a Supabase JWT for these tables. Server routes check the order token, then use the service role, which bypasses RLS. Staff use the admin UI as `authenticated` users who have a `staff` row. The first admin is inserted with the service role (SQL editor or a seed), because a non-staff session cannot insert into `staff`.
+
+`anon` is revoked from every application table. A leaked anon key cannot read orders, documents, or payments even if a policy is added later by mistake and forgotten for one table — the grant is gone too. Do not grant these tables back to `anon`.
+
+## Order token
+
+Each order has an unguessable token that brings the customer back to the quote, the preview, and the download without an account.
+
+The server generates at least 32 bytes from a CSPRNG and puts that raw token in the email link. The database stores only the lowercase hex SHA-256 of the exact string in the link, in `orders.public_token_hash`. A check constraint rejects anything that is not 64 hex characters, so a raw token cannot be written into the column. The column is unique. Lookup is equality on the hash. Do not log the raw token, and do not put it in `order_events.data`.
+
+The hash is not a password hash. It does not need to be slow. It only prevents a database read from becoming a list of live links.
+
+## Billable pages
+
+Price for a translation is `$9.95` per billable page (`orders.unit_price_cents` defaults to `995`, `currency` defaults to `usd`).
+
+A billable page is one side of an original page, up to 250 words. Words past 250 on that same side count as another billable page. Zero words still counts as one side, because the side itself was part of the original.
+
+For each `document_pages` row, once `word_count` is known:
+
+```text
+billable_units = greatest(1, ceil(word_count / 250))
+```
+
+| Words on that side | Billable units |
+| --- | --- |
+| 0–250 | 1 |
+| 251–500 | 2 |
+| 501–750 | 3 |
+
+The check constraint `document_pages_billable_rule_chk` rejects any other pair. Both columns stay null until OCR has produced a count.
+
+`orders.billable_pages` is the sum of `billable_units` across every side of every document on the order. `orders.total_cents` must equal `billable_pages * unit_price_cents` whenever both are set. A translation cannot move to `paid`, `approved`, or `delivered` unless the language pair is confirmed, `billable_pages` is at least 1, and the total matches that product. Evaluation and expert-letter orders may carry a total without a page count.
+
+Example: a two-sided diploma, 180 words on the first side and 400 on the second, is `1 + 2 = 3` billable pages, `$29.85`, `total_cents = 2985`.
+
+## Status flow
+
+`orders.status` is the customer-visible workflow. The database does not encode every transition, so a later `service_type` can reuse the same statuses. These are the translation transitions the server should perform:
+
+1. `draft` — email captured, upload starting. Acquisition fields (`utm_source`, `utm_medium`, `utm_campaign`, `gclid`, `landing_path`) are written here.
+2. `quoted` — language and billable pages are known and `total_cents` is set. `quote_shown` is recorded.
+3. `needs_review` — detection confidence is low, a page is flagged (`document_pages.needs_review`), or a person has to look before a price is trustworthy. `review_reason` says why. Staff clear it back into `quoted` or `processing`.
+4. `confirmed` — the customer has accepted the language pair (`language_confirmed`) and the name and date fields in `confirmations`.
+5. `processing` — a translation job is running.
+6. `preview_ready` — a watermarked preview version exists. The customer compares it with the original.
+7. `correction_requested` — the customer asked for a change. Open `corrections` rows are regenerated into the next preview version, marked `resolved` with `resolved_preview_version`, and the order returns to `preview_ready`.
+8. `paid` — Stripe Checkout completed. A `payments` row is `paid` and a `deliveries` row exists in `pending`.
+9. `approved` — a staff user has certified the translation. `deliveries.status` is `approved`.
+10. `delivered` — the email with the signed links has been sent.
+11. `cancelled` — the customer or staff stopped the order before delivery.
+12. `failed` — processing or payment failed and the order will not continue without a new attempt.
+
+`cancelled` and `failed` are terminal for that order. A new upload is a new order.
+
+Related statuses:
+
+- `documents.status`: `uploaded` → `processing` → `ready`, or `failed`.
+- `translations.status` and `previews.status`: `pending` → `ready`, or `failed`.
+- `corrections.status`: `open` → `resolved` (a preview version fixed it) or `dismissed`. A resolved row must name `resolved_preview_version`. An open or dismissed row must not.
+- `payments.status`: `pending` → `paid`, or `failed` / `canceled`. `refunded` still requires `paid_at`. At most one `paid` row per order.
+- `deliveries.status`: `pending` → `approved` → `delivered`, or `failed`. Approval requires `approved_by` (a `staff.user_id`) and `approved_at`. Delivery also requires `delivered_at`. Approved and delivered rows must both have `final_path` and `certification_path`.
+
+## Tables
+
+### `customers`
+
+The buyer. `email` is `citext` and unique, so `Ada@example.com` and `ada@example.com` are one person. `name` is optional until they confirm it. No password, no `auth.users` foreign key.
+
+### `orders`
+
+One purchase of one `service_type`: `translation`, `evaluation`, or `expert_letter`. `target_language` defaults to `en`. `source_language` is filled by detection and then confirmed. `eta_at` is the promise shown with the quote. `public_token_hash` is the return-link secret described above. `updated_at` is maintained by `private.set_updated_at` on every update.
+
+### `documents`
+
+One uploaded file on an order. `original_path` is the object key in the `originals` bucket, not a URL and not prefixed with the bucket name. `size` is bytes. `page_count` is the number of sides. `detected_language` and `confidence` (0 through 1) come from detection. Deleting an order deletes its documents.
+
+### `document_pages`
+
+One side of a document. `page_number` starts at 1 and is unique per document. `ocr_text` is the text used for the word count and for the side-by-side review. `needs_review` marks a side a person must check (low confidence, unreadable scan, suspected wrong language). `billable_units` follows the rule above.
+
+### `confirmations`
+
+Name and date fields the customer accepts before translation. `field_key` identifies the field (`applicant_name`, `date_of_birth`, `document_date`, and so on). `original_value` is what OCR extracted. `confirmed_value` is what the customer kept or corrected. One row per field per order. The translation uses `confirmed_value`.
+
+### `translations`
+
+One generation of a document translation. `version` starts at 1 and increases when a correction is regenerated. `model` is the model id. `output` is `jsonb`: a JSON object of structured segments, or a JSON string when the model returns plain text. Versions are unique per document.
+
+### `previews`
+
+One watermarked rendering of the whole order, not of a single document. `version` matches the preview the customer is looking at. `preview_path` is the object key in the `previews` bucket. A correction's `resolved_preview_version` points at the version that incorporated it.
+
+### `corrections`
+
+A customer request to change the preview. `passage` is the text they highlighted. `note` is what they want changed. `page_number` requires `document_id`. Several open corrections may be resolved by the same new preview version.
+
+### `payments`
+
+One Stripe Checkout attempt. `stripe_checkout_session_id` is unique. `stripe_payment_intent_id` is filled when Stripe creates it and is indexed for the webhook. `amount_cents` is the amount charged and should equal `orders.total_cents`. A new attempt after a failure inserts a new row. Orders that have a payment cannot be deleted.
+
+### `deliveries`
+
+The release of the certified files. One row per order. Created when payment succeeds, with `status = pending` and null paths. Staff set `approved_by` and `approved_at` when they certify. The server sets `delivered_at` after it emails the links. `approved_by` references `staff`, so only a staff user can be recorded, and that staff row cannot be removed while the approval exists. Orders that have a delivery cannot be deleted.
+
+### `order_events`
+
+Product-funnel events, separate from the UTM columns (those record where the visitor came from; these record what they did):
+
+`landing_view`, `upload_started`, `upload_done`, `quote_shown`, `preview_ready`, `preview_viewed`, `checkout_started`, `paid`, `downloaded`.
+
+`landing_view` may be inserted before a draft order exists, so `order_id` is nullable only for that type. Later events require an order. `data` is extra context (page path, document id, preview version). Do not put the raw order token in `data`.
+
+### `staff`
+
+`user_id` references `auth.users`. `role` is `admin` or `reviewer`. Both roles have full read and write through RLS; the role is for the admin UI, not for a second set of policies. Deleting the auth user deletes the staff row unless a delivery still names them as `approved_by`.
+
+## Storage
+
+Three private buckets, inserted into `storage.buckets` with `public = false`:
+
+| Bucket | Holds | Written by | Read by |
+| --- | --- | --- | --- |
+| `originals` | Customer uploads (`documents.original_path`) | Service role | Staff, via `staff_read_originals` |
+| `previews` | Watermarked preview PDFs (`previews.preview_path`) | Service role | Staff, via `staff_read_previews` |
+| `finals` | Clean translation and the certification page | Service role | Staff, via `staff_read_finals` |
+
+Object keys are stored on the row. The bucket name is not part of the key.
+
+`storage.objects` already has row level security on Supabase. This migration does not run `alter table storage.objects enable row level security`, because Supabase owns that table and repeating the statement breaks a fresh project. The only policies added are staff `select` on these three buckets. There is no insert, update, or delete policy, and no anon policy. The service role bypasses RLS, uploads the files, and creates signed URLs.
+
+`finals` stays private after approval. The customer does not receive the service role key and has no storage policy, so the object is not readable with the anon key. After `payments.status` is `paid` and a staff member has approved the delivery (`deliveries.status` in `approved` or `delivered`, which requires both file keys), the server creates a short-lived signed URL (minutes, not days) for `final_path` and for `certification_path` and emails those links. When the URL expires, the object is still private. A new link is another signed URL from a server route that checks the order token, payment, and approval again. The watermarked preview is the file the customer may look at before paying; the clean PDF in `finals` is the file they receive only after both payment and staff certification.
