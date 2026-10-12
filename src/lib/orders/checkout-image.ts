@@ -26,7 +26,7 @@ export async function checkoutPreviewImageUrl(
     return signedObjectUrl(db, source.bucket, path, CHECKOUT_IMAGE_SECONDS);
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown error";
-    console.error(`checkout preview image failed: ${message}`);
+    console.error(`checkout preview image failed for ${orderId}: ${message}`, error);
     return null;
   }
 }

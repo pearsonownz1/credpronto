@@ -18,7 +18,12 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/**": [
       "./src/lib/orders/pdf/NotoSans-Regular.ttf",
-      "./node_modules/@embedpdf/pdfium/dist/pdfium.wasm",
+      "./node_modules/@embedpdf/pdfium/**",
+      "./node_modules/sharp/**",
+      "./node_modules/@img/sharp-linux-x64/**",
+      "./node_modules/@img/sharp-linuxmusl-x64/**",
+      "./node_modules/@img/sharp-libvips-linux-x64/**",
+      "./node_modules/@img/sharp-libvips-linuxmusl-x64/**",
     ],
   },
   experimental: {
