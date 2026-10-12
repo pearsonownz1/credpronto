@@ -13,6 +13,7 @@ import {
   languageChoices,
   languageLine,
   quoteFileGroups,
+  orderWithTranslationChoice,
   servicePriceLines,
   settleTargetLanguageUpdate,
   showTargetLanguagePicker,
@@ -150,13 +151,16 @@ export function QuoteBody({
   });
 
   async function onToggleTranslation(includeTranslation: boolean) {
-    if (translationPending) return;
+    if (translationPending || !live.service || live.degreeCount == null) return;
+    const snapshot = live;
     setTranslationError(null);
+    setPatch({ source: order, order: orderWithTranslationChoice(snapshot, includeTranslation) });
     setTranslationPending(true);
     try {
       const updated = await getFlowClient().updateQuote(token, { includeTranslation });
       setPatch({ source: order, order: updated });
     } catch (cause) {
+      setPatch({ source: order, order: snapshot });
       const failed = cause instanceof FlowApiError ? cause : null;
       setTranslationError(failed?.message ?? "We couldn't update the translation.");
     } finally {

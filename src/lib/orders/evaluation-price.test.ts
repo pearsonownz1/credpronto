@@ -134,16 +134,46 @@ describe("evaluation quote", () => {
       orderType: "translation",
       service: null,
       degreeCount: null,
+      includeTranslation: false,
     });
     expect(
       parseOrderChoice({ orderType: "evaluation", service: "diploma", degreeCount: "2" }),
-    ).toEqual({ orderType: "evaluation", service: "diploma", degreeCount: 2 });
+    ).toEqual({ orderType: "evaluation", service: "diploma", degreeCount: 2, includeTranslation: false });
+    expect(
+      parseOrderChoice({
+        orderType: "evaluation",
+        service: "course_by_course",
+        degreeCount: "1",
+        includeTranslation: "true",
+      }),
+    ).toEqual({
+      orderType: "evaluation",
+      service: "course_by_course",
+      degreeCount: 1,
+      includeTranslation: true,
+    });
+    expect(
+      parseOrderChoice({ orderType: "translation", service: null, degreeCount: null, includeTranslation: "true" }),
+    ).toEqual({
+      orderType: "translation",
+      service: null,
+      degreeCount: null,
+      includeTranslation: false,
+    });
     expect(() => parseOrderChoice({ orderType: "evaluation", service: "transcript", degreeCount: "1" })).toThrow(
       /diploma or course_by_course/,
     );
     expect(() => parseOrderChoice({ orderType: "evaluation", service: "diploma", degreeCount: "0" })).toThrow(
       /degreeCount/,
     );
+    expect(() =>
+      parseOrderChoice({
+        orderType: "evaluation",
+        service: "diploma",
+        degreeCount: "1",
+        includeTranslation: "yes",
+      }),
+    ).toThrow(/includeTranslation/);
   });
 
   it("reads a diploma result and rejects a partial one", () => {

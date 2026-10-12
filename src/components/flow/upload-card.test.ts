@@ -17,8 +17,8 @@ vi.mock("@/lib/supabase/client", () => ({
 import { UploadCard } from "./upload-card";
 import { UploadPageFallback } from "./upload-view";
 
-function html(sessionEmail?: string | null) {
-  return renderToStaticMarkup(createElement(UploadCard, { sessionEmail }));
+function html(sessionEmail?: string | null, initialService?: string | null) {
+  return renderToStaticMarkup(createElement(UploadCard, { sessionEmail, initialService }));
 }
 
 describe("quote email field", () => {
@@ -44,5 +44,31 @@ describe("quote email field", () => {
     const markup = renderToStaticMarkup(createElement(UploadPageFallback));
     expect(markup).not.toContain('type="email"');
     expect(markup).toContain("Loading the upload form");
+  });
+});
+
+describe("service checkboxes", () => {
+  it("checks translation by default and leaves the evaluations off", () => {
+    const markup = html(null);
+    expect(markup).toContain("What do you need?");
+    expect(markup).not.toContain('type="radio"');
+    expect(markup.match(/type="checkbox"/g)).toHaveLength(3);
+    expect(markup).toMatch(/data-testid="choice-translation"[^>]*checked=""/);
+    expect(markup).not.toMatch(/data-testid="choice-diploma"[^>]*checked=""/);
+    expect(markup).not.toMatch(/data-testid="choice-course_by_course"[^>]*checked=""/);
+    expect(markup).not.toContain('data-testid="degree-count"');
+  });
+
+  it("checks only the evaluation named in the link", () => {
+    const diploma = html(null, "diploma");
+    expect(diploma).toMatch(/data-testid="choice-diploma"[^>]*checked=""/);
+    expect(diploma).not.toMatch(/data-testid="choice-translation"[^>]*checked=""/);
+    expect(diploma).not.toMatch(/data-testid="choice-course_by_course"[^>]*checked=""/);
+    expect(diploma).toContain('data-testid="degree-count"');
+
+    const course = html(null, "course_by_course");
+    expect(course).toMatch(/data-testid="choice-course_by_course"[^>]*checked=""/);
+    expect(course).not.toMatch(/data-testid="choice-translation"[^>]*checked=""/);
+    expect(course).not.toMatch(/data-testid="choice-diploma"[^>]*checked=""/);
   });
 });

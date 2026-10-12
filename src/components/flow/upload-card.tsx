@@ -6,7 +6,8 @@ import { knownPageCount } from "@/lib/analytics/google-ads";
 import { customerEmailError } from "@/lib/flow/customer-email";
 import {
   parseEvaluationService,
-  uploadChoiceFromSelection,
+  uploadChoiceFromChecks,
+  type ServiceChecks,
   type UploadChoice,
 } from "@/lib/flow/order-choice";
 import { pageLabel } from "@/lib/flow/pricing";
@@ -38,13 +39,26 @@ const SAMPLE_FILES: ListedFile[] = sampleCustomerOrder().documents.map((document
 
 const PRODUCTS: Array<{
   id: "translation" | EvaluationService;
+  key: keyof ServiceChecks;
   label: string;
   price: string;
 }> = [
-  { id: "translation", label: "Translation", price: TRANSLATION_PAGE_LABEL },
-  { id: "diploma", label: "Diploma evaluation", price: DIPLOMA_PRICE_LABEL },
-  { id: "course_by_course", label: "Course-by-course", price: COURSE_BY_COURSE_PRICE_LABEL },
+  { id: "translation", key: "translation", label: "Translation", price: TRANSLATION_PAGE_LABEL },
+  { id: "diploma", key: "diploma", label: "Diploma evaluation", price: DIPLOMA_PRICE_LABEL },
+  {
+    id: "course_by_course",
+    key: "courseByCourse",
+    label: "Course-by-course",
+    price: COURSE_BY_COURSE_PRICE_LABEL,
+  },
 ];
+
+function initialChecks(initialService: string | null | undefined): ServiceChecks {
+  const service = parseEvaluationService(initialService);
+  if (service === "diploma") return { translation: false, diploma: true, courseByCourse: false };
+  if (service === "course_by_course") return { translation: false, diploma: false, courseByCourse: true };
+  return { translation: true, diploma: false, courseByCourse: false };
+}
 
 function useQuoteEmail(serverEmail: string | null | undefined): string | null {
   const seeded = serverEmail?.trim() || null;
@@ -86,9 +100,7 @@ export function UploadCard({
   const [email, setEmail] = useState(mock ? "maria.ruiz@email.com" : "");
   const [emailError, setEmailError] = useState<string | null>(null);
   const [picked, setPicked] = useState<File[]>([]);
-  const [product, setProduct] = useState<"translation" | EvaluationService>(
-    parseEvaluationService(initialService) ?? "translation",
-  );
+  const [checks, setChecks] = useState<ServiceChecks>(() => initialChecks(initialService));
   const [degrees, setDegrees] = useState("1");
   const files: ListedFile[] =
     mock && picked.length === 0
@@ -109,10 +121,23 @@ export function UploadCard({
   }
 
   function choice(): UploadChoice | null {
-    if (product === "translation") return { orderType: "translation" };
-    const degreeCount = Number(degrees);
-    if (!Number.isInteger(degreeCount) || degreeCount < 1) return null;
-    return uploadChoiceFromSelection(product, degreeCount);
+    return uploadChoiceFromChecks(checks, Number(degrees));
+  }
+
+  function choiceError(): string {
+    if (!checks.translation && !checks.diploma && !checks.courseByCourse) {
+      return "Choose a translation, an evaluation, or both.";
+    }
+    return "Enter at least 1 degree.";
+  }
+
+  function toggleCheck(key: keyof ServiceChecks, checked: boolean) {
+    setChecks((current) => {
+      const next = { ...current, [key]: checked };
+      if (key === "diploma" && checked) next.courseByCourse = false;
+      if (key === "courseByCourse" && checked) next.diploma = false;
+      return next;
+    });
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -129,7 +154,7 @@ export function UploadCard({
     setEmailError(null);
     const selected = choice();
     if (!selected) {
-      setError("Enter at least 1 degree.");
+      setError(choiceError());
       return;
     }
     if (!mock && picked.length === 0) {
@@ -152,7 +177,7 @@ export function UploadCard({
           <legend className="mb-1.5 text-[13px] font-semibold">What do you need?</legend>
           <div className="grid gap-2">
             {PRODUCTS.map((item) => {
-              const selected = product === item.id;
+              const selected = checks[item.key];
               return (
                 <label
                   key={item.id}
@@ -161,12 +186,11 @@ export function UploadCard({
                   }`}
                 >
                   <input
-                    type="radio"
-                    name="product"
+                    type="checkbox"
                     value={item.id}
                     checked={selected}
                     data-testid={`choice-${item.id}`}
-                    onChange={() => setProduct(item.id)}
+                    onChange={(event) => toggleCheck(item.key, event.target.checked)}
                   />
                   <span className="min-w-0">
                     <span className="block text-[14px] font-semibold">{item.label}</span>
@@ -177,7 +201,7 @@ export function UploadCard({
             })}
           </div>
         </fieldset>
-        {product === "translation" ? null : (
+        {checks.diploma || checks.courseByCourse ? (
           <label className="mb-4 block">
             <span className="mb-1.5 block text-[13px] font-semibold">Degrees</span>
             <input
@@ -195,7 +219,7 @@ export function UploadCard({
               {TRANSLATION_ADDON} Staff sign off before the report is released.
             </span>
           </label>
-        )}
+        ) : null}
         <div
           data-testid="upload-drop"
           className="rounded-[var(--cp-radius)] border-[1.5px] border-dashed border-[#b9c3d6] bg-[var(--cp-blue-l)] px-4 py-6 text-center"

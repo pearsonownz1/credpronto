@@ -24,6 +24,7 @@ import {
   quoteFileGroups,
   quotePageRows,
   quoteSummaryLabel,
+  orderWithTranslationChoice,
   servicePriceLines,
   settleTargetLanguageUpdate,
   showTargetLanguagePicker,
@@ -610,7 +611,7 @@ describe("evaluation prices", () => {
     });
     expect(servicePriceLines(diploma)).toEqual([
       { label: "Diploma evaluation", amountCents: 1995 },
-      { label: "Certified translation · 2 pages × $9.95", amountCents: 1990 },
+      { label: "Certified translation, 2 billable pages", amountCents: 1990 },
     ]);
 
     const course = order({
@@ -633,6 +634,42 @@ describe("evaluation prices", () => {
     expect(servicePriceLines(course)).toEqual([
       { label: "Course-by-course evaluation", amountCents: 7990 },
     ]);
+  });
+
+  it("updates both line items and the total when translation is toggled", () => {
+    const diploma = order({
+      orderType: "evaluation",
+      service: "diploma",
+      degreeCount: 1,
+      sourceLanguage: "es",
+      billablePages: 2,
+      evaluationCents: 1995,
+      translationCents: 0,
+      includeTranslation: false,
+      totalCents: 1995,
+      lineItems: [
+        {
+          kind: "evaluation",
+          description: "Diploma evaluation",
+          quantity: 1,
+          unitAmountCents: 1995,
+          amountCents: 1995,
+        },
+      ],
+    });
+    const added = orderWithTranslationChoice(diploma, true);
+    expect(added.includeTranslation).toBe(true);
+    expect(added.totalCents).toBe(3985);
+    expect(servicePriceLines(added)).toEqual([
+      { label: "Diploma evaluation", amountCents: 1995 },
+      { label: "Certified translation, 2 billable pages", amountCents: 1990 },
+    ]);
+    const removed = orderWithTranslationChoice(added, false);
+    expect(removed.includeTranslation).toBe(false);
+    expect(removed.totalCents).toBe(1995);
+    expect(servicePriceLines(removed)).toEqual([{ label: "Diploma evaluation", amountCents: 1995 }]);
+    const plain = order();
+    expect(orderWithTranslationChoice(plain, true)).toBe(plain);
   });
 
   it("sends evaluation details to the preview instead of a certification row", () => {

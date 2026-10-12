@@ -196,7 +196,11 @@ describe("quote step actions", () => {
       lineItems: quote.lineItems,
     });
     expect(html).toContain("$29.90");
+    expect(html).toContain("Diploma evaluation");
+    expect(html).toContain("Certified translation, 1 billable page");
+    expect(html).toContain("$9.95");
     expect(html).toContain('data-testid="include-translation"');
     expect(html).toMatch(/data-testid="include-translation"[^>]*checked/);
+    expect(html).toContain('data-testid="file-billable"');
   });
 });

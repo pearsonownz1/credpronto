@@ -1,4 +1,9 @@
-import { evaluationQuote, lineItemsForOrder, translationOfferCents } from "@/lib/orders/evaluation-price";
+import {
+  evaluationCheckoutTotal,
+  evaluationQuote,
+  lineItemsForOrder,
+  translationOfferCents,
+} from "@/lib/orders/evaluation-price";
 import { languagesEqual } from "@/lib/orders/languages";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import { appendOrderChoice, type UploadChoice } from "./order-choice";
@@ -265,12 +270,19 @@ function withEvaluationChoice(
   choice: Extract<UploadChoice, { orderType: "evaluation" }>,
 ): CustomerOrder {
   const billablePages = base.billablePages ?? 0;
+  const priced = evaluationCheckoutTotal({
+    service: choice.service,
+    degreeCount: choice.degreeCount,
+    sourceLanguage: base.sourceLanguage,
+    billablePages,
+    includeTranslation: choice.includeTranslation,
+  });
   const quote = evaluationQuote({
     service: choice.service,
     degreeCount: choice.degreeCount,
     sourceLanguage: base.sourceLanguage,
     billablePages,
-    includeTranslation: false,
+    includeTranslation: priced.includeTranslation,
   });
   return {
     ...base,
@@ -279,7 +291,7 @@ function withEvaluationChoice(
     degreeCount: choice.degreeCount,
     evaluationCents: quote.evaluationCents,
     translationCents: quote.translationCents,
-    includeTranslation: false,
+    includeTranslation: priced.includeTranslation,
     translationOfferCents: translationOfferCents({
       service: choice.service,
       sourceLanguage: base.sourceLanguage,
