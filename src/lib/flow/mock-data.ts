@@ -46,14 +46,12 @@ export function translatedDate(format: string) {
   return format.startsWith("ISO") ? "1994-03-14" : "03/14/1994";
 }
 
+/** Sample PDF bytes for mock clicks. Saved names come from documentName, not these paths. */
 export const DOWNLOADS = {
   certified: {
     href: "/samples/birth-certificate-en.pdf",
-    filename: "birth-certificate-EN-certified.pdf",
-    detail: "3 pages incl. certificate",
   },
   original: {
     href: "/samples/birth-certificate-es.pdf",
-    filename: "acta-nacimiento.pdf",
   },
 } as const;

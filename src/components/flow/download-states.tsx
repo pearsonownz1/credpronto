@@ -4,22 +4,23 @@ import Link from "next/link";
 import { useState } from "react";
 import { flowUsesMock, getFlowClient } from "@/lib/flow/client";
 import { DOWNLOADS } from "@/lib/flow/mock-data";
-import { customerEmail, downloadPhase, totalLabel } from "@/lib/flow/present";
+import {
+  certifiedDownloadName,
+  customerEmail,
+  downloadPhase,
+  originalDownloadName,
+  totalLabel,
+} from "@/lib/flow/present";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
 import { FlowStatus } from "./status";
 import { useCustomerOrder, useStoredToken } from "./use-order";
 import { buttonClasses } from "./ui";
 
-const MOCK_FILES = {
-  translation: {
-    href: "/samples/birth-certificate-en.pdf",
-    filename: "birth-certificate-EN-certified.pdf",
-  },
-  certification: {
-    href: "/samples/birth-certificate-en.pdf",
-    filename: "certification.pdf",
-  },
+const MOCK_HREFS = {
+  translation: "/samples/birth-certificate-en.pdf",
+  certification: "/samples/birth-certificate-en.pdf",
+  original: DOWNLOADS.original.href,
 } as const;
 
 export function DownloadStates({ token: pathToken }: { token?: string }) {
@@ -94,6 +95,7 @@ function Ready({
           token={token}
           file="translation"
           title="Certified translation"
+          filename={certifiedDownloadName(order.documents[0]?.filename)}
           testId="download-certified"
           primary
         />
@@ -101,6 +103,7 @@ function Ready({
           token={token}
           file="certification"
           title="Certification page"
+          filename="certification.pdf"
           testId="download-certification"
         />
         {order.documents.map((document) => (
@@ -124,23 +127,27 @@ function Ready({
   );
 }
 
+function openSignedUrl(url: string) {
+  window.location.assign(url);
+}
+
 function FileRow({
   token,
   file,
   title,
+  filename,
   testId,
   primary,
 }: {
   token: string;
   file: "translation" | "certification";
   title: string;
+  filename: string;
   testId: string;
   primary?: boolean;
 }) {
   const [error, setError] = useState<string | null>(null);
   const mock = flowUsesMock();
-  const href = MOCK_FILES[file].href;
-  const filename = MOCK_FILES[file].filename;
   const className = buttonClasses(
     primary ? "primary" : "secondary",
     "h-10 shrink-0 px-[18px] text-[15px]",
@@ -150,32 +157,32 @@ function FileRow({
     <div className="flex flex-col gap-3 border-t border-line px-[18px] py-4 first:border-t-0 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <b>{title}</b>
-        <div className="text-[13px] text-ink-muted">{filename}</div>
+        <div data-testid={`${testId}-name`} className="text-[13px] text-ink-muted">
+          {filename}
+        </div>
         {error ? <p className="mt-1 text-xs text-[var(--cp-warn)]">{error}</p> : null}
       </div>
-      {mock ? (
-        <a data-testid={testId} href={href} download={filename} className={className}>
-          {primary ? "Download PDF" : "Download"}
-        </a>
-      ) : (
-        <button
-          type="button"
-          data-testid={testId}
-          className={className}
-          onClick={() => {
-            void getFlowClient()
-              .download(token, file)
-              .then((result) => {
-                if ("url" in result) window.location.assign(result.url);
-              })
-              .catch((cause: unknown) => {
-                setError(cause instanceof Error ? cause.message : "Download isn't ready.");
-              });
-          }}
-        >
-          {primary ? "Download PDF" : "Download"}
-        </button>
-      )}
+      <button
+        type="button"
+        data-testid={testId}
+        className={className}
+        onClick={() => {
+          if (mock) {
+            openSignedUrl(MOCK_HREFS[file]);
+            return;
+          }
+          void getFlowClient()
+            .download(token, file)
+            .then((result) => {
+              if ("url" in result) openSignedUrl(result.url);
+            })
+            .catch((cause: unknown) => {
+              setError(cause instanceof Error ? cause.message : "Download isn't ready.");
+            });
+        }}
+      >
+        {primary ? "Download PDF" : "Download"}
+      </button>
     </div>
   );
 }
@@ -190,42 +197,36 @@ function OriginalRow({
   const [error, setError] = useState<string | null>(null);
   const mock = flowUsesMock();
   const className = buttonClasses("secondary", "h-10 shrink-0 px-[18px] text-[15px]");
+  const filename = originalDownloadName(document.filename);
 
   return (
     <div className="flex flex-col gap-3 border-t border-line px-[18px] py-4 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <b>{document.filename}</b>
+        <b data-testid={`download-original-${document.id}-name`}>{filename || "Original"}</b>
         <div className="text-[13px] text-ink-muted">Original upload</div>
         {error ? <p className="mt-1 text-xs text-[var(--cp-warn)]">{error}</p> : null}
       </div>
-      {mock ? (
-        <a
-          data-testid={`download-original-${document.id}`}
-          href={DOWNLOADS.original.href}
-          download={document.filename}
-          className={className}
-        >
-          Download original
-        </a>
-      ) : (
-        <button
-          type="button"
-          data-testid={`download-original-${document.id}`}
-          className={className}
-          onClick={() => {
-            void getFlowClient()
-              .download(token, "original", document.id)
-              .then((result) => {
-                if ("url" in result) window.location.assign(result.url);
-              })
-              .catch((cause: unknown) => {
-                setError(cause instanceof Error ? cause.message : "Download isn't ready.");
-              });
-          }}
-        >
-          Download original
-        </button>
-      )}
+      <button
+        type="button"
+        data-testid={`download-original-${document.id}`}
+        className={className}
+        onClick={() => {
+          if (mock) {
+            openSignedUrl(MOCK_HREFS.original);
+            return;
+          }
+          void getFlowClient()
+            .download(token, "original", document.id)
+            .then((result) => {
+              if ("url" in result) openSignedUrl(result.url);
+            })
+            .catch((cause: unknown) => {
+              setError(cause instanceof Error ? cause.message : "Download isn't ready.");
+            });
+        }}
+      >
+        Download original
+      </button>
     </div>
   );
 }

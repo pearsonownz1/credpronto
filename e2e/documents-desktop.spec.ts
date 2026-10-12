@@ -31,9 +31,9 @@ test("preview groups pages by document and the order links each original", async
   await page.goto("/order/mock-token?checkout=success");
   await expect(page.getByTestId("email-note")).toContainText("maria.ruiz@email.com");
   await expect(page.getByTestId("download-original-acta")).toHaveText("Download original");
-  await expect(page.getByTestId("download-original-back")).toHaveAttribute(
-    "download",
-    "IMG_4021.HEIC",
+  await expect(page.getByTestId("download-certified-name")).toHaveText(
+    "acta-nacimiento-EN-certified.pdf",
   );
+  await expect(page.getByTestId("download-original-back-name")).toHaveText("IMG_4021.HEIC");
   await page.screenshot({ path: "artifacts/order-originals.png", fullPage: true });
 });

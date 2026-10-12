@@ -120,6 +120,25 @@ export function customerEmail(order: { email: string | null | undefined }): stri
   return order.email?.trim() ?? "";
 }
 
+/** Filename without its extension. `acta-nacimiento.pdf` → `acta-nacimiento`. */
+export function downloadBase(documentName: string | null | undefined): string {
+  const name = documentName?.trim() ?? "";
+  const dot = name.lastIndexOf(".");
+  if (dot <= 0) return name;
+  return name.slice(0, dot);
+}
+
+/** Certified translation download: `<base>-EN-certified.pdf`. */
+export function certifiedDownloadName(documentName: string | null | undefined): string {
+  const base = downloadBase(documentName);
+  return base ? `${base}-EN-certified.pdf` : "document-EN-certified.pdf";
+}
+
+/** Original download keeps the uploaded name. */
+export function originalDownloadName(documentName: string | null | undefined): string {
+  return documentName?.trim() ?? "";
+}
+
 /** Checkout shows the order address, then the signed-in account, then nothing. */
 export function checkoutEmail(
   orderEmail: string | null | undefined,

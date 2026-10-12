@@ -4,8 +4,11 @@ import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import {
   LANGUAGE_PENDING,
   canSetSourceLanguage,
+  certifiedDownloadName,
   checkoutEmail,
   checkoutFailureMessage,
+  downloadBase,
+  originalDownloadName,
   displayedPageRule,
   customerEmail,
   documentIdForPage,
@@ -119,6 +122,20 @@ describe("checkout errors", () => {
   it("turns a not-ready preview into a waiting message", () => {
     expect(checkoutFailureMessage(409, "Preview is not ready")).toMatch(/isn't ready yet/);
     expect(checkoutFailureMessage(503, "Payments not configured")).toBeNull();
+  });
+});
+
+describe("download names", () => {
+  it("builds the certified name from the document base and keeps the original name", () => {
+    expect(downloadBase("acta-nacimiento.pdf")).toBe("acta-nacimiento");
+    expect(downloadBase("IMG_4021.HEIC")).toBe("IMG_4021");
+    expect(certifiedDownloadName("acta-nacimiento.pdf")).toBe(
+      "acta-nacimiento-EN-certified.pdf",
+    );
+    expect(certifiedDownloadName("diploma.name.pdf")).toBe("diploma.name-EN-certified.pdf");
+    expect(originalDownloadName("IMG_4021.HEIC")).toBe("IMG_4021.HEIC");
+    expect(certifiedDownloadName("  ")).toBe("document-EN-certified.pdf");
+    expect(originalDownloadName(null)).toBe("");
   });
 });
 

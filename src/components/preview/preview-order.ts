@@ -116,6 +116,7 @@ export function statusLabel(order: PreviewOrder) {
   return order.status === "preview_ready" ? "Preview ready" : order.status;
 }
 
+/** Demo viewer only. Real orders name files from `documentName`, not this sample. */
 export const CERTIFICATE_PREVIEW: PreviewOrder = {
   id: "CP-24817",
   status: "preview_ready",

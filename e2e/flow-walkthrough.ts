@@ -100,23 +100,13 @@ export async function walkCustomerFlow(
   await shown(page, "pay-button").click();
   await expect(page).toHaveURL(/\/order\/mock-token\?checkout=success$/);
   await expect(shown(page, "download-certified")).toBeVisible();
-  await expect(shown(page, "download-certified")).toHaveAttribute(
-    "download",
-    "birth-certificate-EN-certified.pdf",
+  await expect(shown(page, "download-certified-name")).toHaveText(
+    "acta-nacimiento-EN-certified.pdf",
   );
-  await expect(shown(page, "download-certification")).toHaveAttribute(
-    "download",
-    "certification.pdf",
-  );
+  await expect(shown(page, "download-certification-name")).toHaveText("certification.pdf");
   await expect(shown(page, "download-original-acta")).toHaveText("Download original");
-  await expect(shown(page, "download-original-acta")).toHaveAttribute(
-    "download",
-    "acta-nacimiento.pdf",
-  );
-  await expect(shown(page, "download-original-back")).toHaveAttribute(
-    "download",
-    "IMG_4021.HEIC",
-  );
+  await expect(shown(page, "download-original-acta-name")).toHaveText("acta-nacimiento.pdf");
+  await expect(shown(page, "download-original-back-name")).toHaveText("IMG_4021.HEIC");
   await expect(shown(page, "email-note")).toContainText("maria.ruiz@email.com");
   await expect(shown(page, "email-note")).toContainText("CP-24817");
   await expect(shown(page, "email-note")).toContainText("$19.90");
