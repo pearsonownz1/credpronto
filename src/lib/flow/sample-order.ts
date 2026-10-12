@@ -34,6 +34,7 @@ export function sampleCustomerOrder(): CustomerOrder {
     ],
     pageOrder: null,
     pages: [],
+    pageLineItems: [],
     billablePages: 2,
     unitPriceCents: 995,
     addons: [],

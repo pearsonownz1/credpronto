@@ -79,6 +79,7 @@ describe("customer order", () => {
     expect(order.email).toBe("ada@example.com");
     expect(order.orderId).toBe("order-1");
     expect(order.pageRule).toBe(WORD_PAGE_RULE);
+    expect(order.pageLineItems).toEqual([]);
     expect(order.addons).toEqual([]);
     expect(order.addonOptions).toEqual(addonOptions(2));
     expect(order.shippingAddress).toBeNull();
@@ -154,6 +155,45 @@ describe("customer order", () => {
     expect(order.addons).toEqual(["notarization", "mail"]);
     expect(order.shippingAddress?.state).toBe("CA");
     expect(order.totalCents).toBe(7765);
+  });
+});
+
+describe("page line items", () => {
+  it("exposes pageIndex, billable units, and skip reason", () => {
+    const order = toCustomerOrder({
+      order: orderRecord(),
+      documents: [],
+      pages: [
+        page({
+          documentId: "doc",
+          number: 1,
+          ocrText: "This is to certify that the student record is true and complete.",
+          billableUnits: 0,
+          wordCount: 12,
+        }),
+        page({
+          documentId: "doc",
+          number: 2,
+          ocrText: "课".repeat(1500),
+          billableUnits: 2,
+          billingBasis: "cjk",
+          wordCount: 1500,
+        }),
+      ],
+      confirmations: [],
+      previewVersion: null,
+      paymentStatus: null,
+      deliveryStatus: null,
+      email: "ada@example.com",
+    });
+
+    expect(order.pageLineItems).toEqual([
+      { pageIndex: 0, billableUnits: 0, skip: true, skipReason: "english" },
+      { pageIndex: 1, billableUnits: 2, skip: false, skipReason: null },
+    ]);
+    expect(order.pages.map((item) => item.pageIndex)).toEqual([0, 1]);
+    expect(order.billablePages).toBe(2);
+    expect(order.totalCents).toBe(1990);
   });
 });
 

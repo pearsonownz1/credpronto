@@ -2,7 +2,7 @@
 
 Customer routes authenticate with the raw order token from the email link (`/order/<token>`). The database stores only the lowercase hex SHA-256 of that string in `orders.public_token_hash`. Server routes use the Supabase service role. Responses never include storage paths or the token hash.
 
-Prices are `$9.95` per billable page (`unitPriceCents` 995). For Chinese, Japanese, and Korean, a billable page is `max(1, ceil(units / 400))` per original side. A unit is one Han, Hiragana, Katakana, or Hangul character, or one ASCII number or Latin-letter group (`3.85`, `2019`, `GPA`, and `2019-06` are each one unit). Spaces and punctuation count as 0. `学号 2019 GPA 3.85` is 5 units. Every other language stays `max(1, ceil(words / 250))` per original side, and an empty side is still 1. `GET /api/orders/[token]` returns that sentence in `pageRule`.
+Prices are `$9.95` per billable page (`unitPriceCents` 995). For a page of Chinese, Japanese, or Korean, billable pages are `max(1, ceil(cjkChars / 1000))`. A character is one Han, Hiragana, Katakana, or Hangul character. Latin text on the same page is not added to that count. Every other page is `max(1, ceil(words / 250))`. A page that is already English (when the translation is into English), a blank page, or a shipping label is not billed: billable units `0`, `skip` true, and `skipReason` of `english`, `blank`, or `label`. `GET /api/orders/[token]` returns that sentence in `pageRule`, and one `pageLineItems` entry per physical page (`pageIndex`, `billableUnits`, `skip`, `skipReason`). The order total is the sum of those units at `$9.95`.
 
 Uploads are normalized into one combined original PDF at `originals/<orderId>/original-combined.pdf`. Page N of the watermarked preview is the English translation of page N of that PDF.
 
@@ -133,6 +133,10 @@ Idempotent retry of analysis or translation. Safe to call more than once. Return
     {
       "documentId": "…",
       "pageNumber": 1,
+      "pageIndex": 0,
+      "billableUnits": 1,
+      "skip": false,
+      "skipReason": null,
       "uploadPage": 1,
       "logicalPage": 1,
       "orderHint": "page 1/2",
@@ -140,6 +144,9 @@ Idempotent retry of analysis or translation. Safe to call more than once. Return
       "qualityFlags": [],
       "qualityMessage": null
     }
+  ],
+  "pageLineItems": [
+    { "pageIndex": 0, "billableUnits": 1, "skip": false, "skipReason": null }
   ],
   "billablePages": 3,
   "unitPriceCents": 995,
@@ -152,7 +159,7 @@ Idempotent retry of analysis or translation. Safe to call more than once. Return
   "shippingAddress": null,
   "totalCents": 2985,
   "currency": "usd",
-  "pageRule": "250 words per billable page. Each original page side counts as at least 1.",
+  "pageRule": "250 words per billable page. Each page with text counts as at least 1. Blank pages and shipping labels are not billed. Pages that are already English are not billed when the translation is into English.",
   "etaAt": "2026-10-12T01:00:00.000Z",
   "reviewReason": null,
   "confirmations": [

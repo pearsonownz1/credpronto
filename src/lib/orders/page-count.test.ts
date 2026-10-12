@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getDocumentProxy } from "unpdf";
 import { describe, expect, it } from "vitest";
-import { billableCjkUnits, billableUnits, countCjkUnits } from "./billing";
+import { quotePages } from "./billing";
 import { joinTextItems, type TextItemLike } from "./text-layer";
 import { countWords, isCjkDominant } from "./words";
 
@@ -17,14 +17,9 @@ async function pageTexts(name: string): Promise<string[]> {
   return texts;
 }
 
-/** Mirrors analysis.ts when AI detection is unavailable. */
+/** Mirrors analysis.ts when AI detection is unavailable. Target language is English. */
 function billWithoutAi(texts: string[]): number {
-  const cjk = isCjkDominant(texts.join("\n"));
-  return texts.reduce(
-    (sum, text) =>
-      sum + (cjk ? billableCjkUnits(countCjkUnits(text)) : billableUnits(countWords(text))),
-    0,
-  );
+  return quotePages(texts, "en").billablePages;
 }
 
 describe("QA sample page counts", () => {
@@ -46,9 +41,13 @@ describe("QA sample page counts", () => {
     expect(billWithoutAi(texts)).toBe(1);
   });
 
-  it("bills the Chinese transcript by the CJK rule without AI: 4 pages", async () => {
+  it("bills the Chinese transcript by the 1000-character rule without AI: 2 pages", async () => {
     const texts = await pageTexts("zh_chengjidan_2p.pdf");
-    expect(billWithoutAi(texts)).toBe(4);
+    const quote = quotePages(texts, "en");
+    expect(quote.lineItems.map((item) => item.billableUnits)).toEqual([1, 1]);
+    expect(quote.lineItems.every((item) => item.skip === false)).toBe(true);
+    expect(quote.billablePages).toBe(2);
+    expect(quote.totalCents).toBe(1990);
   });
 });
 

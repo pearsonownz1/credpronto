@@ -1,14 +1,62 @@
 import {
-  CJK_UNITS_PER_BILLABLE_PAGE,
+  CJK_CHARS_PER_BILLABLE_PAGE,
   UNIT_PRICE_CENTS,
   WORDS_PER_BILLABLE_PAGE,
 } from "./constants";
+import { countWords, isCjkDominant } from "./words";
 
 const CJK_CHAR =
   /^(?:\p{Script=Han}|\p{Script=Hiragana}|\p{Script=Katakana}|\p{Script=Hangul})$/u;
+const CJK_CHARS =
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu;
 const ALNUM = /^[A-Za-z0-9]$/;
 /** Separators that stay inside a number or Latin run when they sit between alphanumerics. */
 const JOINER = /^[.,/-]$/;
+const LETTER_OR_NUMBER = /[\p{L}\p{N}]/u;
+const OTHER_SCRIPT =
+  /[\p{Script=Cyrillic}\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Greek}\p{Script=Devanagari}\p{Script=Thai}]/u;
+
+const ENGLISH_STOPS = new Set([
+  "the", "of", "and", "to", "in", "is", "for", "that", "on", "with", "as", "by",
+  "this", "be", "or", "from", "at", "an", "are", "was", "were", "been", "it",
+  "its", "not", "your", "you", "we", "our", "has", "have", "had", "will",
+  "which", "their", "his", "her", "they", "he", "she", "but", "if", "than",
+]);
+
+const ROMANCE_STOPS = new Set([
+  "el", "los", "las", "del", "una", "por", "con", "para", "que", "un", "les",
+  "des", "une", "est", "dans", "sur", "pour", "das", "uma", "dos", "em", "ao",
+  "le", "la", "du", "au", "aux", "et", "ou", "ce", "il", "elle", "de", "da",
+  "do", "en", "al", "se", "su", "lo", "os", "as", "na", "no", "nao", "como",
+  "mais", "foi", "sao", "esta", "qui", "pas", "par", "avec", "sont", "dans",
+]);
+
+const LABEL_PATTERNS: RegExp[] = [
+  /\b(?:ups|fedex|usps|dhl)\b/i,
+  /\bship\s*to\b/i,
+  /\bshipping\s+label\b/i,
+  /\btracking(?:\s+(?:number|no\.?|#))?/i,
+  /\bwaybill\b/i,
+  /\bair\s*waybill\b/i,
+  /顺丰|圆通|中通|申通|韵达/,
+  /快递单|运单号|运单|面单/,
+];
+
+export type SkipReason = "english" | "blank" | "label";
+
+/** One physical page on the quote. `pageIndex` is 0-based in combined order. */
+export type PageLineItem = {
+  pageIndex: number;
+  billableUnits: number;
+  skip: boolean;
+  skipReason: SkipReason | null;
+};
+
+export type PageQuote = PageLineItem & {
+  /** Words, or CJK characters, stored in `document_pages.word_count`. */
+  counted: number;
+  billingBasis: "words" | "cjk";
+};
 
 /**
  * Chinese, Japanese, and Korean billing units.
@@ -55,22 +103,27 @@ export function countCjkUnits(text: string): number {
   return units;
 }
 
+/** Han, Hiragana, Katakana, and Hangul characters. Latin runs and digits are not counted. */
+export function countCjkChars(text: string): number {
+  return text.match(CJK_CHARS)?.length ?? 0;
+}
+
 function assertCount(name: string, count: number): void {
   if (!Number.isInteger(count) || count < 0) {
     throw new Error(`${name} must be a non-negative integer`);
   }
 }
 
-/** One original side is at least one billable page. Every further 250 words is another. */
+/** One kept Latin page is at least one billable page. Every further 250 words is another. */
 export function billableUnits(wordCount: number): number {
   assertCount("wordCount", wordCount);
   return Math.max(1, Math.ceil(wordCount / WORDS_PER_BILLABLE_PAGE));
 }
 
-/** One original side is at least one billable page. Every further 400 CJK units is another. */
-export function billableCjkUnits(unitCount: number): number {
-  assertCount("unitCount", unitCount);
-  return Math.max(1, Math.ceil(unitCount / CJK_UNITS_PER_BILLABLE_PAGE));
+/** One kept CJK page is at least one billable page. Every further 1000 characters is another. */
+export function billableCjkUnits(charCount: number): number {
+  assertCount("charCount", charCount);
+  return Math.max(1, Math.ceil(charCount / CJK_CHARS_PER_BILLABLE_PAGE));
 }
 
 export function isCjkBillingLanguage(language: string | null | undefined): boolean {
@@ -79,11 +132,166 @@ export function isCjkBillingLanguage(language: string | null | undefined): boole
   return base === "zh" || base === "ja" || base === "ko";
 }
 
-export const WORD_PAGE_RULE =
-  "250 words per billable page. Each original page side counts as at least 1.";
+function targetBase(language: string | null | undefined): string {
+  return language?.trim().toLowerCase().split("-")[0] || "en";
+}
 
-export const CJK_PAGE_RULE =
-  "400 units per billable page. Each Chinese, Japanese, or Korean character counts as 1 unit, and each number or Latin-letter group (such as 2019, GPA, or 3.85) counts as 1. Spaces and punctuation count as 0. Each original page side counts as at least 1.";
+function isBlankPage(text: string): boolean {
+  return !LETTER_OR_NUMBER.test(text);
+}
+
+function isShippingLabel(text: string): boolean {
+  const hits = LABEL_PATTERNS.reduce((count, pattern) => count + (pattern.test(text) ? 1 : 0), 0);
+  if (hits >= 2) return true;
+  return hits === 1 && countWords(text) < 40 && !isCjkDominant(text);
+}
+
+function latinWords(text: string): string[] {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().match(/[a-z]+/g) ?? [];
+}
+
+/** Already-English prose, and only when the customer asked for English. */
+function isEnglishOnly(text: string, targetLanguage: string | null | undefined): boolean {
+  if (targetBase(targetLanguage) !== "en") return false;
+  if (countCjkChars(text) > 0 || OTHER_SCRIPT.test(text)) return false;
+  const words = latinWords(text);
+  if (words.length === 0) return false;
+  let english = 0;
+  let romance = 0;
+  for (const word of words) {
+    if (ENGLISH_STOPS.has(word)) english += 1;
+    if (ROMANCE_STOPS.has(word)) romance += 1;
+  }
+  return english >= 2 && english > romance;
+}
+
+function measure(text: string): { billingBasis: "words" | "cjk"; counted: number } {
+  if (isCjkDominant(text)) {
+    return { billingBasis: "cjk", counted: countCjkChars(text) };
+  }
+  return { billingBasis: "words", counted: countWords(text) };
+}
+
+/**
+ * Bill one physical page.
+ * Latin text is `max(1, ceil(words / 250))`. CJK text is `max(1, ceil(chars / 1000))`.
+ * English-only pages (when the target is English), blank pages, and shipping labels are 0.
+ */
+export function quotePage(input: {
+  text: string;
+  targetLanguage?: string | null;
+  pageIndex: number;
+}): PageQuote {
+  if (!Number.isInteger(input.pageIndex) || input.pageIndex < 0) {
+    throw new Error("pageIndex must be a non-negative integer");
+  }
+  const text = input.text ?? "";
+  if (isBlankPage(text)) {
+    return {
+      pageIndex: input.pageIndex,
+      billableUnits: 0,
+      skip: true,
+      skipReason: "blank",
+      counted: 0,
+      billingBasis: "words",
+    };
+  }
+  const measured = measure(text);
+  if (isShippingLabel(text)) {
+    return {
+      pageIndex: input.pageIndex,
+      billableUnits: 0,
+      skip: true,
+      skipReason: "label",
+      counted: measured.counted,
+      billingBasis: measured.billingBasis,
+    };
+  }
+  if (isEnglishOnly(text, input.targetLanguage)) {
+    return {
+      pageIndex: input.pageIndex,
+      billableUnits: 0,
+      skip: true,
+      skipReason: "english",
+      counted: countWords(text),
+      billingBasis: "words",
+    };
+  }
+  if (measured.billingBasis === "cjk") {
+    return {
+      pageIndex: input.pageIndex,
+      billableUnits: billableCjkUnits(measured.counted),
+      skip: false,
+      skipReason: null,
+      counted: measured.counted,
+      billingBasis: "cjk",
+    };
+  }
+  return {
+    pageIndex: input.pageIndex,
+    billableUnits: billableUnits(measured.counted),
+    skip: false,
+    skipReason: null,
+    counted: measured.counted,
+    billingBasis: "words",
+  };
+}
+
+export function quotePages(
+  texts: readonly string[],
+  targetLanguage?: string | null,
+): { lineItems: PageLineItem[]; billablePages: number; totalCents: number } {
+  const lineItems = texts.map((text, pageIndex) => {
+    const quote = quotePage({ text, targetLanguage, pageIndex });
+    return {
+      pageIndex: quote.pageIndex,
+      billableUnits: quote.billableUnits,
+      skip: quote.skip,
+      skipReason: quote.skipReason,
+    };
+  });
+  const billablePages = lineItems.reduce((sum, item) => sum + item.billableUnits, 0);
+  return { lineItems, billablePages, totalCents: totalCents(billablePages) };
+}
+
+/**
+ * Line item for a stored page. The stored unit count wins so the sum matches
+ * `orders.total_cents`. Skip reason is read from the page text.
+ */
+export function lineItemForStoredPage(input: {
+  pageIndex: number;
+  text: string | null;
+  targetLanguage?: string | null;
+  billableUnits: number | null;
+}): PageLineItem {
+  const live = quotePage({
+    text: input.text ?? "",
+    targetLanguage: input.targetLanguage,
+    pageIndex: input.pageIndex,
+  });
+  if (input.billableUnits == null) {
+    return {
+      pageIndex: live.pageIndex,
+      billableUnits: live.billableUnits,
+      skip: live.skip,
+      skipReason: live.skipReason,
+    };
+  }
+  const skip = input.billableUnits === 0;
+  return {
+    pageIndex: input.pageIndex,
+    billableUnits: input.billableUnits,
+    skip,
+    skipReason: skip ? (live.skipReason ?? "blank") : null,
+  };
+}
+
+const SKIP_PAGE_RULE =
+  "Blank pages and shipping labels are not billed. Pages that are already English are not billed when the translation is into English.";
+
+export const WORD_PAGE_RULE = `250 words per billable page. Each page with text counts as at least 1. ${SKIP_PAGE_RULE}`;
+
+export const CJK_PAGE_RULE = `1000 Chinese, Japanese, or Korean characters per billable page. Each page with those characters counts as at least 1. ${SKIP_PAGE_RULE}`;
 
 /** Quote-screen copy for the rule that priced this order. */
 export function pageRuleForLanguages(languages: Array<string | null | undefined>): string {
@@ -97,7 +305,9 @@ export function pageRuleForLanguages(languages: Array<string | null | undefined>
   if (known.length === 0) return WORD_PAGE_RULE;
   const cjk = known.some((language) => isCjkBillingLanguage(language));
   const other = known.some((language) => !isCjkBillingLanguage(language));
-  if (cjk && other) return `${CJK_PAGE_RULE} ${WORD_PAGE_RULE}`;
+  if (cjk && other) {
+    return `1000 Chinese, Japanese, or Korean characters per billable page. 250 words per billable page. Each page with text counts as at least 1. ${SKIP_PAGE_RULE}`;
+  }
   if (cjk) return CJK_PAGE_RULE;
   return WORD_PAGE_RULE;
 }

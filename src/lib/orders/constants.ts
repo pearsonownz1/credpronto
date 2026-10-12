@@ -1,6 +1,6 @@
 export const UNIT_PRICE_CENTS = 995;
 export const WORDS_PER_BILLABLE_PAGE = 250;
-export const CJK_UNITS_PER_BILLABLE_PAGE = 400;
+export const CJK_CHARS_PER_BILLABLE_PAGE = 1000;
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
 export const MAX_FILES = 15;
 export const MAX_TOTAL_BYTES = 100 * 1024 * 1024;
