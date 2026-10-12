@@ -99,8 +99,8 @@ export function OrderHub() {
     body = <ProcessingView token={token} onOrder={reportPreviewReady} />;
   }
 
-  const confirming =
-    checkout === "success" && !error && (!current || downloadPhase(current) === "confirming");
+  const phase =
+    error && !current ? null : current ? downloadPhase(current) : checkout === "success" ? "finalizing" : null;
 
   return (
     <>
@@ -108,7 +108,7 @@ export function OrderHub() {
         message={orderLiveMessage({
           loading: loading && !current,
           error,
-          confirming,
+          phase,
           checkout,
           order: current,
         })}

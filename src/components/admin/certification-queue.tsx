@@ -29,7 +29,7 @@ export function CertificationQueue({ orders, now }: { orders: AdminOrder[]; now?
         <div>
           <h1 className="text-[26px] tracking-[-0.6px]">Certification</h1>
           <p className="mt-1 text-sm text-ink-muted">
-            Paid orders that are not approved yet, oldest first. The badge turns red after 15 minutes.
+            Paid orders that are not approved yet, oldest first. The badge turns red after 2 minutes.
           </p>
         </div>
         <label className="flex h-9 w-full items-center rounded-[var(--cp-radius)] border border-line bg-white px-2.5 text-sm sm:w-64">

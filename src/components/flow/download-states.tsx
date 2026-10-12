@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { flowUsesMock, getFlowClient } from "@/lib/flow/client";
 import {
+  FINALIZING_COPY,
   PAID_REVIEW_COPY,
   downloadPhase,
   downloadReadyCopy,
@@ -34,9 +35,10 @@ export function DownloadStates({
   const token = useStoredToken(pathToken);
   const storedEmail = useStoredEmail();
   const { order, error, loading } = useCustomerOrder(token, pendingPayment ? "checkout" : "until-download");
-  const phase = order ? downloadPhase(order) : "confirming";
+  const phase = order ? downloadPhase(order) : "finalizing";
   const email = order?.email?.trim() || storedEmail;
-  const onDownloadStep = phase === "certifying" || phase === "ready";
+  const onDownloadStep =
+    pendingPayment || phase === "certifying" || phase === "ready" || (order != null && phase === "finalizing");
 
   useEffect(() => {
     if (order) onOrder?.(order);
@@ -55,19 +57,19 @@ export function DownloadStates({
         {loading && !order ? (
           <FlowStatus
             testId="download-phase"
-            title="Confirming payment"
-            body="This usually takes a few seconds."
+            title={pendingPayment ? FINALIZING_COPY : "Loading your order…"}
+            body={pendingPayment ? "This usually takes a few seconds." : ""}
           />
         ) : error && !order ? (
           <FlowStatus title="We couldn't load this order" body={error} />
         ) : !order ? (
           <FlowStatus title="No order yet" body="Start a translation to get a download." />
-        ) : phase === "confirming" ? (
+        ) : phase === "finalizing" ? (
           <FlowStatus
             testId="download-phase"
             kicker={`Order ${order.orderId}`}
-            title="Confirming payment"
-            body="Stripe is sending the receipt. This page checks until the payment is recorded."
+            title={FINALIZING_COPY}
+            body="This usually takes a few seconds."
           />
         ) : phase === "certifying" ? (
           <Certifying order={order} token={token} email={email} />

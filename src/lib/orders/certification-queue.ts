@@ -1,5 +1,5 @@
 /** Paid orders still waiting on a person. The badge turns red at this age. */
-export const CERTIFICATION_LATE_MINUTES = 15;
+export const CERTIFICATION_LATE_MINUTES = 2;
 
 const CLOSED = new Set(["approved", "delivered", "cancelled", "failed"]);
 

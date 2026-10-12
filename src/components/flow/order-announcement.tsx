@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { formatMoney } from "@/lib/flow/pricing";
-import { PAID_REVIEW_COPY } from "@/lib/flow/present";
+import { FINALIZING_COPY, PAID_REVIEW_COPY, type DownloadPhase } from "@/lib/flow/present";
 import type { CustomerOrder } from "@/lib/orders/view";
 
 const LOADING_ORDER = "Loading your order";
@@ -12,8 +12,8 @@ const PREVIEW_WAIT = new Set(["processing", "confirmed", "correction_requested",
 export function orderLiveMessage(input: {
   loading: boolean;
   error?: string | null;
-  /** Stripe success page, still waiting for the webhook to record payment. */
-  confirming?: boolean;
+  /** Checkout return before release, or a flagged order still with the translator. */
+  phase?: DownloadPhase | null;
   checkout?: string | null;
   order: (Pick<CustomerOrder, "status" | "billablePages" | "totalCents"> & {
     fulfillment?: CustomerOrder["fulfillment"];
@@ -22,7 +22,7 @@ export function orderLiveMessage(input: {
   }) | null;
 }): string {
   if (input.checkout === "cancel") return "Payment canceled.";
-  if (input.confirming) return "Confirming payment.";
+  if (input.phase === "finalizing") return FINALIZING_COPY;
   const order = input.order;
   if (!order) {
     if (input.loading) return "Loading your order…";
@@ -32,7 +32,7 @@ export function orderLiveMessage(input: {
 
   const pages = order.billablePages ?? 0;
   const pageText = `${pages} ${pages === 1 ? "page" : "pages"}`;
-  if (order.fulfillment === "awaiting_review") return PAID_REVIEW_COPY;
+  if (input.phase === "certifying" || order.fulfillment === "awaiting_review") return PAID_REVIEW_COPY;
   if (
     order.fulfillment === "released" ||
     order.status === "paid" ||
