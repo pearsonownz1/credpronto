@@ -651,6 +651,25 @@ export async function markPaymentFailed(db: Db, paymentId: string): Promise<void
   fail(error);
 }
 
+export async function markPaymentExpired(db: Db, paymentId: string): Promise<void> {
+  const { error } = await db
+    .from("payments")
+    .update({ status: "expired" })
+    .eq("id", paymentId)
+    .eq("status", "pending");
+  fail(error);
+}
+
+/** Keeps an unpaid preview order payable. Does not overwrite a later status. */
+export async function restorePreviewReadyOrder(db: Db, orderId: string): Promise<void> {
+  const { error } = await db
+    .from("orders")
+    .update({ status: "preview_ready" })
+    .eq("id", orderId)
+    .eq("status", "preview_ready");
+  fail(error);
+}
+
 export async function getDelivery(db: Db, orderId: string): Promise<DeliveryRecord | null> {
   const { data, error } = await db.from("deliveries").select("*").eq("order_id", orderId).maybeSingle();
   fail(error);

@@ -111,7 +111,7 @@ Idempotent retry of analysis or translation. Safe to call more than once. Return
 }
 ```
 
-`confirmations` has one row per document for each of `full_name`, `date_of_birth`, `parent_names`, `place_of_birth`, and `date_format`. `originalValue` is what the model read. `confirmedValue` is null until the customer confirms. `payment.status` is `pending`, `paid`, `paid_test`, `failed`, `canceled`, or `refunded`. `delivery.status` is `pending`, `approved`, `delivered`, or `failed`.
+`confirmations` has one row per document for each of `full_name`, `date_of_birth`, `parent_names`, `place_of_birth`, and `date_format`. `originalValue` is what the model read. `confirmedValue` is null until the customer confirms. `payment.status` is `pending`, `paid`, `paid_test`, `failed`, `canceled`, `expired`, or `refunded`. `delivery.status` is `pending`, `approved`, `delivered`, or `failed`.
 
 `sourceLanguageConfidence` is the lowest document confidence, from 0 to 1.
 
@@ -192,9 +192,11 @@ HTTP 503.
 
 ## `POST /api/stripe/webhook`
 
-`checkout.session.completed` and `charge.refunded`. The body must be the raw payload. `Stripe-Signature` is verified with `STRIPE_WEBHOOK_SECRET`.
+`checkout.session.completed`, `checkout.session.expired`, and `charge.refunded`. The body must be the raw payload. `Stripe-Signature` is verified with `STRIPE_WEBHOOK_SECRET`.
 
 `checkout.session.completed` is applied once per Checkout Session id. A second delivery returns `{ "received": true, "duplicate": true }` and does not create a second payment or a second `paid` event. The payment is marked `paid`, a `deliveries` row is ensured at `pending`, and the order becomes `paid` only when `amount_total` equals `orders.total_cents` and `currency` equals `orders.currency` (case-insensitive). A mismatch does not mark the order paid.
+
+`checkout.session.expired` marks the pending payment for that Checkout Session id `expired`. If the order is still awaiting payment for that session and has not been paid (`paid`, `approved`, or `delivered`, or any settled payment), the order is set back to `preview_ready` so the customer can pay again. A second delivery returns `{ "received": true, "duplicate": true }` and does not change the payment again. An unknown session is ignored.
 
 `charge.refunded` marks that payment `refunded` when the charge amount and currency match the order total. Downloads are locked again (`402`) even if delivery was already approved. A second refund of the same payment returns `{ "received": true, "duplicate": true }`.
 
