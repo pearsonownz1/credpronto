@@ -1,4 +1,4 @@
-import { ADDON_CATALOG, addonOptions, type AddonOption } from "./addons";
+import { ADDON_CATALOG, EXPEDITED_UNIT, addonOptions, type AddonOption } from "./addons";
 import { lineItemForStoredPage, pageRuleForLanguages, type PageLineItem } from "./billing";
 import { asOrderProgress, publicOrderProgress, UPLOADED_PROGRESS, type OrderProgress } from "./reading-progress";
 import { isPreviewDelayed } from "./translation-watch";
@@ -72,6 +72,8 @@ export type CustomerOrder = {
   unitPriceCents: number;
   addons: AddonId[];
   addonOptions: AddonOption[];
+  /** Unit for the Expedited add-on. Evaluations charge this once per order. */
+  expeditedUnit: typeof EXPEDITED_UNIT;
   shippingAddress: ShippingAddress | null;
   totalCents: number | null;
   currency: string;
@@ -191,6 +193,7 @@ export function toCustomerOrder(input: {
       )
       .map((item) => item.id),
     addonOptions: addonOptions(input.order.billablePages, input.order),
+    expeditedUnit: EXPEDITED_UNIT,
     shippingAddress: input.order.shippingAddress,
     totalCents: input.order.totalCents,
     currency: input.order.currency,

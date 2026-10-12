@@ -1,10 +1,13 @@
 import { HttpError } from "./errors";
 import type { AddonId, ShippingAddress } from "./types";
 
+/** Expedited is one flat charge on an evaluation, not a per-page price. */
+export const EXPEDITED_UNIT = "order" as const;
+
 export const ADDON_CATALOG = [
   { id: "notarization", label: "Notarization", unitCents: 1795, per: "order" },
   { id: "mail", label: "USPS Priority hard copy", unitCents: 1295, per: "order" },
-  { id: "expedited", label: "Expedited", unitCents: 995, per: "page" },
+  { id: "expedited", label: "Expedited", unitCents: 995, per: EXPEDITED_UNIT },
 ] as const;
 
 const ADDON_IDS = new Set<string>(ADDON_CATALOG.map((item) => item.id));
@@ -139,11 +142,10 @@ export function parseCheckoutBody(
   const seen = new Set<string>(chosen);
 
   const pages = billablePages != null && billablePages > 0 ? billablePages : null;
-  if (seen.has("expedited") && pages == null) throw new HttpError("Expedited needs a page count", 400);
 
   const shippingAddress = seen.has("mail") ? parseShippingAddress(record.shippingAddress) : null;
   const addons = ADDON_CATALOG.filter((item) => seen.has(item.id)).map((item) => {
-    const quantity = item.per === "page" ? (pages as number) : 1;
+    const quantity = item.per === "page" && pages != null ? pages : 1;
     return {
       id: item.id,
       label: item.label,

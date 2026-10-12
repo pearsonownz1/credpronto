@@ -91,6 +91,7 @@ describe("customer order", () => {
     expect(order.addonOptions).toEqual(addonOptions(2, orderRecord()));
     expect(order.addonOptions.map((item) => item.id)).toEqual(["notarization", "mail"]);
     expect(order.addonOptions).toEqual(offeredAddonOptions(2, "translation"));
+    expect(order.expeditedUnit).toBe("order");
     expect(order.shippingAddress).toBeNull();
     expect(order.totalCents).toBe(1990);
     expect(order).not.toHaveProperty("combinedOriginalPath");
@@ -132,7 +133,12 @@ describe("customer order", () => {
     expect(order.orderType).toBe("evaluation");
     expect(order.service).toBe("diploma");
     expect(order.addonOptions.map((item) => item.id)).toEqual(["notarization", "mail", "expedited"]);
-    expect(order.addonOptions.find((item) => item.id === "expedited")?.totalCents).toBe(995);
+    expect(order.addonOptions.find((item) => item.id === "expedited")).toMatchObject({
+      per: "order",
+      unitCents: 995,
+      totalCents: 995,
+    });
+    expect(order.expeditedUnit).toBe("order");
     expect(order.degreeCount).toBe(1);
     expect(order.lineItems.map((item) => item.kind)).toEqual(["evaluation", "translation"]);
     expect(order.includeTranslation).toBe(true);
