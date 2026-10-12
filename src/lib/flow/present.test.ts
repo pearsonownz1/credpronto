@@ -159,7 +159,8 @@ describe("page rule", () => {
       pageRule: CJK_PAGE_RULE,
     });
     expect(displayedPageRule(cjk)).toBe(CJK_PAGE_RULE);
-    expect(displayedPageRule(cjk)).toContain("1,000 units");
+    expect(displayedPageRule(cjk)).toContain("250 words");
+    expect(displayedPageRule(cjk)).toContain("1,000 characters");
     expect(displayedPageRule(cjk)).toBe(WORD_PAGE_RULE);
   });
 });

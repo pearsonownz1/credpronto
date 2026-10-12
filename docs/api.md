@@ -2,7 +2,7 @@
 
 Customer routes authenticate with the raw order token from the email link (`/order/<token>`). The database stores only the lowercase hex SHA-256 of that string in `orders.public_token_hash`. Server routes use the Supabase service role. Responses never include storage paths or the token hash.
 
-Prices are `$9.95` per physical page (`unitPriceCents` 995). A page counts as more than one billable page only when it exceeds 1,000 units: `max(1, ceil(units / 1000))`. A unit is one Han, Hiragana, Katakana, or Hangul character, or one ASCII number or Latin-letter group (`3.85`, `2019`, `GPA`, and `2019-06` are each one unit). Spaces and punctuation count as 0. `学号 2019 GPA 3.85` is 5 units. Blank pages, pages already in the target language, and non-documents such as a shipping label are skipped: they are not billed, translated, or included in the preview. `GET /api/orders/[token]` returns that sentence in `pageRule`.
+Prices are `$9.95` per billable page (`unitPriceCents` 995). A physical page is `max(1, ceil(words / 250))` billable pages for word-based text, and `max(1, ceil(chars / 1000))` for Chinese, Japanese, or Korean text. `chars` counts Han, Hiragana, Katakana, and Hangul characters only. Latin groups and digits are not characters. `学号 2019 GPA 3.85` is 2 characters. Blank pages, pages already in the target language, and non-documents such as a shipping label are skipped and bill `0`. `GET /api/orders/[token]` returns `About 250 words (or 1,000 characters) per page.` in `pageRule`. Each translation line item exposes that count as `billableUnits`.
 
 Uploads are normalized into one combined original PDF at `originals/<orderId>/original-combined.pdf`. Page N of the watermarked preview is the translation of the Nth page that was not skipped. When any page is skipped, the preview original is that same subset.
 
@@ -152,7 +152,7 @@ Idempotent retry of analysis or translation. Safe to call more than once. Return
   "shippingAddress": null,
   "totalCents": 2985,
   "currency": "usd",
-  "pageRule": "$9.95 per physical page. A page counts as more than one billable page only when it exceeds 1,000 units. Each Chinese, Japanese, or Korean character counts as 1 unit, and each number or Latin-letter group (such as 2019, GPA, or 3.85) counts as 1. Spaces and punctuation count as 0.",
+  "pageRule": "About 250 words (or 1,000 characters) per page.",
   "etaAt": "2026-10-12T01:00:00.000Z",
   "reviewReason": null,
   "confirmations": [
@@ -195,7 +195,7 @@ JSON `{ "targetLanguage": "es", "skipPages": [2, 4] }`. Either field may be omit
 
 `skipPages` is the full list of skipped `pageIndex` values, not a delta. Each entry is an integer page index from the quote. `400` `{ "error": "skipPages must be a list of page numbers." }` when it is not that list. `400` `{ "error": "Unknown page." }` when an index is not on the order. Pages in the list are not billed. Pages left out are billed, including a page that was auto-skipped. Omitting `skipPages` recomputes the automatic skips for the target language.
 
-At quote time a page is auto-skipped when it is already in the target language (an English page on a Chinese-to-English order), blank, or not a document (a DHL, FedEx, UPS, or USPS label or waybill). Skipped pages are not billed, translated, or included in the preview. A billed page is 1 until it exceeds 1,000 units, then `ceil(units / 1000)`.
+At quote time a page is auto-skipped when it is already in the target language (an English page on a Chinese-to-English order), blank, or not a document (a DHL, FedEx, UPS, or USPS label or waybill). Skipped pages are not billed, translated, or included in the preview, and their `billableUnits` is `0`. A billed word-based page is `max(1, ceil(words / 250))`. A billed CJK page is `max(1, ceil(chars / 1000))`, where `chars` counts CJK characters. That number is `billableUnits` on the line item.
 
 The order is re-quoted and the response `lineItems` lists every physical page:
 

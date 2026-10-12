@@ -231,7 +231,7 @@ async function applyPageQuote(
     await updatePageQuote(db, page.id, {
       wordCount: quote.units,
       billableUnits: quote.billableUnits,
-      billingBasis: "units",
+      billingBasis: quote.billingBasis,
       skip: quote.skip,
       skipReason: quote.skipReason,
     });

@@ -187,7 +187,7 @@ export type PageRecord = {
   pageNumber: number;
   wordCount: number | null;
   billableUnits: number | null;
-  billingBasis: "words" | "cjk" | "units" | null;
+  billingBasis: "words" | "cjk" | "chars" | null;
   ocrText: string | null;
   skip: boolean;
   skipReason: string | null;

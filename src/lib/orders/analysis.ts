@@ -417,7 +417,7 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
             pageNumber: page.appliedPage,
             wordCount: quoted.units,
             billableUnits: quoted.billableUnits,
-            billingBasis: "units" as const,
+            billingBasis: quoted.billingBasis,
             ocrText: read.text,
             skip: quoted.skip,
             skipReason: quoted.skipReason,

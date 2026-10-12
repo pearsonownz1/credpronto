@@ -1,10 +1,14 @@
--- Physical-page billing. A side is one billable page until its unit count
--- exceeds 1,000. word_count stores that unit count when billing_basis = 'units':
--- one Han, Hiragana, Katakana, or Hangul character, or one ASCII number or
--- Latin-letter group. billable_units = greatest(1, ceil(word_count / 1000)).
+-- Physical-page billing.
+-- Word sides keep billing_basis = 'words':
+--   word_count is the word count
+--   billable_units = greatest(1, ceil(word_count / 250))
+-- Character sides use billing_basis = 'chars':
+--   word_count is the Han, Hiragana, Katakana, and Hangul character count
+--   (Latin groups and digits are not counted)
+--   billable_units = greatest(1, ceil(word_count / 1000))
 -- Skipped sides (already in the target language, blank, not a document, or
 -- chosen by the customer) store billable_units = 0 and are not billed.
--- Rows priced before this rule keep billing_basis words (/250) or cjk (/400).
+-- Rows priced before this rule keep billing_basis cjk (/400).
 
 alter table public.document_pages
   add column skip boolean not null default false;
@@ -16,7 +20,7 @@ alter table public.document_pages drop constraint document_pages_billing_basis_c
 
 alter table public.document_pages
   add constraint document_pages_billing_basis_chk
-  check (billing_basis in ('words', 'cjk', 'units'));
+  check (billing_basis in ('words', 'cjk', 'chars'));
 
 alter table public.document_pages drop constraint document_pages_billable_rule_chk;
 
@@ -46,7 +50,7 @@ alter table public.document_pages add constraint document_pages_billable_rule_ch
     and billable_units = greatest(1, ceil(word_count::numeric / 400)::integer)
   )
   or (
-    billing_basis = 'units'
+    billing_basis = 'chars'
     and skip = false
     and skip_reason is null
     and word_count is not null
@@ -64,7 +68,7 @@ alter table public.document_pages add constraint document_pages_billable_rule_ch
 );
 
 comment on column public.document_pages.billing_basis is
-  'units: word_count is the unit count and billable_units = greatest(1, ceil(word_count / 1000)), or 0 when skip is true. words (/250) and cjk (/400) remain for rows priced before the 1,000-unit rule.';
+  'words: word_count is the word count and billable_units = greatest(1, ceil(word_count / 250)). chars: word_count is the CJK character count and billable_units = greatest(1, ceil(word_count / 1000)). cjk (/400) remains for rows priced before the character rule. billable_units is 0 when skip is true.';
 
 comment on column public.document_pages.skip is
   'True when the side is not billed, translated, or included in the preview.';

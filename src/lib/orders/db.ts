@@ -147,8 +147,8 @@ function mapPage(row: Row): PageRecord {
         ? "cjk"
         : row.billing_basis === "words"
           ? "words"
-          : row.billing_basis === "units"
-            ? "units"
+          : row.billing_basis === "chars" || row.billing_basis === "units"
+            ? "chars"
             : null,
     ocrText: str(row.ocr_text),
     skip: row.skip === true,
@@ -465,7 +465,7 @@ export async function replacePages(
     pageNumber: number;
     wordCount: number;
     billableUnits: number;
-    billingBasis: "words" | "cjk" | "units";
+    billingBasis: "words" | "cjk" | "chars";
     ocrText: string;
     skip?: boolean;
     skipReason?: string | null;
@@ -513,7 +513,7 @@ export async function updatePageQuote(
   patch: {
     wordCount: number;
     billableUnits: number;
-    billingBasis: "units";
+    billingBasis: "words" | "chars";
     skip: boolean;
     skipReason: string | null;
   },

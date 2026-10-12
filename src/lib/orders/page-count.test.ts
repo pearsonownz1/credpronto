@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getDocumentProxy } from "unpdf";
 import { describe, expect, it } from "vitest";
-import { billableUnits, countCjkUnits } from "./billing";
+import { billableForText } from "./billing";
 import { joinTextItems, type TextItemLike } from "./text-layer";
 import { countWords, isCjkDominant } from "./words";
 
@@ -17,16 +17,16 @@ async function pageTexts(name: string): Promise<string[]> {
   return texts;
 }
 
-/** Mirrors analysis.ts: every physical page uses the 1,000-unit rule. */
+/** Mirrors analysis.ts: words/250 or CJK characters/1000, chosen per page. */
 function billWithoutAi(texts: string[]): number {
-  return texts.reduce((sum, text) => sum + billableUnits(countCjkUnits(text)), 0);
+  return texts.reduce((sum, text) => sum + billableForText(text), 0);
 }
 
 describe("QA sample page counts", () => {
-  it("counts the pt-BR certidão as 251 words and 1 physical page", async () => {
+  it("counts the pt-BR certidão as 251 words and 2 billable pages", async () => {
     const texts = await pageTexts("pt-br_certidao-nascimento.pdf");
     expect(countWords(texts[0] ?? "")).toBe(251);
-    expect(billWithoutAi(texts)).toBe(1);
+    expect(billWithoutAi(texts)).toBe(2);
   });
 
   it("keeps the French relevé page at exactly 250 words, 1 page", async () => {

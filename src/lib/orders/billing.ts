@@ -1,4 +1,5 @@
-import { UNIT_PRICE_CENTS, UNITS_PER_BILLABLE_PAGE } from "./constants";
+import { CJK_CHARS_PER_BILLABLE_PAGE, UNIT_PRICE_CENTS, WORDS_PER_BILLABLE_PAGE } from "./constants";
+import { countWords, isCjkDominant } from "./words";
 
 const CJK_CHAR =
   /^(?:\p{Script=Han}|\p{Script=Hiragana}|\p{Script=Katakana}|\p{Script=Hangul})$/u;
@@ -51,28 +52,45 @@ export function countCjkUnits(text: string): number {
   return units;
 }
 
+const CJK_CHARS = /\p{Script=Han}|\p{Script=Hiragana}|\p{Script=Katakana}|\p{Script=Hangul}/gu;
+
+/** Han, Hiragana, Katakana, and Hangul characters. Latin groups and digits are not counted. */
+export function countCjkChars(text: string): number {
+  return text.match(CJK_CHARS)?.length ?? 0;
+}
+
+export type BillingBasis = "words" | "chars";
+
+/** Words for a word-based page, or CJK characters for a character-based page. */
+export function countedForPage(text: string): { basis: BillingBasis; counted: number } {
+  if (isCjkDominant(text)) return { basis: "chars", counted: countCjkChars(text) };
+  return { basis: "words", counted: countWords(text) };
+}
+
 function assertCount(name: string, count: number): void {
   if (!Number.isInteger(count) || count < 0) {
     throw new Error(`${name} must be a non-negative integer`);
   }
 }
 
-/**
- * One physical page is one billable page until it exceeds 1,000 units.
- * A skipped page is billed separately as zero.
- */
-export function billableUnits(unitCount: number): number {
-  assertCount("unitCount", unitCount);
-  return Math.max(1, Math.ceil(unitCount / UNITS_PER_BILLABLE_PAGE));
+/** Word-based scripts: one physical page is 1 billable page through 250 words. */
+export function billableUnits(wordCount: number): number {
+  assertCount("wordCount", wordCount);
+  return Math.max(1, Math.ceil(wordCount / WORDS_PER_BILLABLE_PAGE));
 }
 
-/** Same 1,000-unit rule as billableUnits. Kept so older call sites keep working. */
-export function billableCjkUnits(unitCount: number): number {
-  return billableUnits(unitCount);
+/** Character-based text: one physical page is 1 billable page through 1,000 CJK characters. */
+export function billableCjkUnits(charCount: number): number {
+  assertCount("charCount", charCount);
+  return Math.max(1, Math.ceil(charCount / CJK_CHARS_PER_BILLABLE_PAGE));
 }
 
-export const PAGE_RULE =
-  "$9.95 per physical page. A page counts as more than one billable page only when it exceeds 1,000 units. Each Chinese, Japanese, or Korean character counts as 1 unit, and each number or Latin-letter group (such as 2019, GPA, or 3.85) counts as 1. Spaces and punctuation count as 0.";
+export function billableForText(text: string): number {
+  const counted = countedForPage(text);
+  return counted.basis === "chars" ? billableCjkUnits(counted.counted) : billableUnits(counted.counted);
+}
+
+export const PAGE_RULE = "About 250 words (or 1,000 characters) per page.";
 
 export const WORD_PAGE_RULE = PAGE_RULE;
 export const CJK_PAGE_RULE = PAGE_RULE;

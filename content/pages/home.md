@@ -64,7 +64,7 @@ Not for USCIS. Some courts, DMVs and foreign agencies ask for one, and you can a
 The rule doesn't forbid it, but most immigration attorneys advise against translating your own or a family member's documents, because an officer may question whether the translation is neutral.
 
 **What counts as a page?**
-Each physical page is $9.95. A page counts as more than one billable page only when it exceeds 1,000 units. A Chinese, Japanese, or Korean character is one unit, and a number or group of Latin letters is one unit. You'll see the page count and the exact total before anything is processed.
+Each physical page is $9.95. About 250 words (or 1,000 characters) count as one page. A longer page is billed as more than one. You'll see the page count and the exact total before anything is processed.
 
 **How fast will I get it?**
 Most previews are ready in about 10 minutes. Once you pay, the certified PDF unlocks right away. Hard-to-read scans and unusual languages go to a person for review, and we'll tell you the timing before you pay.

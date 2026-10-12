@@ -1,4 +1,4 @@
-import { billableUnits, countCjkUnits } from "./billing";
+import { billableCjkUnits, billableUnits, countCjkChars, countedForPage, type BillingBasis } from "./billing";
 import { isCjkDominant } from "./words";
 
 export const SKIP_REASONS = ["target_language", "blank", "not_document", "customer"] as const;
@@ -7,8 +7,9 @@ export type SkipReason = (typeof SKIP_REASONS)[number];
 
 export type QuotedPage = {
   pageIndex: number;
-  /** CJK characters plus number and Latin groups on the physical page. */
+  /** Words on a word-based page, or CJK characters on a character-based page. */
   units: number;
+  billingBasis: BillingBasis;
   /** Billable pages for this side. Zero when the side is skipped. */
   billableUnits: number;
   skip: boolean;
@@ -34,7 +35,7 @@ const LATIN_HINTS: Record<string, RegExp> = {
  * (a shipping label) are not billed.
  */
 export function autoSkipReason(text: string, targetLanguage: string | null): SkipReason | null {
-  if (!text.trim() || countCjkUnits(text) === 0) return "blank";
+  if (isBlankPage(text)) return "blank";
   if (NON_DOCUMENT.test(text)) return "not_document";
   if (targetLanguage && alreadyInTargetLanguage(text, targetLanguage)) return "target_language";
   return null;
@@ -51,18 +52,27 @@ export function pricePage(input: {
   pageIndex: number;
   skipPages: number[] | null;
 }): QuotedPage {
-  const units = countCjkUnits(input.text);
+  const counted = countedForPage(input.text);
   const auto = autoSkipReason(input.text, input.targetLanguage);
   const listed = input.skipPages?.includes(input.pageIndex) ?? false;
   const skip = input.skipPages ? listed : auto != null;
   const skipReason = skip ? (auto ?? "customer") : null;
+  const billed =
+    counted.basis === "chars" ? billableCjkUnits(counted.counted) : billableUnits(counted.counted);
   return {
     pageIndex: input.pageIndex,
-    units,
-    billableUnits: skip ? 0 : billableUnits(units),
+    units: counted.counted,
+    billingBasis: counted.basis,
+    billableUnits: skip ? 0 : billed,
     skip,
     skipReason,
   };
+}
+
+function isBlankPage(text: string): boolean {
+  if (!text.trim()) return true;
+  if (countCjkChars(text) > 0) return false;
+  return (text.match(/[\p{L}\p{N}]+/gu)?.length ?? 0) === 0;
 }
 
 export function quotePages(input: {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { countCjkChars } from "./billing";
 import { UNIT_PRICE_CENTS } from "./constants";
 import { quotePages } from "./page-skip";
 
@@ -34,11 +35,28 @@ describe("quote pages", () => {
     expect(pages.every((page) => page.pageIndex === pages.indexOf(page) + 1)).toBe(true);
   });
 
-  it("skips a blank page and bills a page only after 1,000 units", () => {
+  it("skips a blank page and bills a second page after 1,000 CJK characters", () => {
     const dense = "学".repeat(1001);
     const pages = quotePages({ texts: ["   ", dense], targetLanguage: "en" });
     expect(pages[0]).toMatchObject({ skip: true, skipReason: "blank", billableUnits: 0 });
-    expect(pages[1]).toMatchObject({ skip: false, billableUnits: 2, units: 1001 });
+    expect(pages[1]).toMatchObject({
+      skip: false,
+      billingBasis: "chars",
+      billableUnits: 2,
+      units: 1001,
+    });
+    expect(countCjkChars("学号 2019 GPA 3.85")).toBe(2);
+  });
+
+  it("bills a 251-word Latin page as two pages", () => {
+    const words = Array.from({ length: 251 }, () => "alpha").join(" ");
+    const pages = quotePages({ texts: [words], targetLanguage: "es" });
+    expect(pages[0]).toMatchObject({
+      skip: false,
+      billingBasis: "words",
+      units: 251,
+      billableUnits: 2,
+    });
   });
 
   it("treats skipPages as the full list, so an English page can be billed", () => {

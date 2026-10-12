@@ -30,26 +30,37 @@ The hash is not a password hash. It does not need to be slow. It only prevents a
 
 Price for a translation is `$9.95` per billable page (`orders.unit_price_cents` defaults to `995`, `currency` defaults to `usd`).
 
-A billable page is one physical side of an original page. Price is `$9.95` per billed side. A side counts as more than one billable page only when its unit count exceeds 1,000.
+A billable page is about 250 words, or 1,000 CJK characters, of one physical side. Price is `$9.95` per billable page.
 
-For new rows (`billing_basis = 'units'`), `word_count` stores a unit count. A unit is one Han, Hiragana, Katakana, or Hangul character, or one maximal run of ASCII digits or Latin letters. A run may include `.` `,` `/` `-` when that mark sits between alphanumerics (`3.85`, `2019`, `GPA`, `2019-06` are each one unit). Spaces and other punctuation count as zero. Example: `学号 2019 GPA 3.85` is 5 units.
+Word-based sides use `billing_basis = 'words'`. `word_count` is the word count:
+
+```text
+billable_units = greatest(1, ceil(word_count / 250))
+```
+
+| Words on that side | Billable units |
+| --- | --- |
+| 0–250 | 1 |
+| 251–500 | 2 |
+
+Character-based sides (a page whose text is mostly Han, Hiragana, Katakana, or Hangul) use `billing_basis = 'chars'`. `word_count` stores that CJK character count. Latin groups and digits are not counted. `学号 2019 GPA 3.85` is 2 characters.
 
 ```text
 billable_units = greatest(1, ceil(word_count / 1000))
 ```
 
-| Units on that side | Billable units |
+| CJK characters on that side | Billable units |
 | --- | --- |
-| 1–1000 | 1 |
+| 0–1000 | 1 |
 | 1001–2000 | 2 |
 
-A skipped side stores `skip = true`, `billable_units = 0`, and `skip_reason` of `target_language`, `blank`, `not_document`, or `customer`. Blank pages, pages already in the target language, and non-documents such as a shipping label are skipped at quote time. Those sides are not billed, translated, or previewed. Apply `supabase/migrations/20261012100000_physical_page_billing.sql` before writing `units` rows. The app does not run it.
+A skipped side stores `skip = true`, `billable_units = 0`, and `skip_reason` of `target_language`, `blank`, `not_document`, or `customer`. Blank pages, pages already in the target language, and non-documents such as a shipping label are skipped at quote time. Those sides are not billed, translated, or previewed. Apply `supabase/migrations/20261012100000_physical_page_billing.sql` before writing `chars` rows or skip columns. The app does not run it.
 
-Rows priced before that migration keep `billing_basis` `words` (`greatest(1, ceil(word_count / 250))`) or `cjk` (`greatest(1, ceil(word_count / 400))`). The check constraint `document_pages_billable_rule_chk` accepts those historical pairs and the new `units` pair. `word_count` and `billable_units` stay null until the count is known. `GET /api/orders/[token]` returns the current sentence in `pageRule`.
+Rows priced before that migration keep `billing_basis` `cjk` (`greatest(1, ceil(word_count / 400))`). The check constraint `document_pages_billable_rule_chk` accepts that historical pair, the `words` pair, and the new `chars` pair. `word_count` and `billable_units` stay null until the count is known. `GET /api/orders/[token]` returns `About 250 words (or 1,000 characters) per page.` in `pageRule`. Translation line items expose the same number as `billableUnits`, which is `0` when the page is skipped.
 
 `orders.billable_pages` is the sum of `billable_units` across every side that is not skipped. For a translation, `orders.total_cents` must equal `billable_pages * unit_price_cents + addon_cents` whenever the page count and total are set. `addon_cents` defaults to 0. A translation cannot move to `paid`, `approved`, or `delivered` unless the language pair is confirmed, `billable_pages` is at least 1, and the total matches that product. Evaluation and expert-letter orders may carry a total without a page count.
 
-Example: a two-sided diploma, 180 units on the first side and 400 on the second, is `1 + 1 = 2` billable pages, `$19.90`, `total_cents = 1990`.
+Example: a two-sided diploma, 180 words on the first side and 400 on the second, is `1 + 2 = 3` billable pages, `$29.85`, `total_cents = 2985`.
 
 ## Status flow
 
@@ -102,7 +113,7 @@ One uploaded file on an order. `original_path` is the object key in the `origina
 
 ### `document_pages`
 
-One side of a document. `page_number` starts at 1 and is unique per document. After analysis it is the applied page inside that file, matching the combined original. `upload_page` is the page index in the uploaded file before that reorder. `logical_page` is the printed page number when the model saw one. `order_hint` is the cue (`page 1/2`, `suite`). `ocr_text` is the text used for the unit count and for the side-by-side review. `skip` and `skip_reason` record a side that is left out of the price, the translation, and the preview. `needs_review` marks a side a person must check (low confidence, unreadable scan, suspected wrong language, or a failed image-quality gate). `quality_score` is legibility from 0 to 1. `quality_flags` is a subset of `blurry`, `cropped`, `glare`, `too_dark`, and `unreadable_fields`. `quality_message` is the retake text when a photo or scan is flagged, or when its score is below 0.6. Severe flags (`blurry`, `too_dark`, `unreadable_fields`, `cropped` when the crop cuts off text) cap `quality_score` below 0.6 and set `orders.review_reason` to `image_quality`. `billable_units` follows the rule above.
+One side of a document. `page_number` starts at 1 and is unique per document. After analysis it is the applied page inside that file, matching the combined original. `upload_page` is the page index in the uploaded file before that reorder. `logical_page` is the printed page number when the model saw one. `order_hint` is the cue (`page 1/2`, `suite`). `ocr_text` is the text used for the word or CJK character count and for the side-by-side review. `skip` and `skip_reason` record a side that is left out of the price, the translation, and the preview. `needs_review` marks a side a person must check (low confidence, unreadable scan, suspected wrong language, or a failed image-quality gate). `quality_score` is legibility from 0 to 1. `quality_flags` is a subset of `blurry`, `cropped`, `glare`, `too_dark`, and `unreadable_fields`. `quality_message` is the retake text when a photo or scan is flagged, or when its score is below 0.6. Severe flags (`blurry`, `too_dark`, `unreadable_fields`, `cropped` when the crop cuts off text) cap `quality_score` below 0.6 and set `orders.review_reason` to `image_quality`. `billable_units` follows the rule above.
 
 `orders.page_order_basis` is `logical` or `upload`. `orders.page_order` is the recorded sequence: each page's upload position, applied position, upload page, applied page, logical page, hint, and confidence.
 

@@ -1,4 +1,4 @@
-import { UNIT_PRICE_CENTS, UNITS_PER_BILLABLE_PAGE } from "@/lib/orders/constants";
+import { UNIT_PRICE_CENTS, WORDS_PER_BILLABLE_PAGE } from "@/lib/orders/constants";
 import type { FlowDraft, FlowFile, FlowQuote, PricedFile } from "./types";
 
 export const PRICE_PER_PAGE_CENTS = UNIT_PRICE_CENTS;
@@ -12,14 +12,14 @@ export function pageLabel(pages: number) {
 }
 
 /**
- * A physical side is one billable page until the estimated unit count exceeds 1,000.
- * Extra sides still count.
+ * A billable page is one side of the original, about 250 words.
+ * A longer side counts as another page, and extra sides still count.
  */
 export function billablePages(words: number, sides: number) {
   const safeWords = Number.isFinite(words) ? Math.max(0, words) : 0;
   const safeSides = Number.isFinite(sides) ? Math.max(0, sides) : 0;
   const sidePages = Math.max(1, safeSides);
-  const wordPages = Math.max(1, Math.ceil(safeWords / UNITS_PER_BILLABLE_PAGE));
+  const wordPages = Math.max(1, Math.ceil(safeWords / WORDS_PER_BILLABLE_PAGE));
   return Math.max(sidePages, wordPages);
 }
 
