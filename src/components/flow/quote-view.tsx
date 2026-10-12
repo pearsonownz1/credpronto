@@ -277,16 +277,7 @@ export function QuoteBody({
                   )}
                   header={
                     <div className="px-4 py-3.5 text-sm">
-                      <div className="flex flex-col gap-1 md:flex-row md:items-start md:justify-between md:gap-3">
-                        <b className="min-w-0 break-words md:flex-1">{file.filename}</b>
-                        <p
-                          data-testid="file-turnaround"
-                          className="flex shrink-0 items-center gap-1 text-[13px] font-semibold leading-5 text-[var(--cp-ok)]"
-                        >
-                          <ClockIcon />
-                          Ready in a few minutes
-                        </p>
-                      </div>
+                      <b className="block min-w-0 break-words">{file.filename}</b>
                       {showPages ? (
                         <div data-testid="file-billable" className="text-[12.5px] text-ink-muted">
                           {file.pages == null ? "—" : fileCountLabel(file.billable)}
@@ -341,6 +332,7 @@ export function QuoteBody({
             value="Free"
             valueClass="font-semibold text-[var(--cp-ok)]"
           />
+          <QuoteTurnaround />
           <SummaryRow
             testId="quote-total"
             label={qualityHold ? "Price" : "Total if you buy"}
@@ -420,9 +412,31 @@ function BillingNote({ note }: { note: string }) {
   );
 }
 
+function QuoteTurnaround() {
+  return (
+    <div className="border-t border-line px-3 py-3">
+      <div
+        data-testid="quote-turnaround"
+        className="flex w-full items-center gap-3 rounded-[4px] bg-[#EEF3FF] p-3.5"
+      >
+        <ClockIcon />
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold tracking-[0.08em] text-ink-muted uppercase">
+            Turnaround time
+          </p>
+          <p className="text-[22px] font-bold leading-tight text-primary">3 minutes</p>
+        </div>
+        <span className="shrink-0 rounded-full bg-[#e8f6f0] px-2 py-0.5 text-[12px] font-semibold text-[var(--cp-ok)]">
+          Fast
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function ClockIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+    <svg width="20" height="20" viewBox="0 0 14 14" fill="none" aria-hidden className="shrink-0 text-primary">
       <circle cx="7" cy="7" r="5.4" stroke="currentColor" strokeWidth="1.2" />
       <path d="M7 4.1V7.1L9 8.3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>

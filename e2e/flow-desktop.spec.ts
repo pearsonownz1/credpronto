@@ -12,14 +12,18 @@ test("a quote file shows a large page viewer and opens it full size", async ({ p
   await page.goto("/order/mock-token");
   await expect(page.getByRole("heading", { name: /exact price/ }).filter({ visible: true })).toBeVisible();
   const list = page.getByTestId("file-list").filter({ visible: true });
-  const turnaround = list.getByTestId("file-turnaround").first();
-  await expect(turnaround).toContainText("Ready in a few minutes");
-  const filename = list.locator("b").first();
-  const nameBox = await filename.boundingBox();
-  const turnBox = await turnaround.boundingBox();
-  expect(nameBox).toBeTruthy();
-  expect(turnBox).toBeTruthy();
-  expect(turnBox!.x).toBeGreaterThan(nameBox!.x + nameBox!.width - 4);
+  await expect(page.getByTestId("file-turnaround")).toHaveCount(0);
+  const turnaround = page.getByTestId("quote-turnaround").filter({ visible: true });
+  await expect(turnaround).toContainText(/turnaround time/i);
+  await expect(turnaround).toContainText("3 minutes");
+  await expect(turnaround).toContainText("Fast");
+  const time = turnaround.getByText("3 minutes");
+  const pill = turnaround.getByText("Fast", { exact: true });
+  const timeBox = await time.boundingBox();
+  const pillBox = await pill.boundingBox();
+  expect(timeBox).toBeTruthy();
+  expect(pillBox).toBeTruthy();
+  expect(pillBox!.x).toBeGreaterThan(timeBox!.x + timeBox!.width - 4);
 
   const row = list.getByTestId("file-row").filter({ hasText: "acta-nacimiento.pdf" });
   await expect(row.getByTestId("file-billable")).toBeVisible();
@@ -64,9 +68,8 @@ test("a missing source file hides the page viewer", async ({ page }) => {
   await expect(page.getByTestId("page-viewer")).toHaveCount(0);
   await expect(page.getByTestId("file-thumb-fallback")).toHaveCount(0);
   await expect(page.getByTestId("file-thumb-skeleton")).toHaveCount(0);
-  await expect(page.getByTestId("file-turnaround").filter({ visible: true }).first()).toContainText(
-    "Ready in a few minutes",
-  );
+  await expect(page.getByTestId("file-turnaround")).toHaveCount(0);
+  await expect(page.getByTestId("quote-turnaround").filter({ visible: true })).toContainText("3 minutes");
 });
 
 test("a loaded quote replaces the loading announcement", async ({ page }) => {
