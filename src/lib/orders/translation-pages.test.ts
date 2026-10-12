@@ -125,6 +125,9 @@ describe("translation dispatch", () => {
     vi.unstubAllGlobals();
     delete process.env.CRON_SECRET;
     delete process.env.VERCEL_URL;
+    delete process.env.VERCEL_ENV;
+    delete process.env.APP_URL;
+    delete process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
   });
 
   it("posts the page job to this deployment with the cron bearer", async () => {
@@ -142,5 +145,12 @@ describe("translation dispatch", () => {
         body: JSON.stringify({ orderId: "order-1", version: 2, jobId: "job-1" }),
       }),
     );
+  });
+
+  it("returns the public app origin when VERCEL_ENV is production", () => {
+    process.env.VERCEL_ENV = "production";
+    process.env.VERCEL_URL = "credpronto-prod.vercel.app";
+    process.env.APP_URL = "https://credpronto.com";
+    expect(internalOrigin()).toBe("https://credpronto.com");
   });
 });
