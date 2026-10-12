@@ -4,6 +4,7 @@ import { asOrderProgress, UPLOADED_PROGRESS, type OrderProgress } from "./readin
 import { isPreviewDelayed } from "./translation-watch";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
 import { lineItemsForOrder, translationOfferCents } from "./evaluation-price";
+import { customerEvaluationResult, customerReviewReason } from "./equivalency";
 import { compareCombinedPages } from "./page-order";
 import type {
   AddonId,
@@ -193,7 +194,7 @@ export function toCustomerOrder(input: {
       ...input.documents.map((document) => document.detectedLanguage),
     ]),
     etaAt: input.order.etaAt,
-    reviewReason: input.order.reviewReason,
+    reviewReason: customerReviewReason(input.order.reviewReason),
     confirmations: input.confirmations.map((field) => ({
       documentId: field.documentId,
       fieldKey: field.fieldKey,
@@ -230,7 +231,7 @@ function publicProgress(progress: OrderProgress): OrderProgress {
 
 function publicEvaluation(result: EvaluationResult | null): EvaluationResult | null {
   if (!result) return null;
-  const copy = { ...result };
+  const copy = customerEvaluationResult(result);
   delete copy.pageCount;
   return copy;
 }

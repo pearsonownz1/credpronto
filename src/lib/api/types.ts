@@ -105,6 +105,7 @@ export type StaffDetail = {
     field: string;
     dates: string;
     usEquivalency: string;
+    basis: string | null;
   }>;
   edge: {
     title: string;

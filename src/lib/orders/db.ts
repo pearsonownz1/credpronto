@@ -2,9 +2,11 @@ import { ADDON_CATALOG, type PricedAddon } from "./addons";
 import {
   countrySlugFallbackFilter,
   mapEdgeCredentialRow,
+  mapEdgeEquivalencyRow,
   mapEdgeGradingScaleRow,
   resolveStoredCountrySlug,
   type EdgeCredentialRecord,
+  type EdgeEquivalencyRecord,
   type EdgeGradingScaleRecord,
 } from "./edge";
 import { parseEvaluationResult } from "./evaluation-price";
@@ -791,6 +793,21 @@ export async function listEdgeGradingScalesForCountry(
   fail(error);
   return ((data ?? []) as Row[]).flatMap((row) => {
     const mapped = mapEdgeGradingScaleRow(row);
+    return mapped ? [mapped] : [];
+  });
+}
+
+export async function listEdgeEquivalenciesForCredential(
+  db: Db,
+  edgeCredentialId: string,
+): Promise<EdgeEquivalencyRecord[]> {
+  const { data, error } = await db
+    .from("edge_equivalencies")
+    .select("id, edge_credential_id, country, credential_title, edge_level, us_equivalency, basis, confidence")
+    .eq("edge_credential_id", edgeCredentialId);
+  fail(error);
+  return ((data ?? []) as Row[]).flatMap((row) => {
+    const mapped = mapEdgeEquivalencyRow(row);
     return mapped ? [mapped] : [];
   });
 }

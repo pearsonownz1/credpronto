@@ -227,10 +227,21 @@ export function parseEvaluationResult(value: unknown): EvaluationResult | null {
       const dates = text(credential.dates);
       const usEquivalency = text(credential.usEquivalency);
       const documentsReviewed = stringList(credential.documentsReviewed);
+      const equivalencyBasis = text(credential.equivalencyBasis);
       if (!applicant || !institution || !country || !name || !field || !dates || !usEquivalency || !documentsReviewed) {
         return null;
       }
-      credentials.push({ applicant, institution, country, credential: name, field, dates, usEquivalency, documentsReviewed });
+      credentials.push({
+        applicant,
+        institution,
+        country,
+        credential: name,
+        field,
+        dates,
+        usEquivalency,
+        documentsReviewed,
+        ...(equivalencyBasis ? { equivalencyBasis } : {}),
+      });
     }
     const pageCount = finite(record.pageCount);
     return pageCount == null ? { kind: "diploma", credentials } : { kind: "diploma", credentials, pageCount };
@@ -271,7 +282,20 @@ export function parseEvaluationResult(value: unknown): EvaluationResult | null {
     years.push({ year: label, courses });
   }
   const pageCount = finite(record.pageCount);
-  return pageCount == null
-    ? { kind: "course_by_course", applicant, institution, country, credential, years, totalHours, gpa, gradeScale }
-    : { kind: "course_by_course", applicant, institution, country, credential, years, totalHours, gpa, gradeScale, pageCount };
+  const usEquivalency = text(record.usEquivalency);
+  const equivalencyBasis = text(record.equivalencyBasis);
+  return {
+    kind: "course_by_course",
+    applicant,
+    institution,
+    country,
+    credential,
+    years,
+    totalHours,
+    gpa,
+    gradeScale,
+    ...(usEquivalency ? { usEquivalency } : {}),
+    ...(equivalencyBasis ? { equivalencyBasis } : {}),
+    ...(pageCount == null ? {} : { pageCount }),
+  };
 }
