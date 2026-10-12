@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { getAccount } from "@/lib/account/session";
-import { UploadPageFallback, UploadView } from "@/components/flow/upload-view";
+import { UploadExperience, UploadSeed } from "@/components/flow/upload-view";
 import { TRANSLATE_CANONICAL, TRANSLATE_DESCRIPTION, TRANSLATE_TITLE } from "@/lib/seo";
 
 export const metadata: Metadata = {
@@ -18,9 +18,13 @@ export default function TranslatePage({
   searchParams: Promise<{ service?: string | string[] }>;
 }) {
   return (
-    <Suspense fallback={<UploadPageFallback />}>
-      <TranslateUpload searchParams={searchParams} />
-    </Suspense>
+    <UploadExperience
+      seed={
+        <Suspense fallback={null}>
+          <TranslateUpload searchParams={searchParams} />
+        </Suspense>
+      }
+    />
   );
 }
 
@@ -31,5 +35,5 @@ async function TranslateUpload({
 }) {
   const [params, account] = await Promise.all([searchParams, getAccount()]);
   const service = Array.isArray(params.service) ? params.service[0] : params.service;
-  return <UploadView initialService={service} sessionEmail={account?.email ?? null} />;
+  return <UploadSeed initialService={service} sessionEmail={account?.email ?? null} />;
 }

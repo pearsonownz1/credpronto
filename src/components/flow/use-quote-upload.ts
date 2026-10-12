@@ -7,6 +7,7 @@ import { FlowApiError, flowUsesMock, getFlowClient } from "@/lib/flow/client";
 import type { UploadChoice } from "@/lib/flow/order-choice";
 import { writeEmail, writeToken } from "@/lib/flow/session";
 import { rememberUpload } from "@/lib/flow/upload-blobs";
+import { clearUploadDraft } from "./upload-draft";
 import { useReadingHandoff } from "./reading-handoff";
 
 /** Same upload the translate page runs, then the quote route. */
@@ -38,6 +39,7 @@ export function useQuoteUpload() {
       writeToken(result.orderToken);
       writeEmail(email);
       rememberUpload(result.orderToken, input.files);
+      clearUploadDraft();
       orderCreated();
       const useOrderRoute =
         !mock ||

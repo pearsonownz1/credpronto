@@ -1,15 +1,23 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { knownPageCount } from "@/lib/analytics/google-ads";
 import { customerEmailError } from "@/lib/flow/customer-email";
 import {
-  parseEvaluationService,
   uploadChoiceFromChecks,
   type ServiceChecks,
   type UploadChoice,
 } from "@/lib/flow/order-choice";
+import {
+  adoptUploadInputs,
+  checksAfterServiceChange,
+  draftHasStoredFiles,
+  readStoredFiles,
+  serviceKeyFrom,
+  uploadStateFromDraft,
+  writeUploadDraft,
+} from "./upload-draft";
 import { pageLabel } from "@/lib/flow/pricing";
 import { CUSTOMER_FILE_ACCEPT, dedupeUploads } from "@/lib/flow/uploads";
 import { sampleCustomerOrder } from "@/lib/flow/sample-order";
@@ -53,11 +61,16 @@ const PRODUCTS: Array<{
   },
 ];
 
-function initialChecks(initialService: string | null | undefined): ServiceChecks {
-  const service = parseEvaluationService(initialService);
-  if (service === "diploma") return { translation: false, diploma: true, courseByCourse: false };
-  if (service === "course_by_course") return { translation: false, diploma: false, courseByCourse: true };
-  return { translation: true, diploma: false, courseByCourse: false };
+function readDomChecks(form: HTMLFormElement): ServiceChecks | null {
+  const translation = form.querySelector<HTMLInputElement>('[data-testid="choice-translation"]');
+  const diploma = form.querySelector<HTMLInputElement>('[data-testid="choice-diploma"]');
+  const course = form.querySelector<HTMLInputElement>('[data-testid="choice-course_by_course"]');
+  if (!translation || !diploma || !course) return null;
+  return {
+    translation: translation.checked,
+    diploma: diploma.checked,
+    courseByCourse: course.checked,
+  };
 }
 
 function useQuoteEmail(serverEmail: string | null | undefined): string | null {
@@ -97,11 +110,62 @@ export function UploadCard({
   const signedInEmail = useQuoteEmail(sessionEmail);
   const inputRef = useRef<HTMLInputElement>(null);
   const emailRef = useRef<HTMLInputElement>(null);
-  const [email, setEmail] = useState(mock ? "maria.ruiz@email.com" : "");
+  const [start] = useState(() => uploadStateFromDraft(initialService));
+  const [email, setEmail] = useState(start.email || (mock ? "maria.ruiz@email.com" : ""));
   const [emailError, setEmailError] = useState<string | null>(null);
-  const [picked, setPicked] = useState<File[]>([]);
-  const [checks, setChecks] = useState<ServiceChecks>(() => initialChecks(initialService));
-  const [degrees, setDegrees] = useState("1");
+  const [picked, setPicked] = useState<File[]>(start.files);
+  const [checks, setChecks] = useState<ServiceChecks>(start.checks);
+  const [degrees, setDegrees] = useState(start.degrees);
+  const seenService = useRef(start.serviceKey);
+  const restoreFiles = useRef(start.files.length === 0 && draftHasStoredFiles());
+
+  useEffect(() => {
+    if (!restoreFiles.current) return;
+    let cancelled = false;
+    void readStoredFiles().then((files) => {
+      if (cancelled || files.length === 0) return;
+      setPicked((current) => (current.length > 0 ? current : files));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    const form = inputRef.current?.form ?? null;
+    const domChecks = form ? readDomChecks(form) : null;
+    const adopted = adoptUploadInputs(
+      { email, files: picked, checks },
+      {
+        email: emailRef.current?.value ?? "",
+        files: inputRef.current?.files ? Array.from(inputRef.current.files) : [],
+        checks: domChecks,
+      },
+    );
+    if (adopted.email !== email) setEmail(adopted.email);
+    if (picked.length === 0 && adopted.files.length > 0) setPicked(adopted.files);
+    if (adopted.checks !== checks) setChecks(adopted.checks);
+    // Adopt the DOM once, before the first toggle can render empty React state over it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const serviceKey = serviceKeyFrom(initialService);
+    if (seenService.current === serviceKey) return;
+    const previous = seenService.current;
+    seenService.current = serviceKey;
+    setChecks((current) => checksAfterServiceChange(current, previous, serviceKey));
+  }, [initialService]);
+
+  useEffect(() => {
+    writeUploadDraft({
+      email,
+      files: picked,
+      checks,
+      degrees,
+      serviceKey: seenService.current,
+    });
+  }, [email, picked, checks, degrees]);
   const files: ListedFile[] =
     mock && picked.length === 0
       ? SAMPLE_FILES
