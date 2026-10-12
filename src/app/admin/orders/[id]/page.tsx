@@ -26,6 +26,7 @@ async function OrderDetail({ params }: { params: Promise<{ id: string }> }) {
   }
   return (
     <OrderStudio
+      key={detail.data.id}
       detail={detail.data}
       notes={notes.ok ? notes.data.notes : []}
       notesError={notes.ok ? null : notes.error}

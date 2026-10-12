@@ -21,6 +21,7 @@ import { languageLabel } from "@/lib/orders/languages";
 import type { PreviewOrder, PreviewPageSize } from "@/components/preview/preview-order";
 import { humanStatus } from "@/components/admin/orders-board";
 import { QaPanel } from "@/components/admin/qa-panel";
+import { approveButtonLabel, runStudioAction, type StudioTaskResult } from "@/components/admin/studio-action";
 import type { ViewerFocus } from "@/components/preview/side-by-side-viewer";
 
 const SideBySideViewer = dynamic(
@@ -49,6 +50,7 @@ export function OrderStudio({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
+  const [status, setStatus] = useState(detail.status);
   const [confirmRefund, setConfirmRefund] = useState(false);
   const [focusPage, setFocusPage] = useState<ViewerFocus | null>(null);
   const focusNonce = useRef(0);
@@ -64,18 +66,16 @@ export function OrderStudio({
     });
   }
 
-  async function run(action: string, task: () => Promise<{ ok: boolean; error?: string; message?: string }>) {
+  async function run(action: string, task: () => Promise<StudioTaskResult>) {
     setPending(action);
     setError(null);
     setMessage(null);
-    const result = await task();
+    const settled = await runStudioAction(task);
     setPending(null);
-    if (!result.ok) {
-      setError(result.error ?? "Request failed");
-      return;
-    }
-    if (result.message) setMessage(result.message);
-    router.refresh();
+    setError(settled.error);
+    setMessage(settled.message);
+    if (settled.status) setStatus(settled.status);
+    if (settled.refresh) router.refresh();
   }
 
   async function save() {
@@ -112,7 +112,7 @@ export function OrderStudio({
             <h1 className="font-mono text-[22px] tracking-[-0.4px]">{detail.id}</h1>
             <p className="mt-1 text-sm text-ink-muted">
               {detail.expedited ? "Expedited · " : ""}
-              {detail.email ?? "No customer email"} · {humanStatus(detail.status)} ·{" "}
+              {detail.email ?? "No customer email"} · <span data-testid="order-status">{humanStatus(status)}</span> ·{" "}
               {detail.sourceLanguage ? languageLabel(detail.sourceLanguage) : "Language unset"} →{" "}
               {languageLabel(detail.targetLanguage)} · {formatOrderMoney(detail.totalCents)}
             </p>
@@ -145,26 +145,33 @@ export function OrderStudio({
             >
               {pending === "regenerate" ? "Regenerating…" : "Regenerate preview"}
             </button>
-            {detail.status === "paid" || detail.status === "approved" ? (
+            {status === "paid" || status === "approved" ? (
               <button
                 type="button"
                 data-testid="approve-order"
+                aria-busy={pending === "approve"}
                 disabled={pending !== null}
                 onClick={() =>
                   void run("approve", async () => {
                     const result = await approveOrder(detail.id);
-                    const email =
-                      result.ok && result.data && typeof result.data === "object" && "email" in result.data
-                        ? String((result.data as { email?: unknown }).email ?? "")
-                        : "";
+                    const data =
+                      result.ok && result.data && typeof result.data === "object"
+                        ? (result.data as { email?: unknown; status?: unknown })
+                        : null;
+                    const email = data && "email" in data ? String(data.email ?? "") : "";
+                    const nextStatus = data && typeof data.status === "string" ? data.status : null;
                     return result.ok
-                      ? { ok: true, message: `Certified files released${email ? `. Email ${email}` : ""}.` }
+                      ? {
+                          ok: true,
+                          message: `Certified files released${email ? `. Email ${email}` : ""}.`,
+                          status: nextStatus,
+                        }
                       : { ok: false, error: result.error };
                   })
                 }
                 className="inline-flex h-9 items-center rounded-[var(--cp-radius)] border border-line bg-white px-3 text-sm font-semibold disabled:opacity-60"
               >
-                {pending === "approve" ? "Approving…" : "Approve and release"}
+                {approveButtonLabel(pending)}
               </button>
             ) : null}
             {detail.payment && detail.payment.status !== "refunded" ? (
@@ -191,7 +198,7 @@ export function OrderStudio({
           </p>
         ) : null}
         {error ? (
-          <p role="alert" className="mt-3 text-sm text-[#b45309]">
+          <p role="alert" data-testid="studio-error" className="mt-3 text-sm text-[#b45309]">
             {error}
           </p>
         ) : null}

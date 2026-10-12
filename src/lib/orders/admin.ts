@@ -163,6 +163,7 @@ export async function approveOrder(orderId: string) {
   }
 
   await ensureStaffRow(db, userId);
+  // Status and the delivery email run only after this returns. A throw leaves the order unchanged.
   await stampApprovedCover(db, order, await approverDisplayName(db, userId));
   const now = new Date().toISOString();
   if (delivery.status !== "approved") {

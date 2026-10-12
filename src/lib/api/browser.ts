@@ -8,6 +8,7 @@ export async function browserJson<T>(path: string, init?: RequestInit): Promise<
   try {
     const response = await fetch(path, {
       ...init,
+      credentials: init?.credentials ?? "include",
       headers: {
         accept: "application/json",
         ...(init?.body ? { "content-type": "application/json" } : {}),
