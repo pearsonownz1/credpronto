@@ -160,6 +160,7 @@ export type OrderRecord = {
   edgeCredentialId: string | null;
   edgeGradingScaleId: string | null;
   createdAt: string;
+  updatedAt: string;
   progress: OrderProgress;
 };
 

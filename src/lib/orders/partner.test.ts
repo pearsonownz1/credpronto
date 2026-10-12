@@ -42,6 +42,7 @@ function order(patch: Partial<OrderRecord> = {}): OrderRecord {
     edgeCredentialId: null,
     edgeGradingScaleId: null,
     createdAt: "2026-10-12T00:00:00.000Z",
+    updatedAt: "2026-10-12T00:00:00.000Z",
     progress: { step: "done", pagesRead: 3, pagesTotal: 3 },
     ...patch,
   };

@@ -33,6 +33,7 @@ import {
   decideTranslationFailure,
   isTemporaryTranslationError,
 } from "./translation-failure";
+import { checkedProgress } from "./translation-watch";
 import { uploadObject } from "./storage";
 import type { ConfirmationRecord, CorrectionRecord, PageRecord } from "./types";
 
@@ -202,7 +203,10 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
 
     const claim = await db
       .from("orders")
-      .update({ status: "processing" })
+      .update({
+        status: "processing",
+        progress: checkedProgress(order.progress, { step: "translating" }),
+      })
       .eq("id", orderId)
       .in("status", ["confirmed", "correction_requested", "failed", "preview_ready", "processing", "paid"])
       .select("id");
@@ -312,7 +316,11 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
           pendingQa = assessment.issues;
           continue;
         }
-        await updateOrder(db, orderId, { status: "needs_review", review_reason: QA_REVIEW_REASON });
+        await updateOrder(db, orderId, {
+          status: "needs_review",
+          review_reason: QA_REVIEW_REASON,
+          progress: checkedProgress(order.progress, { step: "done" }),
+        });
         return;
       }
 
@@ -341,10 +349,11 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
       await insertEvent(db, orderId, "preview_ready", { version });
 
       const stillOpen = (await listCorrections(db, orderId)).filter((correction) => correction.status === "open");
+      const settled = checkedProgress(order.progress, { step: "done" });
       if (stillOpen.length === 0) {
-        await updateOrder(db, orderId, { status: "preview_ready", review_reason: null });
+        await updateOrder(db, orderId, { status: "preview_ready", review_reason: null, progress: settled });
       } else {
-        await updateOrder(db, orderId, { status: "correction_requested" });
+        await updateOrder(db, orderId, { status: "correction_requested", progress: settled });
       }
       const { notifyLifecycle } = await import("./webhook-delivery");
       await notifyLifecycle(db, orderId, "order.preview_ready");
@@ -359,6 +368,7 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
       await updateOrder(db, orderId, {
         status: decision.status,
         review_reason: decision.reviewReason,
+        progress: checkedProgress(order.progress, { step: "done" }),
       });
       if (!decision.notifyFailed) return;
       const { notifyOrder } = await import("./webhook-delivery");

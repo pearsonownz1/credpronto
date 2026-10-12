@@ -66,6 +66,7 @@ import { serviceDb, signedObjectUrl, uploadObject, type Db } from "./storage";
 import { assertOrderTokenShape, hashOrderToken } from "./token";
 import { parseCorrectionBody } from "./corrections";
 import { decideChargeRefunded, decideCheckoutCompleted, decideCheckoutExpired } from "./webhook";
+import { checkedProgress } from "./translation-watch";
 import { previewPages, type CustomerOrder, type PreviewResponse } from "./view";
 
 async function orderForToken(token: string) {
@@ -212,6 +213,7 @@ export async function confirmOrder(token: string, body: unknown): Promise<Custom
     status: "confirmed",
     source_language: language,
     language_confirmed: true,
+    progress: checkedProgress(order.progress, { step: "translating", retries: 0 }),
   });
 
   const updated = await requireOrderByHash(db, hashOrderToken(token));
@@ -241,9 +243,10 @@ export async function addCorrection(token: string, body: unknown) {
     passage: payload.passage,
     note: payload.note,
   });
-  if (order.status === "preview_ready") {
-    await updateOrder(db, order.id, { status: "correction_requested" });
-  }
+  await updateOrder(db, order.id, {
+    ...(order.status === "preview_ready" ? { status: "correction_requested" } : {}),
+    progress: checkedProgress(order.progress, { step: "translating", retries: 0 }),
+  });
 
   return {
     id: correction.id,

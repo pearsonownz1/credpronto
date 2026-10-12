@@ -1,6 +1,7 @@
 import { ADDON_CATALOG, addonOptions, type AddonOption } from "./addons";
 import { lineItemForStoredPage, pageRuleForLanguages, type PageLineItem } from "./billing";
 import { asOrderProgress, UPLOADED_PROGRESS, type OrderProgress } from "./reading-progress";
+import { isPreviewDelayed } from "./translation-watch";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
 import { lineItemsForOrder } from "./evaluation-price";
 import { compareCombinedPages } from "./page-order";
@@ -92,6 +93,8 @@ export type CustomerOrder = {
   lineItems: EvaluationLine[];
   evaluation: EvaluationResult | null;
   progress: OrderProgress;
+  /** True after 15 minutes with no preview while translation should be running. */
+  delayed: boolean;
 };
 
 export function toCustomerOrder(input: {
@@ -104,6 +107,7 @@ export function toCustomerOrder(input: {
   deliveryStatus: string | null;
   email: string | null;
   addons?: Array<{ id: AddonId }>;
+  now?: number;
 }): CustomerOrder {
   const confidences = input.documents
     .map((document) => document.confidence)
@@ -202,8 +206,19 @@ export function toCustomerOrder(input: {
     translationCents: input.order.translationCents,
     lineItems: lineItemsForOrder(input.order),
     evaluation: publicEvaluation(input.order.evaluationResult),
-    progress: asOrderProgress(input.order.progress) ?? UPLOADED_PROGRESS,
+    progress: publicProgress(asOrderProgress(input.order.progress) ?? UPLOADED_PROGRESS),
+    delayed: isPreviewDelayed({
+      status: input.order.status,
+      previewVersion: input.previewVersion,
+      updatedAt: input.order.updatedAt,
+      progress: input.order.progress,
+      now: input.now ?? Date.now(),
+    }),
   };
+}
+
+function publicProgress(progress: OrderProgress): OrderProgress {
+  return { step: progress.step, pagesRead: progress.pagesRead, pagesTotal: progress.pagesTotal };
 }
 
 function publicEvaluation(result: EvaluationResult | null): EvaluationResult | null {

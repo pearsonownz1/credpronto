@@ -26,23 +26,38 @@ export type OrderReadProgress = {
   pagesTotal?: number;
 };
 
-/** Progress stored on the order and returned by GET. */
+/** Progress stored on the order. `translating` is the post-quote job. `retries` stays off the public payload. */
 export type OrderProgress = {
-  step: ReadingStep;
+  step: ReadingStep | "translating";
   pagesRead: number;
   pagesTotal: number;
+  retries?: number;
 };
 
 export const UPLOADED_PROGRESS: OrderProgress = { step: "uploaded", pagesRead: 0, pagesTotal: 0 };
 
+function integerCount(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isInteger(value)) return null;
+  return value;
+}
+
+function storedRetries(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) return undefined;
+  return value;
+}
+
 /** Full progress object, or null when the payload is missing a step or an integer count. */
 export function asOrderProgress(value: unknown): OrderProgress | null {
-  const parsed = readOrderProgress(value);
-  const pagesRead = parsed?.pagesRead;
-  const pagesTotal = parsed?.pagesTotal;
-  if (!parsed || !Number.isInteger(pagesRead) || !Number.isInteger(pagesTotal)) return null;
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  const pagesRead = integerCount(row.pagesRead);
+  const pagesTotal = integerCount(row.pagesTotal);
   if (pagesRead == null || pagesTotal == null || pagesRead < 0 || pagesTotal < 0) return null;
-  return { step: parsed.step, pagesRead, pagesTotal };
+  const retries = storedRetries(row.retries);
+  const extra = retries == null ? {} : { retries };
+  if (row.step === "translating") return { step: "translating", pagesRead, pagesTotal, ...extra };
+  if (typeof row.step !== "string" || !STEP_SET.has(row.step)) return null;
+  return { step: row.step as ReadingStep, pagesRead, pagesTotal, ...extra };
 }
 
 export type StepState = "done" | "current" | "pending";
