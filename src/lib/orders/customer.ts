@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { addonStripeLines, parseCheckoutBody, serviceCents } from "./addons";
+import { checkoutBlockReason } from "./equivalency";
 import { downloadGate } from "./access";
 import { checkoutPreviewImageUrl } from "./checkout-image";
 import { checkoutLineProduct, checkoutProductDescription } from "./checkout-preview";
@@ -351,17 +352,12 @@ function serviceStripeLines(input: {
 
 export async function startCheckout(token: string, body: unknown = {}) {
   const { db, order } = await orderForToken(token);
-  if (order.status !== "preview_ready") throw new HttpError("Preview is not ready", 409);
+  const blocked = checkoutBlockReason(order);
+  if (blocked) throw new HttpError(blocked, 409);
   if (await settledPayment(db, order.id)) throw new HttpError("This order is already paid", 409);
   const selection = parseCheckoutBody(body, order.billablePages);
   const base = serviceCents(order);
-  if (
-    !order.languageConfirmed ||
-    base == null ||
-    (order.service != null && (order.evaluationCents == null || order.translationCents == null))
-  ) {
-    throw new HttpError("This order is not ready to pay", 409);
-  }
+  if (base == null) throw new HttpError("This order is not ready to pay", 409);
   const total = base + selection.addonCents;
   await replaceOrderAddons(db, order.id, {
     addons: selection.addons,

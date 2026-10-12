@@ -156,9 +156,19 @@ export const MOCK_ADMIN_ORDERS: AdminOrder[] = [
   },
 ];
 
-export function mockAdminList(query: { status?: string | null; limit?: number; offset?: number }): AdminList {
+export function mockAdminList(query: {
+  status?: string | null;
+  reviewReason?: string | null;
+  limit?: number;
+  offset?: number;
+}): AdminList {
   const status = query.status ?? null;
-  const filtered = status ? MOCK_ADMIN_ORDERS.filter((order) => order.status === status) : MOCK_ADMIN_ORDERS;
+  const reviewReason = query.reviewReason ?? null;
+  const filtered = MOCK_ADMIN_ORDERS.filter((order) => {
+    if (status && order.status !== status) return false;
+    if (reviewReason && order.reviewReason !== reviewReason) return false;
+    return true;
+  });
   const offset = query.offset ?? 0;
   const limit = query.limit ?? 50;
   const ordered = expeditedFirst(filtered);
@@ -182,6 +192,7 @@ export function mockStaffDetail(id: string): StaffDetail | null {
     currency: summary.currency,
     createdAt: summary.createdAt,
     reviewReason: summary.reviewReason,
+    equivalencyCredentials: [],
     filename: "birth-certificate.pdf",
     originalUrl: "/samples/birth-certificate-es.pdf",
     translationUrl: "/samples/birth-certificate-en.pdf",

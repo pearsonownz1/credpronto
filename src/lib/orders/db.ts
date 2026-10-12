@@ -935,6 +935,7 @@ export async function listOrders(
   db: Db,
   status: OrderStatus | null,
   page: { limit: number; offset: number },
+  reviewReason: string | null = null,
 ) {
   let query = db
     .from("orders")
@@ -946,6 +947,7 @@ export async function listOrders(
     .order("created_at", { ascending: false })
     .range(page.offset, page.offset + page.limit - 1);
   if (status) query = query.eq("status", status);
+  if (reviewReason) query = query.eq("review_reason", reviewReason);
   const { data, error, count } = await query;
   fail(error);
   const orders = ((data ?? []) as Row[]).map((row) => {

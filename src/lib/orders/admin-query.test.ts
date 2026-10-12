@@ -5,6 +5,7 @@ describe("admin order list query", () => {
   it("defaults to the first page of 50", () => {
     expect(parseAdminListQuery(new URLSearchParams("status=paid"))).toEqual({
       status: "paid",
+      reviewReason: null,
       limit: 50,
       offset: 0,
     });
@@ -13,6 +14,7 @@ describe("admin order list query", () => {
   it("accepts limit and offset", () => {
     expect(parseAdminListQuery(new URLSearchParams("limit=20&offset=40"))).toEqual({
       status: null,
+      reviewReason: null,
       limit: 20,
       offset: 40,
     });

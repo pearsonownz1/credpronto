@@ -97,6 +97,7 @@ export type StaffDetail = {
   currency: string;
   createdAt: string;
   reviewReason: string | null;
+  equivalencyCredentials: Array<{ credential: string; field: string; usEquivalency: string }>;
   filename: string;
   pages: StaffPage[];
   corrections: StaffCorrection[];

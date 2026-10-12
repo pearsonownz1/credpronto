@@ -128,6 +128,21 @@ describe("evaluation PDFs", () => {
     expect(await textOf(files.clean)).not.toContain(PREVIEW_WATERMARK);
   });
 
+  it("prints Pending staff review in the equivalency box", async () => {
+    const files = await renderEvaluationPdfs({
+      ...diploma,
+      credentials: diploma.credentials.map((credential) => ({
+        ...credential,
+        usEquivalency: "Pending staff review",
+      })),
+    });
+    const clean = await textOf(files.preview);
+    const label = clean.indexOf("U.S. EQUIVALENCY");
+    const pending = clean.indexOf("Pending staff review");
+    expect(label).toBeGreaterThanOrEqual(0);
+    expect(pending).toBeGreaterThan(label);
+  });
+
   it("builds a stable report id from the order id", () => {
     expect(evaluationReportId("4b7cd466-eb4f-cdb3-5cbf-c62a9efcfcc8")).toBe("CP-E-4B7CD466");
   });
