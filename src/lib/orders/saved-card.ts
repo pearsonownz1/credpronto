@@ -48,7 +48,10 @@ export function setupIntentCreateParams(customerId: string, userId: string) {
   return {
     customer: customerId,
     usage: "off_session" as const,
-    payment_method_types: ["card"],
+    automatic_payment_methods: {
+      enabled: true,
+      allow_redirects: "never" as const,
+    },
     metadata: { user_id: userId },
   };
 }
