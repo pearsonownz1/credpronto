@@ -12,6 +12,7 @@ export default function PreviewLayout({
 }>) {
   return (
     <>
+      {/* anonymous matches a main-thread fetch with credentials: "same-origin". The worker cannot reuse this preload. */}
       <link rel="preload" href="/pdfium/pdfium.wasm" as="fetch" crossOrigin="anonymous" />
       {children}
     </>

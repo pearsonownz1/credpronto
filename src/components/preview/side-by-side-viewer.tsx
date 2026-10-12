@@ -40,7 +40,7 @@ import {
 import { PreviewShell } from "./preview-shell";
 import type { PreviewCorrection, PreviewOrder } from "./preview-order";
 import { anchorsMatch, visibleAnchor, type ScrollAnchor } from "./scroll-anchor";
-import { pdfiumWasmUrl } from "./pdfium-url";
+import { usePdfiumBlobUrl } from "./pdfium-url";
 import { TranslationWatermark } from "./translation-watermark";
 
 export const ORIGINAL_DOCUMENT_ID = "original";
@@ -101,7 +101,14 @@ export function SideBySideViewer(props: ViewerProps) {
 }
 
 function SideBySideOwnEngine(props: ViewerProps) {
-  const { engine, isLoading, error } = usePdfiumEngine({ wasmUrl: pdfiumWasmUrl() });
+  const wasm = usePdfiumBlobUrl();
+  if (wasm.error) return <SideBySideEngine {...props} engine={null} isLoading={false} error={wasm.error} />;
+  if (!wasm.url) return <SideBySideEngine {...props} engine={null} isLoading error={null} />;
+  return <SideBySideBlobEngine {...props} wasmUrl={wasm.url} />;
+}
+
+function SideBySideBlobEngine({ wasmUrl, ...props }: ViewerProps & { wasmUrl: string }) {
+  const { engine, isLoading, error } = usePdfiumEngine({ wasmUrl });
   return <SideBySideEngine {...props} engine={engine} isLoading={isLoading} error={error} />;
 }
 

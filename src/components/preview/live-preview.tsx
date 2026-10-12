@@ -3,12 +3,13 @@
 import dynamic from "next/dynamic";
 import { usePdfiumEngine } from "@embedpdf/engines/react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
 import { checkoutFailureMessage, documentIdForPage, previewShellOrder, toPreviewOrder } from "@/lib/flow/present";
 import { writeToken } from "@/lib/flow/session";
 import type { CustomerOrder } from "@/lib/orders/view";
-import { pdfiumWasmUrl } from "./pdfium-url";
+import { timedDownloadLabel } from "./download-bytes";
+import { usePdfiumBlobUrl } from "./pdfium-url";
 import type { PreviewOrder } from "./preview-order";
 import { PreviewShell } from "./preview-shell";
 
@@ -23,7 +24,6 @@ function logPreviewTiming(fields: Record<string, number | string | null>) {
 export function LivePreview() {
   const params = useParams<{ id: string }>();
   const search = useSearchParams();
-  const router = useRouter();
   const token = params.id ?? "";
   const canceled = search.get("canceled") === "1";
   const [order, setOrder] = useState<CustomerOrder | null>(null);
@@ -31,35 +31,12 @@ export function LivePreview() {
   const [waiting, setWaiting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const started = useRef(0);
-  const engineState = usePdfiumEngine({ wasmUrl: pdfiumWasmUrl() });
+  const wasm = usePdfiumBlobUrl();
 
   useEffect(() => {
     started.current = performance.now();
     void viewerImport();
   }, []);
-
-  useEffect(() => {
-    if (!engineState.engine) return;
-    logPreviewTiming({ phase: "engine", ms: Math.round(performance.now() - started.current) });
-  }, [engineState.engine]);
-
-  useEffect(() => {
-    if (!preview || !engineState.engine) return;
-    logPreviewTiming({ phase: "viewer", ms: Math.round(performance.now() - started.current) });
-    const timer = window.setTimeout(() => {
-      const resources = performance.getEntriesByType("resource").filter((entry): entry is PerformanceResourceTiming => {
-        return entry.name.includes("pdfium.wasm") || entry.name.includes(".pdf") || entry.name.includes("/object/");
-      });
-      logPreviewTiming({
-        phase: "downloads",
-        ms: Math.round(performance.now() - started.current),
-        files: resources
-          .map((entry) => `${Math.round(entry.duration)}ms/${entry.decodedBodySize || entry.transferSize}b`)
-          .join(" "),
-      });
-    }, 1500);
-    return () => window.clearTimeout(timer);
-  }, [preview, engineState.engine]);
 
   useEffect(() => {
     if (!token) return;
@@ -129,6 +106,80 @@ export function LivePreview() {
       />
     );
   }
+
+  if (wasm.error) {
+    return (
+      <PreviewShell
+        notice={canceled ? "Payment canceled" : undefined}
+        noticeTestId={canceled ? "payment-canceled" : undefined}
+        status="The preview engine failed to load. Refresh to try again."
+      />
+    );
+  }
+
+  if (!wasm.url) {
+    return (
+      <PreviewShell
+        notice={canceled ? "Payment canceled" : undefined}
+        noticeTestId={canceled ? "payment-canceled" : undefined}
+        status={error ?? "Loading preview…"}
+      />
+    );
+  }
+
+  return (
+    <LivePreviewEngine
+      wasmUrl={wasm.url}
+      started={started}
+      token={token}
+      canceled={canceled}
+      order={order}
+      preview={preview}
+      error={error}
+    />
+  );
+}
+
+function LivePreviewEngine({
+  wasmUrl,
+  started,
+  token,
+  canceled,
+  order,
+  preview,
+  error,
+}: {
+  wasmUrl: string;
+  started: RefObject<number>;
+  token: string;
+  canceled: boolean;
+  order: CustomerOrder | null;
+  preview: PreviewOrder | null;
+  error: string | null;
+}) {
+  const router = useRouter();
+  const engineState = usePdfiumEngine({ wasmUrl });
+
+  useEffect(() => {
+    if (!engineState.engine) return;
+    logPreviewTiming({ phase: "engine", ms: Math.round(performance.now() - started.current) });
+  }, [engineState.engine, started]);
+
+  useEffect(() => {
+    if (!preview || !engineState.engine) return;
+    logPreviewTiming({ phase: "viewer", ms: Math.round(performance.now() - started.current) });
+    const timer = window.setTimeout(() => {
+      const resources = performance.getEntriesByType("resource").filter((entry): entry is PerformanceResourceTiming => {
+        return entry.name.includes("pdfium.wasm") || entry.name.includes(".pdf") || entry.name.includes("/object/");
+      });
+      logPreviewTiming({
+        phase: "downloads",
+        ms: Math.round(performance.now() - started.current),
+        files: resources.map((entry) => `${Math.round(entry.duration)}ms/${timedDownloadLabel(entry)}`).join(" "),
+      });
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [preview, engineState.engine, started]);
 
   if (engineState.error) {
     return (
