@@ -9,7 +9,7 @@ import {
   EVALUATION_STEPS,
   TRANSLATION_ADDON,
 } from "@/lib/evaluations/catalog";
-import { MarketingHeader } from "@/components/flow/flow-header";
+import { MarketingHeader } from "@/components/flow/marketing-header";
 import { buttonClasses } from "@/components/flow/ui";
 import { CourseSample } from "./course-sample";
 import { DiplomaSample } from "./diploma-sample";

@@ -25,15 +25,21 @@ export async function walkCustomerFlow(
   await expect(
     page.getByRole("heading", { level: 1, name: /Your documents/ }),
   ).toBeVisible();
-  await expect(page.getByText("No account, no card.")).toBeVisible();
+  await expect(page.getByTestId("upload-drop")).toHaveCount(0);
+  await expect(page.getByTestId("nav-log-in")).toBeVisible();
+  await expect(page.getByTestId("nav-get-started")).toBeVisible();
+  await expect(page.getByTestId("cover-sample")).toBeVisible();
+  await expect(page.getByText("Signed certification included")).toBeVisible();
+  await expect(page.getByText("Sample certificate · example data")).toBeVisible();
+  await expect(page.getByText(/USCIS accepts/i)).toHaveCount(0);
+  await check();
+
+  await page.getByTestId("nav-get-started").click();
+  await expect(page).toHaveURL(/\/translate$/);
   await expect(shown(page, "upload-drop")).toBeVisible();
   await expect(shown(page, "email")).toHaveValue("maria.ruiz@email.com");
   await expect(shown(page, "file-list")).toContainText("acta-nacimiento.pdf");
   await expect(shown(page, "file-list")).toContainText("IMG_4021.HEIC");
-  await check();
-
-  await page.getByRole("link", { name: "Get your free preview" }).click();
-  await expect(page).toHaveURL(/\/translate$/);
   await expect(shown(page, "flow-stepper").locator("[data-state=current]")).toContainText(
     "Upload",
   );
