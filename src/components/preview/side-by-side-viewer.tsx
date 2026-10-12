@@ -17,12 +17,7 @@ import {
   useScroll,
   useScrollCapability,
 } from "@embedpdf/plugin-scroll/react";
-import {
-  ThumbImg,
-  ThumbnailPluginPackage,
-  ThumbnailsPane,
-  type ThumbMeta,
-} from "@embedpdf/plugin-thumbnail/react";
+import { ThumbnailPluginPackage } from "@embedpdf/plugin-thumbnail/react";
 import {
   useViewportCapability,
   Viewport,
@@ -35,7 +30,13 @@ import {
   ZoomPluginPackage,
   type ZoomLevel,
 } from "@embedpdf/plugin-zoom/react";
+import {
+  CorrectionPopover,
+  MobileBuyBar,
+  OrderRail,
+} from "./preview-chrome";
 import { PreviewShell } from "./preview-shell";
+import type { PreviewCorrection, PreviewOrder } from "./preview-order";
 import { anchorsMatch, visibleAnchor, type ScrollAnchor } from "./scroll-anchor";
 import { TranslationWatermark } from "./translation-watermark";
 
@@ -70,13 +71,9 @@ function useIsMobile() {
   return mobile;
 }
 
-export function SideBySideViewer({
-  original,
-  translation,
-}: {
-  original: string;
-  translation: string;
-}) {
+export function SideBySideViewer({ order }: { order: PreviewOrder }) {
+  const original = order.original.url;
+  const translation = order.translation.url;
   const wasmUrl = new URL("/pdfium/pdfium.wasm", window.location.origin).href;
   const { engine, isLoading, error } = usePdfiumEngine({ wasmUrl });
   const plugins = useMemo(
@@ -111,12 +108,23 @@ export function SideBySideViewer({
 
   if (error) {
     return (
-      <PreviewShell status="The preview engine failed to load. Refresh to try again." />
+      <PreviewShell
+        order={order}
+        rail={<OrderRail order={order} corrections={order.corrections} />}
+        status="The preview engine failed to load. Refresh to try again."
+      />
     );
   }
 
   if (isLoading || !engine) {
-    return <PreviewShell status="Loading preview…" />;
+    return (
+      <PreviewShell
+        order={order}
+        rail={<OrderRail order={order} corrections={order.corrections} />}
+        mobileBar={<MobileBuyBar order={order} onFlag={() => undefined} />}
+        status="Loading preview…"
+      />
+    );
   }
 
   return (
@@ -125,7 +133,7 @@ export function SideBySideViewer({
       engine={engine}
       plugins={plugins}
     >
-      <ViewerWorkspace />
+      <ViewerWorkspace order={order} />
     </EmbedPDF>
   );
 }
@@ -169,15 +177,22 @@ function usePageCount(documentId: string) {
   };
 }
 
-function ViewerWorkspace() {
+function ViewerWorkspace({ order }: { order: PreviewOrder }) {
   const isMobile = useIsMobile();
   const [role, setRole] = useState<Role>("original");
   const [lead, setLead] = useState<Role>("original");
   const [syncScroll, setSyncScroll] = useState(true);
+  const [corrections, setCorrections] = useState<PreviewCorrection[]>(
+    order.corrections,
+  );
+  const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [flagPage, setFlagPage] = useState(1);
+  const [correctionNote, setCorrectionNote] = useState("");
   const { provides: scrollCapability } = useScrollCapability();
   const { provides: zoomCapability } = useZoomCapability();
   const { provides: viewportCapability } = useViewportCapability();
   const leadScroll = usePageCount(DOCUMENT_ID[lead]);
+  const { state: leadZoom } = useZoom(DOCUMENT_ID[lead]);
   const snapshot = useRef<Snapshot>({
     pageNumber: 1,
     x: 0,
@@ -383,16 +398,71 @@ function ViewerWorkspace() {
 
   const pageNumber = leadScroll.currentPage || 0;
   const totalPages = leadScroll.totalPages || 0;
+  const zoomPercent = Math.round((leadZoom.currentZoomLevel || 0) * 100);
   const visibleRoles: Role[] = isMobile
     ? [role]
     : ["original", "translation"];
 
+  function openCorrection() {
+    setFlagPage(pageNumber || 1);
+    setCorrectionNote("");
+    setCorrectionOpen(true);
+  }
+
+  useEffect(() => {
+    if (!correctionOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setCorrectionOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [correctionOpen]);
+
+  function sendCorrection() {
+    const note = correctionNote.trim();
+    if (!note) return;
+    setCorrections((current) => [
+      ...current,
+      {
+        id: `draft-${flagPage}-${current.length + 1}`,
+        page: flagPage,
+        passage: null,
+        note,
+        status: "sent",
+        label: note.length > 42 ? `${note.slice(0, 42)}…` : note,
+        detail: "sent, new preview in ~5 min",
+      },
+    ]);
+    setCorrectionNote("");
+    setCorrectionOpen(false);
+  }
+
+  const popover = correctionOpen ? (
+    <CorrectionPopover
+      page={flagPage}
+      note={correctionNote}
+      onNote={setCorrectionNote}
+      onSend={sendCorrection}
+    />
+  ) : null;
+
   return (
     <PreviewShell
+      order={order}
+      rail={
+        isMobile ? undefined : (
+          <OrderRail order={order} corrections={corrections} />
+        )
+      }
+      mobileBar={
+        isMobile ? (
+          <MobileBuyBar order={order} onFlag={openCorrection} />
+        ) : undefined
+      }
       toolbar={
-        <div className="flex h-12 w-full items-center gap-2 overflow-x-auto">
+        <div className="flex w-full flex-col">
           <div
-            className="flex shrink-0 rounded-[var(--cp-radius)] border border-line p-0.5 md:hidden"
+            className="mx-4 mt-3 grid grid-cols-2 rounded-[var(--cp-radius)] bg-[#eceff3] p-[3px] md:hidden"
             role="group"
             aria-label="Document"
           >
@@ -411,65 +481,108 @@ function ViewerWorkspace() {
               Translation
             </SegmentButton>
           </div>
-          <button
-            type="button"
-            data-testid="prev-page"
-            className="toolbar-button"
-            disabled={pageNumber <= 1}
-            onClick={() => jumpBoth(pageNumber - 1, lead)}
-          >
-            Prev
-          </button>
-          <p
-            data-testid="page-status"
-            className="shrink-0 text-sm tabular-nums text-ink"
-            aria-live="polite"
-          >
-            Page {pageNumber || "–"} of {totalPages || "–"}
-          </p>
-          <button
-            type="button"
-            data-testid="next-page"
-            className="toolbar-button"
-            disabled={totalPages > 0 && pageNumber >= totalPages}
-            onClick={() => jumpBoth(pageNumber + 1, lead)}
-          >
-            Next
-          </button>
-          <span className="mx-1 h-5 w-px shrink-0 bg-line" aria-hidden />
-          <button
-            type="button"
-            data-testid="zoom-out"
-            className="toolbar-button"
-            onClick={() => changeZoom("out")}
-          >
-            Zoom out
-          </button>
-          <button
-            type="button"
-            data-testid="zoom-in"
-            className="toolbar-button"
-            onClick={() => changeZoom("in")}
-          >
-            Zoom in
-          </button>
-          <button
-            type="button"
-            data-testid="fit-width"
-            className="toolbar-button"
-            onClick={() => changeZoom("fit")}
-          >
-            Fit width
-          </button>
-          <button
-            type="button"
-            data-testid="sync-scroll"
-            className="toolbar-button hidden md:inline-flex"
-            aria-pressed={syncScroll}
-            onClick={() => setSyncScroll((value) => !value)}
-          >
-            Sync scroll
-          </button>
+          <div className="flex w-full flex-wrap items-center gap-x-2.5 gap-y-2 px-4 py-2 md:h-[52px] md:flex-nowrap md:px-5 md:py-0">
+            <IconButton
+              testId="prev-page"
+              label="Previous page"
+              disabled={pageNumber <= 1}
+              onClick={() => jumpBoth(pageNumber - 1, lead)}
+            >
+              ‹
+            </IconButton>
+            <p
+              data-testid="page-status"
+              className="shrink-0 text-[13px] text-ink-muted"
+              aria-live="polite"
+            >
+              <span className="font-semibold text-ink">
+                Page {pageNumber || "–"}
+              </span>{" "}
+              of {totalPages || "–"}
+              {isMobile ? " · same spot kept" : null}
+            </p>
+            <IconButton
+              testId="next-page"
+              label="Next page"
+              disabled={totalPages > 0 && pageNumber >= totalPages}
+              onClick={() => jumpBoth(pageNumber + 1, lead)}
+            >
+              ›
+            </IconButton>
+            <span className="w-1.5 shrink-0" aria-hidden />
+            <div className="flex shrink-0 overflow-hidden rounded-[var(--cp-radius)] border border-line">
+              <button
+                type="button"
+                data-testid="zoom-out"
+                aria-label="Zoom out"
+                className="inline-flex h-8 w-8 items-center justify-center border-r border-line text-[15px] text-ink-muted"
+                onClick={() => changeZoom("out")}
+              >
+                −
+              </button>
+              <span className="inline-flex h-8 min-w-12 items-center justify-center border-r border-line px-2 text-[13px] text-ink-muted tabular-nums">
+                {zoomPercent || "–"}%
+              </span>
+              <button
+                type="button"
+                data-testid="zoom-in"
+                aria-label="Zoom in"
+                className="inline-flex h-8 w-8 items-center justify-center text-[15px] text-ink-muted"
+                onClick={() => changeZoom("in")}
+              >
+                +
+              </button>
+            </div>
+            <div className="flex shrink-0 overflow-hidden rounded-[var(--cp-radius)] border border-line">
+              <button
+                type="button"
+                data-testid="fit-width"
+                className="inline-flex h-8 items-center px-[11px] text-[13px] text-ink"
+                onClick={() => changeZoom("fit")}
+              >
+                Fit width
+              </button>
+            </div>
+            <span className="hidden flex-1 md:block" />
+            <button
+              type="button"
+              data-testid="sync-scroll"
+              className="hidden shrink-0 items-center gap-2 text-[13px] text-ink md:inline-flex"
+              aria-pressed={syncScroll}
+              onClick={() => setSyncScroll((value) => !value)}
+            >
+              <span
+                className={`relative h-[18px] w-8 rounded-full ${
+                  syncScroll ? "bg-primary" : "bg-line"
+                }`}
+              >
+                <span
+                  className={`absolute top-[2px] size-3.5 rounded-full bg-white ${
+                    syncScroll ? "right-[2px]" : "left-[2px]"
+                  }`}
+                />
+              </span>
+              Sync scrolling
+            </button>
+            <div className="relative hidden shrink-0 md:block">
+              <button
+                type="button"
+                data-testid="flag-correction"
+                className="inline-flex h-[34px] items-center rounded-[var(--cp-radius)] border border-line bg-bg px-3 text-[13px] font-semibold text-ink"
+                onClick={openCorrection}
+              >
+                ⚑ Flag a correction
+              </button>
+              {popover && !isMobile ? (
+                <div className="absolute top-[calc(100%+8px)] right-0 z-30">
+                  {popover}
+                </div>
+              ) : null}
+            </div>
+          </div>
+          {popover && isMobile ? (
+            <div className="fixed inset-x-4 bottom-28 z-30">{popover}</div>
+          ) : null}
         </div>
       }
     >
@@ -478,8 +591,8 @@ function ViewerWorkspace() {
           key={visible}
           role={visible}
           label={visible === "original" ? "Original" : "Translation"}
+          subtitle={order[visible].subtitle}
           watermark={visible === "translation"}
-          onJump={(page) => jumpBoth(page, visible)}
         />
       ))}
     </PreviewShell>
@@ -502,10 +615,39 @@ function SegmentButton({
       type="button"
       data-testid={testId}
       aria-pressed={pressed}
-      className={`h-7 rounded-[var(--cp-radius)] px-2.5 text-sm ${
-        pressed ? "bg-primary text-primary-ink" : "text-ink"
+      className={`h-9 rounded-[3px] text-sm font-semibold ${
+        pressed
+          ? "bg-bg text-ink shadow-[0_1px_2px_rgba(0,0,0,0.1)]"
+          : "text-ink-muted"
       }`}
       onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function IconButton({
+  testId,
+  label,
+  disabled,
+  onClick,
+  children,
+}: {
+  testId: string;
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: string;
+}) {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="inline-flex size-8 shrink-0 items-center justify-center rounded-[var(--cp-radius)] border border-line bg-bg text-[15px] text-ink-muted disabled:opacity-40"
     >
       {children}
     </button>
@@ -515,13 +657,13 @@ function SegmentButton({
 function DocumentPane({
   role,
   label,
+  subtitle,
   watermark,
-  onJump,
 }: {
   role: Role;
   label: string;
+  subtitle: string;
   watermark?: boolean;
-  onJump: (pageNumber: number) => void;
 }) {
   const documentId = DOCUMENT_ID[role];
   const { currentPage, totalPages } = usePageCount(documentId);
@@ -550,58 +692,39 @@ function DocumentPane({
       aria-label={label}
       className="flex min-h-0 min-w-0 flex-1 flex-col border-line md:border-l md:first:border-l-0"
     >
-      <h2 className="flex h-8 shrink-0 items-center border-b border-line px-3 text-xs font-medium uppercase tracking-wide text-ink-muted">
-        {label}
-      </h2>
-      <div className="flex min-h-0 flex-1">
-        <div className="relative w-[4.75rem] shrink-0 border-r border-line bg-bg">
-          <div className="absolute inset-0">
-            <ThumbnailsPane documentId={documentId}>
-              {(meta: ThumbMeta) => (
-                <button
-                  key={meta.pageIndex}
-                  type="button"
-                  data-testid={`thumb-${role}-${meta.pageIndex + 1}`}
-                  className="absolute right-1 left-1"
-                  style={{ top: meta.top }}
-                  onClick={() => onJump(meta.pageIndex + 1)}
-                >
-                  <ThumbImg documentId={documentId} meta={meta} />
-                </button>
-              )}
-            </ThumbnailsPane>
-          </div>
+      <header className="flex h-10 shrink-0 items-center justify-between bg-bg px-5 text-[13px]">
+        <span className="font-semibold">{label}</span>
+        <span className="font-normal text-ink-muted">{subtitle}</span>
+      </header>
+      <div className="relative min-h-0 flex-1">
+        <div className="absolute inset-0">
+          <DocumentContent documentId={documentId}>
+            {({ isLoaded, isError }) =>
+              isError ? (
+                <p className="p-4 text-sm text-ink">
+                  This document could not be opened.
+                </p>
+              ) : isLoaded ? (
+                <Viewport documentId={documentId}>
+                  <Scroller
+                    documentId={documentId}
+                    renderPage={({ pageIndex, width, height }) => (
+                      <div style={{ width, height, position: "relative" }}>
+                        <RenderLayer
+                          documentId={documentId}
+                          pageIndex={pageIndex}
+                        />
+                      </div>
+                    )}
+                  />
+                </Viewport>
+              ) : (
+                <p className="p-4 text-sm text-ink-muted">Opening document…</p>
+              )
+            }
+          </DocumentContent>
         </div>
-        <div className="relative min-w-0 flex-1 bg-bg-muted">
-          <div className="absolute inset-0">
-            <DocumentContent documentId={documentId}>
-              {({ isLoaded, isError }) =>
-                isError ? (
-                  <p className="p-4 text-sm text-ink">
-                    This document could not be opened.
-                  </p>
-                ) : isLoaded ? (
-                  <Viewport documentId={documentId}>
-                    <Scroller
-                      documentId={documentId}
-                      renderPage={({ pageIndex, width, height }) => (
-                        <div style={{ width, height, position: "relative" }}>
-                          <RenderLayer
-                            documentId={documentId}
-                            pageIndex={pageIndex}
-                          />
-                        </div>
-                      )}
-                    />
-                  </Viewport>
-                ) : (
-                  <p className="p-4 text-sm text-ink-muted">Opening document…</p>
-                )
-              }
-            </DocumentContent>
-          </div>
-          {watermark ? <TranslationWatermark /> : null}
-        </div>
+        {watermark ? <TranslationWatermark /> : null}
       </div>
     </section>
   );

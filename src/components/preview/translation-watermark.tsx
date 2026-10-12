@@ -1,12 +1,12 @@
 const pattern = encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="280" height="160">
-    <text x="8" y="88" fill="#121212" fill-opacity="0.16" font-family="Inter, sans-serif" font-size="15" font-weight="600" transform="rotate(-24 140 80)">PREVIEW, CredPronto</text>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="460" height="180">
+    <text x="8" y="110" fill="#1f5eff" fill-opacity="0.16" font-family="ui-monospace, monospace" font-size="15" font-weight="600" letter-spacing="1.8" transform="rotate(-30 230 90)">PREVIEW · CREDPRONTO · NOT FOR OFFICIAL USE</text>
   </svg>`,
 );
 
 /**
- * Layout-only overlay. Real preview protection is a server-rendered
- * watermarked PDF from Backend.
+ * Layout-only overlay. Backend prints the real watermark into the
+ * preview PDF on the server.
  */
 export function TranslationWatermark() {
   return (

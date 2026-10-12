@@ -24,6 +24,14 @@ test("side-by-side preview syncs page and zoom", async ({ page }) => {
   await expect(page.getByTestId("page-status")).toContainText("Page 1 of 3");
   await expect(page.getByTestId("translation-watermark")).toBeVisible();
   await expect(original.getByTestId("translation-watermark")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Review every page, then buy." })).toBeVisible();
+  await expect(page.getByTestId("order-rail")).toContainText("Buy & download — $29.85");
+
+  await page.getByTestId("flag-correction").click();
+  await expect(page.getByTestId("correction-popover")).toContainText("page 1");
+  await expect(page.getByTestId("correction-popover")).toContainText("image");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("correction-popover")).toHaveCount(0);
 
   const shell = await page.getByTestId("preview-shell").boundingBox();
   await page.getByTestId("next-page").click();
@@ -40,7 +48,7 @@ test("side-by-side preview syncs page and zoom", async ({ page }) => {
   const zoomedTranslation = Number(await translation.getAttribute("data-zoom"));
   expect(Math.abs(zoomedOriginal - zoomedTranslation)).toBeLessThanOrEqual(1);
 
-  await page.getByTestId("thumb-original-3").click();
+  await page.getByTestId("next-page").click();
   await expect(original).toHaveAttribute("data-page", "3");
   await expect(translation).toHaveAttribute("data-page", "3");
 
@@ -55,8 +63,10 @@ test("a 12-page sample renders without moving the shell", async ({ page }) => {
   const original = page.getByTestId("pane-original");
   await expect(original).toHaveAttribute("data-total", "12");
   await expect(page.getByTestId("pane-translation")).toHaveAttribute("data-page", "1");
-  await page.getByTestId("thumb-translation-10").click();
-  await expect(original).toHaveAttribute("data-page", "10");
+  for (let pageNumber = 2; pageNumber <= 10; pageNumber += 1) {
+    await page.getByTestId("next-page").click();
+    await expect(original).toHaveAttribute("data-page", String(pageNumber));
+  }
   await expect(page.getByTestId("pane-translation")).toHaveAttribute("data-page", "10");
   expect(await page.getByTestId("preview-shell").boundingBox()).toEqual(shell);
 });
