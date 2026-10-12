@@ -1,11 +1,13 @@
 import { analyzeOrder } from "./analysis";
 import {
+  customerEmail,
   getDelivery,
   getOrderById,
   latestPayment,
   latestReadyPreview,
   listConfirmations,
   listDocuments,
+  listPages,
 } from "./db";
 import { translateOrder } from "./translation";
 import { toCustomerOrder, type CustomerOrder } from "./view";
@@ -13,21 +15,25 @@ import { serviceDb, type Db } from "./storage";
 import type { OrderRecord } from "./types";
 
 export async function loadCustomerOrder(db: Db, order: OrderRecord): Promise<CustomerOrder> {
-  const [documents, confirmations, preview, payment, delivery] = await Promise.all([
-    listDocuments(db, order.id),
+  const documents = await listDocuments(db, order.id);
+  const [pages, confirmations, preview, payment, delivery, email] = await Promise.all([
+    listPages(db, documents.map((document) => document.id)),
     listConfirmations(db, order.id),
     latestReadyPreview(db, order.id),
     latestPayment(db, order.id),
     getDelivery(db, order.id),
+    customerEmail(db, order.customerId),
   ]);
 
   return toCustomerOrder({
     order,
     documents,
+    pages,
     confirmations,
     previewVersion: preview?.version ?? null,
     paymentStatus: payment?.status ?? null,
     deliveryStatus: delivery?.status ?? null,
+    email,
   });
 }
 
@@ -46,7 +52,8 @@ export async function processOrder(orderId: string, token: string | null = null)
     order.status === "processing" ||
     order.status === "correction_requested" ||
     order.status === "preview_ready" ||
-    (order.status === "failed" && order.languageConfirmed)
+    (order.status === "failed" && order.languageConfirmed) ||
+    (order.status === "paid" && !order.finalTranslationPath)
   ) {
     await translateOrder(db, order.id, token);
   }

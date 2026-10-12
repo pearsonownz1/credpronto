@@ -1,4 +1,6 @@
 import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET } from "./constants";
+import { notifyOrder } from "./webhook-delivery";
+import { orderDownloadFilename } from "./download-name";
 import {
   customerEmail,
   dismissCorrections,
@@ -11,6 +13,7 @@ import {
   listDocuments,
   listOrders,
   listPages,
+  listQaRuns,
   listTranslations,
   settledPayment,
   updateDelivery,
@@ -51,13 +54,15 @@ export async function staffOrder(orderId: string) {
   const documents = await listDocuments(db, order.id);
   const pages = withCombinedNumbers(documents, await listPages(db, documents.map((document) => document.id)));
   const translations = await listTranslations(db, documents.map((document) => document.id));
-  const [confirmations, corrections, payment, delivery, email] = await Promise.all([
+  const [confirmations, corrections, payment, delivery, email, qaRuns] = await Promise.all([
     listConfirmations(db, order.id),
     listCorrections(db, order.id),
     settledPayment(db, order.id),
     getDelivery(db, order.id),
     customerEmail(db, order.customerId),
+    listQaRuns(db, order.id),
   ]);
+  const latestQa = qaRuns[qaRuns.length - 1] ?? null;
 
   return {
     ...order,
@@ -95,24 +100,41 @@ export async function staffOrder(orderId: string) {
     corrections,
     payment,
     delivery,
+    qa: latestQa
+      ? {
+          status: latestQa.status,
+          score: latestQa.score,
+          checkedAt: latestQa.createdAt,
+          attempts: qaRuns.length,
+          issues: latestQa.issues,
+        }
+      : null,
   };
 }
 
 async function signedFinals(
   db: Parameters<typeof signedObjectUrl>[0],
+  order: { id: string; targetLanguage: string },
   translationPath: string | null,
   certificationPath: string | null,
 ) {
   if (!translationPath || !certificationPath) {
     throw new HttpError("Translated files are not ready", 409);
   }
+  const names = (await listDocuments(db, order.id)).map((document) => document.filename);
+  const translationName = orderDownloadFilename("translation", names, order.targetLanguage);
+  const certificationName = orderDownloadFilename("certification", names, order.targetLanguage);
   const [translationUrl, certificationUrl] = await Promise.all([
-    signedObjectUrl(db, FINALS_BUCKET, translationPath, DOWNLOAD_URL_SECONDS),
-    signedObjectUrl(db, FINALS_BUCKET, certificationPath, DOWNLOAD_URL_SECONDS),
+    signedObjectUrl(db, FINALS_BUCKET, translationPath, DOWNLOAD_URL_SECONDS, { download: translationName }),
+    signedObjectUrl(db, FINALS_BUCKET, certificationPath, DOWNLOAD_URL_SECONDS, { download: certificationName }),
   ]);
   return {
-    translation: { url: translationUrl, expiresInSeconds: DOWNLOAD_URL_SECONDS },
-    certification: { url: certificationUrl, expiresInSeconds: DOWNLOAD_URL_SECONDS },
+    translation: { url: translationUrl, filename: translationName, expiresInSeconds: DOWNLOAD_URL_SECONDS },
+    certification: {
+      url: certificationUrl,
+      filename: certificationName,
+      expiresInSeconds: DOWNLOAD_URL_SECONDS,
+    },
   };
 }
 
@@ -128,7 +150,7 @@ export async function approveOrder(orderId: string) {
   const delivery = await getDelivery(db, order.id);
   if (!delivery) throw new HttpError("Payment has not created a delivery", 409);
   if (delivery.status === "delivered") {
-    const files = await signedFinals(db, delivery.finalPath, delivery.certificationPath);
+    const files = await signedFinals(db, order, delivery.finalPath, delivery.certificationPath);
     return { status: "delivered" as const, ...files };
   }
   if (!order.finalTranslationPath || !order.certificationPath) {
@@ -153,7 +175,7 @@ export async function approveOrder(orderId: string) {
 
   const email = await customerEmail(db, order.customerId);
   const sent = email ? await sendDeliveryReady(email) : { sent: false, skipped: true };
-  const files = await signedFinals(db, order.finalTranslationPath, order.certificationPath);
+  const files = await signedFinals(db, order, order.finalTranslationPath, order.certificationPath);
   if (!sent.sent && !sent.skipped) {
     return { status: "approved" as const, email: "failed" as const, ...files };
   }
@@ -167,6 +189,7 @@ export async function approveOrder(orderId: string) {
     certification_path: order.certificationPath,
   });
   await updateOrder(db, order.id, { status: "delivered" });
+  await notifyOrder(db, order.id, "order.delivered");
   return {
     status: "delivered" as const,
     email: sent.skipped ? ("skipped" as const) : ("sent" as const),

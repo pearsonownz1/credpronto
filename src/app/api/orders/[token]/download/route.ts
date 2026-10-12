@@ -6,7 +6,7 @@ type Context = { params: Promise<{ token: string }> };
 export async function GET(request: Request, context: Context) {
   return run(async () => {
     const { token } = await context.params;
-    const file = new URL(request.url).searchParams.get("file");
-    return json(await downloadOrderFile(token, file));
+    const params = new URL(request.url).searchParams;
+    return json(await downloadOrderFile(token, params.get("file"), params.get("documentId")));
   });
 }

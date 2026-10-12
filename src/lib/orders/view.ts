@@ -1,9 +1,18 @@
 import { pageRuleForLanguages } from "./billing";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
-import type { ConfirmationRecord, DocumentRecord, OrderRecord, PageRecord } from "./types";
+import { compareCombinedPages } from "./page-order";
+import type {
+  ConfirmationRecord,
+  DocumentRecord,
+  OrderRecord,
+  PageOrderBasis,
+  PageRecord,
+  StoredPage,
+} from "./types";
 
 export type CustomerOrder = {
   orderId: string;
+  email: string | null;
   status: string;
   sourceLanguage: string | null;
   sourceLanguageConfidence: number | null;
@@ -15,6 +24,22 @@ export type CustomerOrder = {
     pageCount: number | null;
     detectedLanguage: string | null;
     confidence: number | null;
+    uploadPosition: number;
+    appliedPosition: number;
+  }>;
+  pageOrder: {
+    basis: PageOrderBasis;
+    pages: Array<StoredPage & { filename: string }>;
+  } | null;
+  pages: Array<{
+    documentId: string;
+    pageNumber: number;
+    uploadPage: number | null;
+    logicalPage: number | null;
+    orderHint: string | null;
+    qualityScore: number | null;
+    qualityFlags: string[];
+    qualityMessage: string | null;
   }>;
   billablePages: number | null;
   unitPriceCents: number;
@@ -37,28 +62,58 @@ export type CustomerOrder = {
 export function toCustomerOrder(input: {
   order: OrderRecord;
   documents: DocumentRecord[];
+  pages?: PageRecord[];
   confirmations: ConfirmationRecord[];
   previewVersion: number | null;
   paymentStatus: string | null;
   deliveryStatus: string | null;
+  email: string | null;
 }): CustomerOrder {
   const confidences = input.documents
     .map((document) => document.confidence)
     .filter((confidence): confidence is number => confidence != null);
+  const documents = [...input.documents].sort(
+    (a, b) => a.position - b.position || a.filename.localeCompare(b.filename),
+  );
+  const filenames = new Map(documents.map((document) => [document.id, document.filename]));
+  const pages = [...(input.pages ?? [])].sort((a, b) => compareCombinedPages(documents, a, b));
+  const stored = input.order.pageOrder;
 
   return {
     orderId: input.order.id,
+    email: input.email,
     status: input.order.status,
     sourceLanguage: input.order.sourceLanguage,
     sourceLanguageConfidence: confidences.length > 0 ? Math.min(...confidences) : null,
     targetLanguage: input.order.targetLanguage,
     languageConfirmed: input.order.languageConfirmed,
-    documents: input.documents.map((document) => ({
+    documents: documents.map((document) => ({
       id: document.id,
       filename: document.filename,
       pageCount: document.pageCount,
       detectedLanguage: document.detectedLanguage,
       confidence: document.confidence,
+      uploadPosition: document.position,
+      appliedPosition: document.appliedPosition ?? document.position,
+    })),
+    pageOrder: stored
+      ? {
+          basis: stored.basis,
+          pages: stored.pages.map((page) => ({
+            ...page,
+            filename: filenames.get(page.documentId) ?? "",
+          })),
+        }
+      : null,
+    pages: pages.map((page) => ({
+      documentId: page.documentId,
+      pageNumber: page.pageNumber,
+      uploadPage: page.uploadPage,
+      logicalPage: page.logicalPage,
+      orderHint: page.orderHint,
+      qualityScore: page.qualityScore,
+      qualityFlags: page.qualityFlags,
+      qualityMessage: page.qualityMessage,
     })),
     billablePages: input.order.billablePages,
     unitPriceCents: input.order.unitPriceCents,
@@ -82,7 +137,14 @@ export function toCustomerOrder(input: {
   };
 }
 
-export type PreviewPage = { number: number; widthPt: number; heightPt: number };
+export type PreviewPage = {
+  number: number;
+  widthPt: number;
+  heightPt: number;
+  documentId: string;
+  documentIndex: number;
+  documentName: string;
+};
 
 export type PreviewResponse = {
   status: string;
@@ -102,10 +164,29 @@ export type PreviewResponse = {
   }>;
 };
 
-export function previewPages(pages: Array<PageRecord & { number: number }>): PreviewPage[] {
-  return pages.map((page) => ({
-    number: page.number,
-    widthPt: page.widthPt ?? LETTER_WIDTH_PT,
-    heightPt: page.heightPt ?? LETTER_HEIGHT_PT,
-  }));
+export function previewPages(
+  documents: Array<Pick<DocumentRecord, "id" | "filename" | "position">>,
+  pages: Array<PageRecord & { number: number }>,
+): PreviewPage[] {
+  const ordered = [...documents].sort(
+    (a, b) => a.position - b.position || a.filename.localeCompare(b.filename),
+  );
+  const meta = new Map(
+    ordered.map((document, index) => [
+      document.id,
+      { documentIndex: index, documentName: document.filename },
+    ]),
+  );
+
+  return pages.map((page) => {
+    const document = meta.get(page.documentId);
+    return {
+      number: page.number,
+      widthPt: page.widthPt ?? LETTER_WIDTH_PT,
+      heightPt: page.heightPt ?? LETTER_HEIGHT_PT,
+      documentId: page.documentId,
+      documentIndex: document?.documentIndex ?? 0,
+      documentName: document?.documentName ?? "",
+    };
+  });
 }

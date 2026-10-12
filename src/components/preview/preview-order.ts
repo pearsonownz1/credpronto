@@ -9,6 +9,7 @@ export type PreviewPageSize = {
   page: number;
   widthPt: number;
   heightPt: number;
+  documentId?: string;
 };
 
 export type PreviewCorrection = {
