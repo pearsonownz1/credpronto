@@ -1,3 +1,4 @@
+import Stripe from "stripe";
 import type { Db } from "./storage";
 import { findBillingCard } from "./integrations-db";
 
@@ -22,10 +23,25 @@ export type OffSessionCharge =
   | { ok: true; paymentIntentId: string }
   | { ok: false; code: OffSessionCode; message: string };
 
-/**
- * Stripe PaymentIntent confirmation. The billing PR performs the test-mode charge.
- * Until then a saved card still cannot be captured.
- */
+export function offSessionPaymentParams(input: {
+  customerId: string;
+  paymentMethodId: string;
+  amountCents: number;
+  currency: string;
+  orderId: string;
+}) {
+  return {
+    amount: input.amountCents,
+    currency: input.currency,
+    customer: input.customerId,
+    payment_method: input.paymentMethodId,
+    confirm: true as const,
+    off_session: true as const,
+    metadata: { order_id: input.orderId },
+  };
+}
+
+/** Confirms a test-mode PaymentIntent off session. Declines stay card_declined. */
 export async function createOffSessionPaymentIntent(input: {
   customerId: string;
   paymentMethodId: string;
@@ -33,8 +49,23 @@ export async function createOffSessionPaymentIntent(input: {
   currency: string;
   orderId: string;
 }): Promise<OffSessionCharge> {
-  void input;
-  return { ok: false, code: "payments_not_configured", message: "Payments not configured" };
+  const key = process.env.STRIPE_SECRET_KEY ?? "";
+  if (!key.startsWith("sk_test_")) {
+    return { ok: false, code: "payments_not_configured", message: "Payments not configured" };
+  }
+  try {
+    const stripe = new Stripe(key);
+    const intent = await stripe.paymentIntents.create(offSessionPaymentParams(input));
+    if (intent.status !== "succeeded") {
+      return { ok: false, code: "card_declined", message: "The card was declined" };
+    }
+    return { ok: true, paymentIntentId: intent.id };
+  } catch (error) {
+    if (error instanceof Stripe.errors.StripeCardError) {
+      return { ok: false, code: "card_declined", message: "The card was declined" };
+    }
+    return { ok: false, code: "payments_not_configured", message: "Payments not configured" };
+  }
 }
 
 export async function chargeOffSession(input: {
