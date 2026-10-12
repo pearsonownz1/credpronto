@@ -8,6 +8,17 @@ test("customer walks from landing through download", async ({ page }) => {
   await walkCustomerFlow(page);
 });
 
+test("a loaded quote replaces the loading announcement", async ({ page }) => {
+  await page.goto("/order/mock-token");
+  await expect(page.getByRole("heading", { name: /exact price/ }).filter({ visible: true })).toBeVisible();
+  await expect(page.getByTestId("order-announcement")).toHaveText("Quote ready: 2 pages, $19.90");
+  const routeAnnouncement = await page.evaluate(() => {
+    const host = document.getElementsByTagName("next-route-announcer")[0];
+    return host?.shadowRoot?.querySelector("#__next-route-announcer__")?.textContent ?? "";
+  });
+  expect(routeAnnouncement).not.toContain("Loading your order");
+});
+
 test("needs_review quote keeps the total when language is unknown", async ({ page }) => {
   await page.addInitScript((pageRule) => {
     sessionStorage.setItem(
@@ -265,6 +276,10 @@ test("a quote shows billable pages and can skip one", async ({ page }) => {
   await page.getByTestId("page-details").filter({ visible: true }).click();
   await expect(page.getByTestId("page-row").filter({ visible: true })).toHaveCount(3);
   await expect(page.getByTestId("page-row").filter({ hasText: "diploma.pdf" })).toHaveCount(0);
+  const plain = page.getByTestId("page-row").filter({ hasText: "Page 1" });
+  await expect(plain.getByTestId("page-status")).toHaveCount(0);
+  await expect(plain.getByRole("button", { name: "Translate" })).toBeVisible();
+  await expect(page.getByTestId("page-status").filter({ hasText: /^Translate$/ })).toHaveCount(0);
   await expect(page.getByTestId("page-status").filter({ hasText: "Counts as 2" })).toHaveText(
     "Counts as 2",
   );

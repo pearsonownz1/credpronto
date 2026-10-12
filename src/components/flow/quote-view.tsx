@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type ChangeEvent } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
 import { formatMoney } from "@/lib/flow/pricing";
 import {
@@ -30,9 +30,19 @@ import { FlowStatus } from "./status";
 import { useCustomerOrder, useStoredToken } from "./use-order";
 import { Checks, FlowColumns, Summary, SummaryRow, buttonClasses, fieldClass } from "./ui";
 
-export function QuoteView({ token: pathToken }: { token?: string }) {
+export function QuoteView({
+  token: pathToken,
+  onOrder,
+}: {
+  token?: string;
+  onOrder?: (order: CustomerOrder) => void;
+}) {
   const token = useStoredToken(pathToken);
   const { order, error, loading, reload } = useCustomerOrder(token, "while-working");
+
+  useEffect(() => {
+    if (order) onOrder?.(order);
+  }, [order, onOrder]);
 
   return (
     <div>
@@ -291,16 +301,11 @@ export function QuoteBody({
                         >
                           <FileThumb filename={file.filename} small />
                           <span>Page {pageNumber + 1}</span>
-                          <span
-                            data-testid="page-status"
-                            className="rounded-[var(--cp-radius)] border border-line px-1.5 py-0.5 text-[12px] text-ink-muted"
-                          >
-                            {pageStatusTag({
-                              skip: skipped,
-                              skipReason: row.skipReason,
-                              billableUnits: row.billableUnits,
-                            })}
-                          </span>
+                          <PageStatus
+                            skip={skipped}
+                            skipReason={row.skipReason}
+                            billableUnits={row.billableUnits}
+                          />
                           {row.pageIndex != null ? (
                             <PageSkipToggle
                               pageIndex={row.pageIndex}
@@ -452,6 +457,27 @@ function quoteSummaryPrices(order: CustomerOrder) {
     ];
   }
   return servicePriceLines(order);
+}
+
+function PageStatus({
+  skip,
+  skipReason,
+  billableUnits,
+}: {
+  skip: boolean;
+  skipReason?: string | null;
+  billableUnits?: number | null;
+}) {
+  const label = pageStatusTag({ skip, skipReason, billableUnits });
+  if (label === "Translate") return null;
+  return (
+    <span
+      data-testid="page-status"
+      className="rounded-[var(--cp-radius)] border border-line px-1.5 py-0.5 text-[12px] text-ink-muted"
+    >
+      {label}
+    </span>
+  );
 }
 
 function PageSkipToggle({
