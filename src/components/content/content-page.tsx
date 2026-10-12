@@ -5,7 +5,7 @@ import { MDXRemote } from "next-mdx-remote/rsc";
 import { MarketingHeader } from "@/components/flow/marketing-header";
 import { buttonClasses } from "@/components/flow/ui";
 import { jsonLdScript } from "@/lib/content/jsonld";
-import { articleJsonLd, formatPostDate, type Post } from "@/lib/content/posts";
+import { articleJsonLd, formatPostDate, guideCoverAlt, readingMinutes, type Post } from "@/lib/content/posts";
 import { MarkdownBody } from "./markdown-body";
 
 export function ContentShell({ children }: { children: ReactNode }) {
@@ -32,7 +32,7 @@ export function TranslateCta() {
   );
 }
 
-export function PostList({
+export function GuideCardGrid({
   kicker,
   title,
   lede,
@@ -44,27 +44,58 @@ export function PostList({
   posts: Post[];
 }) {
   return (
-    <ContentShell>
-      <p className="preview-kicker blue">{kicker}</p>
-      <h1 className="mt-3 text-4xl font-bold tracking-tight">{title}</h1>
-      <p className="mt-4 text-[17px] leading-normal text-ink-muted">{lede}</p>
-      <ul className="mt-10 grid gap-8">
-        {posts.map((post) => (
-          <li key={post.canonical} className="border-t border-line pt-6">
-            <time dateTime={post.date} className="text-sm text-ink-muted">
-              {formatPostDate(post.date)}
-            </time>
-            <h2 className="mt-1 text-2xl font-bold tracking-tight">
-              <Link href={`/${post.section}/${post.slug}`} className="hover:text-primary">
-                {post.headline}
+    <div>
+      <MarketingHeader />
+      <main className="mx-auto w-full max-w-6xl px-4 py-12 md:px-6 md:py-16">
+        <p className="preview-kicker blue">{kicker}</p>
+        <h1 className="mt-3 text-4xl font-bold tracking-tight">{title}</h1>
+        <p className="mt-4 max-w-2xl text-[17px] leading-normal text-ink-muted">{lede}</p>
+        <ul className="mt-10 grid grid-cols-1 gap-6 lg:grid-cols-3">
+          {posts.map((post) => (
+            <li key={post.canonical} className="min-w-0">
+              <Link
+                href={`/${post.section}/${post.slug}`}
+                className="flex h-full flex-col overflow-hidden rounded-[var(--cp-radius)] border border-line bg-white"
+              >
+                {post.cover ? (
+                  <Image
+                    src={post.cover}
+                    alt={guideCoverAlt(post.headline)}
+                    width={1200}
+                    height={630}
+                    sizes="(min-width: 1024px) 33vw, 100vw"
+                    className="aspect-[1200/630] h-auto w-full object-cover"
+                  />
+                ) : null}
+                <div className="flex flex-1 flex-col px-4 py-4">
+                  <h2 className="text-lg font-bold leading-snug tracking-tight">{post.headline}</h2>
+                  <p className="mt-2 text-[15px] leading-normal text-ink-muted">{post.description}</p>
+                  <p className="mt-auto pt-4 text-sm text-ink-muted">
+                    {readingMinutes(post.body)} min read
+                  </p>
+                </div>
               </Link>
-            </h2>
-            <p className="mt-2 text-[15px] leading-normal text-ink-muted">{post.description}</p>
-          </li>
-        ))}
-      </ul>
-      <TranslateCta />
-    </ContentShell>
+            </li>
+          ))}
+        </ul>
+        <TranslateCta />
+      </main>
+    </div>
+  );
+}
+
+function GuideHero({ post }: { post: Post }) {
+  if (!post.cover) return null;
+  return (
+    <Image
+      src={post.cover}
+      alt={guideCoverAlt(post.headline)}
+      width={1200}
+      height={630}
+      preload
+      sizes="(min-width: 768px) 720px, 100vw"
+      className="mb-8 aspect-[1200/630] h-auto w-full rounded-[var(--cp-radius)] object-cover"
+    />
   );
 }
 
@@ -83,6 +114,7 @@ export function PostArticle({ post }: { post: Post }) {
           {jsonLd ? (
             <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }} />
           ) : null}
+          <GuideHero post={post} />
           <MarkdownBody source={post.body} />
         </article>
       </ContentShell>
@@ -92,20 +124,12 @@ export function PostArticle({ post }: { post: Post }) {
   return (
     <ContentShell>
       <article>
+        <GuideHero post={post} />
         <p className="preview-kicker blue">Guide</p>
         <h1 className="mt-3 text-4xl font-bold tracking-tight">{post.headline}</h1>
         <time dateTime={post.date} className="mt-3 block text-sm text-ink-muted">
           {formatPostDate(post.date)}
         </time>
-        {post.cover ? (
-          <Image
-            src={post.cover}
-            alt=""
-            width={1200}
-            height={630}
-            className="mt-6 aspect-[1200/630] h-auto w-full rounded-[var(--cp-radius)] object-cover"
-          />
-        ) : null}
         <div className="mt-8 space-y-4 text-[17px] leading-relaxed text-ink [&_h2]:mt-8 [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:tracking-tight [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-5">
           <MDXRemote source={post.body} components={mdxComponents} />
         </div>

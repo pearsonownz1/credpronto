@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allPosts, articleJsonLd, getPublishedPost, publishedPosts } from "./posts";
+import { allPosts, articleJsonLd, getPublishedPost, postMetadata, publishedPosts, readingMinutes } from "./posts";
 
 const DRAFT_SLUG = "does-uscis-require-a-certified-translation";
 
@@ -29,8 +29,22 @@ describe("guides", () => {
     for (const post of allPosts()) {
       expect(post.body.length).toBeGreaterThan(0);
       expect(post.description.length).toBeGreaterThan(0);
-      if (post.author) expect(post.cover).toBeNull();
-      else expect(post.cover?.startsWith("/images/")).toBe(true);
+      if (post.draft) expect(post.cover?.startsWith("/images/")).toBe(true);
+      else expect(post.cover).toBe(`/guides/covers/${post.slug}.png`);
+    }
+  });
+
+  it("uses each cover as the absolute Open Graph and Twitter image", () => {
+    for (const post of publishedPosts()) {
+      const image = `https://www.credpronto.com/guides/covers/${post.slug}.png`;
+      expect(readingMinutes(post.body)).toBeGreaterThan(0);
+      expect(postMetadata(post).openGraph).toMatchObject({
+        images: [{ url: image, width: 1200, height: 630, alt: `Cover for the guide "${post.headline}"` }],
+      });
+      expect(postMetadata(post).twitter).toMatchObject({
+        card: "summary_large_image",
+        images: [image],
+      });
     }
   });
 
