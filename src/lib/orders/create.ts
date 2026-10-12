@@ -10,7 +10,7 @@ import {
 import { assertEmail, assertUploadBudget, resolveUploadMime, safeFilename } from "./files";
 import { serviceDb, uploadObject } from "./storage";
 import { generateOrderToken, hashOrderToken } from "./token";
-import { parseOrderChoice } from "./evaluation-price";
+import { evaluationFeeCents, parseOrderChoice } from "./evaluation-price";
 import { HttpError } from "./errors";
 
 function textField(form: FormData, key: string): string | null {
@@ -58,6 +58,10 @@ export async function createOrder(request: Request): Promise<{
     serviceType: choice.orderType === "evaluation" ? "evaluation" : "translation",
     service: choice.service,
     degreeCount: choice.degreeCount,
+    evaluationCents:
+      choice.service && choice.degreeCount != null
+        ? evaluationFeeCents(choice.service, choice.degreeCount)
+        : null,
     utmSource: textField(form, "utm_source"),
     utmMedium: textField(form, "utm_medium"),
     utmCampaign: textField(form, "utm_campaign"),

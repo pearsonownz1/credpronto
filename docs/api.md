@@ -572,7 +572,7 @@ Amounts are integer cents. The evaluation fee and, when the source is not Englis
 | `diploma` | `1995` ($19.95) |
 | `course_by_course` | `3995` ($39.95) |
 
-`evaluationCents` is `degreeCount` times that unit. When `sourceLanguage` is `en`, there is no translation line and `translationCents` is `0`. Otherwise the translation uses the same billable-page rule as a translation order (`unitPriceCents` `995`) and `translationCents` is `billablePages * 995`. `totalCents` is `evaluationCents + translationCents`. It is not `billablePages * unitPriceCents`.
+`evaluationCents` is `degreeCount` times that unit. It is stored when the order is created, before the source language or page count is known. `translationCents` and `totalCents` stay null until that quote exists, and `lineItems` stays empty until then. When `sourceLanguage` is `en`, there is no translation line and `translationCents` is `0`. Otherwise the translation uses the same billable-page rule as a translation order (`unitPriceCents` `995`) and `translationCents` is `billablePages * 995`. `totalCents` is `evaluationCents + translationCents`. It is not `billablePages * unitPriceCents`.
 
 ```json
 {
