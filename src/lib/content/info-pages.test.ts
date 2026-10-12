@@ -29,22 +29,13 @@ describe("info pages", () => {
     });
   });
 
-  it("renders about as a translate button and contact as a mailto button", () => {
+  it("renders the about page call to action as a translate button", () => {
     const about = render(loadInfoPage("about").body);
     expect(about).toContain("Certified translations you can see before you pay.");
     expect(about).toContain('href="/translate"');
     expect(about).toContain("Upload your document");
     expect(about).toContain("bg-primary");
     expect(about).not.toContain("<form");
-
-    const contact = render(loadInfoPage("contact").body);
-    expect(contact).toContain("We usually reply within one business day.");
-    expect(contact).toContain('href="mailto:support@credpronto.com"');
-    expect(contact).toContain("Send message");
-    expect(contact).toContain("bg-primary");
-    expect(contact).toContain('href="/faq"');
-    expect(contact).toContain('href="/guides"');
-    expect(contact).not.toContain("<form");
   });
 
   it("links About, Contact, Privacy, and Terms from the footer", () => {

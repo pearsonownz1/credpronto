@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { CONTACT_TO, oneLine, type ContactMessage } from "@/lib/contact/validate";
 import { BRAND_NAME } from "./brand";
 import {
   renderOrderReceivedEmail,
@@ -18,7 +19,7 @@ export function orderLink(token: string): string {
   return `${appOrigin()}/order/${token}`;
 }
 
-type SendResult = { sent: boolean; skipped: boolean };
+type SendResult = { sent: boolean; skipped: boolean; detail?: string };
 
 /** Display name is always CredPronto. The mailbox is the address in EMAIL_FROM. */
 export function emailFromHeader(raw: string): string {
@@ -51,7 +52,47 @@ async function send(to: string, subject: string, text: string, html?: string): P
   });
   if (error) {
     console.error(`email failed: ${error.message}`);
-    return { sent: false, skipped: false };
+    return { sent: false, skipped: false, detail: error.message };
+  }
+  return { sent: true, skipped: false };
+}
+
+export function buildContactEmail(input: ContactMessage): {
+  to: string;
+  replyTo: string;
+  subject: string;
+  text: string;
+} {
+  const lines = [
+    `Name: ${oneLine(input.name)}`,
+    `Email: ${oneLine(input.email)}`,
+    input.company ? `Company: ${oneLine(input.company)}` : null,
+    input.orderNumber ? `Order number: ${oneLine(input.orderNumber)}` : null,
+    "",
+    input.message,
+  ].filter((line): line is string => line != null);
+  return {
+    to: CONTACT_TO,
+    replyTo: oneLine(input.email),
+    subject: `Message from ${oneLine(input.name)}`,
+    text: lines.join("\n"),
+  };
+}
+
+export async function sendContactMessage(input: ContactMessage): Promise<SendResult> {
+  const client = mailer();
+  if (!client) return { sent: false, skipped: true, detail: "RESEND_API_KEY or EMAIL_FROM is unset" };
+  const message = buildContactEmail(input);
+  const { error } = await client.resend.emails.send({
+    from: client.from,
+    to: message.to,
+    replyTo: message.replyTo,
+    subject: message.subject,
+    text: message.text,
+  });
+  if (error) {
+    console.error(`contact email failed: ${error.message}`);
+    return { sent: false, skipped: false, detail: error.message };
   }
   return { sent: true, skipped: false };
 }

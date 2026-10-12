@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BRAND_NAME } from "./brand";
-import { deliveryReadyMessage, emailFromHeader } from "./email";
+import { buildContactEmail, deliveryReadyMessage, emailFromHeader } from "./email";
 
 describe("email from header", () => {
   it("uses the CredPronto display name and keeps the mailbox", () => {
@@ -20,5 +20,24 @@ describe("delivery ready email", () => {
     });
     expect(deliveryReadyMessage("translation").text).toContain("certified translation");
     expect(deliveryReadyMessage("evaluation").text).not.toMatch(/\bEDGE\b/);
+  });
+});
+
+describe("contact email", () => {
+  it("sends to support and replies to the customer", () => {
+    expect(
+      buildContactEmail({
+        name: "Ada\nLovelace",
+        email: "ada@example.com",
+        company: "Northwind",
+        orderNumber: "",
+        message: "Please check order CP-100.",
+      }),
+    ).toEqual({
+      to: "support@credpronto.com",
+      replyTo: "ada@example.com",
+      subject: "Message from Ada Lovelace",
+      text: "Name: Ada Lovelace\nEmail: ada@example.com\nCompany: Northwind\n\nPlease check order CP-100.",
+    });
   });
 });
