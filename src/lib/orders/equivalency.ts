@@ -3,8 +3,14 @@ import { serviceCents } from "./addons";
 export const PENDING_EQUIVALENCY = "Pending staff review";
 export const EQUIVALENCY_UNMAPPED = "equivalency_unmapped";
 
-export function diplomaEquivalencyPending(credentials: Array<{ usEquivalency: string }>): boolean {
-  return credentials.some((credential) => credential.usEquivalency === PENDING_EQUIVALENCY);
+export function diplomaEquivalencyPending(
+  credentials: Array<{ usEquivalency: string; country?: string; field?: string; dates?: string }>,
+): boolean {
+  return credentials.some((credential) =>
+    [credential.usEquivalency, credential.country, credential.field, credential.dates].some(
+      (value) => value === PENDING_EQUIVALENCY,
+    ),
+  );
 }
 
 /** Checkout stays open for a priced preview. The equivalency flag does not add a 409. */

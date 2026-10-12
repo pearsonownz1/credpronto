@@ -5,6 +5,7 @@ import {
   PENDING_EQUIVALENCY,
   approvalBlockReason,
   checkoutBlockReason,
+  diplomaEquivalencyPending,
   onStaffReviewQueue,
 } from "./equivalency";
 import { GRADE_SCALE_20 } from "./grades";
@@ -83,6 +84,79 @@ describe("assemble evaluation", () => {
     expect(filled?.credentials[0]?.usEquivalency).toBe("Bachelor's degree");
     expect(applyDiplomaEquivalency(result, [PENDING_EQUIVALENCY])).toBeNull();
     expect(applyDiplomaEquivalency(result, [])).toBeNull();
+  });
+
+  it("keeps a licenciatura preview when the country or title was not mapped", () => {
+    const licenciatura = assembleDiploma({
+      degreeCount: 1,
+      documentsReviewed: ["es-mx_titulo-licenciatura.pdf"],
+      extracted: {
+        credentials: [
+          {
+            applicant: "Valeria Ximena Olvera Tostado",
+            institution: "Universidad Autónoma de San Isidro del Valle",
+            country: "",
+            credential: "Licenciatura",
+            field: "Administración de Empresas",
+            dates: "18 de junio de 2019",
+          },
+        ],
+      },
+    });
+    expect(licenciatura?.kind).toBe("diploma");
+    if (licenciatura?.kind !== "diploma") return;
+    expect(licenciatura.credentials[0]).toMatchObject({
+      credential: "Licenciatura",
+      country: PENDING_EQUIVALENCY,
+      usEquivalency: "Bachelor's degree",
+    });
+    expect(diplomaEquivalencyPending(licenciatura.credentials)).toBe(true);
+
+    const printed = assembleDiploma({
+      degreeCount: 1,
+      documentsReviewed: ["es-mx_titulo-licenciatura.pdf"],
+      extracted: {
+        credentials: [
+          {
+            applicant: "Valeria Ximena Olvera Tostado",
+            institution: "Universidad Autónoma de San Isidro del Valle",
+            country: "",
+            credential: "LICENCIADA EN ADMINISTRACIÓN DE EMPRESAS",
+            field: "",
+            dates: "18 de junio de 2019",
+          },
+        ],
+      },
+    });
+    expect(printed?.kind).toBe("diploma");
+    if (printed?.kind !== "diploma") return;
+    expect(printed.credentials[0]).toMatchObject({
+      field: "ADMINISTRACIÓN DE EMPRESAS",
+      country: PENDING_EQUIVALENCY,
+      dates: "18 de junio de 2019",
+      usEquivalency: PENDING_EQUIVALENCY,
+    });
+    const order = {
+      status: "preview_ready" as const,
+      languageConfirmed: true,
+      service: "diploma",
+      degreeCount: 1,
+      evaluationCents: 1995,
+      translationCents: 995,
+      billablePages: 1,
+      unitPriceCents: 995,
+      reviewReason: EQUIVALENCY_UNMAPPED,
+    };
+    expect(checkoutBlockReason(order)).toBeNull();
+    expect(approvalBlockReason(order)).toBe("The U.S. equivalency is still pending staff review");
+    expect(applyDiplomaEquivalency(printed, ["Bachelor's degree"])).toBeNull();
+    expect(
+      applyDiplomaEquivalency(printed, ["Bachelor's degree"], { countries: ["Mexico"] })?.credentials[0],
+    ).toMatchObject({
+      usEquivalency: "Bachelor's degree",
+      country: "Mexico",
+      field: "ADMINISTRACIÓN DE EMPRESAS",
+    });
   });
 
   it("holds a diploma when the degree count does not match", () => {

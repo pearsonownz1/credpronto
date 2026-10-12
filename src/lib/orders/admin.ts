@@ -218,6 +218,13 @@ function stringList(body: unknown, key: string): string[] | null {
   return value;
 }
 
+function optionalStrings(body: unknown, key: string): string[] | undefined {
+  if (!body || typeof body !== "object" || !(key in body)) return undefined;
+  const value = (body as Record<string, unknown>)[key];
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return undefined;
+  return value;
+}
+
 export async function resolveReview(orderId: string, body: unknown) {
   const { db } = await requireStaff();
   const order = await getOrderById(db, orderId);
@@ -225,7 +232,11 @@ export async function resolveReview(orderId: string, body: unknown) {
   if (order.reviewReason === EQUIVALENCY_UNMAPPED) {
     const equivalencies = stringList(body, "equivalencies");
     if (!equivalencies) throw new HttpError("Each credential needs a U.S. equivalency", 400);
-    await publishDiplomaEquivalency(db, order, equivalencies);
+    await publishDiplomaEquivalency(db, order, equivalencies, {
+      countries: optionalStrings(body, "countries"),
+      fields: optionalStrings(body, "fields"),
+      dates: optionalStrings(body, "dates"),
+    });
     return { status: order.status, reviewReason: null as string | null };
   }
   if (order.status !== "needs_review") throw new HttpError("This order is not waiting for review", 409);

@@ -19,11 +19,14 @@ export async function regenerateOrder(id: string): Promise<ApiResult<unknown>> {
   });
 }
 
-export async function assignEquivalency(id: string, equivalencies: string[]): Promise<ApiResult<unknown>> {
+export async function assignEquivalency(
+  id: string,
+  body: { equivalencies: string[]; countries?: string[]; fields?: string[]; dates?: string[] },
+): Promise<ApiResult<unknown>> {
   if (publicMockMode()) return { ok: true, status: 200, data: { reviewReason: null } };
   return browserJson(`/api/admin/orders/${encodeURIComponent(id)}/resolve-review`, {
     method: "POST",
-    body: JSON.stringify({ equivalencies }),
+    body: JSON.stringify(body),
   });
 }
 
