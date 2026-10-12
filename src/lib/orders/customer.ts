@@ -38,6 +38,7 @@ import { assertUploadBudget, resolveUploadMime, safeFilename } from "./files";
 import { replacementAllowed } from "./image-quality";
 import { CONFIRMATION_FIELD_KEYS, normalizeDateFormat, type ConfirmationFieldKey } from "./fields";
 import { appOrigin } from "./email";
+import { applySucceededSetupIntent } from "./saved-card";
 import { normalizeLanguage } from "./languages";
 import { loadCustomerOrder } from "./pipeline";
 import { orderDownloadFilename } from "./download-name";
@@ -382,6 +383,9 @@ export async function handleStripeWebhook(request: Request) {
   }
   if (event.type === "checkout.session.expired") {
     return expireCheckoutSession(db, event.data.object as Stripe.Checkout.Session);
+  }
+  if (event.type === "setup_intent.succeeded") {
+    return applySucceededSetupIntent(db, stripe, event.data.object as Stripe.SetupIntent);
   }
   if (event.type !== "checkout.session.completed") return { received: true };
 

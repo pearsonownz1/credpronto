@@ -233,6 +233,85 @@ export async function findBillingCard(
   return { customerId, paymentMethodId };
 }
 
+export type BillingCustomerRow = {
+  userId: string;
+  stripeCustomerId: string;
+  paymentMethodId: string | null;
+  brand: string | null;
+  last4: string | null;
+};
+
+function mapBilling(row: Row): BillingCustomerRow {
+  return {
+    userId: String(row.user_id),
+    stripeCustomerId: String(row.stripe_customer_id),
+    paymentMethodId: typeof row.payment_method_id === "string" ? row.payment_method_id : null,
+    brand: typeof row.brand === "string" ? row.brand : null,
+    last4: typeof row.last4 === "string" ? row.last4 : null,
+  };
+}
+
+export async function billingCustomerForUser(db: Db, userId: string): Promise<BillingCustomerRow | null> {
+  const { data, error } = await db.from("billing_customers").select("*").eq("user_id", userId).maybeSingle();
+  if (error) {
+    if (error.code === "42P01" || /billing_customers/i.test(error.message)) return null;
+    throw new Error(error.message);
+  }
+  return data ? mapBilling(data as Row) : null;
+}
+
+export async function billingUserForStripeCustomer(db: Db, stripeCustomerId: string): Promise<string | null> {
+  const { data, error } = await db
+    .from("billing_customers")
+    .select("user_id")
+    .eq("stripe_customer_id", stripeCustomerId)
+    .maybeSingle();
+  if (error) {
+    if (error.code === "42P01" || /billing_customers/i.test(error.message)) return null;
+    throw new Error(error.message);
+  }
+  return data?.user_id ? String(data.user_id) : null;
+}
+
+export async function insertBillingCustomer(db: Db, userId: string, stripeCustomerId: string): Promise<void> {
+  const { error } = await db.from("billing_customers").insert({
+    user_id: userId,
+    stripe_customer_id: stripeCustomerId,
+  });
+  if (error?.code === "23505") return;
+  fail(error);
+}
+
+export async function saveBillingMethod(
+  db: Db,
+  userId: string,
+  input: { paymentMethodId: string; brand: string; last4: string },
+): Promise<void> {
+  const { error } = await db
+    .from("billing_customers")
+    .update({
+      payment_method_id: input.paymentMethodId,
+      brand: input.brand,
+      last4: input.last4,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId);
+  fail(error);
+}
+
+export async function clearBillingMethod(db: Db, userId: string): Promise<void> {
+  const { error } = await db
+    .from("billing_customers")
+    .update({
+      payment_method_id: null,
+      brand: null,
+      last4: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId);
+  fail(error);
+}
+
 export async function orderByExternalRef(db: Db, userId: string, externalRef: string): Promise<string | null> {
   const { data, error } = await db
     .from("orders")

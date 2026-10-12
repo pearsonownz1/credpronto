@@ -63,11 +63,15 @@ describe("auth migrations", () => {
     const endpoints = readFileSync(path.join(migrationsDir, "20261012070100_webhook_endpoints.sql"), "utf8");
     const deliveries = readFileSync(path.join(migrationsDir, "20261012070200_webhook_deliveries.sql"), "utf8");
     const externalRef = readFileSync(path.join(migrationsDir, "20261012070300_orders_external_ref.sql"), "utf8");
+    const billing = readFileSync(path.join(migrationsDir, "20261012070400_billing_customers.sql"), "utf8");
     expect(apiKeys).toMatch(/create table public\.api_keys/);
     expect(endpoints).toMatch(/create table public\.webhook_endpoints/);
     expect(deliveries).toMatch(/create table public\.webhook_deliveries/);
     expect(externalRef).toMatch(/external_ref text/);
-    for (const sql of [apiKeys, endpoints, deliveries, externalRef]) {
+    expect(billing).toMatch(/create table public\.billing_customers/);
+    expect(billing).toMatch(/stripe_customer_id text not null/);
+    expect(billing).not.toMatch(/card_number/);
+    for (const sql of [apiKeys, endpoints, deliveries, externalRef, billing]) {
       expect(sql.toLowerCase()).not.toMatch(/create type/);
       expect(sql.toLowerCase()).not.toMatch(/add value/);
     }
