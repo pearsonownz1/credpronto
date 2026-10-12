@@ -56,3 +56,30 @@ export function nextRetrySeconds(attempt: number): number | null {
 export function isWebhookEvent(value: string): value is WebhookEvent {
   return (WEBHOOK_EVENTS as readonly string[]).includes(value);
 }
+
+export type WebhookLastDelivery = {
+  status: string;
+  event: string;
+  at: string;
+  responseStatus: number | null;
+};
+
+/** Last 4 characters of the signing secret. The full secret is never returned from a read. */
+export function webhookSecretLast4(secret: string): string {
+  return secret.slice(-4);
+}
+
+export function webhookReadBody(input: {
+  url: string | null;
+  signingSecret: string | null;
+  lastDelivery: WebhookLastDelivery | null;
+}): { url: string | null; secretLast4: string | null; lastDelivery: WebhookLastDelivery | null } {
+  if (!input.url || !input.signingSecret) {
+    return { url: null, secretLast4: null, lastDelivery: null };
+  }
+  return {
+    url: input.url,
+    secretLast4: webhookSecretLast4(input.signingSecret),
+    lastDelivery: input.lastDelivery,
+  };
+}
