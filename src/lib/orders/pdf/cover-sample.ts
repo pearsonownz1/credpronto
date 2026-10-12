@@ -2,7 +2,7 @@ import type { RenderInput } from "./layout";
 
 /**
  * Public homepage sample. Names and the order id are fake.
- * The cover template still prints the ATA logo and the Venture Oaks address.
+ * The cover prints the CredPronto logo, the ATA member logo, and the Sacramento footer.
  */
 export const SAMPLE_COVER_INPUT: RenderInput = {
   orderId: "EXAMPLE-000",

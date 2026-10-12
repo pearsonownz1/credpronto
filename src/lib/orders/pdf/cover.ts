@@ -1,13 +1,16 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { PDFDocument, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
+import { BRAND_ADDRESS, BRAND_FOOTER, BRAND_LOCALITY, BRAND_SIGNER, BRAND_STREET } from "../brand";
 import { languageLabel } from "../languages";
 import { faceForCodePoint, fontFace, stableFontkit, type FontFace, type FontFaceId } from "./font";
 import { wrapLines, type CoverDocument, type RenderInput } from "./layout";
 
-export const COVER_ADDRESS_LINES = ["2520 Venture Oaks Way, Suite 120", "Sacramento, CA 95833"] as const;
-export const COVER_ADDRESS = COVER_ADDRESS_LINES.join(", ");
+export const COVER_ADDRESS_LINES = [BRAND_STREET, BRAND_LOCALITY] as const;
+export const COVER_ADDRESS = BRAND_ADDRESS;
+export const COVER_FOOTER = BRAND_FOOTER;
 const ATA_LOGO_PATH = path.join(process.cwd(), "src/lib/orders/pdf/ata-logo.png");
+const BRAND_LOGO_PATH = path.join(process.cwd(), "src/lib/orders/pdf/credpronto-logo.png");
 
 /** Printed word for word. Do not edit, shorten, or interpolate this statement. */
 export const CERTIFICATION_STATEMENTS = [
@@ -59,17 +62,15 @@ type Faces = {
   italic: ReadyFace | null;
 };
 
-export const COVER_FALLBACK_SIGNER = "CredPronto Certification Team";
+export const COVER_FALLBACK_SIGNER = BRAND_SIGNER;
 
-/** Signer shown on the cover. Never an email address. */
-export function coverTranslatorName(
-  approverName: string | null | undefined,
-  configuredName = process.env.CREDPRONTO_TRANSLATOR_NAME,
-): string {
-  const approver = approverName?.trim();
-  if (approver && !approver.includes("@")) return approver;
-  const configured = configuredName?.trim();
-  if (configured && !configured.includes("@")) return configured;
+/**
+ * Signer shown on the cover. Always the team.
+ * A staff name, a configured translator, or an email is never printed.
+ */
+export function coverTranslatorName(approverName?: string | null, configuredName?: string | null): string {
+  void approverName;
+  void configuredName;
   return COVER_FALLBACK_SIGNER;
 }
 
@@ -89,6 +90,10 @@ export function coverSignature(
 
 export function loadAtaLogo(): Uint8Array {
   return new Uint8Array(readFileSync(ATA_LOGO_PATH));
+}
+
+export function loadBrandLogo(): Uint8Array {
+  return new Uint8Array(readFileSync(BRAND_LOGO_PATH));
 }
 
 export function loadTranslatorSignature(value = process.env.CREDPRONTO_TRANSLATOR_SIGNATURE): Uint8Array | null {
@@ -211,14 +216,16 @@ export async function drawCertificationPage(doc: PDFDocument, input: RenderInput
     cover.summary,
     cover.translatorName,
     ...cover.documents.map((document) => document.name),
-    COVER_ADDRESS,
+    COVER_FOOTER,
   ].join("\n");
   const faces = await embedFaces(doc, sample);
   const page = doc.addPage([PAGE_W, PAGE_H]);
   const signature = await embedSignature(doc, cover.signature);
+  const brand = await embedSignature(doc, loadBrandLogo());
   const ata = await embedSignature(doc, loadAtaLogo());
+  if (!brand) throw new Error("CredPronto logo did not embed");
   if (!ata) throw new Error("ATA logo did not embed");
-  let y = drawHeader(page, faces, cover, ata);
+  let y = drawHeader(page, faces, cover, brand, ata);
   y = drawTitle(page, faces, cover, y);
   y = drawSummary(page, faces, cover, y);
   y = drawOrderBox(page, faces, cover, y);
@@ -236,12 +243,7 @@ export async function drawCertificationPage(doc: PDFDocument, input: RenderInput
   y = drawTable(page, faces, cover, y, tableFloor);
   y = drawStatements(page, faces, measured, y);
   drawSignature(page, faces, cover, signature, y - statementGap);
-  drawFinalFooter(page, faces.regular, {
-    orderId: cover.orderId,
-    pageNumber: 1,
-    pageCount: cover.pageCount,
-    width: PAGE_W,
-  });
+  drawCoverFooter(page, faces, cover);
 }
 
 async function embedFaces(doc: PDFDocument, sample: string): Promise<Faces> {
@@ -372,23 +374,25 @@ function drawWrapped(
   return y;
 }
 
-function drawHeader(page: PDFPage, faces: Faces, cover: ResolvedCover, ata: PDFImage): number {
+function drawHeader(page: PDFPage, faces: Faces, cover: ResolvedCover, brand: PDFImage, ata: PDFImage): number {
   const contentTop = PAGE_H - 40;
-  const top = contentTop - 14;
-  page.drawRectangle({ x: MARGIN_X, y: top - 2, width: 16, height: 16, color: BLUE });
-  page.drawLine({ start: { x: MARGIN_X + 5, y: top + 10 }, end: { x: MARGIN_X + 12, y: top + 10 }, thickness: 1.4, color: WHITE });
-  page.drawLine({ start: { x: MARGIN_X + 12, y: top + 10 }, end: { x: MARGIN_X + 12, y: top + 2 }, thickness: 1.4, color: WHITE });
-  page.drawLine({ start: { x: MARGIN_X + 5, y: top + 2 }, end: { x: MARGIN_X + 12, y: top + 2 }, thickness: 1.4, color: WHITE });
-  drawText(page, "CredPronto", MARGIN_X + 22, top + 2, 13, INK, false, faces);
+  const brandHeight = 22;
+  const brandWidth = brandHeight * (brand.width / brand.height);
+  page.drawImage(brand, {
+    x: MARGIN_X,
+    y: contentTop - brandHeight,
+    width: brandWidth,
+    height: brandHeight,
+  });
 
-  let addressY = top - 16;
+  let addressY = contentTop - brandHeight - 14;
   for (const line of COVER_ADDRESS_LINES) {
     drawText(page, line, MARGIN_X, addressY, 8, MUTED, false, faces);
     addressY -= 11;
   }
 
   const right = PAGE_W - MARGIN_X;
-  const ataHeight = 24; // full lockup, width follows aspect ratio
+  const ataHeight = 24;
   const ataWidth = ataHeight * (ata.width / ata.height);
   const ataBottom = contentTop - ataHeight;
   page.drawImage(ata, { x: right - ataWidth, y: ataBottom, width: ataWidth, height: ataHeight });
@@ -409,6 +413,28 @@ function drawHeader(page: PDFPage, faces: Faces, cover: ResolvedCover, ata: PDFI
     color: INK,
   });
   return ruleY - 22;
+}
+
+function drawCoverFooter(page: PDFPage, faces: Faces, cover: ResolvedCover): void {
+  const y = 28;
+  page.drawLine({
+    start: { x: MARGIN_X, y: y + 14 },
+    end: { x: PAGE_W - MARGIN_X, y: y + 14 },
+    thickness: 0.6,
+    color: LINE,
+  });
+  const pageLabel = `Order ${cover.orderId} · Page 1 of ${cover.pageCount}`;
+  const gap = 16;
+  let size = 7.5;
+  let brandWidth = textWidth(COVER_FOOTER, size, false, faces);
+  let pageWidth = textWidth(pageLabel, size, false, faces);
+  while (brandWidth + gap + pageWidth > CONTENT_W && size > 6) {
+    size -= 0.25;
+    brandWidth = textWidth(COVER_FOOTER, size, false, faces);
+    pageWidth = textWidth(pageLabel, size, false, faces);
+  }
+  drawText(page, COVER_FOOTER, MARGIN_X, y, size, MUTED, false, faces);
+  drawText(page, pageLabel, PAGE_W - MARGIN_X - pageWidth, y, size, MUTED, false, faces);
 }
 
 function drawTitle(page: PDFPage, faces: Faces, cover: ResolvedCover, y: number): number {
@@ -583,8 +609,6 @@ function drawSignature(
     const width = signature.width * scale;
     const height = signature.height * scale;
     page.drawImage(signature, { x: MARGIN_X, y: lineY + 3, width, height });
-  } else {
-    drawText(page, cover.translatorName, MARGIN_X, lineY + 6, 11, MUTED, true, faces);
   }
   page.drawLine({
     start: { x: MARGIN_X, y: lineY },
@@ -592,17 +616,7 @@ function drawSignature(
     thickness: 0.8,
     color: INK,
   });
-  drawWrapped(
-    page,
-    `${cover.translatorName}, Authorized Representative, CredPronto`,
-    MARGIN_X,
-    lineY - 12,
-    8,
-    MUTED,
-    false,
-    leftWidth,
-    faces,
-  );
+  drawWrapped(page, cover.translatorName, MARGIN_X, lineY - 12, 8, MUTED, false, leftWidth, faces);
 
   drawText(page, cover.issued, rightX, lineY + 6, 10, INK, false, faces);
   page.drawLine({

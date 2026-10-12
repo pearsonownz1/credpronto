@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { BRAND_NAME } from "./brand";
 import {
   renderOrderReceivedEmail,
   renderPaymentReceiptEmail,
@@ -19,14 +20,23 @@ export function orderLink(token: string): string {
 
 type SendResult = { sent: boolean; skipped: boolean };
 
+/** Display name is always CredPronto. The mailbox is the address in EMAIL_FROM. */
+export function emailFromHeader(raw: string): string {
+  const trimmed = raw.trim();
+  const angled = trimmed.match(/<([^<>\s]+@[^<>\s]+)>/);
+  const bare = trimmed.match(/[^\s<>]+@[^\s<>]+/);
+  const address = (angled?.[1] ?? bare?.[0] ?? trimmed).trim();
+  return `${BRAND_NAME} <${address}>`;
+}
+
 function mailer(): { from: string; resend: Resend } | null {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM;
-  if (!apiKey || !from) {
+  const configured = process.env.EMAIL_FROM;
+  if (!apiKey || !configured) {
     console.info("email skipped: RESEND_API_KEY or EMAIL_FROM unset");
     return null;
   }
-  return { from, resend: new Resend(apiKey) };
+  return { from: emailFromHeader(configured), resend: new Resend(apiKey) };
 }
 
 async function send(to: string, subject: string, text: string, html?: string): Promise<SendResult> {

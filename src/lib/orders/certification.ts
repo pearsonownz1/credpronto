@@ -31,7 +31,7 @@ export async function approverDisplayName(db: Db, userId: string): Promise<strin
   }
 }
 
-/** Rewrite the cover with the approving staff member. The translated pages stay. */
+/** Rewrite the cover. The signer line stays CredPronto Certification Team. The translated pages stay. */
 export async function stampApprovedCover(db: Db, order: OrderRecord, approverName: string | null): Promise<void> {
   if (!order.finalTranslationPath || !order.certificationPath || !order.sourceLanguage) return;
   const documents = await listDocuments(db, order.id);

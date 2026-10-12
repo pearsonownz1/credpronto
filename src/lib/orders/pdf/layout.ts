@@ -53,7 +53,7 @@ export type RenderInput = {
   targetLanguage?: string | null;
   clientName?: string | null;
   documents?: CoverDocument[];
-  /** Approving staff member, or the configured translator when nobody has approved yet. Printed as an authorized representative. */
+  /** Kept for callers. The cover signer line is always CredPronto Certification Team. */
   translatorName?: string | null;
   /** PNG or JPEG of the translator signature. Omitted when none is on file. */
   signature?: Uint8Array | null;
