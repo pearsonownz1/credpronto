@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { addonUnitPhrase, withoutExpedited } from "@/lib/orders/addons";
 import type { ShippingAddress } from "@/lib/orders/types";
 import {
   formatMoney,
@@ -86,7 +87,7 @@ export function useAddonPanel(
   order: PreviewOrder,
   onBuy?: (body: CheckoutBody) => void | Promise<void>,
 ): AddonPanelState {
-  const options = order.addonOptions ?? [];
+  const options = withoutExpedited(order.addonOptions ?? [], order.product !== "evaluation");
   const [selected, setSelected] = useState<string[]>(() =>
     (order.addons ?? []).filter((id) => options.some((option) => option.id === id)),
   );
@@ -161,7 +162,7 @@ export function AddonPanel({ panel }: { panel: AddonPanelState }) {
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm">{option.label}</span>
                   <span className="block text-[11px] text-ink-muted">
-                    {option.per === "page" ? `${formatMoney(option.unitCents)} per page` : "per order"}
+                    {`${formatMoney(option.unitCents)} ${addonUnitPhrase(option.per)}`}
                   </span>
                 </span>
                 <span className="text-sm font-semibold">{price}</span>

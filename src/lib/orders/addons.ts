@@ -1,9 +1,13 @@
 import { HttpError } from "./errors";
 import type { AddonId, ShippingAddress } from "./types";
 
+/** Expedited is one flat charge on an evaluation, not a per-page price. */
+export const EXPEDITED_UNIT = "order" as const;
+
 export const ADDON_CATALOG = [
   { id: "notarization", label: "Notarization", unitCents: 1795, per: "order" },
   { id: "mail", label: "USPS Priority hard copy", unitCents: 1295, per: "order" },
+  { id: "expedited", label: "Expedited", unitCents: 995, per: EXPEDITED_UNIT },
 ] as const;
 
 const ADDON_IDS = new Set<string>(ADDON_CATALOG.map((item) => item.id));
@@ -13,6 +17,23 @@ export type AddonOrderContext = {
   orderType?: string | null;
   service?: string | null;
 };
+
+/** Diploma and course-by-course evaluations still sell Expedited. Translation orders do not. */
+export function offersExpedited(order: AddonOrderContext): boolean {
+  if (order.service === "diploma" || order.service === "course_by_course") return true;
+  if (order.serviceType === "evaluation" || order.orderType === "evaluation") return true;
+  return false;
+}
+
+function offeredCatalog(order: AddonOrderContext) {
+  if (offersExpedited(order)) return ADDON_CATALOG;
+  return ADDON_CATALOG.filter((item) => item.id !== "expedited");
+}
+
+/** Words for an add-on unit. `per` comes from the quote; Expedited is `order`. */
+export function addonUnitPhrase(per: "order" | "page"): "per order" | "per page" {
+  return per === "page" ? "per page" : "per order";
+}
 
 export const US_STATE_CODES = [
   "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL",
@@ -47,10 +68,9 @@ export type CheckoutSelection = {
   addonCents: number;
 };
 
-export function addonOptions(billablePages: number | null, _order: AddonOrderContext = {}): AddonOption[] {
-  void _order;
+export function addonOptions(billablePages: number | null, order: AddonOrderContext = {}): AddonOption[] {
   const pages = billablePages != null && billablePages > 0 ? billablePages : null;
-  return ADDON_CATALOG.map((item) => ({
+  return offeredCatalog(order).map((item) => ({
     id: item.id,
     label: item.label,
     unitCents: item.unitCents,
@@ -59,13 +79,14 @@ export function addonOptions(billablePages: number | null, _order: AddonOrderCon
   }));
 }
 
-export function selectedAddonIds(addons: unknown, _order: AddonOrderContext = {}): AddonId[] {
-  void _order;
+export function selectedAddonIds(addons: unknown, order: AddonOrderContext = {}): AddonId[] {
   if (!Array.isArray(addons)) throw new HttpError("Unknown add-on", 400);
   const seen = new Set<string>();
   const chosen: AddonId[] = [];
   for (const entry of addons) {
-    if (entry === "expedited") throw new HttpError("Expedited is no longer offered", 400);
+    if (entry === "expedited" && !offersExpedited(order)) {
+      throw new HttpError("Expedited is no longer offered", 400);
+    }
     if (typeof entry !== "string" || !ADDON_IDS.has(entry) || seen.has(entry)) {
       throw new HttpError("Unknown add-on", 400);
     }
@@ -75,11 +96,24 @@ export function selectedAddonIds(addons: unknown, _order: AddonOrderContext = {}
   return chosen;
 }
 
-/** New orders never store Expedited. A request that still names it is rejected. */
-export function expeditedFlagForAddons(_order: AddonOrderContext, addons: readonly { id: string }[]): boolean {
-  void _order;
-  if (addons.some((item) => item.id === "expedited")) throw new HttpError("Expedited is no longer offered", 400);
-  return false;
+/** Translation orders always store false. Evaluations store true only when Expedited was purchased. */
+export function expeditedFlagForAddons(order: AddonOrderContext, addons: readonly { id: string }[]): boolean {
+  const chosen = addons.some((item) => item.id === "expedited");
+  if (chosen && !offersExpedited(order)) throw new HttpError("Expedited is no longer offered", 400);
+  return chosen;
+}
+
+/** Evaluations still offer Expedited. Translation orders do not. */
+export function offeredAddonOptions(
+  billablePages: number | null,
+  orderType: string | null | undefined,
+): AddonOption[] {
+  return withoutExpedited(addonOptions(billablePages, { orderType }), orderType !== "evaluation");
+}
+
+export function withoutExpedited<T extends { id: string }>(options: readonly T[], hide: boolean): T[] {
+  if (!hide) return [...options];
+  return options.filter((item) => item.id !== "expedited");
 }
 
 export function serviceCents(order: {

@@ -1,4 +1,4 @@
-import { addonOptions } from "@/lib/orders/addons";
+import { EXPEDITED_UNIT, addonOptions } from "@/lib/orders/addons";
 import { WORD_PAGE_RULE } from "@/lib/orders/billing";
 import type { CustomerOrder } from "@/lib/orders/view";
 
@@ -38,7 +38,8 @@ export function sampleCustomerOrder(): CustomerOrder {
     billablePages: 2,
     unitPriceCents: 995,
     addons: [],
-    addonOptions: addonOptions(2),
+    addonOptions: addonOptions(2, { orderType: "translation", serviceType: "translation" }),
+    expeditedUnit: EXPEDITED_UNIT,
     shippingAddress: null,
     totalCents: 1990,
     currency: "usd",

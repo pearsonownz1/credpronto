@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { checkoutPayload } from "./addon-panel";
+import { AddonPanel, checkoutPayload } from "./addon-panel";
 import { MobileBuyBar, OrderRail } from "./preview-chrome";
 import type { AddonPanelState } from "./addon-panel";
 import {
@@ -111,6 +111,8 @@ describe("preview order", () => {
     expect(html).toContain("Notarization");
     expect(html).toContain("USPS Priority hard copy");
     expect(html).not.toContain("Expedited");
+    expect(html).toContain("$17.95 per order");
+    expect(html).not.toContain("per page");
     expect(
       checkoutPayload(options, ["expedited", "notarization"], {
         name: "Ada",
@@ -156,6 +158,34 @@ describe("preview order", () => {
     );
     expect(html).not.toContain("addon-panel");
     expect(html).not.toContain("shipping-address");
+  });
+
+  it("labels Expedited from the option price and unit", () => {
+    const html = renderToStaticMarkup(
+      <AddonPanel
+        panel={panel({
+          options: [{ id: "expedited", label: "Expedited", unitCents: 995, per: "order", totalCents: 995 }],
+          selected: [],
+          totalCents: 1995,
+        })}
+      />,
+    );
+    expect(html).toContain("Expedited");
+    expect(html).toContain("$9.95 per order");
+    expect(html).not.toContain("per page");
+
+    const custom = renderToStaticMarkup(
+      <AddonPanel
+        panel={panel({
+          options: [{ id: "expedited", label: "Expedited", unitCents: 1500, per: "order", totalCents: 1500 }],
+          selected: [],
+          totalCents: 1995,
+        })}
+      />,
+    );
+    expect(custom).toContain("$15.00 per order");
+    expect(custom).not.toContain("$9.95");
+    expect(custom).not.toContain("per page");
   });
 });
 

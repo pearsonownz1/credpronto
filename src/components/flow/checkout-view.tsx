@@ -10,7 +10,7 @@ import {
   servicePriceLines,
   totalLabel,
 } from "@/lib/flow/present";
-import { US_STATE_CODES, chargeCents, serviceCents } from "@/lib/orders/addons";
+import { US_STATE_CODES, addonUnitPhrase, chargeCents, serviceCents, withoutExpedited } from "@/lib/orders/addons";
 import type { AddonId, ShippingAddress } from "@/lib/orders/types";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
@@ -53,8 +53,12 @@ function CheckoutForm({
   const router = useRouter();
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const evaluationOrder = order.orderType === "evaluation" || order.service != null;
   const [selected, setSelected] = useState<AddonId[]>(() =>
-    order.addons.filter((id) => id === "notarization" || id === "mail"),
+    withoutExpedited(
+      order.addons.map((id) => ({ id })),
+      !evaluationOrder,
+    ).map((item) => item.id),
   );
   const [address, setAddress] = useState({
     name: order.shippingAddress?.name ?? "",
@@ -66,8 +70,8 @@ function CheckoutForm({
   });
 
   const notReady = order.status !== "preview_ready";
-  const evaluation = order.orderType === "evaluation" || order.service != null;
-  const options = order.addonOptions.filter((option) => option.id === "notarization" || option.id === "mail");
+  const evaluation = evaluationOrder;
+  const options = withoutExpedited(order.addonOptions, !evaluation);
   const service = serviceCents(order);
   const due = chargeCents(service, options, selected);
   const mail = selected.includes("mail");
@@ -98,7 +102,7 @@ function CheckoutForm({
     setNotice(null);
     try {
       const result = await getFlowClient().checkout(token, {
-        addons: selected,
+        addons: selected.filter((id) => options.some((option) => option.id === id)),
         ...(mail ? { shippingAddress: shippingAddress() } : {}),
       });
       if ("url" in result && result.url) {
@@ -149,10 +153,11 @@ function CheckoutForm({
           <legend className="mb-1 text-[13px] font-semibold">Add-ons</legend>
           {options.map((option) => {
             const unavailable = option.totalCents == null;
+            const unit = addonUnitPhrase(option.per);
             const price =
               option.per === "page" && option.totalCents != null
-                ? `${formatMoney(option.unitCents)} per page · ${formatMoney(option.totalCents)}`
-                : formatMoney(option.unitCents);
+                ? `${formatMoney(option.unitCents)} ${unit} · ${formatMoney(option.totalCents)}`
+                : `${formatMoney(option.unitCents)} ${unit}`;
             return (
               <label key={option.id} className="flex items-start gap-3 text-sm">
                 <input
