@@ -140,12 +140,12 @@ export function parseCheckoutBody(
   }
   const chosen = selectedAddonIds(record.addons, order);
   const seen = new Set<string>(chosen);
-
-  const pages = billablePages != null && billablePages > 0 ? billablePages : null;
+  // Add-ons are flat per order. The page count stays on the signature for callers.
+  void billablePages;
 
   const shippingAddress = seen.has("mail") ? parseShippingAddress(record.shippingAddress) : null;
   const addons = ADDON_CATALOG.filter((item) => seen.has(item.id)).map((item) => {
-    const quantity = item.per === "page" && pages != null ? pages : 1;
+    const quantity = 1;
     return {
       id: item.id,
       label: item.label,
