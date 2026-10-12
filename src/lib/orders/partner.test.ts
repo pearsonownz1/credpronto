@@ -68,6 +68,14 @@ describe("partner orders", () => {
         reviewReason: "image_quality",
       }),
     ).toBe("unavailable");
+    expect(
+      partnerQuoteAction({
+        ...priced,
+        status: "needs_review",
+        reviewReason: "same_language",
+        sourceLanguage: "en",
+      }),
+    ).toBe("unavailable");
     expect(partnerQuoteAction({ ...priced, billablePages: 0, totalCents: 0 })).toBe("unavailable");
   });
 

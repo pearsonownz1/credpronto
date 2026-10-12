@@ -83,6 +83,11 @@ export function isSupportedSourceLanguage(code: string | null): boolean {
   return code != null && code !== "en" && SUPPORTED.has(code);
 }
 
+/** English is a valid target. Every other target is a supported source language. */
+export function isSupportedTargetLanguage(code: string | null): boolean {
+  return code === "en" || isSupportedSourceLanguage(code);
+}
+
 export function languageLabel(code: string): string {
   const entry = Object.entries(LANGUAGE_NAMES).find(([, value]) => value === code);
   if (!entry) return code;
@@ -105,7 +110,7 @@ export function sourceLanguageChoices(): Array<{ code: string; label: string }> 
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-/** Target languages, including English. There is no customer route that saves this choice. */
+/** Target languages, including English. `PATCH /api/orders/[token]` saves the choice. */
 export function targetLanguageChoices(): Array<{ code: string; label: string }> {
   return [{ code: "en", label: languageLabel("en") }, ...sourceLanguageChoices()].sort((a, b) =>
     a.label.localeCompare(b.label),

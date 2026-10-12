@@ -1,5 +1,6 @@
 import { UNIT_PRICE_CENTS } from "./constants";
 import { HttpError } from "./errors";
+import { languagesEqual } from "./languages";
 import type { EvaluationLine, EvaluationResult, EvaluationService } from "./types";
 
 export const DIPLOMA_UNIT_CENTS = 1995;
@@ -44,14 +45,19 @@ export function parseOrderChoice(fields: {
   return { orderType: "evaluation", service: fields.service, degreeCount };
 }
 
-export function needsBundledTranslation(sourceLanguage: string | null): boolean {
-  return sourceLanguage != null && sourceLanguage !== "en";
+export function needsBundledTranslation(
+  sourceLanguage: string | null,
+  targetLanguage: string | null = "en",
+): boolean {
+  if (sourceLanguage == null) return false;
+  return !languagesEqual(sourceLanguage, targetLanguage ?? "en");
 }
 
 export function evaluationQuote(input: {
   service: EvaluationService;
   degreeCount: number;
   sourceLanguage: string | null;
+  targetLanguage?: string | null;
   billablePages: number;
 }): {
   evaluationCents: number;
@@ -61,7 +67,7 @@ export function evaluationQuote(input: {
 } {
   const unitAmountCents = evaluationUnitCents(input.service);
   const evaluationCents = evaluationFeeCents(input.service, input.degreeCount);
-  const translationCents = needsBundledTranslation(input.sourceLanguage)
+  const translationCents = needsBundledTranslation(input.sourceLanguage, input.targetLanguage ?? "en")
     ? input.billablePages * UNIT_PRICE_CENTS
     : 0;
   const lineItems: EvaluationLine[] = [

@@ -448,6 +448,7 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
       detectionAvailable: !missedDetection && distinct.length > 0,
       languagesDisagree: distinct.length > 1,
       imageQuality,
+      targetLanguage: order.targetLanguage,
     });
 
     await replaceExtractedConfirmations(db, orderId, extractedFields);

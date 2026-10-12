@@ -1,5 +1,6 @@
 import { serviceCents } from "@/lib/orders/addons";
 import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
+import { SAME_LANGUAGE_REASON } from "@/lib/orders/quote";
 import {
   languageLabel,
   languagesEqual,
@@ -62,6 +63,16 @@ export function showTargetLanguagePicker(order: {
 export function canOpenConfirm(order: { status: string; reviewReason: string | null }): boolean {
   if (order.status === "quoted") return true;
   return order.status === "needs_review" && order.reviewReason !== IMAGE_QUALITY_REASON;
+}
+
+export function reviewNote(reason: string | null): string {
+  if (
+    reason === SAME_LANGUAGE_REASON ||
+    (reason ?? "").startsWith("The document appears to already be in English")
+  ) {
+    return "This document is already in English. Choose another language to translate it into.";
+  }
+  return reason ?? "A reviewer will confirm the language before this price is final.";
 }
 
 export function languageLine(order: {

@@ -37,6 +37,19 @@ describe("evaluation quote", () => {
     ]);
   });
 
+  it("prices an English source once a different target is chosen", () => {
+    const quote = evaluationQuote({
+      service: "diploma",
+      degreeCount: 1,
+      sourceLanguage: "en",
+      targetLanguage: "es",
+      billablePages: 2,
+    });
+    expect(quote.translationCents).toBe(1990);
+    expect(quote.totalCents).toBe(1995 + 1990);
+    expect(quote.lineItems.map((item) => item.kind)).toEqual(["evaluation", "translation"]);
+  });
+
   it("prices course-by-course in English without a translation line", () => {
     const quote = evaluationQuote({
       service: "course_by_course",

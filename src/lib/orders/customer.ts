@@ -5,7 +5,7 @@ import { checkoutBlockReason } from "./equivalency";
 import { downloadGate } from "./access";
 import { checkoutPreviewImageUrl } from "./checkout-image";
 import { checkoutLineProduct, checkoutProductDescription } from "./checkout-preview";
-import { checkoutPriceLines } from "./evaluation-price";
+import { checkoutPriceLines, evaluationQuote } from "./evaluation-price";
 import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET, ORIGINALS_BUCKET, PREVIEW_URL_SECONDS } from "./constants";
 import {
   confirmFields,
@@ -46,7 +46,10 @@ import { CONFIRMATION_FIELD_KEYS, normalizeDateFormat, type ConfirmationFieldKey
 import { appOrigin, orderLink, sendPaymentReceipt } from "./email";
 import { formatPaymentMethod, receiptLineItems } from "./email-templates";
 import { applySucceededSetupIntent } from "./saved-card";
-import { normalizeLanguage } from "./languages";
+import { retryEvaluation } from "./evaluation";
+import { isSupportedTargetLanguage, languagesEqual, normalizeLanguage } from "./languages";
+import { decideQuote, englishSourceWithoutTarget, etaFromNow, SAME_LANGUAGE_REASON } from "./quote";
+import { translateOrder } from "./translation";
 import { loadCustomerOrder } from "./pipeline";
 import { orderDownloadFilename } from "./download-name";
 import { originalDownloadResponse, originalTargets } from "./originals";
@@ -68,6 +71,129 @@ async function orderForToken(token: string) {
 export async function getOrder(token: string): Promise<CustomerOrder> {
   const { db, order } = await orderForToken(token);
   return loadCustomerOrder(db, order);
+}
+
+const PAID_STATUSES = new Set(["paid", "approved", "delivered"]);
+
+export function readTargetLanguage(body: unknown): string {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new HttpError("targetLanguage is required", 400);
+  }
+  const value = (body as { targetLanguage?: unknown }).targetLanguage;
+  if (typeof value !== "string" || !value.trim()) throw new HttpError("targetLanguage is required", 400);
+  const code = normalizeLanguage(value);
+  if (!code || !isSupportedTargetLanguage(code)) {
+    throw new HttpError("Choose a supported target language.", 400);
+  }
+  return code;
+}
+
+/**
+ * Saves a target language before payment, re-quotes, and rebuilds a preview
+ * when the order already has a source language. Clears an en → en hold.
+ */
+export async function updateOrderTarget(token: string, body: unknown): Promise<CustomerOrder> {
+  const { db, order, token: rawToken } = await orderForToken(token);
+  if (order.status === "cancelled") throw new HttpError("This order can no longer be changed", 409);
+  if (PAID_STATUSES.has(order.status) || (await settledPayment(db, order.id))) {
+    throw new HttpError("This order is already paid", 409);
+  }
+  const targetLanguage = readTargetLanguage(body);
+  if (order.sourceLanguage && languagesEqual(order.sourceLanguage, targetLanguage)) {
+    throw new HttpError("Choose a target language that is different from the source.", 400);
+  }
+
+  if (order.service && order.degreeCount != null) {
+    return updateEvaluationTarget(db, order, targetLanguage);
+  }
+  return updateTranslationTarget(db, order, rawToken, targetLanguage);
+}
+
+async function updateTranslationTarget(
+  db: Db,
+  order: Awaited<ReturnType<typeof orderForToken>>["order"],
+  token: string,
+  targetLanguage: string,
+): Promise<CustomerOrder> {
+  const documents = await listDocuments(db, order.id);
+  const pages = await listPages(
+    db,
+    documents.map((document) => document.id),
+  );
+  const detected = [
+    ...new Set(documents.map((document) => document.detectedLanguage).filter((language): language is string => Boolean(language))),
+  ];
+  const confidences = documents
+    .map((document) => document.confidence)
+    .filter((confidence): confidence is number => confidence != null);
+  const storedUnits = pages
+    .map((page) => page.billableUnits)
+    .filter((units): units is number => units != null);
+  const decision = decideQuote({
+    billableUnits: storedUnits.length > 0 ? storedUnits : order.billablePages != null ? [order.billablePages] : [],
+    pageNeedsReview: pages.map((page) => page.needsReview),
+    language: order.sourceLanguage,
+    confidence: confidences.length > 0 ? Math.min(...confidences) : order.sourceLanguage ? 1 : null,
+    detectionAvailable: order.sourceLanguage != null,
+    languagesDisagree: detected.length > 1,
+    imageQuality: order.reviewReason === "image_quality",
+    unitPriceCents: order.unitPriceCents,
+    targetLanguage,
+  });
+  const startPreview = decision.status === "quoted" && order.languageConfirmed;
+  await updateOrder(db, order.id, {
+    target_language: targetLanguage,
+    status: startPreview ? "confirmed" : decision.status,
+    review_reason: decision.reviewReason,
+    billable_pages: pages.length > 0 ? decision.billablePages : order.billablePages,
+    total_cents: decision.totalCents + order.addonCents,
+    eta_at: etaFromNow(decision.etaHours),
+  });
+  if (startPreview) await translateOrder(db, order.id, token);
+  const updated = await getOrderById(db, order.id);
+  if (!updated) throw new HttpError("Order not found", 404);
+  return loadCustomerOrder(db, updated);
+}
+
+async function updateEvaluationTarget(
+  db: Db,
+  order: Awaited<ReturnType<typeof orderForToken>>["order"],
+  targetLanguage: string,
+): Promise<CustomerOrder> {
+  if (!order.service || order.degreeCount == null) throw new HttpError("This order is not an evaluation", 409);
+  const quote = evaluationQuote({
+    service: order.service,
+    degreeCount: order.degreeCount,
+    sourceLanguage: order.sourceLanguage,
+    targetLanguage,
+    billablePages: order.billablePages ?? 0,
+  });
+  const clearing =
+    order.reviewReason === SAME_LANGUAGE_REASON ||
+    (order.reviewReason ?? "").startsWith("The document appears to already be in English") ||
+    englishSourceWithoutTarget(order.sourceLanguage, order.targetLanguage);
+  const keepHold = order.reviewReason === "image_quality";
+  await updateOrder(db, order.id, {
+    target_language: targetLanguage,
+    evaluation_cents: quote.evaluationCents,
+    translation_cents: quote.translationCents,
+    total_cents: quote.totalCents + order.addonCents,
+    ...(clearing && !keepHold ? { review_reason: null } : {}),
+  });
+  const next = {
+    ...order,
+    targetLanguage,
+    evaluationCents: quote.evaluationCents,
+    translationCents: quote.translationCents,
+    totalCents: quote.totalCents + order.addonCents,
+    reviewReason: clearing && !keepHold ? null : order.reviewReason,
+  };
+  if (order.sourceLanguage && !keepHold && order.status !== "draft") {
+    await retryEvaluation(db, next, order.sourceLanguage);
+  }
+  const updated = await getOrderById(db, order.id);
+  if (!updated) throw new HttpError("Order not found", 404);
+  return loadCustomerOrder(db, updated);
 }
 
 export async function replaceOrderDocument(

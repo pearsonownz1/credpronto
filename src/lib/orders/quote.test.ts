@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { UNIT_PRICE_CENTS } from "./constants";
-import { decideQuote } from "./quote";
+import { SAME_LANGUAGE_REASON, decideQuote, englishSourceWithoutTarget } from "./quote";
 
 const ready = {
   billableUnits: [1, 1],
@@ -36,5 +36,18 @@ describe("decideQuote image quality", () => {
     expect(decision.status).toBe("quoted");
     expect(decision.reviewReason).toBeNull();
     expect(decision.etaHours).toBe(1);
+  });
+
+  it("holds English with no chosen target instead of quoting en to en", () => {
+    expect(englishSourceWithoutTarget("en", "en")).toBe(true);
+    expect(englishSourceWithoutTarget("en", null)).toBe(true);
+    expect(englishSourceWithoutTarget("es", "en")).toBe(false);
+    const held = decideQuote({ ...ready, language: "en" });
+    expect(held.status).toBe("needs_review");
+    expect(held.reviewReason).toBe(SAME_LANGUAGE_REASON);
+    expect(held.totalCents).toBe(2 * UNIT_PRICE_CENTS);
+    const quoted = decideQuote({ ...ready, language: "en", targetLanguage: "es" });
+    expect(quoted.status).toBe("quoted");
+    expect(quoted.reviewReason).toBeNull();
   });
 });

@@ -29,6 +29,7 @@ import { HttpError } from "./errors";
 import { assertUploadBudget, dedupeUploads, resolveUploadMime } from "./files";
 import { findActiveApiKey, orderByExternalRef, type ApiKeyRow } from "./integrations-db";
 import { isSupportedSourceLanguage } from "./languages";
+import { SAME_LANGUAGE_REASON } from "./quote";
 import { chargeOffSession, type OffSessionCharge } from "./off-session";
 import { notifyOrder } from "./webhook-delivery";
 import { originalTargets } from "./originals";
@@ -234,7 +235,14 @@ export async function partnerFiles(userId: string, orderId: string) {
 function languageOnlyHold(reviewReason: string | null): boolean {
   const reason = reviewReason ?? "";
   if (!reason) return false;
-  const blocks = [IMAGE_QUALITY_REASON, "No pages could be read", "could not be read clearly", "different languages"];
+  const blocks = [
+    IMAGE_QUALITY_REASON,
+    SAME_LANGUAGE_REASON,
+    "already be in English",
+    "No pages could be read",
+    "could not be read clearly",
+    "different languages",
+  ];
   return !blocks.some((part) => reason.includes(part));
 }
 

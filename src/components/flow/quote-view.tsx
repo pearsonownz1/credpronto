@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, type ChangeEvent } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
 import { formatMoney, pageLabel } from "@/lib/flow/pricing";
@@ -10,6 +11,7 @@ import {
   displayedPageRule,
   languageChoices,
   languageLine,
+  reviewNote,
   servicePriceLines,
   showTargetLanguagePicker,
   targetChoices,
@@ -84,6 +86,9 @@ function QuoteBody({
   token: string;
   onReplaced: () => void;
 }) {
+  const router = useRouter();
+  const [continuing, setContinuing] = useState(false);
+  const [continueError, setContinueError] = useState<string | null>(null);
   const choices = languageChoices();
   const targets = targetChoices();
   const picker = canSetSourceLanguage(order);
@@ -101,6 +106,20 @@ function QuoteBody({
   const showPrice = !qualityHold;
   const priceLines = showPrice ? servicePriceLines(order) : [];
   const orderedPages = order.pageOrder && order.pageOrder.pages.length > 1 ? order.pageOrder : null;
+
+  async function onContinue() {
+    setContinuing(true);
+    setContinueError(null);
+    try {
+      if (targetCode !== order.targetLanguage) {
+        await getFlowClient().updateTarget(token, targetCode);
+      }
+      router.push(`/confirm?lang=${encodeURIComponent(sourceCode)}&target=${encodeURIComponent(targetCode)}`);
+    } catch (error) {
+      setContinueError(error instanceof FlowApiError ? error.message : "We couldn't save that language.");
+      setContinuing(false);
+    }
+  }
 
   return (
     <FlowColumns>
@@ -153,8 +172,7 @@ function QuoteBody({
         </div>
         {order.status === "needs_review" ? (
           <p data-testid="review-note" className="mt-3 text-[13px] text-ink-muted">
-            {order.reviewReason ??
-              "A reviewer will confirm the language before this price is final."}
+            {reviewNote(order.reviewReason)}
           </p>
         ) : null}
         <div
@@ -242,13 +260,15 @@ function QuoteBody({
           />
         </Summary>
         {order.status === "quoted" || (order.status === "needs_review" && !qualityHold) ? (
-          <Link
-            href={`/confirm?lang=${encodeURIComponent(sourceCode)}&target=${encodeURIComponent(targetCode)}`}
+          <button
+            type="button"
             data-testid="continue"
+            disabled={continuing || targetCode === sourceCode}
+            onClick={() => void onContinue()}
             className={buttonClasses("primary", "mt-4 h-[50px] w-full text-[15px]")}
           >
-            Continue
-          </Link>
+            {continuing ? "Saving…" : "Continue"}
+          </button>
         ) : qualityHold ? (
           <ImageQuality order={order} token={token} onReplaced={onReplaced} />
         ) : (
@@ -257,6 +277,9 @@ function QuoteBody({
             anything else right now.
           </p>
         )}
+        {continueError ? (
+          <p role="alert" className="mt-3 text-[13px] text-[var(--cp-warn)]">{continueError}</p>
+        ) : null}
         <div className="mt-[18px]">
           <Checks
             items={

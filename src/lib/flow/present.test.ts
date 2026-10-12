@@ -14,6 +14,7 @@ import {
   downloadPhase,
   joinParents,
   languageLine,
+  reviewNote,
   orderHubStep,
   servicePriceLines,
   showTargetLanguagePicker,
@@ -108,6 +109,12 @@ describe("quote language", () => {
     });
     expect(showTargetLanguagePicker(english)).toBe(true);
     expect(languageLine({ sourceLanguage: "en", targetLanguage: "es" })).toBe("English → Spanish");
+    expect(reviewNote("same_language")).toBe(
+      "This document is already in English. Choose another language to translate it into.",
+    );
+    expect(reviewNote("The document appears to already be in English. A reviewer will confirm whether a translation is needed.")).toContain(
+      "already in English",
+    );
     expect(showTargetLanguagePicker(order())).toBe(false);
     expect(canOpenConfirm(english)).toBe(true);
     expect(canOpenConfirm(order({ status: "needs_review", reviewReason: IMAGE_QUALITY_REASON }))).toBe(

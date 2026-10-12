@@ -75,6 +75,7 @@ export type FlowClient = {
     file: "translation" | "certification",
   ): Promise<{ url: string; expiresInSeconds: number }>;
   replaceDocument(token: string, documentId: string, file: File): Promise<CustomerOrder>;
+  updateTarget(token: string, targetLanguage: string): Promise<CustomerOrder>;
   /** Mock walk-through moves a quoted order to preview_ready before checkout. */
   markPreviewReady(token: string): Promise<void>;
 };
@@ -157,6 +158,13 @@ const liveClient: FlowClient = {
       { method: "POST", body: form },
     );
   },
+  updateTarget(token, targetLanguage) {
+    return request(`/api/orders/${encodeURIComponent(token)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ targetLanguage }),
+    });
+  },
 };
 
 function readMockOrder(): CustomerOrder {
@@ -193,6 +201,7 @@ function withEvaluationChoice(
     service: choice.service,
     degreeCount: choice.degreeCount,
     sourceLanguage: base.sourceLanguage,
+    targetLanguage: base.targetLanguage,
     billablePages,
   });
   return {
@@ -328,6 +337,20 @@ const mockClient: FlowClient = {
       pages: current.pages.map((page) =>
         page.documentId === documentId ? { ...page, qualityMessage: null, qualityFlags: [] } : page,
       ),
+    };
+    writeMockOrder(next);
+    return next;
+  },
+  async updateTarget(_token, targetLanguage) {
+    const order = readMockOrder();
+    const clearing =
+      order.reviewReason === "same_language" ||
+      (order.reviewReason ?? "").startsWith("The document appears to already be in English") ||
+      (order.sourceLanguage === "en" && (order.targetLanguage === "en" || !order.targetLanguage));
+    const next: CustomerOrder = {
+      ...order,
+      targetLanguage,
+      ...(clearing ? { status: "quoted", reviewReason: null } : {}),
     };
     writeMockOrder(next);
     return next;

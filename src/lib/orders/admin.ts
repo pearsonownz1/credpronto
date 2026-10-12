@@ -275,6 +275,7 @@ export async function resolveReview(orderId: string, body: unknown) {
       service: order.service,
       degreeCount: order.degreeCount,
       sourceLanguage: language,
+      targetLanguage: order.targetLanguage,
       billablePages: order.billablePages,
     });
     await updateOrder(db, order.id, {

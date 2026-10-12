@@ -1,7 +1,17 @@
 import { LOW_LANGUAGE_CONFIDENCE, UNIT_PRICE_CENTS } from "./constants";
 import { totalCents } from "./billing";
 import { IMAGE_QUALITY_REASON } from "./image-quality";
-import { isSupportedSourceLanguage } from "./languages";
+import { isSupportedSourceLanguage, normalizeLanguage } from "./languages";
+
+/** Detected English with the default target still English. Not a silent en → en quote. */
+export const SAME_LANGUAGE_REASON = "same_language";
+
+export function englishSourceWithoutTarget(
+  source: string | null | undefined,
+  target: string | null | undefined,
+): boolean {
+  return normalizeLanguage(source) === "en" && (normalizeLanguage(target) ?? "en") === "en";
+}
 
 export type QuoteDecision = {
   status: "quoted" | "needs_review";
@@ -20,6 +30,7 @@ export function decideQuote(input: {
   languagesDisagree: boolean;
   unitPriceCents?: number;
   imageQuality?: boolean;
+  targetLanguage?: string | null;
 }): QuoteDecision {
   const unit = input.unitPriceCents ?? UNIT_PRICE_CENTS;
   const billablePages = input.billableUnits.reduce((sum, pages) => sum + pages, 0);
@@ -28,6 +39,20 @@ export function decideQuote(input: {
     return {
       status: "needs_review",
       reviewReason: IMAGE_QUALITY_REASON,
+      billablePages,
+      totalCents: price,
+      etaHours: 24,
+    };
+  }
+  if (
+    englishSourceWithoutTarget(input.language, input.targetLanguage) &&
+    input.detectionAvailable &&
+    !input.languagesDisagree &&
+    input.billableUnits.length > 0
+  ) {
+    return {
+      status: "needs_review",
+      reviewReason: SAME_LANGUAGE_REASON,
       billablePages,
       totalCents: price,
       etaHours: 24,
@@ -45,9 +70,12 @@ export function decideQuote(input: {
   } else if (!input.language) {
     reasons.push("The source language could not be detected.");
   } else if (input.language === "en") {
-    reasons.push(
-      "The document appears to already be in English. A reviewer will confirm whether a translation is needed.",
-    );
+    if (input.confidence == null || input.confidence < LOW_LANGUAGE_CONFIDENCE) {
+      const shown = input.confidence == null ? "unknown" : input.confidence.toFixed(2);
+      reasons.push(
+        `Language detection confidence is low (${shown}). A reviewer will confirm the language before this price is final.`,
+      );
+    }
   } else if (!isSupportedSourceLanguage(input.language)) {
     reasons.push(
       `Detected language "${input.language}" is not supported for automatic translation. A reviewer will take a look.`,

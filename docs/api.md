@@ -177,7 +177,7 @@ Idempotent retry of analysis or translation. Safe to call more than once. Return
 
 `pages` lists each side after analysis. `pageNumber` is the applied page inside that file. `qualityScore` is legibility from 0 to 1. A severe flag caps it below `0.6`, so a high model score is not kept. `qualityFlags` may include `blurry`, `cropped`, `glare`, `too_dark`, and `unreadable_fields`. `qualityMessage` is the retake instruction when any flag is set, or when the score itself is below `0.6`. It is null when the page was not flagged and the score passed.
 
-Quoted orders set `etaAt` about one hour out. `needs_review` sets it about 24 hours out and explains why in `reviewReason` (low confidence, unreadable page, unsupported language, detection unavailable, or `image_quality`).
+Quoted orders set `etaAt` about one hour out. `needs_review` sets it about 24 hours out and explains why in `reviewReason` (low confidence, unreadable page, unsupported language, detection unavailable, `image_quality`, or `same_language` when the document is English and no other target was chosen).
 
 A photo or scan the model sees (a phone picture, or a PDF page without a usable text layer) does not get a quote when legibility is below `0.6`, or when a severe flag is set: `blurry`, `too_dark`, `unreadable_fields`, or `cropped` (the crop cuts off text). A high score does not override those flags. `glare` alone does not hold the quote, but it still sets `qualityMessage`. `status` is `needs_review` and `reviewReason` is exactly `image_quality`, even if language detection also looks uncertain. `qualityMessage` tells the customer how to retake it. Billable pages and `totalCents` are still stored so staff can override. `POST /api/admin/orders/[id]/resolve-review` clears the hold and moves the order to `quoted` without a new photo. Until then, confirm, preview, and checkout stay blocked.
 
@@ -186,6 +186,14 @@ A photo or scan the model sees (a phone picture, or a PDF page without a usable 
 Multipart upload with one `file` (or `files`) field. Allowed only when `status` is `needs_review` and `reviewReason` is `image_quality`. The file replaces that document and every document on the order is read again. The response is the `GET /api/orders/[token]` shape with `status` `draft`. Analysis runs after the response. A readable replacement can then be quoted. Another unreadable photo stays `needs_review` with `reviewReason` `image_quality`.
 
 `400` when the file is missing or empty. `404` when the token or document is unknown. `409` when the order is not waiting on a retake. `415` for an unsupported type. The same size limits as `POST /api/orders` apply.
+
+## `PATCH /api/orders/[token]`
+
+JSON `{ "targetLanguage": "es" }`. Same token authentication as the other order routes. Allowed only before payment. `409` `{ "error": "This order is already paid" }` after payment, or when the status is `paid`, `approved`, or `delivered`. `409` `{ "error": "This order can no longer be changed" }` when the order is cancelled.
+
+`targetLanguage` is required. It is normalized the same way as a source language (`Spanish` → `es`, `en-US` → `en`) and must be one of the supported targets, including English. `400` `{ "error": "Choose a supported target language." }` otherwise. `400` `{ "error": "Choose a target language that is different from the source." }` when it matches the detected source.
+
+The order is re-quoted. A detected English source with no other target is `needs_review` and `reviewReason` is exactly `same_language` (an English document is not silently quoted as English → English). Saving a different target clears that hold. When the order already has a confirmed source, or it is an evaluation, the watermarked preview is generated again in the new target language. The response is the same shape as `GET /api/orders/[token]`, including `lineItems`.
 
 ## `POST /api/orders/[token]/confirm`
 
@@ -574,7 +582,7 @@ Amounts are integer cents. The evaluation fee and, when the source is not Englis
 | `diploma` | `1995` ($19.95) |
 | `course_by_course` | `3995` ($39.95) |
 
-`evaluationCents` is `degreeCount` times that unit. It is stored when the order is created, before the source language or page count is known. `translationCents` and `totalCents` stay null until that quote exists, and `lineItems` stays empty until then. When `sourceLanguage` is `en`, there is no translation line and `translationCents` is `0`. Otherwise the translation uses the same billable-page rule as a translation order (`unitPriceCents` `995`) and `translationCents` is `billablePages * 995`. `totalCents` is `evaluationCents + translationCents`. It is not `billablePages * unitPriceCents`.
+`evaluationCents` is `degreeCount` times that unit. It is stored when the order is created, before the source language or page count is known. `translationCents` and `totalCents` stay null until that quote exists, and `lineItems` stays empty until then. When `sourceLanguage` is `en` and `targetLanguage` is still `en`, there is no translation line and `translationCents` is `0`, and the order is `needs_review` with `reviewReason` `same_language` until a different target is saved. A different target prices the translation at `billablePages * 995`. Otherwise the translation uses the same billable-page rule as a translation order (`unitPriceCents` `995`) and `translationCents` is `billablePages * 995`. `totalCents` is `evaluationCents + translationCents`. It is not `billablePages * unitPriceCents`.
 
 ```json
 {

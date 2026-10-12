@@ -33,6 +33,7 @@ import {
   decideTranslationFailure,
   isTemporaryTranslationError,
 } from "./translation-failure";
+import { languageLabel } from "./languages";
 import { uploadObject } from "./storage";
 import type { ConfirmationRecord, CorrectionRecord, PageRecord } from "./types";
 
@@ -107,6 +108,7 @@ function alignPages(expected: number[], returned: ModelPage[]): Array<{ pageNumb
 async function translateDocument(input: {
   filename: string;
   sourceLanguage: string;
+  targetLanguage: string;
   fields: ConfirmationRecord[];
   pages: Array<PageRecord & { number: number }>;
   corrections: CorrectionRecord[];
@@ -129,8 +131,10 @@ async function translateDocument(input: {
     .map((item) => `Page ${item.page ?? "all"} (${item.type}): ${item.note} Original: ${item.original}`)
     .join("\n");
 
-  const prompt = `Translate this document into English, one original page to one translated page.
+  const targetLabel = languageLabel(input.targetLanguage.trim() || "en");
+  const prompt = `Translate this document into ${targetLabel}, one original page to one translated page.
 Source language: ${input.sourceLanguage}.
+Target language: ${input.targetLanguage}.
 File: ${input.filename}.
 
 Use these confirmed spellings exactly whenever the person, the parents, the birthplace, or the date of birth appears. Do not invent a name that was confirmed as absent.
@@ -146,7 +150,7 @@ ${qaNotes ? `A previous translation failed QA. Fix every item and keep confirmed
 Return one object per page number, with blocks in the original top-to-bottom order.
 Keep names, CURPs, and place spellings exactly as printed or confirmed. Do not join a label and its value into a paragraph.
 
-For a form, use type "fields" and rows of {label, value}. Translate labels into English. One row per field, in the original order. A line-broken reading (type "lines", one label or value per line) is acceptable when you cannot split a row.
+For a form, use type "fields" and rows of {label, value}. Translate labels into ${targetLabel}. One row per field, in the original order. A line-broken reading (type "lines", one label or value per line) is acceptable when you cannot split a row.
 
 For prose, use type "paragraph" and preserve paragraph breaks.
 
@@ -238,6 +242,7 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
         const translated = await translateDocument({
           filename: document.filename,
           sourceLanguage: order.sourceLanguage,
+          targetLanguage: order.targetLanguage,
           fields,
           pages: documentPages,
           corrections: open,
@@ -399,6 +404,7 @@ export async function watermarkedTranslationPreview(
     const translated = await translateDocument({
       filename: document.filename,
       sourceLanguage: input.sourceLanguage,
+      targetLanguage: input.targetLanguage,
       fields: confirmations.filter((field) => field.documentId === document.id),
       pages: documentPages,
       corrections: [],

@@ -18,6 +18,7 @@ import {
 import { sendPreviewReady } from "./email";
 import { AiUnavailableError, HttpError } from "./errors";
 import { evaluationQuote, needsBundledTranslation } from "./evaluation-price";
+import { englishSourceWithoutTarget, SAME_LANGUAGE_REASON } from "./quote";
 import { EQUIVALENCY_UNMAPPED, PENDING_EQUIVALENCY, diplomaEquivalencyPending } from "./equivalency";
 import {
   chooseEquivalency,
@@ -369,7 +370,7 @@ type EvaluationContext = {
 /**
  * Best-effort watermarked translation next to the report. A failure here does
  * not mark the evaluation report failed or move the order to needs_review.
- * English sources are not translated. Staff republish of a diploma does not
+ * English sources are translated only after a different target is saved. Staff republish of a diploma does not
  * call this; the existing translation-preview object stays.
  */
 async function storeTranslationPreview(
@@ -378,7 +379,7 @@ async function storeTranslationPreview(
   reportVersion: number,
   sourceLanguage: string | null,
 ): Promise<void> {
-  if (!needsBundledTranslation(sourceLanguage) || !sourceLanguage) return;
+  if (!needsBundledTranslation(sourceLanguage, order.targetLanguage) || !sourceLanguage) return;
   let rowVersion: number | null = null;
   let insertedTranslation = false;
   try {
@@ -558,6 +559,7 @@ export async function completeEvaluation(
           service,
           degreeCount,
           sourceLanguage: source,
+          targetLanguage: order.targetLanguage,
           billablePages: input.billablePages,
         })
       : null;
@@ -585,6 +587,10 @@ export async function completeEvaluation(
   }
   if (!languageConfirmed(input, language)) {
     await hold(LANGUAGE_REASON, language);
+    return;
+  }
+  if (englishSourceWithoutTarget(language, order.targetLanguage)) {
+    await hold(SAME_LANGUAGE_REASON, language);
     return;
   }
 
