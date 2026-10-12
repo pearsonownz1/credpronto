@@ -26,13 +26,16 @@ function assetOptions() {
   };
 }
 
-export async function openPdfDocument(url: string): Promise<PDFDocumentProxy> {
+export async function openPdfDocument(
+  source: { url: string } | { data: Uint8Array },
+): Promise<PDFDocumentProxy> {
   const pdfjs = await loadPdfjs();
   const options = assetOptions();
+  if ("data" in source) return pdfjs.getDocument({ data: source.data, ...options }).promise;
   try {
-    return await pdfjs.getDocument({ url, ...options }).promise;
+    return await pdfjs.getDocument({ url: source.url, ...options }).promise;
   } catch (error) {
-    const response = await fetch(url);
+    const response = await fetch(source.url);
     if (!response.ok) throw error;
     const data = new Uint8Array(await response.arrayBuffer());
     return pdfjs.getDocument({ data, ...options }).promise;

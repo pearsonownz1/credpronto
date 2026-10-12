@@ -21,6 +21,7 @@ import {
   totalLabel,
   type QuotePageRow,
 } from "@/lib/flow/present";
+import { rememberDocument } from "@/lib/flow/upload-blobs";
 import { pageStatusTag, sumQuotedBillable } from "@/lib/orders/skip-pages";
 import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
 import type { CustomerOrder } from "@/lib/orders/view";
@@ -613,6 +614,7 @@ function ReplacementUpload({
     setError(null);
     try {
       await getFlowClient().replaceDocument(token, documentId, file);
+      rememberDocument(token, documentId, file);
       onReplaced();
     } catch (cause) {
       setError(cause instanceof FlowApiError ? cause.message : "We couldn't upload that replacement.");
