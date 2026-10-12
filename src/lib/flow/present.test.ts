@@ -39,6 +39,7 @@ import {
   showTargetLanguagePicker,
   skippedPageIndexes,
   splitParents,
+  previewShellOrder,
   toPreviewOrder,
   totalLabel,
 } from "./present";
@@ -630,6 +631,10 @@ describe("preview mapping", () => {
         },
       ],
     };
+    const shell = previewShellOrder("order-1", preview);
+    expect(shell.original.url).toBe("https://files.example/original");
+    expect(shell.translation.url).toBe(preview.translation.url);
+    expect(shell.filename).toBe("a.pdf");
     const mapped = toPreviewOrder(order(), preview);
     expect(mapped.original.url).toBe("https://files.example/original");
     expect(mapped.original.pages[1]).toEqual({

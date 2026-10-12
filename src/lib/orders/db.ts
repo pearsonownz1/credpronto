@@ -595,6 +595,17 @@ export async function listPages(db: Db, documentIds: string[]): Promise<PageReco
   return ((data ?? []) as Row[]).map(mapPage);
 }
 
+/** Geometry only. The preview viewer does not need OCR text, and `select *` pulls that column. */
+export const PAGE_FRAME_COLUMNS =
+  "id, document_id, page_number, width_pt, height_pt, upload_page, logical_page, order_hint";
+
+export async function listPageFrames(db: Db, documentIds: string[]): Promise<PageRecord[]> {
+  if (documentIds.length === 0) return [];
+  const { data, error } = await db.from("document_pages").select(PAGE_FRAME_COLUMNS).in("document_id", documentIds);
+  fail(error);
+  return ((data ?? []) as Row[]).map(mapPage);
+}
+
 export function withCombinedNumbers(documents: DocumentRecord[], pages: PageRecord[]) {
   const sorted = [...pages].sort((a, b) => compareCombinedPages(documents, a, b));
   return sorted.map((page, index) => ({ ...page, number: index + 1 }));

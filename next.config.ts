@@ -12,6 +12,7 @@ const nextConfig: NextConfig = {
         source: "/pdfium/:path*",
         headers: [
           { key: "Access-Control-Allow-Origin", value: "*" },
+          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
         ],
       },
       // Matched on the request path, so error responses stay noindex too.
@@ -21,6 +22,14 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   serverExternalPackages: ["sharp", "unpdf", "heic-convert", "@embedpdf/pdfium"],
+  outputFileTracingExcludes: {
+    // Preview only signs stored PDFs. Keep PDFium and sharp out of this function.
+    "/api/orders/[token]/preview": [
+      "./node_modules/@embedpdf/pdfium/**",
+      "./node_modules/sharp/**",
+      "./node_modules/@img/**",
+    ],
+  },
   outputFileTracingIncludes: {
     "/api/**": [
       "./src/lib/orders/pdf/NotoSans-Regular.ttf",

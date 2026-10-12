@@ -1,19 +1,24 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { usePdfiumEngine } from "@embedpdf/engines/react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
-import { checkoutFailureMessage, documentIdForPage, toPreviewOrder } from "@/lib/flow/present";
+import { checkoutFailureMessage, documentIdForPage, previewShellOrder, toPreviewOrder } from "@/lib/flow/present";
 import { writeToken } from "@/lib/flow/session";
 import type { CustomerOrder } from "@/lib/orders/view";
+import { pdfiumWasmUrl } from "./pdfium-url";
 import type { PreviewOrder } from "./preview-order";
 import { PreviewShell } from "./preview-shell";
 
-const SideBySideViewer = dynamic(
-  () => import("./side-by-side-viewer").then((mod) => mod.SideBySideViewer),
-  { ssr: false, loading: () => <PreviewShell /> },
-);
+const viewerImport = () => import("./side-by-side-viewer").then((mod) => mod.SideBySideViewer);
+
+const SideBySideViewer = dynamic(viewerImport, { ssr: false, loading: () => <PreviewShell /> });
+
+function logPreviewTiming(fields: Record<string, number | string | null>) {
+  console.info(JSON.stringify({ event: "preview_timing", ...fields }));
+}
 
 export function LivePreview() {
   const params = useParams<{ id: string }>();
@@ -25,26 +30,76 @@ export function LivePreview() {
   const [preview, setPreview] = useState<PreviewOrder | null>(null);
   const [waiting, setWaiting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const started = useRef(0);
+  const engineState = usePdfiumEngine({ wasmUrl: pdfiumWasmUrl() });
+
+  useEffect(() => {
+    started.current = performance.now();
+    void viewerImport();
+  }, []);
+
+  useEffect(() => {
+    if (!engineState.engine) return;
+    logPreviewTiming({ phase: "engine", ms: Math.round(performance.now() - started.current) });
+  }, [engineState.engine]);
+
+  useEffect(() => {
+    if (!preview || !engineState.engine) return;
+    logPreviewTiming({ phase: "viewer", ms: Math.round(performance.now() - started.current) });
+    const timer = window.setTimeout(() => {
+      const resources = performance.getEntriesByType("resource").filter((entry): entry is PerformanceResourceTiming => {
+        return entry.name.includes("pdfium.wasm") || entry.name.includes(".pdf") || entry.name.includes("/object/");
+      });
+      logPreviewTiming({
+        phase: "downloads",
+        ms: Math.round(performance.now() - started.current),
+        files: resources
+          .map((entry) => `${Math.round(entry.duration)}ms/${entry.decodedBodySize || entry.transferSize}b`)
+          .join(" "),
+      });
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [preview, engineState.engine]);
 
   useEffect(() => {
     if (!token) return;
     writeToken(token);
     let cancelled = false;
+    const origin = performance.now();
 
     async function load() {
+      const client = getFlowClient();
+      const orderTask = client.getOrder(token).then(
+        (value) => ({ ok: true as const, value, ms: Math.round(performance.now() - origin) }),
+        (cause: unknown) => ({ ok: false as const, cause, ms: Math.round(performance.now() - origin) }),
+      );
       try {
-        const client = getFlowClient();
-        const [nextOrder, nextPreview] = await Promise.all([
-          client.getOrder(token),
-          client.preview(token),
-        ]);
+        const nextPreview = await client.preview(token);
+        const previewMs = Math.round(performance.now() - origin);
         if (cancelled) return;
-        setOrder(nextOrder);
-        setPreview(toPreviewOrder(nextOrder, nextPreview));
+        logPreviewTiming({ phase: "preview_api", ms: previewMs, call: "GET /api/orders/:id/preview" });
+        setPreview(previewShellOrder(token, nextPreview));
         setError(null);
         setWaiting(null);
+        const orderResult = await orderTask;
+        if (cancelled) return;
+        logPreviewTiming({
+          phase: "order_api",
+          ms: orderResult.ms,
+          call: "GET /api/orders/:id",
+          ok: orderResult.ok ? "yes" : "no",
+        });
+        if (orderResult.ok) {
+          setOrder(orderResult.value);
+          setPreview(toPreviewOrder(orderResult.value, nextPreview));
+        }
       } catch (cause) {
         if (cancelled) return;
+        logPreviewTiming({
+          phase: "preview_api_error",
+          ms: Math.round(performance.now() - origin),
+          call: "GET /api/orders/:id/preview",
+        });
         if (cause instanceof FlowApiError) {
           const message = checkoutFailureMessage(cause.status, cause.message);
           if (message) {
@@ -75,7 +130,17 @@ export function LivePreview() {
     );
   }
 
-  if (error || !preview || !order) {
+  if (engineState.error) {
+    return (
+      <PreviewShell
+        notice={canceled ? "Payment canceled" : undefined}
+        noticeTestId={canceled ? "payment-canceled" : undefined}
+        status="The preview engine failed to load. Refresh to try again."
+      />
+    );
+  }
+
+  if (error || !preview || !engineState.engine) {
     return (
       <PreviewShell
         notice={canceled ? "Payment canceled" : undefined}
@@ -88,6 +153,7 @@ export function LivePreview() {
   return (
     <SideBySideViewer
       order={preview}
+      engine={engineState.engine}
       notice={canceled ? "Payment canceled" : undefined}
       noticeTestId={canceled ? "payment-canceled" : undefined}
       onBuy={async (body) => {
@@ -118,7 +184,7 @@ export function LivePreview() {
       onCorrect={async ({ page, note }) => {
         const documentId =
           preview.original.pages.find((item) => item.page === page)?.documentId ??
-          documentIdForPage(order.documents, page);
+          (order ? documentIdForPage(order.documents, page) : null);
         if (!documentId) {
           throw new Error("This page isn't tied to a document yet.");
         }

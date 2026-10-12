@@ -5,8 +5,12 @@ type Context = { params: Promise<{ token: string }> };
 
 export async function GET(_request: Request, context: Context) {
   return run(async () => {
+    const started = performance.now();
     const { token } = await context.params;
-    return json(await getOrder(token));
+    const body = await getOrder(token);
+    const response = json(body);
+    response.headers.set("Server-Timing", `order;dur=${Math.round(performance.now() - started)}`);
+    return response;
   });
 }
 

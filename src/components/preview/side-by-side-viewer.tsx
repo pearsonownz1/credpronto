@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPluginRegistration } from "@embedpdf/core";
 import { EmbedPDF } from "@embedpdf/core/react";
 import { usePdfiumEngine } from "@embedpdf/engines/react";
+import type { PdfEngine } from "@embedpdf/models";
 import {
   DocumentContent,
   DocumentManagerPluginPackage,
@@ -39,6 +40,7 @@ import {
 import { PreviewShell } from "./preview-shell";
 import type { PreviewCorrection, PreviewOrder } from "./preview-order";
 import { anchorsMatch, visibleAnchor, type ScrollAnchor } from "./scroll-anchor";
+import { pdfiumWasmUrl } from "./pdfium-url";
 import { TranslationWatermark } from "./translation-watermark";
 
 export const ORIGINAL_DOCUMENT_ID = "original";
@@ -80,15 +82,7 @@ function showsPurchaseChrome(chrome: PreviewChrome) {
   return chrome === "customer";
 }
 
-export function SideBySideViewer({
-  order,
-  chrome = "customer",
-  focusPage = null,
-  onBuy,
-  onCorrect,
-  notice,
-  noticeTestId,
-}: {
+type ViewerProps = {
   order: PreviewOrder;
   chrome?: PreviewChrome;
   /** Changes when staff asks the viewer to show a QA issue page. */
@@ -97,12 +91,39 @@ export function SideBySideViewer({
   onCorrect?: (input: { page: number; note: string }) => Promise<void>;
   notice?: string;
   noticeTestId?: string;
+  /** When the page already started PDFium, skip a second wasm download. */
+  engine?: PdfEngine<Blob> | null;
+};
+
+export function SideBySideViewer(props: ViewerProps) {
+  if (props.engine) return <SideBySideEngine {...props} engine={props.engine} isLoading={false} error={null} />;
+  return <SideBySideOwnEngine {...props} />;
+}
+
+function SideBySideOwnEngine(props: ViewerProps) {
+  const { engine, isLoading, error } = usePdfiumEngine({ wasmUrl: pdfiumWasmUrl() });
+  return <SideBySideEngine {...props} engine={engine} isLoading={isLoading} error={error} />;
+}
+
+function SideBySideEngine({
+  order,
+  chrome = "customer",
+  focusPage = null,
+  onBuy,
+  onCorrect,
+  notice,
+  noticeTestId,
+  engine,
+  isLoading,
+  error,
+}: ViewerProps & {
+  engine: PdfEngine<Blob> | null;
+  isLoading: boolean;
+  error: Error | null;
 }) {
   const panel = useAddonPanel(order, onBuy);
   const original = order.original.url;
   const translation = order.translation.url;
-  const wasmUrl = new URL("/pdfium/pdfium.wasm", window.location.origin).href;
-  const { engine, isLoading, error } = usePdfiumEngine({ wasmUrl });
   const plugins = useMemo(
     () => [
       createPluginRegistration(DocumentManagerPluginPackage, {
