@@ -139,6 +139,7 @@ export function toPreviewOrder(
       page: page.number,
       widthPt: page.widthPt,
       heightPt: page.heightPt,
+      documentId: page.documentId,
     }));
 
   return {

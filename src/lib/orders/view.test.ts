@@ -21,6 +21,8 @@ function orderRecord(): OrderRecord {
     combinedOriginalPath: "order-1/original-combined.pdf",
     finalTranslationPath: null,
     certificationPath: null,
+    pageOrderBasis: null,
+    pageOrder: null,
     createdAt: "2026-10-12T00:00:00.000Z",
   };
 }
@@ -36,6 +38,12 @@ function page(patch: Partial<PageRecord> & { documentId: string; number: number 
     needsReview: false,
     widthPt: 612,
     heightPt: 792,
+    uploadPage: patch.pageNumber ?? patch.number,
+    logicalPage: null,
+    orderHint: null,
+    qualityScore: null,
+    qualityFlags: [],
+    qualityMessage: null,
     ...patch,
   };
 }

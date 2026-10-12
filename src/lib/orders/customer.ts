@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { downloadGate } from "./access";
-import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET, PREVIEW_URL_SECONDS } from "./constants";
+import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET, ORIGINALS_BUCKET, PREVIEW_URL_SECONDS } from "./constants";
 import {
   confirmFields,
   customerEmail,
@@ -17,6 +17,7 @@ import {
   listCorrections,
   listDocuments,
   listPages,
+  markDocuments,
   markPaymentExpired,
   markPaymentFailed,
   markPaymentPaid,
@@ -26,10 +27,13 @@ import {
   restorePreviewReadyOrder,
   requireOrderByHash,
   settledPayment,
+  updateDocument,
   updateOrder,
   withCombinedNumbers,
 } from "./db";
 import { HttpError } from "./errors";
+import { assertUploadBudget, resolveUploadMime, safeFilename } from "./files";
+import { replacementAllowed } from "./image-quality";
 import { CONFIRMATION_FIELD_KEYS, normalizeDateFormat, type ConfirmationFieldKey } from "./fields";
 import { appOrigin } from "./email";
 import { normalizeLanguage } from "./languages";
@@ -37,7 +41,7 @@ import { loadCustomerOrder } from "./pipeline";
 import { orderDownloadFilename } from "./download-name";
 import { originalDownloadResponse, originalTargets } from "./originals";
 import { previewSignedTargets } from "./preview-targets";
-import { serviceDb, signedObjectUrl, type Db } from "./storage";
+import { serviceDb, signedObjectUrl, uploadObject, type Db } from "./storage";
 import { assertOrderTokenShape, hashOrderToken } from "./token";
 import { parseCorrectionBody } from "./corrections";
 import { decideChargeRefunded, decideCheckoutCompleted, decideCheckoutExpired } from "./webhook";
@@ -53,6 +57,53 @@ async function orderForToken(token: string) {
 export async function getOrder(token: string): Promise<CustomerOrder> {
   const { db, order } = await orderForToken(token);
   return loadCustomerOrder(db, order);
+}
+
+export async function replaceOrderDocument(
+  token: string,
+  documentId: string,
+  request: Request,
+): Promise<CustomerOrder> {
+  const { db, order } = await orderForToken(token);
+  if (!replacementAllowed(order)) {
+    throw new HttpError("Upload a replacement only while a photo needs to be retaken.", 409);
+  }
+  const documents = await listDocuments(db, order.id);
+  const document = documents.find((item) => item.id === documentId);
+  if (!document) throw new HttpError("Unknown document.", 400);
+
+  const form = await request.formData();
+  const entry = form.get("file") ?? form.get("files");
+  if (!(entry instanceof File)) throw new HttpError("Upload a replacement file.", 400);
+  const mime = resolveUploadMime(entry.name, entry.type || "");
+  if (!mime) throw new HttpError(`Unsupported file type: ${entry.name}`, 415);
+  const bytes = new Uint8Array(await entry.arrayBuffer());
+  assertUploadBudget([{ size: bytes.byteLength }]);
+
+  const path = `${order.id}/${document.id}/${randomUUID()}/${safeFilename(entry.name || "upload")}`;
+  await uploadObject(db, ORIGINALS_BUCKET, path, bytes, mime);
+  await updateDocument(db, document.id, {
+    original_path: path,
+    filename: entry.name || "upload",
+    mime,
+    size: bytes.byteLength,
+    status: "uploaded",
+    page_count: null,
+    detected_language: null,
+    confidence: null,
+    applied_position: null,
+  });
+  await markDocuments(db, order.id, "uploaded");
+  await updateOrder(db, order.id, {
+    status: "draft",
+    review_reason: null,
+    page_order_basis: null,
+    page_order: null,
+  });
+
+  const updated = await getOrderById(db, order.id);
+  if (!updated) throw new HttpError("Order not found", 404);
+  return loadCustomerOrder(db, updated);
 }
 
 export async function confirmOrder(token: string, body: unknown): Promise<CustomerOrder> {

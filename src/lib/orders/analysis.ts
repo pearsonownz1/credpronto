@@ -18,13 +18,52 @@ import {
 } from "./db";
 import { AiUnavailableError } from "./errors";
 import { CONFIRMATION_FIELD_KEYS, blankToNull, type DateFormat } from "./fields";
+import { failsImageQuality, isQualityFlag, retakeMessage, type QualityFlag } from "./image-quality";
 import { normalizeLanguage } from "./languages";
+import {
+  applyPageOrder,
+  filesInAppliedOrder,
+  isIdentityOrder,
+  pdfPagePermutation,
+  permutePdfPages,
+  positivePage,
+  type PageCue,
+} from "./page-order";
 import { buildCombinedOriginal, type SourceFile } from "./pdf/combine";
 import { decideQuote, etaFromNow } from "./quote";
 import { downloadObject, uploadObject } from "./storage";
 import { billableCjkUnits, billableUnits, isCjkBillingLanguage, countCjkUnits } from "./billing";
 import { countWords, isCjkDominant } from "./words";
 import type { DocumentRecord } from "./types";
+
+const cueShape = {
+  logicalPage: z.number(),
+  orderHint: z.string(),
+  orderConfidence: z.number(),
+  legibility: z.number(),
+  flags: z.array(z.enum(["blurry", "cropped", "glare", "too_dark", "unreadable_fields"])),
+};
+
+const ocrSchema = z.object({
+  pages: z.array(
+    z.object({
+      pageNumber: z.number(),
+      text: z.string(),
+      unreadable: z.boolean(),
+      confidence: z.number(),
+      ...cueShape,
+    }),
+  ),
+});
+
+const textOrderSchema = z.object({
+  pages: z.array(
+    z.object({
+      pageNumber: z.number(),
+      ...cueShape,
+    }),
+  ),
+});
 
 const readingSchema = z.object({
   language: z.string(),
@@ -36,21 +75,31 @@ const readingSchema = z.object({
   date_format: z.string(),
 });
 
-const ocrSchema = z.object({
-  pages: z.array(
-    z.object({
-      pageNumber: z.number(),
-      text: z.string(),
-      unreadable: z.boolean(),
-      confidence: z.number(),
-    }),
-  ),
-});
-
 type PageRead = {
   text: string;
   needsReview: boolean;
+  logicalPage: number | null;
+  orderHint: string | null;
+  orderConfidence: number | null;
+  legibility: number | null;
+  flags: QualityFlag[];
+  visual: boolean;
 };
+
+type ModelCue = {
+  pageNumber: number;
+  logicalPage: number;
+  orderHint: string;
+  orderConfidence: number;
+  legibility: number;
+  flags: readonly string[];
+};
+
+const CUE_INSTRUCTIONS = `logicalPage: the printed page number when one is visible, including the N in "page N/M", "1/2", or "2 sur 2". Use 0 when there is no printed number and no sequence cue. Do not invent a number from the order the files were uploaded.
+orderHint: the cue itself, such as "page 1/2", "2/2", or "suite". Use an empty string when there is none.
+orderConfidence: a number from 0 to 1. Use 0.8 or higher only when the printed number or a continuation cue (suite, continued, siguiente) is clear. Use a lower score when you are guessing.
+legibility: a number from 0 to 1. 1 is sharp and complete. Score a photo or scan down for blur, crop, glare, darkness, or fields that cannot be read.
+flags: any of blurry, cropped, glare, too_dark, unreadable_fields that apply. Use an empty array when the page is readable. A blank page is unreadable for transcription but is not an image-quality failure: set legibility to 1, flags to [], and unreadable to true.`;
 
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -61,6 +110,31 @@ function guessedDateFormat(value: string): DateFormat | null {
   const normalized = value.trim().toUpperCase().replace(/-/g, "/");
   if (normalized === "MM/DD/YYYY" || normalized === "DD/MM/YYYY") return normalized;
   return null;
+}
+
+function blankRead(text: string): PageRead {
+  return {
+    text,
+    needsReview: false,
+    logicalPage: null,
+    orderHint: null,
+    orderConfidence: null,
+    legibility: null,
+    flags: [],
+    visual: false,
+  };
+}
+
+function applyCue(read: PageRead, cue: ModelCue, visual: boolean): PageRead {
+  return {
+    ...read,
+    logicalPage: positivePage(cue.logicalPage),
+    orderHint: cue.orderHint.trim().slice(0, 200) || null,
+    orderConfidence: clamp01(cue.orderConfidence),
+    legibility: clamp01(cue.legibility),
+    flags: cue.flags.filter(isQualityFlag),
+    visual: visual || read.visual,
+  };
 }
 
 async function pdfTexts(bytes: Uint8Array): Promise<string[]> {
@@ -86,56 +160,98 @@ async function imageBytesForModel(bytes: Uint8Array, mime: string): Promise<{ by
   return { bytes: new Uint8Array(png), mime: "image/png" };
 }
 
-async function transcribeFile(
+async function assessFile(
   bytes: Uint8Array,
   mime: string,
   pageCount: number,
   texts: string[],
 ): Promise<PageRead[]> {
-  const reads: PageRead[] = Array.from({ length: pageCount }, (_, index) => {
-    const text = (texts[index] ?? "").trim();
-    return { text, needsReview: false };
-  });
+  const reads: PageRead[] = Array.from({ length: pageCount }, (_, index) => blankRead((texts[index] ?? "").trim()));
+  if (pageCount === 0) return reads;
 
   const sparse = reads
     .map((page, index) => ({ index, words: countWords(page.text) }))
     .filter((page) => page.words < SPARSE_PAGE_WORDS)
     .map((page) => page.index + 1);
+  const image = mime !== "application/pdf";
+  const visualPages = new Set(image ? reads.map((_, index) => index + 1) : sparse);
 
-  if (sparse.length === 0) return reads;
+  if (!image && sparse.length === 0) {
+    try {
+      const excerpt = reads
+        .map((page, index) => `Page ${index + 1}:\n${page.text.slice(0, 3000)}`)
+        .join("\n\n");
+      const result = await generateObject(textOrderSchema, [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `These are text layers from one uploaded file, in upload order. Return one object per page for page numbers ${reads.map((_, index) => index + 1).join(", ")}.
+For a clean digital text page, set legibility to 1 and flags to an empty array unless the text is empty or garbled.
+${CUE_INSTRUCTIONS}
+
+${excerpt}`,
+            },
+          ],
+        },
+      ]);
+      for (const page of result.pages) {
+        const index = Math.round(page.pageNumber) - 1;
+        const current = reads[index];
+        if (!current) continue;
+        reads[index] = applyCue(current, page, false);
+      }
+    } catch (error) {
+      if (!(error instanceof AiUnavailableError)) throw error;
+    }
+    return reads;
+  }
 
   try {
-    const file =
-      mime === "application/pdf" ? { bytes, mime } : await imageBytesForModel(bytes, mime);
+    const file = mime === "application/pdf" ? { bytes, mime } : await imageBytesForModel(bytes, mime);
+    const requested = reads.map((_, index) => index + 1);
     const result = await generateObject(ocrSchema, [
       {
         role: "user",
         content: [
           {
             type: "text",
-            text: `Transcribe the requested pages into plain text. Preserve names, dates, and place names exactly as spelled. If a page is blank or unreadable, set unreadable true and text to an empty string. Requested page numbers: ${sparse.join(", ")}.`,
+            text: `Read this uploaded file for a certified translation. Return one object for every page. pageNumber is the page in this file, starting at 1, in the file's current order. Requested page numbers: ${requested.join(", ")}.
+text: plain transcription. Preserve names, dates, and place names exactly as spelled. Empty string if the page is blank or unreadable.
+unreadable: true if the page is blank or unreadable.
+confidence: 0 to 1 for the transcription.
+${CUE_INSTRUCTIONS}`,
           },
           { type: "file", mediaType: file.mime, data: file.bytes },
         ],
       },
     ]);
     for (const page of result.pages) {
-      const index = Math.round(page.pageNumber) - 1;
-      if (index < 0 || index >= reads.length) continue;
-      const text = page.text.trim();
-      const unreadable = page.unreadable || countWords(text) === 0;
-      reads[index] = { text, needsReview: unreadable || clamp01(page.confidence) < 0.5 };
+      const pageNumber = Math.round(page.pageNumber);
+      const index = pageNumber - 1;
+      const current = reads[index];
+      if (!current) continue;
+      const visual = visualPages.has(pageNumber);
+      let next = current;
+      if (visual) {
+        const text = page.text.trim();
+        const unreadable = page.unreadable || countWords(text) === 0;
+        next = { ...current, text, needsReview: unreadable || clamp01(page.confidence) < 0.5 };
+      }
+      reads[index] = applyCue(next, page, visual);
     }
     for (const pageNumber of sparse) {
-      const index = pageNumber - 1;
       if (!result.pages.some((page) => Math.round(page.pageNumber) === pageNumber)) {
-        reads[index] = { text: reads[index]?.text ?? "", needsReview: true };
+        const current = reads[pageNumber - 1] ?? blankRead("");
+        reads[pageNumber - 1] = { ...current, needsReview: true, visual: true };
       }
     }
   } catch (error) {
     if (!(error instanceof AiUnavailableError)) throw error;
     for (const pageNumber of sparse) {
-      reads[pageNumber - 1] = { text: reads[pageNumber - 1]?.text ?? "", needsReview: true };
+      const current = reads[pageNumber - 1] ?? blankRead("");
+      reads[pageNumber - 1] = { ...current, needsReview: true, visual: true };
     }
   }
 
@@ -173,6 +289,15 @@ ${sample}`,
   }
 }
 
+type Slot = {
+  document: DocumentRecord;
+  documentId: string;
+  bytes: Uint8Array;
+  mime: string;
+  reads: PageRead[];
+  uploadPosition: number;
+};
+
 export async function analyzeOrder(db: Db, orderId: string): Promise<void> {
   const order = await getOrderById(db, orderId);
   if (!order || order.languageConfirmed) return;
@@ -182,18 +307,58 @@ export async function analyzeOrder(db: Db, orderId: string): Promise<void> {
   if (documents.length === 0) return;
 
   try {
-    const files: SourceFile[] = [];
-    const originals: Array<{ document: DocumentRecord; bytes: Uint8Array }> = [];
+    const slots: Slot[] = [];
     for (const document of documents) {
       const bytes = await downloadObject(db, "originals", document.originalPath);
-      const mime = document.mime ?? "application/octet-stream";
-      files.push({ bytes, mime });
-      originals.push({ document, bytes });
+      const mime = document.mime ?? "application/pdf";
+      const texts = mime === "application/pdf" ? await pdfTexts(bytes) : [];
+      const pageCount = mime === "application/pdf" ? texts.length : 1;
+      const reads = await assessFile(bytes, mime, pageCount, texts);
+      slots.push({
+        document,
+        documentId: document.id,
+        bytes,
+        mime,
+        reads,
+        uploadPosition: document.position > 0 ? document.position : slots.length + 1,
+      });
     }
 
+    const cues: PageCue[] = [];
+    for (const slot of slots) {
+      slot.reads.forEach((read, index) => {
+        cues.push({
+          documentId: slot.documentId,
+          uploadPosition: slot.uploadPosition,
+          uploadPage: index + 1,
+          logicalPage: read.logicalPage,
+          hint: read.orderHint,
+          confidence: read.orderConfidence,
+        });
+      });
+    }
+    const applied = applyPageOrder(cues);
+    const ordered = filesInAppliedOrder(slots, applied);
+    const files: SourceFile[] = ordered.map((slot) => ({ bytes: slot.bytes, mime: slot.mime }));
     const combined = await buildCombinedOriginal(files);
+    const metas = combined.pages.map((page) => {
+      const slot = ordered[page.sourceIndex];
+      if (!slot) throw new Error("Combined page is missing its source file");
+      return {
+        documentId: slot.documentId,
+        uploadPage: page.sourcePage,
+        widthPt: page.widthPt,
+        heightPt: page.heightPt,
+      };
+    });
+    const permutation = pdfPagePermutation(
+      ordered.map((slot) => ({ documentId: slot.documentId, pageCount: slot.reads.length })),
+      applied,
+    );
+    const pdf = isIdentityOrder(permutation) ? combined.pdf : await permutePdfPages(combined.pdf, permutation);
     const combinedPath = `${orderId}/original-combined.pdf`;
-    await uploadObject(db, "originals", combinedPath, combined.pdf, "application/pdf");
+    await uploadObject(db, "originals", combinedPath, pdf, "application/pdf");
+    const metaByKey = new Map(metas.map((meta) => [`${meta.documentId}:${meta.uploadPage}`, meta]));
 
     const extractedFields: Array<{ documentId: string; fieldKey: string; originalValue: string | null }> = [];
     const languages: string[] = [];
@@ -201,14 +366,16 @@ export async function analyzeOrder(db: Db, orderId: string): Promise<void> {
     let missedDetection = false;
     const pageBillable: number[] = [];
     const pageNeedsReview: boolean[] = [];
+    let imageQuality = false;
 
-    for (let index = 0; index < originals.length; index += 1) {
-      const { document, bytes } = originals[index];
-      const mime = document.mime ?? "application/pdf";
-      const pageMeta = combined.pages.filter((page) => page.sourceIndex === index);
-      const layer = mime === "application/pdf" ? await pdfTexts(bytes) : [];
-      const reads = await transcribeFile(bytes, mime, pageMeta.length, layer);
-      const joined = reads.map((page) => page.text).filter(Boolean).join("\n");
+    for (const slot of ordered) {
+      const docPages = applied.pages
+        .filter((page) => page.documentId === slot.documentId)
+        .sort((a, b) => a.appliedPage - b.appliedPage);
+      const joined = docPages
+        .map((page) => slot.reads[page.uploadPage - 1]?.text ?? "")
+        .filter(Boolean)
+        .join("\n");
       const reading = await readFields(joined);
       if (!reading) missedDetection = true;
 
@@ -226,7 +393,7 @@ export async function analyzeOrder(db: Db, orderId: string): Promise<void> {
       };
       for (const fieldKey of CONFIRMATION_FIELD_KEYS) {
         extractedFields.push({
-          documentId: document.id,
+          documentId: slot.documentId,
           fieldKey,
           originalValue: values[fieldKey],
         });
@@ -235,32 +402,44 @@ export async function analyzeOrder(db: Db, orderId: string): Promise<void> {
       const cjk = language ? isCjkBillingLanguage(language) : isCjkDominant(joined);
       await replacePages(
         db,
-        document.id,
-        pageMeta.map((page, pageIndex) => {
-          const read = reads[pageIndex] ?? { text: "", needsReview: true };
+        slot.documentId,
+        docPages.map((page) => {
+          const read = slot.reads[page.uploadPage - 1] ?? blankRead("");
+          const meta = metaByKey.get(`${slot.documentId}:${page.uploadPage}`);
+          if (!meta) throw new Error("A page is missing its size");
+          const qualityFailed = failsImageQuality(read.legibility, read.visual);
+          if (qualityFailed) imageQuality = true;
           const words = countWords(read.text);
           const counted = cjk ? countCjkUnits(read.text) : words;
           const billed = cjk ? billableCjkUnits(counted) : billableUnits(words);
           pageBillable.push(billed);
-          pageNeedsReview.push(read.needsReview);
+          const needsReview = read.needsReview || qualityFailed;
+          pageNeedsReview.push(needsReview);
           return {
-            pageNumber: page.sourcePage,
+            pageNumber: page.appliedPage,
             wordCount: counted,
             billableUnits: billed,
             billingBasis: cjk ? ("cjk" as const) : ("words" as const),
             ocrText: read.text,
-            needsReview: read.needsReview,
-            widthPt: page.widthPt,
-            heightPt: page.heightPt,
+            needsReview,
+            widthPt: meta.widthPt,
+            heightPt: meta.heightPt,
+            uploadPage: page.uploadPage,
+            logicalPage: page.logicalPage,
+            orderHint: page.hint,
+            qualityScore: read.legibility,
+            qualityFlags: read.flags,
+            qualityMessage: qualityFailed ? retakeMessage(read.flags) : null,
           };
         }),
       );
 
-      await updateDocument(db, document.id, {
+      await updateDocument(db, slot.documentId, {
         status: "ready",
-        page_count: pageMeta.length,
+        page_count: docPages.length,
         detected_language: language,
         confidence,
+        applied_position: docPages[0]?.appliedPosition ?? slot.uploadPosition,
       });
     }
 
@@ -272,6 +451,7 @@ export async function analyzeOrder(db: Db, orderId: string): Promise<void> {
       confidence: confidences.length > 0 ? Math.min(...confidences) : null,
       detectionAvailable: !missedDetection && distinct.length > 0,
       languagesDisagree: distinct.length > 1,
+      imageQuality,
     });
 
     await replaceExtractedConfirmations(db, orderId, extractedFields);
@@ -283,6 +463,8 @@ export async function analyzeOrder(db: Db, orderId: string): Promise<void> {
       review_reason: decision.reviewReason,
       eta_at: etaFromNow(decision.etaHours),
       combined_original_path: combinedPath,
+      page_order_basis: applied.basis,
+      page_order: applied,
     });
 
     if (decision.status === "quoted" && !(await hasEvent(db, orderId, "quote_shown"))) {
@@ -299,6 +481,8 @@ export async function analyzeOrder(db: Db, orderId: string): Promise<void> {
       status: "needs_review",
       review_reason: message,
       eta_at: etaFromNow(24),
+      page_order_basis: null,
+      page_order: null,
     });
   }
 }

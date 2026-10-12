@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { generateObject, translationModelId } from "./ai";
+import { inReadingOrder } from "./page-order";
 import { CONFIRMATION_FIELD_KEYS } from "./fields";
 import type { RenderBlock, RenderPage } from "./pdf/layout";
 import { renderOrderPdfs } from "./pdf/render";
@@ -179,7 +180,7 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
     if (claim.error) throw new Error(claim.error.message);
     if ((claim.data ?? []).length === 0) return;
 
-    const documents = await listDocuments(db, orderId);
+    const documents = inReadingOrder(await listDocuments(db, orderId));
     const pages = withCombinedNumbers(
       documents,
       await listPages(
