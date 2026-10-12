@@ -97,7 +97,7 @@ export function IntegrationsPanel() {
 
   if (!snapshot) {
     return (
-      <section data-testid="integrations">
+      <section data-testid="integrations" className="min-w-0">
         <h1 className="text-[26px] tracking-[-0.6px]">Integrations</h1>
         <p className="mt-2 text-sm text-ink-muted" data-testid="integrations-notice">
           {notice ?? "Loading integrations…"}
@@ -107,7 +107,7 @@ export function IntegrationsPanel() {
   }
 
   return (
-    <section data-testid="integrations">
+    <section data-testid="integrations" className="min-w-0">
       <div className="mb-[22px] flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-[26px] tracking-[-0.6px]">Integrations</h1>
@@ -130,8 +130,8 @@ export function IntegrationsPanel() {
           {notice}
         </p>
       ) : null}
-      <div className="grid items-start gap-[18px] lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
-        <div>
+      <div className="grid min-w-0 items-start gap-[18px] lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+        <div className="min-w-0">
           <Panel
             title="API keys"
             subtitle="Keys are shown once. Store them somewhere safe."
@@ -249,11 +249,11 @@ export function IntegrationsPanel() {
             </div>
           </Panel>
         </div>
-        <div>
+        <div className="min-w-0">
           <Panel title="Billing for API orders" subtitle="Charged automatically when an order is placed.">
             <div className="px-[18px] py-4">
               {snapshot.card ? (
-                <div data-testid="saved-card" className="flex items-center gap-3 rounded-[var(--cp-radius)] border border-line p-3">
+                <div data-testid="saved-card" className="flex flex-wrap items-center gap-3 rounded-[var(--cp-radius)] border border-line p-3">
                   <span className="inline-flex h-7 w-[42px] items-center justify-center rounded-[var(--cp-radius)] bg-[#1a1f71] text-[11px] font-bold text-white">
                     {snapshot.card.brand === "Visa" ? "VISA" : "MC"}
                   </span>
@@ -317,7 +317,7 @@ function Panel({
   children: ReactNode;
 }) {
   return (
-    <section className="mb-[18px] rounded-[var(--cp-radius)] border border-line bg-white">
+    <section className="mb-[18px] min-w-0 rounded-[var(--cp-radius)] border border-line bg-white">
       <header className="flex items-center justify-between gap-4 border-b border-line px-[18px] py-3.5">
         <div>
           <h2 className="text-[15px] font-semibold">{title}</h2>

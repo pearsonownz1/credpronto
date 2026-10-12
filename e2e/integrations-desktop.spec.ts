@@ -41,7 +41,7 @@ test("integrations matches the key, webhook, and billing layout", async ({ page 
   await expect(page.getByTestId("quick-start")).toContainText("curl https://www.credpronto.com/api/v1/orders");
   await expect(page.getByTestId("api-docs")).toHaveAttribute("href", "https://www.credpronto.com/docs/api");
 
-  const blueButtons = await page.locator("button").evaluateAll((buttons) =>
+  const blueButtons = await page.locator("button:visible").evaluateAll((buttons) =>
     buttons
       .filter((button) => getComputedStyle(button).backgroundColor === "rgb(31, 94, 255)")
       .map((button) => (button.textContent ?? "").replace(/\s+/g, " ").trim()),
