@@ -2,7 +2,7 @@ import type { AnchorHTMLAttributes, ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { MDXRemote } from "next-mdx-remote/rsc";
-import { MarketingHeader } from "@/components/flow/flow-header";
+import { MarketingHeader } from "@/components/flow/marketing-header";
 import { buttonClasses } from "@/components/flow/ui";
 import { formatPostDate, type Post } from "@/lib/content/posts";
 

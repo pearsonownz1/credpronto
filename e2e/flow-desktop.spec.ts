@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { CJK_PAGE_RULE } from "../src/lib/orders/billing";
+import { signIn } from "./account";
 import { walkCustomerFlow } from "./flow-walkthrough";
 
 test("customer walks from landing through download", async ({ page }) => {
@@ -168,4 +169,25 @@ test("an English quote can pick a target language and continue", async ({ page }
   await expect(page).toHaveURL(/\/confirm\?/);
   await expect(page.getByRole("heading", { name: "Confirm the important details." })).toBeVisible();
   await expect(page.getByText("English → Spanish").filter({ visible: true })).toBeVisible();
+});
+
+test("the homepage sample opens larger, and a signed-in header shows Dashboard", async ({ page }) => {
+  await page.goto("/");
+  await page.getByTestId("see-sample").click();
+  await expect(page.getByTestId("sample-dialog")).toBeVisible();
+  await page.getByRole("button", { name: "Close" }).click();
+  await expect(page.getByTestId("sample-dialog")).toHaveCount(0);
+
+  await page.goto("/evaluations");
+  await expect(page.getByTestId("nav-log-in")).toBeVisible();
+  await expect(page.getByTestId("nav-get-started")).toBeVisible();
+  await expect(page.getByText("Find my order")).toHaveCount(0);
+
+  await signIn(page, "maria.ruiz@email.com");
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.goto("/");
+  await expect(page.getByTestId("nav-dashboard")).toBeVisible();
+  await expect(page.getByTestId("nav-log-in")).toHaveCount(0);
+  await page.goto("/faq");
+  await expect(page.getByTestId("nav-dashboard")).toBeVisible();
 });
