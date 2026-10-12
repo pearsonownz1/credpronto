@@ -286,7 +286,7 @@ function ImageQuality({
           <p data-testid="page-order-basis" className="text-[13px] text-ink-muted">
             {basis === "logical"
               ? "We ordered these pages from the printed page numbers."
-              : "We kept the order you uploaded them."}
+              : "We kept the pages in the order you uploaded them."}
           </p>
         ) : null}
         <ol className="mt-3 space-y-3">
