@@ -30,7 +30,7 @@ describe("quote file preview", () => {
         fileId: "file",
         filename: "notes.pdf",
         pages: [{ skip: true, skipReason: "english" }],
-        renderThumb: () => null,
+        header: null,
       }),
     );
     expect(html).toContain('data-testid="page-viewer-label"');
@@ -47,7 +47,7 @@ describe("quote file preview", () => {
         token: "tok",
         fileId: "file",
         filename: "notes.docx",
-        renderThumb: () => null,
+        header: null,
       }),
     );
     expect(html).not.toContain('data-testid="page-viewer"');

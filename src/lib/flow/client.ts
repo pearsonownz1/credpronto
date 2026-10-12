@@ -95,7 +95,7 @@ export type FlowClient = {
   updateTargetLanguage(token: string, targetLanguage: string): Promise<CustomerOrder>;
   updateQuote(
     token: string,
-    body: { skipPages?: number[]; targetLanguage?: string; includeTranslation?: boolean },
+    body: { targetLanguage?: string; includeTranslation?: boolean },
   ): Promise<CustomerOrder>;
   /** Mock walk-through moves a quoted order to preview_ready before checkout. */
   markPreviewReady(token: string): Promise<void>;
@@ -455,39 +455,8 @@ const mockClient: FlowClient = {
       }
     }
     const current = readMockOrder();
-    const skip = new Set(body.skipPages);
-    const orderedLength = current.pageOrder?.pages.length ?? 0;
-    const usePages = current.pages.length > 0 && current.pages.length >= orderedLength;
-    const pages = usePages
-      ? current.pages.map((page, index) => ({ ...page, skip: skip.has(index) }))
-      : current.pages.map((page) => {
-          if (!current.pageOrder) return page;
-          const index = current.pageOrder.pages.findIndex(
-            (row) =>
-              row.documentId === page.documentId &&
-              (page.uploadPage === row.uploadPage || page.pageNumber === row.appliedPage),
-          );
-          return index >= 0 ? { ...page, skip: skip.has(index) } : page;
-        });
-    const pageOrder = current.pageOrder
-      ? {
-          ...current.pageOrder,
-          pages: current.pageOrder.pages.map((page, index) => {
-            if (!usePages) return { ...page, skip: skip.has(index) };
-            const matchIndex = current.pages.findIndex(
-              (item) =>
-                item.documentId === page.documentId &&
-                ((item.uploadPage != null && item.uploadPage === page.uploadPage) ||
-                  item.pageNumber === page.appliedPage),
-            );
-            return matchIndex >= 0 ? { ...page, skip: skip.has(matchIndex) } : page;
-          }),
-        }
-      : current.pageOrder;
     const next: CustomerOrder = {
       ...current,
-      pages,
-      pageOrder,
       ...(body.targetLanguage ? { targetLanguage: body.targetLanguage } : {}),
     };
     const billablePages = quoteCounts(next).billable;

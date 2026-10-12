@@ -16,17 +16,14 @@ import {
   servicePriceLines,
   settleTargetLanguageUpdate,
   showTargetLanguagePicker,
-  skippedPageIndexes,
   targetChoices,
   totalLabel,
-  type QuotePageRow,
 } from "@/lib/flow/present";
 import { rememberDocument } from "@/lib/flow/upload-blobs";
-import { pageStatusTag, sumQuotedBillable } from "@/lib/orders/skip-pages";
+import { sumQuotedBillable } from "@/lib/orders/skip-pages";
 import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FilePreview, inlineSourceUrl, type ViewerPage } from "./file-preview";
-import { PageDetails, PageThumb } from "./page-thumbs";
 import { FlowHeader } from "./flow-header";
 import { useReadingHandoff } from "./reading-handoff";
 import { ReadingFiles } from "./reading-files";
@@ -116,9 +113,6 @@ export function QuoteBody({
 }) {
   const [patch, setPatch] = useState<{ source: CustomerOrder; order: CustomerOrder } | null>(null);
   const live = patch?.source === order ? patch.order : order;
-  const [pendingSkip, setPendingSkip] = useState<number[] | null>(null);
-  const [skipError, setSkipError] = useState<string | null>(null);
-  const [skipPending, setSkipPending] = useState(false);
   const choices = languageChoices();
   const targets = targetChoices();
   const picker = canSetSourceLanguage(live);
@@ -127,7 +121,6 @@ export function QuoteBody({
   const [target, setTarget] = useState(order.targetLanguage || "en");
   const [notice, setNotice] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
-  const [openDetails, setOpenDetails] = useState<Record<string, boolean>>({});
   const sourceCode = picker ? language : (live.sourceLanguage ?? language);
   const targetCode = sameLanguage ? target : live.targetLanguage;
   const line = live.sourceLanguage
@@ -143,12 +136,6 @@ export function QuoteBody({
   const [translationPending, setTranslationPending] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
 
-  function rowSkipped(row: QuotePageRow): boolean {
-    if (row.pageIndex == null) return row.skip === true;
-    if (pendingSkip) return pendingSkip.includes(row.pageIndex);
-    return row.skip === true;
-  }
-
   const files = quoteFileGroups(live).map((group) => {
     const unitsKnown = group.rows.some(
       (row) => typeof row.billableUnits === "number" && Number.isFinite(row.billableUnits),
@@ -157,47 +144,17 @@ export function QuoteBody({
     return {
       ...group,
       billable: sumQuotedBillable(
-        group.rows.map((row) => ({ billableUnits: row.billableUnits, skip: rowSkipped(row) })),
+        group.rows.map((row) => ({ billableUnits: row.billableUnits, skip: row.skip === true })),
       ),
     };
   });
-
-  async function onPageSkip(row: QuotePageRow, skip: boolean) {
-    if (row.pageIndex == null || skipPending) return;
-    const current = pendingSkip ?? skippedPageIndexes(live);
-    const nextIndexes = skip
-      ? [...new Set([...current, row.pageIndex])].sort((a, b) => a - b)
-      : current.filter((index) => index !== row.pageIndex);
-    if (skip === rowSkipped(row)) return;
-    setSkipError(null);
-    setPendingSkip(nextIndexes);
-    setSkipPending(true);
-    try {
-      const updated = await getFlowClient().updateQuote(token, { skipPages: nextIndexes });
-      setPatch({ source: order, order: updated });
-      setPendingSkip(null);
-    } catch (cause) {
-      setPendingSkip(null);
-      const failed = cause instanceof FlowApiError ? cause : null;
-      if (!failed || (failed.status >= 400 && failed.status < 500)) {
-        setSkipError(failed?.message ?? "We couldn't update that page.");
-      } else {
-        setSkipError(failed.message);
-      }
-    } finally {
-      setSkipPending(false);
-    }
-  }
 
   async function onToggleTranslation(includeTranslation: boolean) {
     if (translationPending) return;
     setTranslationError(null);
     setTranslationPending(true);
     try {
-      const updated = await getFlowClient().updateQuote(token, {
-        includeTranslation,
-        skipPages: pendingSkip ?? skippedPageIndexes(live),
-      });
+      const updated = await getFlowClient().updateQuote(token, { includeTranslation });
       setPatch({ source: order, order: updated });
     } catch (cause) {
       const failed = cause instanceof FlowApiError ? cause : null;
@@ -300,9 +257,7 @@ export function QuoteBody({
           data-testid="file-list"
           className="mt-5 overflow-hidden rounded-[var(--cp-radius)] border border-line"
         >
-          {files.map((file, index) => {
-            const open = openDetails[file.id] === true;
-            return (
+          {files.map((file, index) => (
               <div
                 key={file.id}
                 data-testid="file-row"
@@ -315,93 +270,34 @@ export function QuoteBody({
                   sourceUrl={inlineSourceUrl(live.documents.find((document) => document.id === file.id))}
                   pages={file.rows.map(
                     (row): ViewerPage => ({
-                      skip: rowSkipped(row),
+                      skip: row.skip === true,
                       skipReason: row.skipReason,
                       billableUnits: row.billableUnits,
                     }),
                   )}
-                  renderThumb={(thumb) => (
-                    <div className="flex items-start gap-3 px-4 py-3.5 text-sm md:gap-4">
-                      {thumb}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-col gap-1 md:flex-row md:items-start md:justify-between md:gap-3">
-                          <b className="min-w-0 break-words md:flex-1">{file.filename}</b>
-                          <p
-                            data-testid="file-turnaround"
-                            className="flex shrink-0 items-center gap-1 text-[13px] font-semibold leading-5 text-[var(--cp-ok)]"
-                          >
-                            <ClockIcon />
-                            Ready in a few minutes
-                          </p>
-                        </div>
-                        {showPages ? (
-                          <div data-testid="file-billable" className="text-[12.5px] text-ink-muted">
-                            {file.pages == null ? "—" : fileCountLabel(file.billable)}
-                          </div>
-                        ) : null}
-                        {showPages && file.rows.length > 0 ? (
-                          <button
-                            type="button"
-                            data-testid="page-details"
-                            aria-expanded={open}
-                            onClick={() =>
-                              setOpenDetails((current) => ({ ...current, [file.id]: !open }))
-                            }
-                            className="mt-2 text-[13px] font-semibold text-primary"
-                          >
-                            Page details
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  )}
-                />
-                {showPages && open ? (
-                  <PageDetails
-                    token={token}
-                    fileId={file.id}
-                    filename={file.filename}
-                    sourceUrl={inlineSourceUrl(live.documents.find((document) => document.id === file.id))}
-                  >
-                  <div className="space-y-2 px-4 pb-3.5">
-                    {file.rows.map((row, pageNumber) => {
-                      const skipped = rowSkipped(row);
-                      return (
-                        <div
-                          key={row.key}
-                          data-testid="page-row"
-                          className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]"
+                  header={
+                    <div className="px-4 py-3.5 text-sm">
+                      <div className="flex flex-col gap-1 md:flex-row md:items-start md:justify-between md:gap-3">
+                        <b className="min-w-0 break-words md:flex-1">{file.filename}</b>
+                        <p
+                          data-testid="file-turnaround"
+                          className="flex shrink-0 items-center gap-1 text-[13px] font-semibold leading-5 text-[var(--cp-ok)]"
                         >
-                          <PageThumb pageNumber={pageNumber} />
-                          <span>Page {pageNumber + 1}</span>
-                          <PageStatus
-                            skip={skipped}
-                            skipReason={row.skipReason}
-                            billableUnits={row.billableUnits}
-                          />
-                          {row.pageIndex != null ? (
-                            <PageSkipToggle
-                              pageIndex={row.pageIndex}
-                              skipped={skipped}
-                              disabled={skipPending}
-                              onChange={(skip) => void onPageSkip(row, skip)}
-                            />
-                          ) : null}
+                          <ClockIcon />
+                          Ready in a few minutes
+                        </p>
+                      </div>
+                      {showPages ? (
+                        <div data-testid="file-billable" className="text-[12.5px] text-ink-muted">
+                          {file.pages == null ? "—" : fileCountLabel(file.billable)}
                         </div>
-                      );
-                    })}
-                  </div>
-                  </PageDetails>
-                ) : null}
+                      ) : null}
+                    </div>
+                  }
+                />
               </div>
-            );
-          })}
+            ))}
         </div>
-        {skipError ? (
-          <p role="alert" data-testid="skip-error" className="mt-2 text-[13px] text-[var(--cp-warn)]">
-            {skipError}
-          </p>
-        ) : null}
       </div>
       <div>
         <Summary>
@@ -553,66 +449,6 @@ function quoteSummaryPrices(order: CustomerOrder) {
     ];
   }
   return servicePriceLines(order);
-}
-
-function PageStatus({
-  skip,
-  skipReason,
-  billableUnits,
-}: {
-  skip: boolean;
-  skipReason?: string | null;
-  billableUnits?: number | null;
-}) {
-  const label = pageStatusTag({ skip, skipReason, billableUnits });
-  if (label === "Translate") return null;
-  return (
-    <span
-      data-testid="page-status"
-      className="rounded-[var(--cp-radius)] border border-line px-1.5 py-0.5 text-[12px] text-ink-muted"
-    >
-      {label}
-    </span>
-  );
-}
-
-function PageSkipToggle({
-  pageIndex,
-  skipped,
-  disabled,
-  onChange,
-}: {
-  pageIndex: number;
-  skipped: boolean;
-  disabled: boolean;
-  onChange: (skip: boolean) => void;
-}) {
-  const choice = (skip: boolean, label: string) => {
-    const selected = skipped === skip;
-    return (
-      <button
-        type="button"
-        aria-pressed={selected}
-        disabled={disabled || selected}
-        onClick={() => onChange(skip)}
-        className={`px-2 py-1 disabled:opacity-100 ${selected ? "bg-primary text-white" : "bg-bg text-ink hover:bg-bg-muted"}`}
-      >
-        {label}
-      </button>
-    );
-  };
-  return (
-    <span
-      data-testid={`page-skip-${pageIndex}`}
-      role="group"
-      aria-label="Translate or skip this page"
-      className={`inline-flex overflow-hidden rounded-[var(--cp-radius)] border border-line text-[12px] font-semibold ${disabled ? "opacity-60" : ""}`}
-    >
-      {choice(false, "Translate")}
-      <span className="w-px bg-line" aria-hidden />
-      {choice(true, "Skip")}
-    </span>
-  );
 }
 
 function ImageQuality({

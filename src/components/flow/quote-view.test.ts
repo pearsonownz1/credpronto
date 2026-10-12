@@ -87,7 +87,10 @@ describe("quote step actions", () => {
     expect(html).not.toContain("10 minutes");
     expect(html).toContain("text-[var(--cp-ok)]");
     expect(html).toContain("md:flex-row");
-    expect(html).toContain('data-testid="file-thumb-skeleton"');
+    expect(html).not.toContain('data-testid="file-thumb-skeleton"');
+    expect(html).not.toContain('data-testid="page-details"');
+    expect(html).not.toContain('data-testid="page-thumb"');
+    expect(html).not.toContain("page-skip-");
     expect(html).toContain('data-testid="page-viewer"');
     expect(html).toContain("md:w-[420px]");
     expect(html).toContain("Page 1");

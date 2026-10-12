@@ -59,14 +59,14 @@ export function FilePreview({
   filename,
   sourceUrl,
   pages: pageMeta = [],
-  renderThumb,
+  header,
 }: {
   token: string;
   fileId: string;
   filename: string;
   sourceUrl?: string | null;
   pages?: ViewerPage[];
-  renderThumb: (thumb: ReactNode) => ReactNode;
+  header: ReactNode;
 }) {
   const kind = previewKind(filename);
   const requestKey = `${token}\n${fileId}\n${sourceUrl ?? ""}\n${kind}`;
@@ -335,21 +335,6 @@ export function FilePreview({
     setOpen(true);
   }
 
-  const thumb =
-    phase === "hidden" ? null : (
-      <FileThumb
-        kind={kind}
-        filename={filename}
-        src={kind === "image" ? imageUrl : (urls[0] ?? null)}
-        onOpen={openFrom}
-        onReady={() => setPhase("ready")}
-        onFail={() => {
-          if (kind === "image") void recoverImage();
-          else setPhase("hidden");
-        }}
-      />
-    );
-
   const dialog =
     open && typeof document !== "undefined"
       ? createPortal(
@@ -406,7 +391,7 @@ export function FilePreview({
 
   return (
     <>
-      {renderThumb(thumb)}
+      {header}
       {showViewer ? (
         <div data-testid="page-viewer" className="px-4 pb-8">
           <div
@@ -478,51 +463,6 @@ export function FilePreview({
       ) : null}
       {dialog}
     </>
-  );
-}
-
-function FileThumb({
-  kind,
-  filename,
-  src,
-  onOpen,
-  onReady,
-  onFail,
-}: {
-  kind: "pdf" | "image" | "file";
-  filename: string;
-  src: string | null;
-  onOpen: (button: HTMLButtonElement) => void;
-  onReady: () => void;
-  onFail: () => void;
-}) {
-  const thumbClass = "h-24 w-[72px] shrink-0 border border-line";
-  if (!src) {
-    return <div data-testid="file-thumb-skeleton" className={`${thumbClass} animate-pulse bg-bg-muted`} aria-hidden />;
-  }
-  return (
-    <button
-      type="button"
-      data-testid="file-thumb-button"
-      aria-label={`Preview ${filename}`}
-      onClick={(event) => onOpen(event.currentTarget)}
-      className={`${thumbClass} overflow-hidden bg-white p-0`}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        data-testid="file-thumb"
-        alt=""
-        src={src}
-        ref={(node) => {
-          if (kind === "image" && node?.complete && node.naturalWidth > 0) onReady();
-        }}
-        onLoad={() => {
-          if (kind === "image") onReady();
-        }}
-        onError={onFail}
-        className="h-full w-full object-cover"
-      />
-    </button>
   );
 }
 
