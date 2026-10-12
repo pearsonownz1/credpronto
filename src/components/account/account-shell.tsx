@@ -87,6 +87,15 @@ export function AccountShell({
           <NavLink href="/dashboard/receipts" active={pathname === "/dashboard/receipts"} icon={<ReceiptsIcon />} onClick={() => setOpen(false)}>
             Receipts
           </NavLink>
+          <NavLink
+            href="/dashboard/integrations"
+            active={pathname.startsWith("/dashboard/integrations")}
+            icon={<KeyIcon />}
+            testId="nav-integrations"
+            onClick={() => setOpen(false)}
+          >
+            Integrations
+          </NavLink>
           <NavLink href="/dashboard/settings" active={pathname === "/dashboard/settings"} icon={<SettingsIcon />} onClick={() => setOpen(false)}>
             Settings
           </NavLink>
@@ -166,16 +175,19 @@ function NavLink({
   icon,
   children,
   onClick,
+  testId,
 }: {
   href: string;
   active: boolean;
   icon: ReactNode;
   children: ReactNode;
   onClick?: () => void;
+  testId?: string;
 }) {
   return (
     <Link
       href={href}
+      data-testid={testId}
       onClick={onClick}
       className={`flex items-center gap-2.5 rounded-[var(--cp-radius)] px-2.5 py-2 text-sm ${active ? "bg-[#eaf0ff] font-semibold text-primary" : "text-[#374151]"}`}
     >
@@ -215,6 +227,14 @@ function ReceiptsIcon() {
     <Icon>
       <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" />
       <path d="M9 8h6M9 12h6" />
+    </Icon>
+  );
+}
+function KeyIcon() {
+  return (
+    <Icon>
+      <circle cx="8" cy="15" r="4" />
+      <path d="M11 12l9-9M17 6l3 3" />
     </Icon>
   );
 }
