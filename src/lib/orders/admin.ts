@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET } from "./constants";
 import {
   customerEmail,
   dismissCorrections,
@@ -11,6 +11,7 @@ import {
   listDocuments,
   listOrders,
   listPages,
+  listTranslations,
   settledPayment,
   updateDelivery,
   updateOrder,
@@ -20,28 +21,13 @@ import { sendDeliveryReady } from "./email";
 import { HttpError } from "./errors";
 import { normalizeLanguage } from "./languages";
 import { etaFromNow } from "./quote";
-import { serviceDb, type Db } from "./storage";
+import { signedObjectUrl } from "./storage";
+import { ensureStaffRow, requireStaff } from "./staff";
+import { paragraphsForPage } from "./translation-edit";
 import { ORDER_STATUSES, type OrderStatus } from "./types";
 import { translateOrder } from "./translation";
 
-export async function requireStaff(): Promise<{ db: Db; userId: string; role: string }> {
-  let client: Awaited<ReturnType<typeof createClient>>;
-  try {
-    client = await createClient();
-  } catch {
-    throw new HttpError("Auth is not configured", 503);
-  }
-
-  const { data, error } = await client.auth.getUser();
-  if (error || !data.user) throw new HttpError("Sign in required", 401);
-
-  const db = serviceDb();
-  const staff = await db.from("staff").select("user_id, role").eq("user_id", data.user.id).maybeSingle();
-  if (staff.error) throw new Error(staff.error.message);
-  if (!staff.data) throw new HttpError("Staff access required", 403);
-
-  return { db, userId: data.user.id, role: String(staff.data.role) };
-}
+export { requireStaff } from "./staff";
 
 export function parseStatus(value: string | null): OrderStatus | null {
   if (!value) return null;
@@ -49,9 +35,13 @@ export function parseStatus(value: string | null): OrderStatus | null {
   throw new HttpError("Unknown status", 400);
 }
 
-export async function listStaffOrders(status: string | null) {
+export async function listStaffOrders(status: string | null, page: { limit: number; offset: number }) {
   const { db } = await requireStaff();
-  return { orders: await listOrders(db, parseStatus(status)) };
+  const listed = await listOrders(db, parseStatus(status), page);
+  return {
+    orders: listed.orders,
+    page: { limit: page.limit, offset: page.offset, total: listed.total },
+  };
 }
 
 export async function staffOrder(orderId: string) {
@@ -60,6 +50,7 @@ export async function staffOrder(orderId: string) {
   if (!order) throw new HttpError("Order not found", 404);
   const documents = await listDocuments(db, order.id);
   const pages = withCombinedNumbers(documents, await listPages(db, documents.map((document) => document.id)));
+  const translations = await listTranslations(db, documents.map((document) => document.id));
   const [confirmations, corrections, payment, delivery, email] = await Promise.all([
     listConfirmations(db, order.id),
     listCorrections(db, order.id),
@@ -71,14 +62,57 @@ export async function staffOrder(orderId: string) {
   return {
     ...order,
     email,
-    documents: documents.map((document) => ({
-      ...document,
-      pages: pages.filter((page) => page.documentId === document.id),
-    })),
+    documents: documents.map((document) => {
+      const ready = translations.filter(
+        (translation) => translation.documentId === document.id && translation.status === "ready",
+      );
+      const translation = ready.sort((a, b) => b.version - a.version)[0] ?? null;
+      return {
+        ...document,
+        translation: translation
+          ? { version: translation.version, model: translation.model, status: translation.status }
+          : null,
+        pages: pages
+          .filter((page) => page.documentId === document.id)
+          .map((page) => {
+            const paragraphs = translation
+              ? paragraphsForPage(translation.output, {
+                  pageNumber: page.pageNumber,
+                  combinedPageNumber: page.number,
+                })
+              : null;
+            return {
+              ...page,
+              sourceText: page.ocrText,
+              translation: paragraphs
+                ? { version: translation?.version ?? null, model: translation?.model ?? null, paragraphs }
+                : null,
+            };
+          }),
+      };
+    }),
     confirmations,
     corrections,
     payment,
     delivery,
+  };
+}
+
+async function signedFinals(
+  db: Parameters<typeof signedObjectUrl>[0],
+  translationPath: string | null,
+  certificationPath: string | null,
+) {
+  if (!translationPath || !certificationPath) {
+    throw new HttpError("Translated files are not ready", 409);
+  }
+  const [translationUrl, certificationUrl] = await Promise.all([
+    signedObjectUrl(db, FINALS_BUCKET, translationPath, DOWNLOAD_URL_SECONDS),
+    signedObjectUrl(db, FINALS_BUCKET, certificationPath, DOWNLOAD_URL_SECONDS),
+  ]);
+  return {
+    translation: { url: translationUrl, expiresInSeconds: DOWNLOAD_URL_SECONDS },
+    certification: { url: certificationUrl, expiresInSeconds: DOWNLOAD_URL_SECONDS },
   };
 }
 
@@ -93,11 +127,15 @@ export async function approveOrder(orderId: string) {
   if (!payment) throw new HttpError("Payment required", 402);
   const delivery = await getDelivery(db, order.id);
   if (!delivery) throw new HttpError("Payment has not created a delivery", 409);
-  if (delivery.status === "delivered") return { status: "delivered" as const };
+  if (delivery.status === "delivered") {
+    const files = await signedFinals(db, delivery.finalPath, delivery.certificationPath);
+    return { status: "delivered" as const, ...files };
+  }
   if (!order.finalTranslationPath || !order.certificationPath) {
     throw new HttpError("Translated files are not ready", 409);
   }
 
+  await ensureStaffRow(db, userId);
   const now = new Date().toISOString();
   if (delivery.status !== "approved") {
     await updateDelivery(db, order.id, {
@@ -108,12 +146,16 @@ export async function approveOrder(orderId: string) {
       certification_path: order.certificationPath,
     });
     await updateOrder(db, order.id, { status: "approved" });
+    if (!(await hasEvent(db, order.id, "approved"))) {
+      await insertEvent(db, order.id, "approved", { actorId: userId });
+    }
   }
 
   const email = await customerEmail(db, order.customerId);
   const sent = email ? await sendDeliveryReady(email) : { sent: false, skipped: true };
+  const files = await signedFinals(db, order.finalTranslationPath, order.certificationPath);
   if (!sent.sent && !sent.skipped) {
-    return { status: "approved" as const, email: "failed" as const };
+    return { status: "approved" as const, email: "failed" as const, ...files };
   }
 
   await updateDelivery(db, order.id, {
@@ -125,7 +167,11 @@ export async function approveOrder(orderId: string) {
     certification_path: order.certificationPath,
   });
   await updateOrder(db, order.id, { status: "delivered" });
-  return { status: "delivered" as const, email: sent.skipped ? "skipped" : "sent" };
+  return {
+    status: "delivered" as const,
+    email: sent.skipped ? ("skipped" as const) : ("sent" as const),
+    ...files,
+  };
 }
 
 export async function resolveReview(orderId: string, body: unknown) {

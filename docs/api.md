@@ -214,19 +214,77 @@ HTTP 503.
 
 The URL is a 5-minute signed URL for the object in `finals` (`translation` → clean translated PDF, `certification` → certification page). A `downloaded` event is recorded. The URL is not stored.
 
-## Admin
+## Auth
 
-These routes require a signed-in Supabase user who has a `staff` row. `401` if signed out, `403` if the user is not staff.
+Email magic link, email plus password, and Google OAuth all use the cookie client from `@supabase/ssr`. `src/proxy.ts` refreshes the session on each matched request. The browser returns to `GET /auth/callback`, which exchanges a `code` (PKCE magic link or Google) or verifies `token_hash` plus `type` (email OTP). After the session exists, unowned orders whose customer email matches the verified account email are claimed (`orders.user_id`). An unverified address claims nothing.
+
+`next` is a relative path (`/orders`). Absolute and protocol-relative values are ignored.
 
 | Method | Path | Body | Result |
 | --- | --- | --- | --- |
-| `GET` | `/api/admin/orders?status=` | | `{ "orders": [ { id, status, serviceType, sourceLanguage, billablePages, totalCents, currency, createdAt, reviewReason, email } ] }` |
-| `GET` | `/api/admin/orders/[id]` | | Order, documents, pages (including text), confirmations, corrections, payment, delivery. Includes storage keys for staff. |
+| `POST` | `/api/auth/magic-link` | `{ "email", "next"? }` | `{ "sent": true }`. The link redirects to `/auth/callback`. |
+| `POST` | `/api/auth/password` | `{ "email", "password", "mode"? , "next"? }` | `mode` is `sign-in` (default) or `sign-up`. Sign-in returns `{ "userId", "claimedOrderIds" }`. Sign-up returns `{ "userId", "session", "claimedOrderIds" }`. Password is at least 8 characters. `401` for a bad sign-in. |
+| `POST` | `/api/auth/google` | `{ "next"? }` | `{ "url" }` for Google OAuth. The provider redirect in Supabase is `{APP_URL}/auth/callback`. |
+| `GET` | `/auth/callback?code=` or `?token_hash=&type=` | | Redirects to `next` after claim. Failure redirects to `/?auth_error=1`. |
+
+`401` `{ "error": "Sign in required" }` when a session is missing. `503` `{ "error": "Auth is not configured" }` when the public Supabase env is missing.
+
+## `GET /api/me/orders`
+
+Signed-in customer. Claims matching unowned orders first, then lists orders with `user_id` equal to the session user. Token routes are unchanged.
+
+```json
+{
+  "orders": [
+    {
+      "id": "…",
+      "status": "paid",
+      "serviceType": "translation",
+      "totalCents": 2985,
+      "currency": "usd",
+      "billablePages": 3,
+      "unitPriceCents": 995,
+      "createdAt": "2026-10-12T00:00:00.000Z",
+      "previewAvailable": true,
+      "paymentStatus": "paid",
+      "downloadAvailable": false
+    }
+  ]
+}
+```
+
+`previewAvailable` is true when a ready watermarked preview exists. `paymentStatus` is the settled payment (`paid` or `paid_test`) or, if none, the newest payment status (`pending`, `failed`, `canceled`, `refunded`). `downloadAvailable` uses the same rule as `GET /api/orders/[token]/download`: settled payment and delivery `approved` or `delivered`. A refund sets `downloadAvailable` to false.
+
+## Admin
+
+These routes require a signed-in Supabase user who has a `staff` row or `profiles.is_admin`. `401` if signed out, `403` if the user is neither.
+
+| Method | Path | Body | Result |
+| --- | --- | --- | --- |
+| `GET` | `/api/admin/orders?status=&limit=&offset=` | | `{ "orders": [ { id, status, serviceType, sourceLanguage, billablePages, totalCents, currency, createdAt, reviewReason, email } ], "page": { "limit", "offset", "total" } }`. `limit` defaults to 50 and cannot exceed 100. `offset` defaults to 0. |
+| `GET` | `/api/admin/orders/[id]` | | Order, documents, pages (source text and the latest ready AI translation paragraphs per page), confirmations, corrections, payment, delivery. Includes storage keys for staff. |
+| `PATCH` | `/api/admin/orders/[id]` | `{ "pages": [ { "documentId", "pageNumber", "paragraphs": ["…"] } ] }` | Replaces those pages' translation text, writes a new translation version (`model` `staff-edit`), and regenerates the watermarked preview, clean translation, and certification page the same way the pipeline renders them. Other pages keep their current text. Allowed from `preview_ready`, `correction_requested`, `paid`, `approved`, and `delivered`. The order status does not move backward. An approved or delivered row's file keys are updated. Records `translation_edited`. |
 | `POST` | `/api/admin/orders/[id]/resolve-review` | `{ "sourceLanguage": "es" }` | `needs_review` → `quoted`. `sourceLanguage` optional when the order already has one. |
 | `POST` | `/api/admin/orders/[id]/resolve-corrections` | `{ "action": "dismiss", "correctionIds": [] }` or `{ "action": "regenerate" }` | Dismiss open corrections, or regenerate the translation and preview. |
-| `POST` | `/api/admin/orders/[id]/approve` | | Sets `deliveries.approved_by` and `approved_at`. A paid order is then emailed and set to `delivered`. |
+| `POST` | `/api/admin/orders/[id]/approve` | | Sets `deliveries.approved_by` and `approved_at`, records `approved`, and returns 5-minute signed URLs for the clean translation and the certification page. A paid order is then emailed and set to `delivered`. |
+| `POST` | `/api/admin/orders/[id]/refund` | | Stripe refund when the payment is `paid`, the secret key is `sk_test_…`, and a payment intent is stored. `paid_test` does not call Stripe: the row is marked `refunded` and a `refunded` event is recorded with `mode: "paid_test"`. A second call returns `{ "paymentStatus": "refunded", "duplicate": true }`. Downloads lock again. |
+| `GET` | `/api/admin/orders/[id]/notes` | | `{ "notes": [ { id, authorId, body, createdAt } ] }` |
+| `POST` | `/api/admin/orders/[id]/notes` | `{ "body": "…" }` | `201` and the note. Records `note_added`. Body is 1 to 4000 characters. |
 
-Approval copies the clean translation and certification keys onto the delivery. The delivery email tells the customer to open the order link from the earlier message. The raw token is not stored, so that email cannot contain a new copy of it.
+Approval copies the clean translation and certification keys onto the delivery and returns:
+
+```json
+{
+  "status": "delivered",
+  "email": "sent",
+  "translation": { "url": "https://…", "expiresInSeconds": 300 },
+  "certification": { "url": "https://…", "expiresInSeconds": 300 }
+}
+```
+
+`email` is `sent`, `skipped`, or `failed`. When email fails the delivery stays `approved` and the signed URLs are still returned. The delivery email tells the customer to open the order link from the earlier message. The raw token is not stored, so that email cannot contain a new copy of it.
+
+A `paid_test` refund returns `{ "paymentStatus": "refunded", "mode": "paid_test", "duplicate": false }`. A Stripe test refund also returns `refundId`. `409` when the payment cannot be refunded or the Stripe key is not a test key. `503` `{ "error": "Payments not configured" }` when a real `paid` row has no Stripe secret.
 
 ## Order statuses
 
@@ -236,4 +294,4 @@ Approval copies the clean translation and certification keys onto the delivery. 
 
 ## Events
 
-`order_events` records `upload_started`, `upload_done`, `quote_shown`, `preview_ready`, `preview_viewed`, `checkout_started`, `paid`, `refunded`, and `downloaded`. The raw token is never written on those rows.
+`order_events` records `upload_started`, `upload_done`, `quote_shown`, `preview_ready`, `preview_viewed`, `checkout_started`, `paid`, `refunded`, `downloaded`, `account_linked`, `translation_edited`, `note_added`, and `approved`. The raw token is never written on those rows.

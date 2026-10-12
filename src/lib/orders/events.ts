@@ -24,5 +24,9 @@ export function isOrderEventType(value: string): value is OrderEventType {
     "paid",
     "refunded",
     "downloaded",
+    "account_linked",
+    "translation_edited",
+    "note_added",
+    "approved",
   ].includes(value);
 }
