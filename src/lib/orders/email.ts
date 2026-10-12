@@ -1,4 +1,12 @@
 import { Resend } from "resend";
+import {
+  renderOrderReceivedEmail,
+  renderPaymentReceiptEmail,
+  renderPreviewReadyEmail,
+  type OrderReceivedEmail,
+  type PaymentReceiptEmail,
+  type PreviewReadyEmail,
+} from "./email-templates";
 
 export function appOrigin(): string {
   const raw = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "https://credpronto.com";
@@ -21,7 +29,7 @@ function mailer(): { from: string; resend: Resend } | null {
   return { from, resend: new Resend(apiKey) };
 }
 
-async function send(to: string, subject: string, text: string): Promise<SendResult> {
+async function send(to: string, subject: string, text: string, html?: string): Promise<SendResult> {
   const client = mailer();
   if (!client) return { sent: false, skipped: true };
   const { error } = await client.resend.emails.send({
@@ -29,6 +37,7 @@ async function send(to: string, subject: string, text: string): Promise<SendResu
     to,
     subject,
     text,
+    ...(html ? { html } : {}),
   });
   if (error) {
     console.error(`email failed: ${error.message}`);
@@ -37,22 +46,28 @@ async function send(to: string, subject: string, text: string): Promise<SendResu
   return { sent: true, skipped: false };
 }
 
-export function sendOrderReceived(to: string, token: string): Promise<SendResult> {
-  const link = orderLink(token);
-  return send(
-    to,
-    "We received your CredPronto documents",
-    `We received your documents. Open this link to see your quote and preview:\n\n${link}\n\nKeep this email. It is how you get back to the order.`,
-  );
+export function sendOrderReceived(
+  to: string,
+  input: Omit<OrderReceivedEmail, "trackUrl"> & { token: string },
+): Promise<SendResult> {
+  const rendered = renderOrderReceivedEmail({ ...input, trackUrl: orderLink(input.token) });
+  return send(to, rendered.subject, rendered.text, rendered.html);
 }
 
-export function sendPreviewReady(to: string, token: string | null): Promise<SendResult> {
-  const link = token ? `\n\n${orderLink(token)}` : "\n\nOpen the CredPronto link from your earlier email.";
-  return send(
-    to,
-    "Your CredPronto preview is ready",
-    `Your watermarked preview is ready. Compare it with the original, then pay only if it looks right.${link}`,
-  );
+export function sendPreviewReady(
+  to: string,
+  input: Omit<PreviewReadyEmail, "payUrl"> & { token: string | null },
+): Promise<SendResult> {
+  const rendered = renderPreviewReadyEmail({
+    ...input,
+    payUrl: input.token ? orderLink(input.token) : null,
+  });
+  return send(to, rendered.subject, rendered.text, rendered.html);
+}
+
+export function sendPaymentReceipt(to: string, input: PaymentReceiptEmail): Promise<SendResult> {
+  const rendered = renderPaymentReceiptEmail(input);
+  return send(to, rendered.subject, rendered.text, rendered.html);
 }
 
 export function sendDeliveryReady(to: string): Promise<SendResult> {

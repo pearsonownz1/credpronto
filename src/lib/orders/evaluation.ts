@@ -307,7 +307,18 @@ export async function completeEvaluation(
     await markPreview(db, order.id, version, "ready");
     await insertEvent(db, order.id, "preview_ready", { version, pageCount: files.pageCount });
     const email = await customerEmail(db, order.customerId);
-    if (email) await sendPreviewReady(email, input.token);
+    if (email) {
+      await sendPreviewReady(email, {
+        token: input.token,
+        orderId: order.id,
+        sourceLanguage: language,
+        targetLanguage: order.targetLanguage,
+        documentCount: input.filenames.length,
+        pageCount: input.billablePages,
+        totalCents: quote?.totalCents ?? null,
+        includesTranslation: (quote?.translationCents ?? 0) > 0,
+      });
+    }
   } catch (error) {
     await markPreview(db, order.id, version, "failed");
     if (error instanceof AiUnavailableError) {

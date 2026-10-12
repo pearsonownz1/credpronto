@@ -20,6 +20,7 @@ import {
   latestReadyPreview,
   listCorrections,
   listDocuments,
+  listOrderAddons,
   listPages,
   markDocuments,
   markPaymentExpired,
@@ -40,7 +41,8 @@ import { HttpError } from "./errors";
 import { assertUploadBudget, resolveUploadMime, safeFilename } from "./files";
 import { replacementAllowed } from "./image-quality";
 import { CONFIRMATION_FIELD_KEYS, normalizeDateFormat, type ConfirmationFieldKey } from "./fields";
-import { appOrigin } from "./email";
+import { appOrigin, orderLink, sendPaymentReceipt } from "./email";
+import { formatPaymentMethod, receiptLineItems } from "./email-templates";
 import { applySucceededSetupIntent } from "./saved-card";
 import { normalizeLanguage } from "./languages";
 import { loadCustomerOrder } from "./pipeline";
@@ -371,16 +373,26 @@ export async function startCheckout(token: string, body: unknown = {}) {
   if (process.env.CHECKOUT_PLACEHOLDER === "1") {
     await insertEvent(db, order.id, "checkout_started", { mode: "paid_test" });
     const sessionId = `paid_test_${randomUUID()}`;
-    await insertPayment(db, {
+    const paidAt = new Date().toISOString();
+    const payment = await insertPayment(db, {
       orderId: order.id,
       sessionId,
       amountCents: total,
       status: "paid_test",
-      paidAt: new Date().toISOString(),
+      paidAt,
     });
     await ensurePendingDelivery(db, order.id);
     await updateOrder(db, order.id, { status: "paid" });
     await insertEvent(db, order.id, "paid", { mode: "paid_test" });
+    await emailPaymentReceipt(db, {
+      order,
+      token,
+      receiptNumber: payment.id,
+      paidAt: payment.paidAt ?? paidAt,
+      totalCents: total,
+      paymentLabel: "Test checkout",
+      addons: selection.addons,
+    });
     return { mode: "paid_test" as const, paymentStatus: "paid_test" as const, orderStatus: "paid" as const };
   }
 
@@ -403,7 +415,7 @@ export async function startCheckout(token: string, body: unknown = {}) {
     mode: "payment",
     customer_email: email ?? undefined,
     client_reference_id: order.id,
-    metadata: { order_id: order.id },
+    metadata: { order_id: order.id, order_token: token },
     line_items: [
       ...serviceStripeLines({
         order,
@@ -504,7 +516,81 @@ export async function handleStripeWebhook(request: Request) {
   if (!(await hasEvent(db, payment.orderId, "paid"))) {
     await insertEvent(db, payment.orderId, "paid", { mode: "stripe" });
   }
+  const receiptOrder = paidOrder ?? chargedOrder;
+  if (receiptOrder) {
+    const paidAt = new Date().toISOString();
+    await emailPaymentReceipt(db, {
+      order: receiptOrder,
+      token: session.metadata?.order_token ?? orderTokenFromSuccessUrl(session.success_url),
+      receiptNumber: payment.id,
+      paidAt,
+      totalCents: payment.amountCents,
+      paymentLabel: await stripePaymentLabel(stripe, decision.paymentIntentId),
+    });
+  }
   return { received: true };
+}
+
+function orderTokenFromSuccessUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    const match = /^\/order\/([^/]+)$/.exec(parsed.pathname);
+    return match?.[1] ? decodeURIComponent(match[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function stripePaymentLabel(stripe: Stripe, paymentIntentId: string | null): Promise<string | null> {
+  if (!paymentIntentId) return null;
+  try {
+    const intent = await stripe.paymentIntents.retrieve(paymentIntentId, { expand: ["payment_method"] });
+    const method = intent.payment_method;
+    if (!method || typeof method === "string") return null;
+    return formatPaymentMethod(method.card?.brand, method.card?.last4);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "card lookup failed");
+    return null;
+  }
+}
+
+async function emailPaymentReceipt(
+  db: Db,
+  input: {
+    order: NonNullable<Awaited<ReturnType<typeof getOrderById>>>;
+    token: string | null;
+    receiptNumber: string;
+    paidAt: string;
+    totalCents: number;
+    paymentLabel: string | null;
+    addons?: Awaited<ReturnType<typeof listOrderAddons>>;
+  },
+): Promise<void> {
+  if (!input.token) return;
+  const email = await customerEmail(db, input.order.customerId);
+  if (!email) return;
+  const addons = input.addons ?? (await listOrderAddons(db, input.order.id));
+  try {
+    await sendPaymentReceipt(email, {
+      downloadUrl: orderLink(input.token),
+      receiptNumber: input.receiptNumber,
+      paidAt: input.paidAt,
+      paymentLabel: input.paymentLabel,
+      totalCents: input.totalCents,
+      lines: receiptLineItems({
+        service: input.order.service,
+        degreeCount: input.order.degreeCount,
+        evaluationCents: input.order.evaluationCents,
+        translationCents: input.order.translationCents,
+        billablePages: input.order.billablePages,
+        unitPriceCents: input.order.unitPriceCents,
+        addons,
+      }),
+    });
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "receipt email failed");
+  }
 }
 
 type ConfirmDocument = {

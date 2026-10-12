@@ -11,12 +11,21 @@ export async function POST(request: Request) {
     const created = await createOrder(request);
     after(async () => {
       try {
-        await sendOrderReceived(created.email, created.orderToken);
+        await sendOrderReceived(created.email, {
+          token: created.orderToken,
+          customerName: null,
+          orderId: created.orderId,
+          sourceLanguage: created.sourceLanguage,
+          targetLanguage: created.targetLanguage,
+          documentCount: created.documentCount,
+          pageCount: null,
+          estimatedCents: created.estimatedCents,
+        });
       } catch (error) {
         console.error(error instanceof Error ? error.message : "order email failed");
       }
       try {
-        await processOrder(created.orderId);
+        await processOrder(created.orderId, created.orderToken);
       } catch (error) {
         console.error(error instanceof Error ? error.message : "order processing failed");
       }
