@@ -1,6 +1,7 @@
 "use client";
 
 import type { FormEvent } from "react";
+import { AddonError, AddonPanel, AddonTotal, type AddonPanelState } from "./addon-panel";
 import {
   buyLabel,
   formatMoney,
@@ -11,11 +12,11 @@ import {
 export function OrderRail({
   order,
   corrections,
-  onBuy,
+  panel,
 }: {
   order: PreviewOrder;
   corrections: PreviewCorrection[];
-  onBuy?: () => void;
+  panel: AddonPanelState;
 }) {
   const { pricing } = order;
 
@@ -40,18 +41,18 @@ export function OrderRail({
           <span>Certification</span>
           <span>{pricing.certificationIncluded ? "Included" : "Extra"}</span>
         </div>
-        <div className="flex justify-between border-t border-line px-3.5 py-[11px] text-base font-bold">
-          <span>Total</span>
-          <span>{formatMoney(pricing.totalCents)}</span>
-        </div>
+        <AddonTotal panel={panel} />
       </div>
+      <AddonPanel panel={panel} />
+      <AddonError panel={panel} />
       <button
         type="button"
         data-testid="buy-download"
-        onClick={onBuy}
-        className="inline-flex h-[52px] w-full items-center justify-center rounded-[var(--cp-radius)] bg-primary text-base font-semibold text-primary-ink"
+        disabled={panel.pending}
+        onClick={panel.purchase}
+        className="inline-flex h-[52px] w-full items-center justify-center rounded-[var(--cp-radius)] bg-primary text-base font-semibold text-primary-ink disabled:opacity-60"
       >
-        {buyLabel(order)}
+        {panel.pending ? "Opening checkout…" : buyLabel(order, panel.selected)}
       </button>
       <ul className="grid gap-[7px] text-[13px] text-ink-muted">
         {order.included.map((item) => (
@@ -99,17 +100,19 @@ export function OrderRail({
 export function MobileBuyBar({
   order,
   onFlag,
-  onBuy,
+  panel,
 }: {
   order: PreviewOrder;
   onFlag: () => void;
-  onBuy?: () => void;
+  panel: AddonPanelState;
 }) {
   return (
     <div
       data-testid="mobile-buy-bar"
-      className="flex flex-col gap-2 border-t border-line bg-bg px-4 pt-3 pb-6"
+      className="flex max-h-[70dvh] flex-col gap-2 overflow-y-auto border-t border-line bg-bg px-4 pt-3 pb-6"
     >
+      <AddonPanel panel={panel} />
+      <AddonError panel={panel} />
       <div className="flex items-center justify-between text-[13px] text-ink-muted">
         <button type="button" data-testid="flag-correction" onClick={onFlag}>
           ⚑ Flag a correction
@@ -121,10 +124,11 @@ export function MobileBuyBar({
       <button
         type="button"
         data-testid="buy-download"
-        onClick={onBuy}
-        className="inline-flex h-[50px] w-full items-center justify-center rounded-[var(--cp-radius)] bg-primary text-[15px] font-semibold text-primary-ink"
+        disabled={panel.pending}
+        onClick={panel.purchase}
+        className="inline-flex h-[50px] w-full items-center justify-center rounded-[var(--cp-radius)] bg-primary text-[15px] font-semibold text-primary-ink disabled:opacity-60"
       >
-        {buyLabel(order)}
+        {panel.pending ? "Opening checkout…" : buyLabel(order, panel.selected)}
       </button>
     </div>
   );

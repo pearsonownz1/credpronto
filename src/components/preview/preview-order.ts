@@ -1,3 +1,14 @@
+import { addonOptions } from "@/lib/orders/addons";
+import type { ShippingAddress } from "@/lib/orders/types";
+
+export type AddonOption = {
+  id: string;
+  label: string;
+  unitCents: number;
+  per: "order" | "page";
+  totalCents: number | null;
+};
+
 /**
  * Shape of the preview payload Backend will return.
  * `original.url` and `translation.url` are signed URLs. This demo
@@ -46,6 +57,10 @@ export type PreviewOrder = {
   };
   included: string[];
   corrections: PreviewCorrection[];
+  /** Prices come from the order. Options that are absent stay hidden. */
+  addonOptions?: AddonOption[];
+  addons?: string[];
+  shippingAddress?: ShippingAddress | null;
 };
 
 const PER_PAGE_CENTS = 995;
@@ -78,8 +93,20 @@ export function formatMoney(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-export function buyLabel(order: PreviewOrder) {
-  return `Buy & download — ${formatMoney(order.pricing.totalCents)}`;
+export function selectedAddonCents(
+  options: readonly AddonOption[],
+  selectedIds: readonly string[],
+): number {
+  const selected = new Set(selectedIds);
+  return options.reduce((sum, option) => {
+    if (!selected.has(option.id) || option.totalCents == null) return sum;
+    return sum + option.totalCents;
+  }, 0);
+}
+
+export function buyLabel(order: PreviewOrder, selectedIds: readonly string[] = []) {
+  const total = order.pricing.totalCents + selectedAddonCents(order.addonOptions ?? [], selectedIds);
+  return `Buy & download — ${formatMoney(total)}`;
 }
 
 export function statusLabel(order: PreviewOrder) {
@@ -104,6 +131,7 @@ export const CERTIFICATE_PREVIEW: PreviewOrder = {
     pages: letterPages(3),
   },
   pricing: pricing(3),
+  addonOptions: addonOptions(3),
   included: INCLUDED,
   corrections: [
     {
@@ -136,6 +164,7 @@ export const LONG_PREVIEW: PreviewOrder = {
     pages: letterPages(12),
   },
   pricing: pricing(12),
+  addonOptions: addonOptions(12),
   included: INCLUDED,
   corrections: [],
 };

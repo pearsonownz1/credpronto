@@ -26,6 +26,15 @@ test("side-by-side preview syncs page and zoom", async ({ page }) => {
   await expect(original.getByTestId("translation-watermark")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Review every page, then buy." })).toBeVisible();
   await expect(page.getByTestId("order-rail")).toContainText("Buy & download — $29.85");
+  await expect(page.getByTestId("addon-panel")).toContainText("Notarization");
+  await expect(page.getByTestId("addon-panel")).toContainText("$17.95");
+  await expect(page.getByTestId("addon-panel")).toContainText("USPS Priority hard copy");
+  await expect(page.getByTestId("addon-panel")).toContainText("$12.95");
+  await expect(page.getByTestId("addon-expedited")).toBeVisible();
+  await page.getByTestId("addon-mail").check();
+  await expect(page.getByTestId("shipping-address")).toBeVisible();
+  await expect(page.getByLabel("Street address")).toBeVisible();
+  await expect(page.getByTestId("buy-download")).toContainText("Buy & download — $42.80");
 
   await page.getByTestId("flag-correction").click();
   await expect(page.getByTestId("correction-popover")).toContainText("page 1");

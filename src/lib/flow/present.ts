@@ -1,3 +1,4 @@
+import { serviceCents } from "@/lib/orders/addons";
 import { languageLabel, sourceLanguageChoices } from "@/lib/orders/languages";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import {
@@ -167,8 +168,20 @@ export function toPreviewOrder(
       perPageCents: preview.unitPriceCents,
       pages,
       certificationIncluded: true,
-      totalCents: preview.totalCents ?? 0,
+      totalCents:
+        serviceCents({
+          billablePages: preview.billablePages,
+          unitPriceCents: preview.unitPriceCents,
+          service: order.service,
+          evaluationCents: order.evaluationCents,
+          translationCents: order.translationCents,
+        }) ??
+        preview.totalCents ??
+        0,
     },
+    addonOptions: order.addonOptions,
+    addons: order.addons,
+    shippingAddress: order.shippingAddress,
     included: PREVIEW_INCLUDED,
     corrections: preview.corrections
       .filter((correction) => correction.page != null)

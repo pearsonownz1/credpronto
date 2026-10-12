@@ -30,6 +30,7 @@ import {
   ZoomPluginPackage,
   type ZoomLevel,
 } from "@embedpdf/plugin-zoom/react";
+import { useAddonPanel, type AddonPanelState, type CheckoutBody } from "./addon-panel";
 import {
   CorrectionPopover,
   MobileBuyBar,
@@ -86,11 +87,12 @@ export function SideBySideViewer({
   chrome?: "customer" | "staff";
   /** Changes when staff asks the viewer to show a QA issue page. */
   focusPage?: ViewerFocus | null;
-  onBuy?: () => void;
+  onBuy?: (body: CheckoutBody) => void | Promise<void>;
   onCorrect?: (input: { page: number; note: string }) => Promise<void>;
   notice?: string;
   noticeTestId?: string;
 }) {
+  const panel = useAddonPanel(order, onBuy);
   const original = order.original.url;
   const translation = order.translation.url;
   const wasmUrl = new URL("/pdfium/pdfium.wasm", window.location.origin).href;
@@ -129,7 +131,7 @@ export function SideBySideViewer({
     return (
       <PreviewShell
         order={order}
-        rail={chrome === "staff" ? undefined : <OrderRail order={order} corrections={order.corrections} onBuy={onBuy} />}
+        rail={chrome === "staff" ? undefined : <OrderRail order={order} corrections={order.corrections} panel={panel} />}
         notice={notice}
         noticeTestId={noticeTestId}
         status="The preview engine failed to load. Refresh to try again."
@@ -141,8 +143,8 @@ export function SideBySideViewer({
     return (
       <PreviewShell
         order={order}
-        rail={chrome === "staff" ? undefined : <OrderRail order={order} corrections={order.corrections} onBuy={onBuy} />}
-        mobileBar={chrome === "staff" ? undefined : <MobileBuyBar order={order} onFlag={() => undefined} onBuy={onBuy} />}
+        rail={chrome === "staff" ? undefined : <OrderRail order={order} corrections={order.corrections} panel={panel} />}
+        mobileBar={chrome === "staff" ? undefined : <MobileBuyBar order={order} onFlag={() => undefined} panel={panel} />}
         notice={notice}
         noticeTestId={noticeTestId}
         status="Loading preview…"
@@ -160,7 +162,7 @@ export function SideBySideViewer({
         order={order}
         chrome={chrome}
         focusPage={focusPage}
-        onBuy={onBuy}
+        panel={panel}
         onCorrect={onCorrect}
         notice={notice}
         noticeTestId={noticeTestId}
@@ -212,7 +214,7 @@ function ViewerWorkspace({
   order,
   chrome,
   focusPage,
-  onBuy,
+  panel,
   onCorrect,
   notice,
   noticeTestId,
@@ -220,7 +222,7 @@ function ViewerWorkspace({
   order: PreviewOrder;
   chrome: "customer" | "staff";
   focusPage: ViewerFocus | null;
-  onBuy?: () => void;
+  panel: AddonPanelState;
   onCorrect?: (input: { page: number; note: string }) => Promise<void>;
   notice?: string;
   noticeTestId?: string;
@@ -522,12 +524,12 @@ function ViewerWorkspace({
       noticeTestId={noticeTestId}
       rail={
         chrome === "staff" || isMobile ? undefined : (
-          <OrderRail order={order} corrections={corrections} onBuy={onBuy} />
+          <OrderRail order={order} corrections={corrections} panel={panel} />
         )
       }
       mobileBar={
         chrome === "customer" && isMobile ? (
-          <MobileBuyBar order={order} onFlag={openCorrection} onBuy={onBuy} />
+          <MobileBuyBar order={order} onFlag={openCorrection} panel={panel} />
         ) : undefined
       }
       toolbar={
