@@ -6,7 +6,16 @@ import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { activityFor } from "@/lib/account/activity";
 import { formatOrderDate, formatOrderMoney } from "@/lib/account/present";
-import { addNote, approveOrder, patchOrderTranslation, refundOrder, regenerateOrder, resolveReview } from "@/lib/api/mutations";
+import {
+  addNote,
+  approveOrder,
+  notarizeOrder,
+  patchOrderTranslation,
+  refundOrder,
+  regenerateOrder,
+  resolveReview,
+  shipOrder,
+} from "@/lib/api/mutations";
 import type { StaffDetail, StaffNote } from "@/lib/api/types";
 import { languageLabel } from "@/lib/orders/languages";
 import type { PreviewOrder, PreviewPageSize } from "@/components/preview/preview-order";
@@ -102,6 +111,7 @@ export function OrderStudio({
           <div>
             <h1 className="font-mono text-[22px] tracking-[-0.4px]">{detail.id}</h1>
             <p className="mt-1 text-sm text-ink-muted">
+              {detail.expedited ? "Expedited · " : ""}
               {detail.email ?? "No customer email"} · {humanStatus(detail.status)} ·{" "}
               {detail.sourceLanguage ? languageLabel(detail.sourceLanguage) : "Language unset"} →{" "}
               {languageLabel(detail.targetLanguage)} · {formatOrderMoney(detail.totalCents)}
@@ -186,6 +196,16 @@ export function OrderStudio({
           </p>
         ) : null}
       </div>
+
+      <FulfillmentTasks
+        key={detail.id}
+        orderId={detail.id}
+        fulfillment={detail.fulfillment}
+        onMessage={setMessage}
+        onError={setError}
+        pending={pending}
+        setPending={setPending}
+      />
 
       {detail.status === "needs_review" ? (
         <form
@@ -395,6 +415,139 @@ export function OrderStudio({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function FulfillmentTasks({
+  orderId,
+  fulfillment,
+  onMessage,
+  onError,
+  pending,
+  setPending,
+}: {
+  orderId: string;
+  fulfillment: StaffDetail["fulfillment"];
+  onMessage: (message: string | null) => void;
+  onError: (message: string | null) => void;
+  pending: string | null;
+  setPending: (action: string | null) => void;
+}) {
+  const [mail, setMail] = useState(fulfillment.mail);
+  const [notarization, setNotarization] = useState(fulfillment.notarization);
+  const [tracking, setTracking] = useState(fulfillment.mail?.trackingNumber ?? "");
+  if (!mail && !notarization) return null;
+
+  async function markShipped() {
+    const trackingNumber = tracking.trim();
+    if (!trackingNumber) {
+      onError("Tracking number is required");
+      onMessage(null);
+      return;
+    }
+    setPending("ship");
+    onError(null);
+    onMessage(null);
+    const result = await shipOrder(orderId, trackingNumber);
+    setPending(null);
+    if (!result.ok) {
+      onError(result.error);
+      return;
+    }
+    setMail({
+      status: "shipped",
+      trackingNumber: result.data.trackingNumber,
+      address: mail?.address ?? null,
+    });
+    onMessage(`Marked shipped. Tracking ${result.data.trackingNumber}.`);
+  }
+
+  async function markNotarized() {
+    setPending("notarize");
+    onError(null);
+    onMessage(null);
+    const result = await notarizeOrder(orderId);
+    setPending(null);
+    if (!result.ok) {
+      onError(result.error);
+      return;
+    }
+    setNotarization({ status: "done" });
+    onMessage(result.data.duplicate ? "Notarization was already marked done." : "Notarization marked done.");
+  }
+
+  return (
+    <section data-testid="fulfillment" className="grid gap-3 md:grid-cols-2">
+      {mail ? (
+        <form
+          data-testid="fulfillment-mail"
+          className="grid gap-3 rounded-[var(--cp-radius)] border border-line bg-white p-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void markShipped();
+          }}
+        >
+          <h2 className="text-sm font-semibold">Mailing</h2>
+          {mail.address ? (
+            <p className="text-sm text-ink-muted">
+              {mail.address.name}
+              <br />
+              {mail.address.line1}
+              {mail.address.line2 ? (
+                <>
+                  <br />
+                  {mail.address.line2}
+                </>
+              ) : null}
+              <br />
+              {mail.address.city}, {mail.address.state} {mail.address.postalCode}
+              <br />
+              {mail.address.country}
+            </p>
+          ) : (
+            <p className="text-sm text-ink-muted">No shipping address on this order.</p>
+          )}
+          <p className="text-sm">{mail.status === "shipped" ? `Shipped · ${mail.trackingNumber ?? ""}` : "Pending"}</p>
+          <label className="grid gap-1 text-sm">
+            <span className="font-semibold">Tracking number</span>
+            <input
+              data-testid="tracking-number"
+              value={tracking}
+              onChange={(event) => setTracking(event.target.value)}
+              className="h-9 rounded-[var(--cp-radius)] border border-line px-2"
+            />
+          </label>
+          <button
+            type="submit"
+            data-testid="mark-shipped"
+            disabled={pending !== null}
+            className="inline-flex h-9 w-fit items-center rounded-[var(--cp-radius)] bg-primary px-3 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {pending === "ship" ? "Saving…" : mail.status === "shipped" ? "Update tracking" : "Mark shipped"}
+          </button>
+        </form>
+      ) : null}
+      {notarization ? (
+        <div
+          data-testid="fulfillment-notarization"
+          className="grid content-start gap-3 rounded-[var(--cp-radius)] border border-line bg-white p-4"
+        >
+          <h2 className="text-sm font-semibold">Notarization</h2>
+          <p className="text-sm">{notarization.status === "done" ? "Done" : "Pending"}</p>
+          {notarization.status === "pending" ? (
+            <button
+              type="button"
+              data-testid="mark-notarized"
+              disabled={pending !== null}
+              onClick={() => void markNotarized()}
+              className="inline-flex h-9 w-fit items-center rounded-[var(--cp-radius)] bg-primary px-3 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {pending === "notarize" ? "Saving…" : "Mark done"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
   );
 }
 

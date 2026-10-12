@@ -33,6 +33,7 @@ export type AdminOrder = {
   createdAt: string;
   reviewReason: string | null;
   email: string | null;
+  expedited: boolean;
 };
 
 export type AdminList = {
@@ -105,6 +106,23 @@ export type StaffDetail = {
   translationUrl: string | null;
   /** Absent until the order payload includes a QA report. */
   qa: QaReport | null;
+  expedited: boolean;
+  fulfillment: {
+    mail: {
+      status: "pending" | "shipped";
+      trackingNumber: string | null;
+      address: {
+        name: string;
+        line1: string;
+        line2: string | null;
+        city: string;
+        state: string;
+        postalCode: string;
+        country: "US";
+      } | null;
+    } | null;
+    notarization: { status: "pending" | "done" } | null;
+  };
 };
 
 export function errorMessage(body: unknown, status: number): string {

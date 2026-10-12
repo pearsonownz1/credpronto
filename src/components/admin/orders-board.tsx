@@ -162,6 +162,11 @@ export function OrdersBoard({
                           <Link href={`/admin/orders/${order.id}`} className="font-semibold text-primary">
                             {order.id}
                           </Link>
+                          {order.expedited ? (
+                            <span className="ml-2 rounded bg-[#fff4e5] px-1.5 py-0.5 text-[11px] font-semibold text-[#9a6700]">
+                              Expedited
+                            </span>
+                          ) : null}
                         </td>
                         <td className="px-4 py-3">{order.email ?? "—"}</td>
                         <td className="px-4 py-3">{order.sourceLanguage ? languageLabel(order.sourceLanguage) : "—"}</td>
