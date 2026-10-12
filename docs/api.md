@@ -561,8 +561,9 @@ An evaluation is an order whose `orderType` is `evaluation`. `service` is `diplo
 | `orderType` | no | `translation` (default) or `evaluation` |
 | `service` | yes when `orderType` is `evaluation` | `diploma` or `course_by_course` |
 | `degreeCount` | yes when `orderType` is `evaluation` | Integer ≥ 1. The number of degrees to price |
+| `includeTranslation` | no | `true` when an evaluation should also include a certified translation. Omit it, or send `false`, to price the evaluation alone. A translation order ignores this field. |
 
-`400` when an evaluation is missing `service` or `degreeCount`, or when `service` is not one of those two values.
+`400` when an evaluation is missing `service` or `degreeCount`, when `service` is not one of those two values, or when `includeTranslation` is present and not `true` or `false`.
 
 `GET /api/orders/[token]` echoes the choice on every status:
 
@@ -585,7 +586,7 @@ Amounts are integer cents. The evaluation fee and, when the source is not Englis
 | `diploma` | `1995` ($19.95) |
 | `course_by_course` | `3995` ($39.95) |
 
-`evaluationCents` is `degreeCount` times that unit. It is stored when the order is created, before the source language or page count is known. `translationCents` and `totalCents` stay null until that quote exists, and `lineItems` stays empty until then. When `sourceLanguage` is `en`, there is no translation line and `translationCents` is `0`. Otherwise the translation uses the same billable-page rule as a translation order (`unitPriceCents` `995`) and `translationCents` is `billablePages * 995`. `totalCents` is `evaluationCents + translationCents`. It is not `billablePages * unitPriceCents`.
+`evaluationCents` is `degreeCount` times that unit. It is stored when the order is created, before the source language or page count is known. `includeTranslation` is stored on the order at the same time (`false` when omitted). `translationCents` and `totalCents` stay null until that quote exists, and `lineItems` stays empty until then. When `sourceLanguage` is `en`, there is no translation line and `translationCents` is `0`. Otherwise, when `includeTranslation` is `true`, the translation uses the same billable-page rule as a translation order (`unitPriceCents` `995`) and `translationCents` is `billablePages * 995`. `totalCents` is `evaluationCents + translationCents`. It is not `billablePages * unitPriceCents`. The quote can turn `includeTranslation` on or off later; both line items and the total follow that flag.
 
 ```json
 {

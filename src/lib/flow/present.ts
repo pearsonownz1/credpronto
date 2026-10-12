@@ -1,4 +1,5 @@
 import { serviceCents } from "@/lib/orders/addons";
+import { evaluationCheckoutTotal, lineItemsForOrder } from "@/lib/orders/evaluation-price";
 import { TRANSLATION_TIMEOUT_REASON } from "@/lib/orders/translation-failure";
 import {
   languageLabel,
@@ -407,9 +408,34 @@ export function servicePriceLines(order: {
 
 function priceLineLabel(item: EvaluationLine): string {
   if (item.kind === "evaluation") return item.description;
-  const unit = formatMoney(item.unitAmountCents);
-  const noun = item.quantity === 1 ? "page" : "pages";
-  return `${item.description} · ${item.quantity} ${noun} × ${unit}`;
+  const pages = fileCountLabel(item.quantity);
+  return `${item.description}, ${pages}`;
+}
+
+/** Local quote used while a translation checkbox is in flight. Amounts match the API. */
+export function orderWithTranslationChoice(order: CustomerOrder, includeTranslation: boolean): CustomerOrder {
+  if (!order.service || order.degreeCount == null) return order;
+  const priced = evaluationCheckoutTotal({
+    service: order.service,
+    degreeCount: order.degreeCount,
+    sourceLanguage: order.sourceLanguage,
+    billablePages: order.billablePages ?? 0,
+    includeTranslation,
+  });
+  return {
+    ...order,
+    includeTranslation: priced.includeTranslation,
+    evaluationCents: priced.evaluationCents,
+    translationCents: priced.translationCents,
+    totalCents: priced.totalCents,
+    lineItems: lineItemsForOrder({
+      service: order.service,
+      degreeCount: order.degreeCount,
+      evaluationCents: priced.evaluationCents,
+      translationCents: priced.translationCents,
+      billablePages: order.billablePages,
+    }),
+  };
 }
 
 const EVALUATION_CONFIRM_LABELS: Record<string, string> = {

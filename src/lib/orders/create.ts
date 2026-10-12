@@ -74,6 +74,7 @@ export async function createOrder(request: Request): Promise<{
     orderType: textField(form, "orderType"),
     service: textField(form, "service"),
     degreeCount: textField(form, "degreeCount"),
+    includeTranslation: textField(form, "includeTranslation"),
   });
 
   const db = serviceDb();
@@ -86,6 +87,7 @@ export async function createOrder(request: Request): Promise<{
     serviceType: choice.orderType === "evaluation" ? "evaluation" : "translation",
     service: choice.service,
     degreeCount: choice.degreeCount,
+    includeTranslation: choice.includeTranslation,
     evaluationCents:
       choice.service && choice.degreeCount != null
         ? evaluationFeeCents(choice.service, choice.degreeCount)

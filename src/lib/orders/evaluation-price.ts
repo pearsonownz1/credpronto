@@ -22,14 +22,17 @@ export function parseOrderChoice(fields: {
   orderType: string | null;
   service: string | null;
   degreeCount: string | null;
+  includeTranslation?: string | null;
 }): {
   orderType: "translation" | "evaluation";
   service: EvaluationService | null;
   degreeCount: number | null;
+  /** True only for an evaluation the customer also wants translated. */
+  includeTranslation: boolean;
 } {
   const orderType = fields.orderType ?? "translation";
   if (orderType === "translation") {
-    return { orderType: "translation", service: null, degreeCount: null };
+    return { orderType: "translation", service: null, degreeCount: null, includeTranslation: false };
   }
   if (orderType !== "evaluation") {
     throw new HttpError("orderType must be translation or evaluation", 400);
@@ -41,7 +44,19 @@ export function parseOrderChoice(fields: {
   if (!Number.isInteger(degreeCount) || degreeCount < 1) {
     throw new HttpError("degreeCount must be an integer of at least 1", 400);
   }
-  return { orderType: "evaluation", service: fields.service, degreeCount };
+  return {
+    orderType: "evaluation",
+    service: fields.service,
+    degreeCount,
+    includeTranslation: parseIncludeTranslation(fields.includeTranslation),
+  };
+}
+
+function parseIncludeTranslation(value: string | null | undefined): boolean {
+  if (value == null || value === "") return false;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new HttpError("includeTranslation must be true or false.", 400);
 }
 
 /** A non-English source can take an optional certified translation. It is not added unless the customer opts in. */
