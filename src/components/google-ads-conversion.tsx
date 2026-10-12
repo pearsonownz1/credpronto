@@ -1,48 +1,20 @@
 "use client";
 
 import { useEffect } from "react";
-
-declare global {
-  interface Window {
-    dataLayer?: unknown[];
-    gtag?: (...args: unknown[]) => void;
-  }
-}
+import { claimAdsEvent, pushGtagEvent } from "@/lib/analytics/gtag-events";
 import {
-  claimConversion,
   googleAdsConversionLabel,
   googleAdsId,
   trackPaidOrderConversion,
   type GoogleAdsConversion,
 } from "@/lib/analytics/google-ads";
 
-const claimedOrders = new Set<string>();
-
 function claimOnce(orderId: string): boolean {
-  if (claimedOrders.has(orderId)) return false;
-  try {
-    if (!claimConversion(orderId, sessionStorage)) {
-      claimedOrders.add(orderId);
-      return false;
-    }
-  } catch {
-    // Private browsing can reject sessionStorage. The in-memory set still
-    // stops a second fire during this page view.
-  }
-  claimedOrders.add(orderId);
-  return true;
+  return claimAdsEvent("conversion", orderId);
 }
 
 function pushConversion(payload: GoogleAdsConversion) {
-  const dataLayer = (window.dataLayer = window.dataLayer || []);
-  const gtag =
-    typeof window.gtag === "function"
-      ? window.gtag
-      : (...args: unknown[]) => {
-          dataLayer.push(args);
-        };
-  window.gtag = gtag;
-  gtag("event", "conversion", payload);
+  pushGtagEvent("conversion", payload);
 }
 
 async function fetchOrder(token: string, signal: AbortSignal): Promise<unknown> {

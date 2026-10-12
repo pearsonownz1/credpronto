@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
+import { knownPageCount } from "@/lib/analytics/google-ads";
+import { trackOrderUpload } from "@/lib/analytics/gtag-events";
 import { FlowApiError, flowUsesMock, getFlowClient } from "@/lib/flow/client";
 import { pageLabel } from "@/lib/flow/pricing";
 import { sampleCustomerOrder } from "@/lib/flow/sample-order";
@@ -46,6 +48,7 @@ export function UploadCard({
             ? "pdf"
             : "image",
         }));
+  const pageCount = knownPageCount(files.map((file) => file.pages));
 
   function takeFiles(list: FileList | null) {
     if (!list || mock) return;
@@ -60,6 +63,7 @@ export function UploadCard({
       const client = getFlowClient();
       if (mock) {
         const result = await client.upload({ email, files: [] });
+        trackOrderUpload(result.orderId, pageCount);
         writeToken(result.orderToken);
         writeEmail(email);
         router.push("/quote");
@@ -70,6 +74,7 @@ export function UploadCard({
         return;
       }
       const result = await client.upload({ email, files: picked });
+      trackOrderUpload(result.orderId, pageCount);
       writeToken(result.orderToken);
       writeEmail(email);
       router.push(`/order/${encodeURIComponent(result.orderToken)}`);

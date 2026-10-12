@@ -3,13 +3,17 @@ import {
   CONVERSION_POLL_MS,
   GOOGLE_ADS_ID,
   claimConversion,
+  claimOrderEvent,
   decideConversion,
   googleAdsConversionLabel,
   googleAdsId,
   googleAdsInlineSnippet,
   googleAdsScriptSrc,
+  knownPageCount,
+  previewReadyEventParams,
   readOrderPayment,
   trackPaidOrderConversion,
+  uploadEventParams,
   type GoogleAdsConversion,
 } from "./google-ads";
 
@@ -54,23 +58,41 @@ describe("google ads id", () => {
 });
 
 describe("conversion label", () => {
-  const previous = process.env.NEXT_PUBLIC_GOOGLE_ADS_CONVERSION_LABEL;
+  const previousPurchase = process.env.NEXT_PUBLIC_GADS_PURCHASE_LABEL;
+  const previousFallback = process.env.NEXT_PUBLIC_GOOGLE_ADS_CONVERSION_LABEL;
 
   afterEach(() => {
-    if (previous === undefined) delete process.env.NEXT_PUBLIC_GOOGLE_ADS_CONVERSION_LABEL;
-    else process.env.NEXT_PUBLIC_GOOGLE_ADS_CONVERSION_LABEL = previous;
+    if (previousPurchase === undefined) delete process.env.NEXT_PUBLIC_GADS_PURCHASE_LABEL;
+    else process.env.NEXT_PUBLIC_GADS_PURCHASE_LABEL = previousPurchase;
+    if (previousFallback === undefined) delete process.env.NEXT_PUBLIC_GOOGLE_ADS_CONVERSION_LABEL;
+    else process.env.NEXT_PUBLIC_GOOGLE_ADS_CONVERSION_LABEL = previousFallback;
   });
 
-  it("is unset when the env var is missing or blank", () => {
+  it("is unset when both env vars are missing or blank", () => {
+    delete process.env.NEXT_PUBLIC_GADS_PURCHASE_LABEL;
     delete process.env.NEXT_PUBLIC_GOOGLE_ADS_CONVERSION_LABEL;
     expect(googleAdsConversionLabel()).toBeNull();
+    process.env.NEXT_PUBLIC_GADS_PURCHASE_LABEL = "  ";
     process.env.NEXT_PUBLIC_GOOGLE_ADS_CONVERSION_LABEL = "  ";
     expect(googleAdsConversionLabel()).toBeNull();
   });
 
-  it("reads a trimmed label", () => {
+  it("reads a trimmed fallback label", () => {
+    delete process.env.NEXT_PUBLIC_GADS_PURCHASE_LABEL;
     process.env.NEXT_PUBLIC_GOOGLE_ADS_CONVERSION_LABEL = " abc_123 ";
     expect(googleAdsConversionLabel()).toBe("abc_123");
+  });
+
+  it("prefers NEXT_PUBLIC_GADS_PURCHASE_LABEL over the fallback", () => {
+    process.env.NEXT_PUBLIC_GADS_PURCHASE_LABEL = " purchase ";
+    process.env.NEXT_PUBLIC_GOOGLE_ADS_CONVERSION_LABEL = "fallback";
+    expect(googleAdsConversionLabel()).toBe("purchase");
+  });
+
+  it("uses the fallback when the purchase label is blank", () => {
+    process.env.NEXT_PUBLIC_GADS_PURCHASE_LABEL = " ";
+    process.env.NEXT_PUBLIC_GOOGLE_ADS_CONVERSION_LABEL = "fallback";
+    expect(googleAdsConversionLabel()).toBe("fallback");
   });
 });
 
@@ -150,6 +172,44 @@ describe("claimConversion", () => {
     expect(claimConversion("order-1", memory)).toBe(false);
     expect(claimConversion("order-2", memory)).toBe(true);
     expect(store.get("credpronto:google-ads-conversion:order-1")).toBe("1");
+  });
+
+  it("dedupes upload and preview_ready separately from the purchase conversion", () => {
+    const store = new Map<string, string>();
+    const memory = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+      },
+    };
+    expect(claimOrderEvent("upload", "order-1", memory)).toBe(true);
+    expect(claimOrderEvent("upload", "order-1", memory)).toBe(false);
+    expect(claimOrderEvent("preview_ready", "order-1", memory)).toBe(true);
+    expect(claimOrderEvent("conversion", "order-1", memory)).toBe(true);
+    expect(store.get("credpronto:google-ads-upload:order-1")).toBe("1");
+    expect(store.get("credpronto:google-ads-preview-ready:order-1")).toBe("1");
+  });
+});
+
+describe("secondary events", () => {
+  it("includes page count on upload only when it is known", () => {
+    expect(knownPageCount([1, 2])).toBe(3);
+    expect(knownPageCount([1, null])).toBeNull();
+    expect(knownPageCount([])).toBeNull();
+    expect(uploadEventParams("order-1", 3)).toEqual({ order_id: "order-1", page_count: 3 });
+    expect(uploadEventParams("order-1", null)).toEqual({ order_id: "order-1" });
+  });
+
+  it("builds a preview_ready event the first time that status is seen", () => {
+    expect(
+      previewReadyEventParams({ orderId: "order-1", status: "processing", totalCents: 1990 }),
+    ).toBeNull();
+    expect(
+      previewReadyEventParams({ orderId: "order-1", status: "preview_ready", totalCents: 1990 }),
+    ).toEqual({ order_id: "order-1", value: 19.9, currency: "USD" });
+    expect(
+      previewReadyEventParams({ orderId: "order-1", status: "preview_ready", totalCents: null }),
+    ).toEqual({ order_id: "order-1", currency: "USD" });
   });
 });
 
