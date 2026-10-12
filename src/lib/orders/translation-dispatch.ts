@@ -17,6 +17,7 @@ export type TranslationAssembleRequest = {
 
 /** The deployment calls itself. Preview deployments use VERCEL_URL rather than the production APP_URL. */
 export function internalOrigin(): string {
+  if (process.env.VERCEL_ENV === "production") return appOrigin(); // production must call its public domain; *.vercel.app sits behind Deployment Protection
   const vercel = process.env.VERCEL_URL?.trim();
   if (vercel) {
     const host = vercel.replace(/^https?:\/\//, "").replace(/\/$/, "");
@@ -49,12 +50,16 @@ export function parseTranslationAssembleRequest(body: unknown): TranslationAssem
 export async function dispatchTranslation(path: string, body: TranslationPageRequest | TranslationAssembleRequest): Promise<void> {
   const secret = process.env.CRON_SECRET;
   if (!secret) throw new Error("CRON_SECRET is not set");
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${secret}`,
+    "content-type": "application/json",
+  };
+  if (process.env.VERCEL_AUTOMATION_BYPASS_SECRET) {
+    headers["x-vercel-protection-bypass"] = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  }
   const response = await fetch(`${internalOrigin()}${path}`, {
     method: "POST",
-    headers: {
-      authorization: `Bearer ${secret}`,
-      "content-type": "application/json",
-    },
+    headers,
     body: JSON.stringify(body),
   });
   if (!response.ok) {
