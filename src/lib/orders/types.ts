@@ -21,6 +21,7 @@ export type PaymentStatus =
   | "paid_test"
   | "failed"
   | "canceled"
+  | "expired"
   | "refunded";
 
 export type DeliveryStatus = "pending" | "approved" | "delivered" | "failed";

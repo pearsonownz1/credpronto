@@ -12,15 +12,18 @@ import {
   insertCorrection,
   insertEvent,
   insertPayment,
+  latestPayment,
   latestReadyPreview,
   listCorrections,
   listDocuments,
   listPages,
+  markPaymentExpired,
   markPaymentFailed,
   markPaymentPaid,
   markPaymentRefunded,
   paymentByIntent,
   paymentBySession,
+  restorePreviewReadyOrder,
   requireOrderByHash,
   settledPayment,
   updateOrder,
@@ -35,7 +38,7 @@ import { previewSignedTargets } from "./preview-targets";
 import { serviceDb, signedObjectUrl, type Db } from "./storage";
 import { assertOrderTokenShape, hashOrderToken } from "./token";
 import { parseCorrectionBody } from "./corrections";
-import { decideChargeRefunded, decideCheckoutCompleted } from "./webhook";
+import { decideChargeRefunded, decideCheckoutCompleted, decideCheckoutExpired } from "./webhook";
 import { previewPages, type CustomerOrder, type PreviewResponse } from "./view";
 
 async function orderForToken(token: string) {
@@ -277,6 +280,9 @@ export async function handleStripeWebhook(request: Request) {
   if (event.type === "charge.refunded") {
     return refundCharge(db, event.data.object as Stripe.Charge);
   }
+  if (event.type === "checkout.session.expired") {
+    return expireCheckoutSession(db, event.data.object as Stripe.Checkout.Session);
+  }
   if (event.type !== "checkout.session.completed") return { received: true };
 
   const session = event.data.object as Stripe.Checkout.Session;
@@ -328,6 +334,34 @@ type ConfirmDocument = {
   documentId: string;
   fields: Record<ConfirmationFieldKey, string>;
 };
+
+async function expireCheckoutSession(db: Db, session: Stripe.Checkout.Session) {
+  const payment = await paymentBySession(db, session.id);
+  const order = payment ? await getOrderById(db, payment.orderId) : null;
+  const settled = payment ? await settledPayment(db, payment.orderId) : null;
+  const latest = payment ? await latestPayment(db, payment.orderId) : null;
+  const decision = decideCheckoutExpired(
+    payment
+      ? { status: payment.status, amountCents: payment.amountCents, orderId: payment.orderId }
+      : null,
+    order
+      ? {
+          status: order.status,
+          settled: Boolean(settled),
+          isLatestPayment: latest?.id === payment?.id,
+        }
+      : null,
+  );
+
+  if (decision.action === "duplicate" || decision.action === "ignore") {
+    return { received: true, duplicate: decision.action === "duplicate" };
+  }
+  if (decision.action !== "expire" || !payment) return { received: true };
+
+  await markPaymentExpired(db, payment.id);
+  if (decision.reopenOrder) await restorePreviewReadyOrder(db, payment.orderId);
+  return { received: true };
+}
 
 async function refundCharge(db: Db, charge: Stripe.Charge) {
   const paymentIntent =
