@@ -3,6 +3,8 @@ import { OrdersBoard } from "@/components/admin/orders-board";
 import { listAdminOrders } from "@/lib/api/server";
 import { ORDER_STATUSES } from "@/lib/orders/types";
 
+export const instant = false;
+
 export default function AdminOrdersPage({
   searchParams,
 }: {

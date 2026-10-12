@@ -6,6 +6,8 @@ import { safeNextPath } from "@/lib/auth/redirect";
 import { currentPath, getAccount } from "@/lib/account/session";
 import { listAdminOrders } from "@/lib/api/server";
 
+export const instant = false;
+
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
     <Suspense fallback={<p className="preview-theme p-8 text-sm text-ink-muted">Loading admin…</p>}>

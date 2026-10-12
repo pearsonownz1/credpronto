@@ -5,6 +5,8 @@ import type { AdminList } from "@/lib/api/types";
 
 const REFUND_STATUSES = ["paid", "approved", "delivered"] as const;
 
+export const instant = false;
+
 export default function RefundsPage() {
   return (
     <Suspense fallback={<p className="text-sm text-ink-muted">Loading refunds…</p>}>

@@ -6,7 +6,7 @@ test("phone admin opens the staff menu and the order studio", async ({ page }) =
   await page.getByTestId("open-menu").click();
   await page.getByRole("link", { name: "Needs review" }).click();
   await expect(page).toHaveURL(/\/admin\/review/);
-  await expect(page.getByTestId("admin-order-CP-24802")).toBeVisible();
+  await expect(page.locator("[data-testid='admin-order-CP-24802']:visible")).toHaveCount(1);
   await page.screenshot({ path: "artifacts/admin-review-phone.png", fullPage: true });
 
   await page.goto("/admin/orders/CP-24740");

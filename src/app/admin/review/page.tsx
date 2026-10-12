@@ -5,6 +5,8 @@ import type { AdminList } from "@/lib/api/types";
 
 const REVIEW_STATUSES = ["needs_review", "correction_requested"] as const;
 
+export const instant = false;
+
 export default function ReviewPage() {
   return (
     <Suspense fallback={<p className="text-sm text-ink-muted">Loading reviews…</p>}>

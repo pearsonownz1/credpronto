@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { OrderStudio } from "@/components/admin/order-studio";
 import { getAdminNotes, getAdminOrder } from "@/lib/api/server";
 
+export const instant = false;
+
 export default function AdminOrderPage({ params }: { params: Promise<{ id: string }> }) {
   return (
     <Suspense fallback={<p className="text-sm text-ink-muted">Loading order…</p>}>

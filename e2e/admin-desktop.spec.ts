@@ -19,10 +19,11 @@ test("staff can review, edit, note, and refund an order", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Incoming" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Active" })).toBeVisible();
   await expect(page.getByTestId("admin-order-CP-24802")).toContainText("Low confidence on page 2");
+  await page.screenshot({ path: "artifacts/admin-orders-desktop.png", fullPage: true });
 
   await page.getByRole("link", { name: "CP-24802" }).click();
   await expect(page.getByTestId("resolve-review")).toBeVisible();
-  await expect(page.getByText("Low confidence on page 2")).toBeVisible();
+  await expect(page.getByText("Needs review: Low confidence on page 2")).toBeVisible();
 
   await page.goto("/admin/orders/CP-24790");
   await expect(page.getByLabel("Translation page 1 segment 1")).toHaveValue("Birth certificate of María Ruiz.");
@@ -47,5 +48,4 @@ test("staff can review, edit, note, and refund an order", async ({ page }) => {
   await expect(page.getByTestId("admin-order-CP-24740")).toBeVisible();
   await page.goto("/admin/refunds");
   await expect(page.getByTestId("admin-order-CP-24790")).toBeVisible();
-  await page.screenshot({ path: "artifacts/admin-orders-desktop.png", fullPage: false });
 });
