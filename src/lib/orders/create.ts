@@ -13,13 +13,6 @@ import { generateOrderToken, hashOrderToken } from "./token";
 import { evaluationFeeCents, parseOrderChoice } from "./evaluation-price";
 import { HttpError } from "./errors";
 
-/** Every `files` or `file` part, in form order. Repeated names are not removed. */
-export function listedUploads(form: FormData): File[] {
-  return [...form.getAll("files"), ...form.getAll("file")].filter(
-    (entry): entry is File => entry instanceof File,
-  );
-}
-
 function textField(form: FormData, key: string): string | null {
   const value = form.get(key);
   if (typeof value !== "string") return null;
@@ -38,7 +31,9 @@ export async function createOrder(request: Request): Promise<{
 }> {
   const form = await request.formData();
   const email = assertEmail(String(form.get("email") ?? ""));
-  const uploads = listedUploads(form);
+  const uploads = [...form.getAll("files"), ...form.getAll("file")].filter(
+    (entry): entry is File => entry instanceof File,
+  );
   assertUploadBudget(uploads.map((file) => ({ size: file.size })));
 
   const prepared: Array<{ filename: string; mime: string; bytes: Uint8Array }> = [];
