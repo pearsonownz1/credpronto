@@ -286,8 +286,8 @@ describe("quote counts", () => {
     expect(rows[0]?.billableUnits).toBe(2);
     expect(rows[1]?.skipReason).toBe("already English");
     expect(skippedPageIndexes(dense)).toEqual([1]);
-    expect(billablePriceLabel(2, 995)).toBe("2 billable pages × $9.95");
-    expect(billablePriceLabel(1, 995)).toBe("1 billable page × $9.95");
+    expect(billablePriceLabel(2, 995)).toBe("2 pages × $9.95");
+    expect(billablePriceLabel(1, 995)).toBe("1 page × $9.95");
   });
 
   it("leaves page rows off when the new fields are missing", () => {
@@ -419,10 +419,10 @@ describe("quote counts", () => {
     expect(groups.map((group) => group.filename)).toEqual(["cv.pdf", "back.jpg"]);
     expect(groups[0]?.pages).toBe(2);
     expect(groups[0]?.billable).toBe(2);
-    expect(fileCountLabel(groups[0]?.pages ?? 0, groups[0]?.billable ?? 0)).toBe("2 pages, 2 billable");
+    expect(fileCountLabel(groups[0]?.billable ?? 0)).toBe("2 billable pages");
     expect(groups[0]?.rows.map((row) => row.documentId)).toEqual(["cv", "cv"]);
     expect(groups[1]?.rows).toEqual([]);
-    expect(fileCountLabel(1, 1)).toBe("1 page, 1 billable");
+    expect(fileCountLabel(1)).toBe("1 billable page");
   });
 });
 

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { HttpError } from "./errors";
-import { lineBillableUnits, parseQuotePatch, quotePriceAfterSkip, skipPageNote, sumQuotedBillable } from "./skip-pages";
+import {
+  lineBillableUnits,
+  pageStatusTag,
+  parseQuotePatch,
+  quotePriceAfterSkip,
+  skipPageNote,
+  sumQuotedBillable,
+} from "./skip-pages";
 
 describe("quoted billable units", () => {
   it("sums billable units and counts a missing field as one page", () => {
@@ -15,6 +22,22 @@ describe("quoted billable units", () => {
   it("drops skipped pages from the billable sum", () => {
     expect(sumQuotedBillable([{ billableUnits: 2, skip: true }, { billableUnits: 1 }])).toBe(1);
     expect(sumQuotedBillable([{ skip: true }])).toBe(0);
+  });
+});
+
+describe("page status", () => {
+  it("tags a page as translate, a double page, or free", () => {
+    expect(pageStatusTag({})).toBe("Translate");
+    expect(pageStatusTag({ billableUnits: 1 })).toBe("Translate");
+    expect(pageStatusTag({ billableUnits: 2 })).toBe("Counts as 2");
+    expect(pageStatusTag({ skip: true, skipReason: "already English", billableUnits: 2 })).toBe(
+      "Free (English)",
+    );
+    expect(pageStatusTag({ skip: true, skipReason: "already_english" })).toBe("Free (English)");
+    expect(pageStatusTag({ skip: true, skipReason: "shipping label" })).toBe("Free (shipping label)");
+    expect(pageStatusTag({ skip: true, skipReason: "shipping_label" })).toBe("Free (shipping label)");
+    expect(pageStatusTag({ skip: true, skipReason: "not a document" })).toBe("Free (not a document)");
+    expect(pageStatusTag({ skip: true })).toBe("Free");
   });
 });
 

@@ -27,9 +27,7 @@ test("needs_review quote keeps the total when language is unknown", async ({ pag
   await expect(language).toContainText("We'll confirm the language");
   await expect(page.getByTestId("quote-total").filter({ visible: true })).toContainText("$19.90");
   await expect(page.getByTestId("page-rule").filter({ visible: true })).toHaveText(QUOTE_BILLING_NOTE);
-  await expect(page.getByTestId("quote-counts").filter({ visible: true })).toHaveText(
-    "2 files, 2 pages, 2 billable",
-  );
+  await expect(page.getByTestId("quote-counts")).toHaveCount(0);
   await expect(page.getByTestId("language-picker")).toHaveCount(0);
 });
 
@@ -160,7 +158,7 @@ test("an English quote can pick a target language and continue", async ({ page }
   );
   await expect(page.getByTestId("file-list").filter({ visible: true }).getByText("GuyPearsonCV_under2MB.pdf")).toHaveCount(1);
   await expect(page.getByTestId("file-billable").filter({ visible: true })).toHaveText(
-    "3 pages, 3 billable",
+    "3 billable pages",
   );
   await expect(page.getByTestId("page-details").filter({ visible: true })).toHaveAttribute(
     "aria-expanded",
@@ -179,10 +177,8 @@ test("an English quote can pick a target language and continue", async ({ page }
 
   await page.getByTestId("target-language").filter({ visible: true }).selectOption("es");
   await expect(language).toContainText("English → Spanish");
-  await expect(page.getByTestId("quote-counts").filter({ visible: true })).toHaveText(
-    "1 file, 3 pages, 3 billable",
-  );
-  await expect(page.getByText("3 billable pages × $9.95").filter({ visible: true })).toBeVisible();
+  await expect(page.getByTestId("quote-counts")).toHaveCount(0);
+  await expect(page.getByText("3 pages × $9.95").filter({ visible: true })).toBeVisible();
   await page.getByTestId("update-language").filter({ visible: true }).click();
   await expect(page.getByTestId("continue").filter({ visible: true })).toBeVisible();
   await expect(page.getByTestId("language-update-note")).toHaveCount(0);
@@ -259,42 +255,45 @@ test("a quote shows billable pages and can skip one", async ({ page }) => {
   });
 
   await page.goto("/quote");
-  const counts = page.getByTestId("quote-counts").filter({ visible: true });
-  await expect(counts).toHaveText("1 file, 3 pages, 3 billable");
+  await expect(page.getByTestId("quote-counts")).toHaveCount(0);
   await expect(page.getByTestId("file-billable").filter({ visible: true })).toHaveText(
-    "3 pages, 3 billable",
+    "3 billable pages",
   );
-  await expect(page.getByText("3 billable pages × $9.95").filter({ visible: true })).toBeVisible();
+  await expect(page.getByText("3 pages × $9.95").filter({ visible: true })).toBeVisible();
   await expect(page.getByTestId("quote-total").filter({ visible: true })).toContainText("$29.85");
-  await expect(page.getByTestId("billed-as")).toHaveCount(0);
+  await expect(page.getByTestId("page-status")).toHaveCount(0);
   await page.getByTestId("page-details").filter({ visible: true }).click();
   await expect(page.getByTestId("page-row").filter({ visible: true })).toHaveCount(3);
   await expect(page.getByTestId("page-row").filter({ hasText: "diploma.pdf" })).toHaveCount(0);
-  await expect(page.getByTestId("billed-as").filter({ visible: true })).toHaveText("billed as 2");
-  const skipped = page.getByTestId("page-row").filter({ hasText: "Skipped: not a document" });
+  await expect(page.getByTestId("page-status").filter({ hasText: "Counts as 2" })).toHaveText(
+    "Counts as 2",
+  );
+  const skipped = page.getByTestId("page-row").filter({ hasText: "Free (not a document)" });
   await expect(skipped).toBeVisible();
-  await expect(skipped.locator("span.line-through")).toBeVisible();
   await expect(page.getByTestId("page-rule").filter({ visible: true })).toHaveText(QUOTE_BILLING_NOTE);
+  await expect(page.getByTestId("billing-info")).toHaveAttribute("title", QUOTE_BILLING_NOTE);
 
   await page.getByTestId("page-skip-1").getByRole("button", { name: "Skip" }).click();
-  await expect(counts).toHaveText("1 file, 3 pages, 1 billable");
   await expect(page.getByTestId("file-billable").filter({ visible: true })).toHaveText(
-    "3 pages, 1 billable",
+    "1 billable page",
   );
-  await expect(page.getByText("1 billable page × $9.95").filter({ visible: true })).toBeVisible();
+  await expect(page.getByText("1 page × $9.95").filter({ visible: true })).toBeVisible();
   await expect(page.getByTestId("quote-total").filter({ visible: true })).toContainText("$9.95");
   const dense = page.getByTestId("page-row").filter({ hasText: "Page 2" });
-  await expect(dense.locator("span.line-through")).toBeVisible();
-  await expect(dense).toContainText("Skipped");
+  await expect(dense).toContainText("Free");
   await expect(page.getByTestId("page-skip-1").getByRole("button", { name: "Skip" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
 
   await page.getByTestId("page-skip-1").getByRole("button", { name: "Translate" }).click();
-  await expect(counts).toHaveText("1 file, 3 pages, 3 billable");
+  await expect(page.getByTestId("file-billable").filter({ visible: true })).toHaveText(
+    "3 billable pages",
+  );
   await expect(page.getByTestId("quote-total").filter({ visible: true })).toContainText("$29.85");
-  await expect(page.getByTestId("billed-as").filter({ visible: true })).toHaveText("billed as 2");
+  await expect(page.getByTestId("page-status").filter({ hasText: "Counts as 2" })).toHaveText(
+    "Counts as 2",
+  );
 
   await page.evaluate(() => sessionStorage.setItem("credpronto-mock-quote-error", "400"));
   await page.getByTestId("page-skip-1").getByRole("button", { name: "Skip" }).click();
@@ -305,7 +304,9 @@ test("a quote shows billable pages and can skip one", async ({ page }) => {
     "aria-pressed",
     "false",
   );
-  await expect(counts).toHaveText("1 file, 3 pages, 3 billable");
+  await expect(page.getByTestId("file-billable").filter({ visible: true })).toHaveText(
+    "3 billable pages",
+  );
   await expect(page.getByTestId("quote-total").filter({ visible: true })).toContainText("$29.85");
 });
 

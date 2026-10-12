@@ -31,7 +31,7 @@ const EVALUATION_INCLUDED = [
 ];
 
 export const QUOTE_BILLING_NOTE =
-  "Each page is billed once. Very dense pages (over 1,000 characters) may count as 2. English pages and non-documents are skipped automatically.";
+  "Billed by translatable text, about 250 words (or 1,000 characters) per page. English pages and shipping labels are free.";
 
 /** Quote-screen fine print. The order still carries pageRule for other clients. */
 export function displayedPageRule(order: { pageRule: string }): string {
@@ -94,13 +94,14 @@ export function quoteSummaryLabel(counts: QuoteCounts): string {
   return `${files}, ${pages}, ${counts.billable} billable`;
 }
 
-export function fileCountLabel(pages: number, billable: number): string {
-  const noun = pages === 1 ? "page" : "pages";
-  return `${pages} ${noun}, ${billable} billable`;
+/** Billable pages for one file. The quote does not show a physical page total. */
+export function fileCountLabel(billable: number): string {
+  const noun = billable === 1 ? "page" : "pages";
+  return `${billable} billable ${noun}`;
 }
 
 export function billablePriceLabel(pages: number, unitPriceCents: number): string {
-  const noun = pages === 1 ? "billable page" : "billable pages";
+  const noun = pages === 1 ? "page" : "pages";
   return `${pages} ${noun} × ${formatMoney(unitPriceCents)}`;
 }
 

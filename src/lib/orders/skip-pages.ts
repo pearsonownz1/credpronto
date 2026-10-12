@@ -82,6 +82,28 @@ export function quotePriceAfterSkip(
   };
 }
 
+/** Status tag for one page in the quote details. */
+export function pageStatusTag(line: {
+  skip?: boolean;
+  skipReason?: string | null;
+  billableUnits?: number | null;
+}): string {
+  if (line.skip === true) return freePageTag(line.skipReason);
+  if (typeof line.billableUnits === "number" && Number.isFinite(line.billableUnits) && line.billableUnits > 1) {
+    return `Counts as ${line.billableUnits}`;
+  }
+  return "Translate";
+}
+
+function freePageTag(skipReason: string | null | undefined): string {
+  const reason = skipReason?.trim() ?? "";
+  if (!reason) return "Free";
+  const key = reason.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+  if (key === "already english" || key === "english") return "Free (English)";
+  if (key.startsWith("skipped ")) return freePageTag(key.slice("skipped ".length));
+  return `Free (${key})`;
+}
+
 export function skipPageNote(skipReason: string | null | undefined): string {
   const reason = skipReason?.trim() ?? "";
   if (!reason) return "Skipped";

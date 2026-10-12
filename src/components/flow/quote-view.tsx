@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, type ChangeEvent } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
-import { formatMoney, pageLabel } from "@/lib/flow/pricing";
+import { formatMoney } from "@/lib/flow/pricing";
 import {
   billablePriceLabel,
   canOpenConfirm,
@@ -12,19 +12,16 @@ import {
   fileCountLabel,
   languageChoices,
   languageLine,
-  quoteCounts,
   quoteFileGroups,
-  quoteSummaryLabel,
   servicePriceLines,
   settleTargetLanguageUpdate,
   showTargetLanguagePicker,
-  skipPageNote,
   skippedPageIndexes,
   targetChoices,
   totalLabel,
   type QuotePageRow,
 } from "@/lib/flow/present";
-import { sumQuotedBillable } from "@/lib/orders/skip-pages";
+import { pageStatusTag, sumQuotedBillable } from "@/lib/orders/skip-pages";
 import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
@@ -111,13 +108,11 @@ export function QuoteBody({
   const line = live.sourceLanguage
     ? languageLine({ sourceLanguage: sourceCode, targetLanguage: targetCode })
     : languageLine(live);
-  const pages = live.billablePages ?? 0;
   const qualityHold = live.reviewReason === IMAGE_QUALITY_REASON;
   const evaluation = live.orderType === "evaluation";
   const showPrice = !qualityHold;
   const priceLines = showPrice ? quoteSummaryPrices(live) : [];
   const showContinue = canOpenConfirm(live);
-  const counts = quoteSummaryLabel(quoteCounts(live));
 
   function rowSkipped(row: QuotePageRow): boolean {
     if (row.pageIndex == null) return row.skip === true;
@@ -247,12 +242,9 @@ export function QuoteBody({
               "A reviewer will confirm the language before this price is final."}
           </p>
         ) : null}
-        <p data-testid="quote-counts" className="mt-5 text-[13px] text-ink-muted">
-          {counts}
-        </p>
         <div
           data-testid="file-list"
-          className="mt-2 overflow-hidden rounded-[var(--cp-radius)] border border-line"
+          className="mt-5 overflow-hidden rounded-[var(--cp-radius)] border border-line"
         >
           {files.map((file, index) => {
             const open = openDetails[file.id] === true;
@@ -267,7 +259,7 @@ export function QuoteBody({
                   <div className="min-w-0">
                     <b className="block break-words">{file.filename}</b>
                     <div data-testid="file-billable" className="text-[12.5px] text-ink-muted">
-                      {file.pages == null ? "—" : fileCountLabel(file.pages, file.billable)}
+                      {file.pages == null ? "—" : fileCountLabel(file.billable)}
                     </div>
                     {file.rows.length > 0 ? (
                       <button
@@ -295,8 +287,16 @@ export function QuoteBody({
                           className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]"
                         >
                           <FileThumb filename={file.filename} small />
-                          <span className={skipped ? "line-through" : undefined}>
-                            Page {pageNumber + 1}
+                          <span>Page {pageNumber + 1}</span>
+                          <span
+                            data-testid="page-status"
+                            className="rounded-[var(--cp-radius)] border border-line px-1.5 py-0.5 text-[12px] text-ink-muted"
+                          >
+                            {pageStatusTag({
+                              skip: skipped,
+                              skipReason: row.skipReason,
+                              billableUnits: row.billableUnits,
+                            })}
                           </span>
                           {row.pageIndex != null ? (
                             <PageSkipToggle
@@ -305,19 +305,6 @@ export function QuoteBody({
                               disabled={skipPending}
                               onChange={(skip) => void onPageSkip(row, skip)}
                             />
-                          ) : null}
-                          {row.billableUnits != null && row.billableUnits > 1 ? (
-                            <span
-                              data-testid="billed-as"
-                              className="rounded-[var(--cp-radius)] border border-line px-1.5 py-0.5 text-[12px] text-ink-muted"
-                            >
-                              billed as {row.billableUnits}
-                            </span>
-                          ) : null}
-                          {skipped ? (
-                            <span data-testid="skip-note" className="text-ink-muted">
-                              {skipPageNote(row.skipReason)}
-                            </span>
                           ) : null}
                         </div>
                       );
@@ -333,9 +320,6 @@ export function QuoteBody({
             {skipError}
           </p>
         ) : null}
-        <p data-testid="page-rule" className="mt-3 text-[12.5px] leading-normal text-ink-muted">
-          {displayedPageRule(live)}
-        </p>
       </div>
       <div>
         <Summary>
@@ -348,10 +332,7 @@ export function QuoteBody({
               />
             ))
           ) : (
-            <SummaryRow
-              label="Pages"
-              value={pages > 0 ? pageLabel(pages) : "Pending"}
-            />
+            <SummaryRow label="Pages" value="Pending" />
           )}
           <SummaryRow label="Certification" value="Included" />
           <SummaryRow
@@ -366,6 +347,7 @@ export function QuoteBody({
             emphasize
           />
         </Summary>
+        <BillingNote note={displayedPageRule(live)} />
         {qualityHold ? (
           <ImageQuality order={live} token={token} onReplaced={onReplaced} />
         ) : (
@@ -420,6 +402,30 @@ export function QuoteBody({
         </div>
       </div>
     </FlowColumns>
+  );
+}
+
+function BillingNote({ note }: { note: string }) {
+  return (
+    <p
+      data-testid="page-rule"
+      className="mt-3 flex items-start gap-1.5 text-[12.5px] leading-normal text-ink-muted"
+    >
+      <span title={note} data-testid="billing-info" className="mt-px inline-flex shrink-0" aria-hidden>
+        <InfoIcon />
+      </span>
+      <span>{note}</span>
+    </p>
+  );
+}
+
+function InfoIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M7 6.2V10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <circle cx="7" cy="4.1" r="0.7" fill="currentColor" />
+    </svg>
   );
 }
 
