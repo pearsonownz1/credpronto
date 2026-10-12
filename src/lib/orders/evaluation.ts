@@ -8,6 +8,7 @@ import {
   listDocuments,
   listEdgeCredentialsForCountry,
   listEdgeGradingScalesForCountry,
+  resolveEdgeCountrySlug,
   listPages,
   markPreview,
   nextPreviewVersion,
@@ -438,9 +439,11 @@ async function edgeCatalog(
   const slug = countrySlug(country);
   if (!slug || country === PENDING_EQUIVALENCY) return { credentials: [], scales: [] };
   try {
+    const resolved = await resolveEdgeCountrySlug(db, slug);
+    if (!resolved) return { credentials: [], scales: [] };
     const [credentials, scales] = await Promise.all([
-      listEdgeCredentialsForCountry(db, slug),
-      listEdgeGradingScalesForCountry(db, slug),
+      listEdgeCredentialsForCountry(db, resolved),
+      listEdgeGradingScalesForCountry(db, resolved),
     ]);
     return { credentials, scales };
   } catch (error) {

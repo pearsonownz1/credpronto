@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { PENDING_EQUIVALENCY } from "./equivalency";
+import { resolveEdgeCountrySlug, type Db } from "./db";
 import {
   chooseEquivalency,
   countrySlug,
+  countrySlugFallbackFilter,
   edgeContentExcerpt,
   edgeEquivalencyPrompt,
   edgeRowsFromSource,
   matchEdgeCredential,
   matchEdgeGradingScale,
+  resolveStoredCountrySlug,
   staffEdgeView,
   type EdgeCredentialRecord,
   type EdgeGradingScaleRecord,
@@ -149,6 +152,139 @@ describe("EDGE reference matching", () => {
     ).toBe("only");
   });
 
+  it("matches a short order country to the official-name slug, and refuses an ambiguous one", () => {
+    const south = "korea-republic-of-south-korea";
+    const north = "korea-democratic-peoples-republic-of-north-korea";
+    expect(countrySlug("Korea, Republic of (South Korea)")).toBe(south);
+    expect(countrySlugFallbackFilter("south-korea")).toBe(
+      "country_slug.like.south-korea-*,country_slug.like.*-south-korea,country_slug.like.*-south-korea-*",
+    );
+    expect(resolveStoredCountrySlug("south-korea", [south, "mexico"])).toBe(south);
+    expect(resolveStoredCountrySlug("korea", [south])).toBe(south);
+    expect(resolveStoredCountrySlug("korea", [south, north])).toBeNull();
+    expect(resolveStoredCountrySlug("mexico", ["mexico", "new-mexico"])).toBe("mexico");
+    expect(resolveStoredCountrySlug("guinea", ["papua-new-guinea", "equatorial-guinea"])).toBeNull();
+    expect(resolveStoredCountrySlug("niger", ["nigeria"])).toBeNull();
+
+    const rows = [
+      credential({ id: "south", title: "Example Diploma", countrySlug: south, country: "Korea, Republic of (South Korea)" }),
+      credential({ id: "mexico", title: "Example Diploma", countrySlug: "mexico", country: "Mexico" }),
+      credential({ id: "new-mexico", title: "Example Diploma", countrySlug: "new-mexico", country: "New Mexico" }),
+      credential({ id: "nigeria", title: "Example Diploma", countrySlug: "nigeria", country: "Nigeria" }),
+    ];
+    expect(matchEdgeCredential(rows, { country: "South Korea", title: "Example Diploma" })?.id).toBe("south");
+    expect(matchEdgeCredential(rows, { country: "Korea", title: "Example Diploma" })?.id).toBe("south");
+    expect(matchEdgeCredential(rows, { country: "México", title: "Example Diploma" })?.id).toBe("mexico");
+    expect(matchEdgeCredential(rows, { country: "Niger", title: "Example Diploma" })).toBeNull();
+    expect(
+      matchEdgeCredential(
+        [...rows, credential({ id: "north", title: "Example Diploma", countrySlug: north, country: "North Korea" })],
+        { country: "Korea", title: "Example Diploma" },
+      ),
+    ).toBeNull();
+  });
+
+  it("matches a grading scale from a section, name, or raw entry", () => {
+    const south = "korea-republic-of-south-korea";
+    expect(
+      matchEdgeGradingScale(
+        [
+          scale({
+            id: "higher",
+            title: "Higher education — Example Diploma — universities",
+            raw: "Example Diploma is the original entry.",
+            rows: [],
+            countrySlug: south,
+          }),
+          scale({
+            id: "secondary",
+            title: "Secondary — Example Certificate — schools",
+            raw: "Example Certificate notes.",
+            rows: [],
+            countrySlug: south,
+          }),
+        ],
+        { country: "South Korea", title: "Example Diploma in Testing", grades: [] },
+      )?.id,
+    ).toBe("higher");
+    expect(
+      matchEdgeGradingScale(
+        [
+          scale({ id: "a", title: "Higher education — Example Diploma — universities", rows: [], countrySlug: "mexico" }),
+          scale({ id: "b", title: "Higher education — Example Diploma — technical", rows: [], countrySlug: "mexico" }),
+        ],
+        { country: "Mexico", title: "Example Diploma in Testing", grades: [] },
+      ),
+    ).toBeNull();
+    expect(
+      matchEdgeGradingScale(
+        [
+          scale({
+            id: "raw",
+            title: "Higher education — Other name — universities",
+            raw: "Used for the Example Diploma.",
+            rows: [],
+            countrySlug: "mexico",
+          }),
+          scale({
+            id: "other",
+            title: "Secondary — Example Certificate — schools",
+            raw: "Nothing relevant.",
+            rows: [],
+            countrySlug: "mexico",
+          }),
+        ],
+        { country: "Mexico", title: "Example Diploma", grades: [] },
+      )?.id,
+    ).toBe("raw");
+    expect(
+      matchEdgeGradingScale(
+        [
+          scale({
+            id: "ten",
+            title: "Higher education — Ten point — universities",
+            countrySlug: south,
+            rows: [{ indigenousGrade: "10", usEquivalent: "A" }],
+          }),
+          scale({
+            id: "letters",
+            title: "Higher education — Letters — universities",
+            countrySlug: south,
+            rows: [{ indigenousGrade: "MB", usEquivalent: "B" }],
+          }),
+        ],
+        { country: "Korea", title: "Example Diploma", grades: ["10"] },
+      )?.id,
+    ).toBe("ten");
+  });
+
+  it("loads the exact country slug, then one fallback slug", async () => {
+    const exact = scriptedEdgeDb([
+      { data: [{ country_slug: "mexico" }] },
+      { data: [] },
+    ]);
+    expect(await resolveEdgeCountrySlug(exact.db, "mexico")).toBe("mexico");
+    expect(exact.calls.map((call) => call.op)).toEqual(["eq", "eq"]);
+
+    const south = "korea-republic-of-south-korea";
+    const fallback = scriptedEdgeDb([
+      { data: [] },
+      { data: [] },
+      { data: [{ country_slug: south }] },
+      { data: [{ country_slug: south }] },
+    ]);
+    expect(await resolveEdgeCountrySlug(fallback.db, "south-korea")).toBe(south);
+    expect(fallback.calls[2]?.value).toContain("country_slug.like.*-south-korea");
+
+    const ambiguous = scriptedEdgeDb([
+      { data: [] },
+      { data: [] },
+      { data: [{ country_slug: south }, { country_slug: "korea-democratic-peoples-republic-of-north-korea" }] },
+      { data: [] },
+    ]);
+    expect(await resolveEdgeCountrySlug(ambiguous.db, "korea")).toBeNull();
+  });
+
   it("keeps an unmapped equivalency when EDGE does not support a confident label", () => {
     expect(
       chooseEquivalency({ matched: false, edgeUsEquivalency: null, ai: null, printed: "Licence" }),
@@ -215,3 +351,47 @@ describe("EDGE reference matching", () => {
     expect(prompt).toContain("confident");
   });
 });
+
+function scriptedEdgeDb(script: Array<{ data: unknown[] }>): {
+  db: Db;
+  calls: Array<{ table: string; op: "eq" | "or"; value: string }>;
+} {
+  let step = 0;
+  const calls: Array<{ table: string; op: "eq" | "or"; value: string }> = [];
+  const db = {
+    from(table: string) {
+      const call = { table, op: "eq" as "eq" | "or", value: "" };
+      const builder = {
+        select() {
+          return builder;
+        },
+        eq(_column: string, value: string) {
+          call.op = "eq";
+          call.value = value;
+          return builder;
+        },
+        limit() {
+          return builder;
+        },
+        or(value: string) {
+          call.op = "or";
+          call.value = value;
+          return builder;
+        },
+        range() {
+          return builder;
+        },
+        then(
+          onFulfilled: (value: { data: unknown[]; error: null }) => unknown,
+          onRejected?: (error: unknown) => unknown,
+        ) {
+          calls.push(call);
+          const data = script[step++]?.data ?? [];
+          return Promise.resolve({ data, error: null }).then(onFulfilled, onRejected);
+        },
+      };
+      return builder;
+    },
+  };
+  return { db: db as unknown as Db, calls };
+}

@@ -67,6 +67,37 @@ export function countrySlug(country: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+/**
+ * Exact slug wins. Otherwise the order slug must sit on a hyphen boundary inside
+ * exactly one stored slug (prefix, suffix, or middle), so "South Korea" and
+ * "Korea" can match `korea-republic-of-south-korea` without guessing between Koreas.
+ */
+export function resolveStoredCountrySlug(orderSlug: string, storedSlugs: readonly string[]): string | null {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(orderSlug)) return null;
+  const unique = [...new Set(storedSlugs.filter((slug) => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)))];
+  if (unique.includes(orderSlug)) return orderSlug;
+  const matches = unique.filter((stored) => countrySlugOverlaps(orderSlug, stored));
+  return matches.length === 1 ? (matches[0] ?? null) : null;
+}
+
+/** PostgREST `or` filter for slugs that contain orderSlug on a hyphen boundary. */
+export function countrySlugFallbackFilter(orderSlug: string): string | null {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(orderSlug)) return null;
+  return [
+    `country_slug.like.${orderSlug}-*`,
+    `country_slug.like.*-${orderSlug}`,
+    `country_slug.like.*-${orderSlug}-*`,
+  ].join(",");
+}
+
+function countrySlugOverlaps(orderSlug: string, stored: string): boolean {
+  return (
+    stored.startsWith(`${orderSlug}-`) ||
+    stored.endsWith(`-${orderSlug}`) ||
+    stored.includes(`-${orderSlug}-`)
+  );
+}
+
 export function normalizeCredentialTitle(title: string): string {
   return title
     .normalize("NFD")
@@ -185,10 +216,9 @@ export function matchEdgeCredential(
   rows: readonly EdgeCredentialRecord[],
   input: { country: string; title: string },
 ): EdgeCredentialRecord | null {
-  const slug = countrySlug(input.country);
   const title = normalizeCredentialTitle(input.title);
-  if (!slug || !title || input.country === PENDING_EQUIVALENCY) return null;
-  const pool = rows.filter((row) => row.countrySlug === slug);
+  if (!title || input.country === PENDING_EQUIVALENCY) return null;
+  const pool = rowsForCountry(rows, input.country);
   const exact = pool.find((row) => normalizeCredentialTitle(row.title) === title);
   if (exact) return exact;
 
@@ -207,28 +237,13 @@ export function matchEdgeGradingScale(
   scales: readonly EdgeGradingScaleRecord[],
   input: { country: string; title: string; grades: readonly string[] },
 ): EdgeGradingScaleRecord | null {
-  const slug = countrySlug(input.country);
-  if (!slug || input.country === PENDING_EQUIVALENCY) return null;
-  const pool = scales.filter((scale) => scale.countrySlug === slug);
+  if (input.country === PENDING_EQUIVALENCY) return null;
+  const pool = rowsForCountry(scales, input.country);
   if (pool.length === 0) return null;
   const grades = input.grades.map((grade) => grade.trim()).filter(Boolean);
   if (grades.length === 0) {
     if (pool.length === 1) return pool[0] ?? null;
-    const matched = matchEdgeCredential(
-      pool.map((scale) => ({
-        id: scale.id,
-        countrySlug: scale.countrySlug,
-        country: input.country,
-        title: scale.title,
-        content: "",
-        levelNumber: null,
-        levelTitle: null,
-        url: null,
-        usEquivalency: null,
-      })),
-      { country: input.country, title: input.title },
-    );
-    return pool.find((scale) => scale.id === matched?.id) ?? null;
+    return matchScaleByCredential(pool, input.title);
   }
 
   const ranked = pool
@@ -311,6 +326,55 @@ EDGE note: ${input.usEquivalencyHint?.trim() || "(none)"}
 EDGE excerpt: ${input.contentExcerpt || "(none)"}
 Grading rows:
 ${rows || "(none)"}`;
+}
+
+function rowsForCountry<T extends { countrySlug: string }>(rows: readonly T[], country: string): T[] {
+  const slug = countrySlug(country);
+  if (!slug) return [];
+  const resolved = resolveStoredCountrySlug(
+    slug,
+    rows.map((row) => row.countrySlug),
+  );
+  if (!resolved) return [];
+  return rows.filter((row) => row.countrySlug === resolved);
+}
+
+const SCALE_TITLE_SEPARATOR = /\s+[—–]\s+/;
+
+function matchScaleByCredential(
+  pool: readonly EdgeGradingScaleRecord[],
+  title: string,
+): EdgeGradingScaleRecord | null {
+  const printed = normalizeCredentialTitle(title);
+  if (!printed) return null;
+  const ranked = pool
+    .map((scale) => ({ scale, score: scaleLabelScore(printed, scale) }))
+    .filter((item) => item.score >= 0.8)
+    .sort((a, b) => b.score - a.score || b.scale.title.length - a.scale.title.length);
+  const best = ranked[0];
+  const next = ranked[1];
+  if (!best) return null;
+  if (next && best.score - next.score < 0.05) return null;
+  return best.scale;
+}
+
+function scaleLabelScore(printed: string, scale: EdgeGradingScaleRecord): number {
+  return scaleSearchTexts(scale).reduce((best, text) => {
+    const reference = normalizeCredentialTitle(text);
+    const score = titleScore(printed, reference);
+    if (reference.length >= 8 && printed.startsWith(`${reference} `)) return Math.max(best, score, 0.95);
+    return Math.max(best, score);
+  }, 0);
+}
+
+function scaleSearchTexts(scale: EdgeGradingScaleRecord): string[] {
+  const segments = scale.title
+    .split(SCALE_TITLE_SEPARATOR)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const texts = [scale.title, ...segments];
+  if (scale.raw) texts.push(scale.raw);
+  return texts;
 }
 
 function slugFromKey(key: string, countryName: string): string {

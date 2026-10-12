@@ -120,7 +120,7 @@ One side of a document. `page_number` starts at 1 and is unique per document. Af
 
 Licensed AACRAO EDGE credential reference. Columns: `id` uuid, `country_slug`, `country`, `title`, `content`, `level_number`, `level_title`, `url`, `us_equivalency` (nullable). Index on `(country_slug, lower(title))`. RLS is enabled with no anon or authenticated policy. Only the service role can read or write. The source files are not in the repo.
 
-Load one object keyed by country. A key that is already a lowercase hyphenated slug is `country_slug`. Any other key uses `countrySlug(country)`, then `countrySlug(key)`. `countrySlug` strips accents, lowercases, and turns other characters into single hyphens (`México` → `mexico`, `Côte d'Ivoire` → `cote-d-ivoire`, `United States` → `united-states`).
+Load one object keyed by country. A key that is already a lowercase hyphenated slug is `country_slug`. Any other key uses `countrySlug(country)`, then `countrySlug(key)`. `countrySlug` strips accents, lowercases, and turns other characters into single hyphens (`México` → `mexico`, `Côte d'Ivoire` → `cote-d-ivoire`, `United States` → `united-states`). Loaded rows used that same rule on the country name, so an official name can be a long slug such as `korea-republic-of-south-korea`. Order matching slugifies the order country the same way. An exact `country_slug` wins. Otherwise the order slug must sit on a hyphen boundary inside exactly one stored slug (prefix, suffix, or middle), so `South Korea` or `Korea` can match `korea-republic-of-south-korea`. Two stored slugs that both match are left unmatched.
 
 ```json
 {
@@ -150,7 +150,7 @@ Each credential becomes one `edge_credentials` row: `country_slug`, `country`, `
 
 ### `edge_grading_scales`
 
-Licensed grading scales for the same country groups. Columns: `id` uuid, `country_slug`, `title`, `raw` (nullable original text), `rows` jsonb. `rows` is an array of `{indigenous_grade, us_equivalent}`. A row missing either string is dropped. Same RLS as `edge_credentials`: service role only, no anon or authenticated policy.
+Licensed grading scales for the same country groups. Columns: `id` uuid, `country_slug`, `title`, `raw` (nullable original text), `rows` jsonb. `rows` is an array of `{indigenous_grade, us_equivalent}`. A row missing either string is dropped. A loaded `title` is the section, name, and qualifier joined with ` — `. `raw` is the original entry. With printed grades, the scale whose rows match the most grades is used, and a tie matches nothing. With no grades, one scale for the country is used; otherwise a title segment or `raw` must uniquely match the credential. Same RLS as `edge_credentials`: service role only, no anon or authenticated policy.
 
 ### `confirmations`
 
