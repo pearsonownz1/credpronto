@@ -10,6 +10,14 @@ export const TRANSLATE_TITLE =
 export const TRANSLATE_DESCRIPTION =
   "Upload a PDF or phone photos for a certified translation from $9.95 per page. Preview the finished translation free before you pay.";
 
+/** Permanent moves from the old blog URLs onto /guides. statusCode 301, not 308. */
+export function blogRedirects() {
+  return [
+    { source: "/blog", destination: "/guides", statusCode: 301 },
+    { source: "/blog/:slug", destination: "/guides/:slug", statusCode: 301 },
+  ];
+}
+
 /** Paths whose HTML must stay out of search indexes, including error responses. */
 export function privateCrawlHeaders(): {
   source: string;

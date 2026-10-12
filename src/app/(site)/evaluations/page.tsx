@@ -1,20 +1,24 @@
 import type { Metadata } from "next";
 import { EvaluationsView } from "@/components/evaluations/evaluations-view";
-import {
-  COURSE_BY_COURSE_PRICE_LABEL,
-  DIPLOMA_PRICE_LABEL,
-  EVALUATIONS_CANONICAL_URL,
-  TRANSLATION_ADDON,
-} from "@/lib/evaluations/catalog";
+import { jsonLdScript } from "@/lib/content/jsonld";
+import { evaluationsFaqJsonLd, evaluationsPage } from "@/lib/content/marketing";
 
 export const metadata: Metadata = {
-  title: "Credential evaluations · CredPronto",
-  description: `Diploma evaluation ${DIPLOMA_PRICE_LABEL}. Course-by-course ${COURSE_BY_COURSE_PRICE_LABEL}. ${TRANSLATION_ADDON}`,
+  title: evaluationsPage.title,
+  description: evaluationsPage.description,
   alternates: {
-    canonical: EVALUATIONS_CANONICAL_URL,
+    canonical: evaluationsPage.canonical,
   },
 };
 
 export default function EvaluationsPage() {
-  return <EvaluationsView />;
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(evaluationsFaqJsonLd()) }}
+      />
+      <EvaluationsView />
+    </>
+  );
 }

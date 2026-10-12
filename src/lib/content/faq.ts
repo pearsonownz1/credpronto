@@ -9,7 +9,6 @@ import {
 import { SITE_ORIGIN } from "@/lib/seo";
 
 export const FAQ_CANONICAL = `${SITE_ORIGIN}/faq`;
-export const BLOG_CANONICAL = `${SITE_ORIGIN}/blog`;
 export const GUIDES_CANONICAL = `${SITE_ORIGIN}/guides`;
 
 export type FaqItem = {

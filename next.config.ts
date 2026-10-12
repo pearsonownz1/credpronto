@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
-import { privateCrawlHeaders } from "./src/lib/seo";
+import { blogRedirects, privateCrawlHeaders } from "./src/lib/seo";
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    return blogRedirects();
+  },
   async headers() {
     return [
       {
