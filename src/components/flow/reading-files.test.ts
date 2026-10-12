@@ -25,4 +25,26 @@ describe("reading files", () => {
     expect(html).toContain("reading-spinner");
     expect(html).toContain("max-w-[520px]");
   });
+
+  it("shows Uploading at 0% until byte progress arrives", () => {
+    const html = renderToStaticMarkup(
+      createElement(ReadingFiles, { status: "draft", uploadRatio: null }),
+    );
+    expect(html).toContain("Reading your files…");
+    expect(html).toContain("Uploading");
+    expect(html).toMatch(/data-testid="reading-percent">\s*0%/);
+    expect(html).toContain('data-testid="reading-step-uploaded"');
+    expect(html).toContain('data-state="current"');
+    expect(html).toContain('data-testid="reading-step-reading" data-state="pending"');
+    expect(html).not.toContain("Reading page ");
+  });
+
+  it("fills the first 5% from upload byte progress", () => {
+    const html = renderToStaticMarkup(
+      createElement(ReadingFiles, { status: "draft", uploadRatio: 1 }),
+    );
+    expect(html).toContain("Uploading");
+    expect(html).toMatch(/data-testid="reading-percent">\s*5%/);
+    expect(html).toContain('aria-valuenow="5"');
+  });
 });

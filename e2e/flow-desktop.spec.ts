@@ -82,6 +82,38 @@ test("a loaded quote replaces the loading announcement", async ({ page }) => {
   expect(routeAnnouncement).not.toContain("Loading your order");
 });
 
+test("upload shows the reading progress immediately, with no loading screen", async ({ page }) => {
+  await page.goto("/translate");
+  const email = page.getByTestId("email").filter({ visible: true });
+  await expect(email).toHaveValue("maria.ruiz@email.com");
+  await page.evaluate(() => {
+    sessionStorage.setItem("credpronto-mock-upload-ms", "1200");
+    sessionStorage.setItem("credpronto-mock-order-route", "1");
+  });
+  await page.getByTestId("get-quote").filter({ visible: true }).click();
+
+  const label = page.getByTestId("reading-label").filter({ visible: true });
+  await expect(label).toHaveText("Uploading");
+  await expect(
+    page.getByRole("heading", { name: "Reading your files…" }).filter({ visible: true }),
+  ).toBeVisible();
+  await expect(page.getByTestId("reading-step-uploaded").filter({ visible: true })).toHaveAttribute(
+    "data-state",
+    "current",
+  );
+  expect(await page.getByText("Loading your order").count()).toBe(0);
+  expect(await page.getByText("The price will show here in a moment.").count()).toBe(0);
+  await expect(page.getByRole("button", { name: "Uploading…" })).toHaveCount(0);
+
+  await expect(page).toHaveURL(/\/order\/mock-token$/);
+  await expect(
+    page.getByRole("heading", { name: /exact price/ }).filter({ visible: true }),
+  ).toBeVisible();
+  await expect(page.getByTestId("reading-handoff")).toHaveCount(0);
+  expect(await page.getByText("Loading your order").count()).toBe(0);
+  expect(await page.getByText("The price will show here in a moment.").count()).toBe(0);
+});
+
 test("needs_review quote keeps the total when language is unknown", async ({ page }) => {
   await page.addInitScript((pageRule) => {
     sessionStorage.setItem(

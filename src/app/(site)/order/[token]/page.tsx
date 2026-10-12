@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { OrderHub } from "@/components/flow/order-hub";
-import { FlowStatus } from "@/components/flow/status";
+import { OrderLoadingFallback } from "@/components/flow/reading-handoff";
 import { publicOrderExists } from "@/lib/orders/public-order-server";
 import { ROBOTS_NOINDEX } from "@/lib/seo";
 
@@ -25,7 +25,7 @@ export default async function OrderPage({
   if (!(await publicOrderExists(token))) notFound();
 
   return (
-    <Suspense fallback={<FlowStatus title="Loading your order…" body="" />}>
+    <Suspense fallback={<OrderLoadingFallback />}>
       <OrderHub />
     </Suspense>
   );

@@ -22,6 +22,7 @@ import {
   TRANSLATION_PAGE_LABEL,
 } from "@/lib/evaluations/catalog";
 import type { EvaluationService } from "@/lib/orders/types";
+import { useReadingHandoff } from "./reading-handoff";
 import { buttonClasses, fieldClass } from "./ui";
 
 type ListedFile = {
@@ -57,6 +58,7 @@ export function UploadCard({
 }) {
   const router = useRouter();
   const mock = flowUsesMock();
+  const { beginUpload, setUploadRatio, orderCreated, endHandoff } = useReadingHandoff();
   const inputRef = useRef<HTMLInputElement>(null);
   const [email, setEmail] = useState(mock ? "maria.ruiz@email.com" : "");
   const [picked, setPicked] = useState<File[]>([]);
@@ -100,28 +102,34 @@ export function UploadCard({
       setError("Enter at least 1 degree.");
       return;
     }
+    if (!mock && picked.length === 0) {
+      setError("Add at least one PDF or photo.");
+      return;
+    }
+    beginUpload();
     setPending(true);
     try {
       const client = getFlowClient();
-      if (mock) {
-        const result = await client.upload({ email, files: [], choice: selected });
-        trackOrderUpload(result.orderId, pageCount);
-        writeToken(result.orderToken);
-        writeEmail(email);
-        router.push("/quote");
-        return;
-      }
-      if (picked.length === 0) {
-        setError("Add at least one PDF or photo.");
-        return;
-      }
-      const result = await client.upload({ email, files: picked, choice: selected });
+      const result = await client.upload({
+        email,
+        files: mock ? [] : picked,
+        choice: selected,
+        onProgress: setUploadRatio,
+      });
       trackOrderUpload(result.orderId, pageCount);
       writeToken(result.orderToken);
       writeEmail(email);
       rememberUpload(result.orderToken, picked);
-      router.push(`/order/${encodeURIComponent(result.orderToken)}`);
+      orderCreated();
+      const useOrderRoute =
+        !mock ||
+        (typeof window !== "undefined" &&
+          sessionStorage.getItem("credpronto-mock-order-route") === "1");
+      router.push(
+        useOrderRoute ? `/order/${encodeURIComponent(result.orderToken)}` : "/quote",
+      );
     } catch (cause) {
+      endHandoff();
       const message =
         cause instanceof FlowApiError
           ? cause.message

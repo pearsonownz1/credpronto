@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useEffect, useLayoutEffect, useState, type ChangeEvent } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
 import { formatMoney } from "@/lib/flow/pricing";
 import {
@@ -27,6 +27,7 @@ import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FilePreview, inlineSourceUrl, type ViewerPage } from "./file-preview";
 import { FlowHeader } from "./flow-header";
+import { useReadingHandoff } from "./reading-handoff";
 import { ReadingFiles } from "./reading-files";
 import { FlowStatus } from "./status";
 import { useCustomerOrder, useStoredToken } from "./use-order";
@@ -41,6 +42,13 @@ export function QuoteView({
 }) {
   const token = useStoredToken(pathToken);
   const { order, error, loading, reload } = useCustomerOrder(token, "while-working");
+  const { covering, reportOrder, endHandoff } = useReadingHandoff();
+
+  useLayoutEffect(() => {
+    if (!covering) return;
+    if (order?.status === "draft") reportOrder(order);
+    else if (order || (!loading && error)) endHandoff();
+  }, [order, loading, error, covering, reportOrder, endHandoff]);
 
   useEffect(() => {
     if (order) onOrder?.(order);
@@ -51,7 +59,11 @@ export function QuoteView({
       <FlowHeader current="quote" />
       <main>
         {loading && !order ? (
-          <FlowStatus title="Reading your files…" body="The price will show here in a moment." />
+          covering ? (
+            <ReadingFiles status="draft" />
+          ) : (
+            <FlowStatus title="Reading your files…" body="The price will show here in a moment." />
+          )
         ) : error && !order ? (
           <FlowStatus
             title="We couldn't load this quote"
