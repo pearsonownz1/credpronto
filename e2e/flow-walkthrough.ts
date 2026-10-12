@@ -51,10 +51,10 @@ export async function walkCustomerFlow(
   await expect(shown(page, "detected-language")).toContainText("Spanish → English");
   await expect(shown(page, "file-list")).toContainText("acta-nacimiento.pdf");
   await expect(shown(page, "file-list")).toContainText("IMG_4021.HEIC");
-  await expect(shown(page, "file-list")).toContainText("1 page");
-  await expect(shown(page, "quote-counts")).toHaveText("2 files, 2 pages, 2 billable");
+  await expect(shown(page, "file-list")).toContainText("1 billable page");
+  await expect(page.getByTestId("quote-counts")).toHaveCount(0);
   await expect(shown(page, "quote-total")).toContainText("$19.90");
-  await expect(page.getByText("2 billable pages × $9.95").filter({ visible: true })).toBeVisible();
+  await expect(page.getByText("2 pages × $9.95").filter({ visible: true })).toBeVisible();
   await expect(page.getByText("Free", { exact: true }).filter({ visible: true })).toBeVisible();
   await expect(shown(page, "page-rule")).toHaveText(QUOTE_BILLING_NOTE);
   await expect(shown(page, "flow-stepper").locator("[data-state=current]")).toContainText(

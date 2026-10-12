@@ -31,7 +31,7 @@ const EVALUATION_INCLUDED = [
 ];
 
 export const QUOTE_BILLING_NOTE =
-  "Each page is billed once. Very dense pages (over 1,000 characters) may count as 2. English pages and non-documents are skipped automatically.";
+  "Billed by translatable text, about 250 words (or 1,000 characters) per page. English pages and shipping labels are free.";
 
 /** Quote-screen fine print. The order still carries pageRule for other clients. */
 export function displayedPageRule(order: { pageRule: string }): string {
@@ -94,13 +94,20 @@ export function quoteSummaryLabel(counts: QuoteCounts): string {
   return `${files}, ${pages}, ${counts.billable} billable`;
 }
 
+/** Billable pages for one file. The quote does not show a physical page total. */
+export function fileCountLabel(billable: number): string {
+  const noun = billable === 1 ? "page" : "pages";
+  return `${billable} billable ${noun}`;
+}
+
 export function billablePriceLabel(pages: number, unitPriceCents: number): string {
-  const noun = pages === 1 ? "billable page" : "billable pages";
+  const noun = pages === 1 ? "page" : "pages";
   return `${pages} ${noun} × ${formatMoney(unitPriceCents)}`;
 }
 
 export type QuotePageRow = {
   key: string;
+  documentId: string;
   /** Index into the line items `skipPages` addresses. Missing when this row is not one of those lines. */
   pageIndex?: number;
   pageId?: string;
@@ -112,6 +119,15 @@ export type QuotePageRow = {
   billableUnits?: number | null;
   skip?: boolean;
   skipReason?: string | null;
+};
+
+export type QuoteFileGroup = {
+  id: string;
+  filename: string;
+  /** Null when the file has no page rows and no page count. */
+  pages: number | null;
+  billable: number;
+  rows: QuotePageRow[];
 };
 
 export function quotePageRows(order: CustomerOrder): QuotePageRow[] {
@@ -127,6 +143,7 @@ export function quotePageRows(order: CustomerOrder): QuotePageRow[] {
       const fallback = indexingPages ? page : match;
       return {
         key: `${page.documentId}-${page.uploadPage}-${page.appliedPage}-${index}`,
+        documentId: page.documentId,
         pageIndex: indexingPages ? (matchIndex >= 0 ? matchIndex : undefined) : index,
         pageId: match?.id ?? page.id,
         filename: page.filename || names.get(page.documentId) || "Page",
@@ -147,6 +164,7 @@ export function quotePageRows(order: CustomerOrder): QuotePageRow[] {
   if (!detailed) return [];
   return order.pages.map((page, index) => ({
     key: page.id ?? `${page.documentId}-${page.pageNumber}-${index}`,
+    documentId: page.documentId,
     pageIndex: index,
     pageId: page.id,
     filename: names.get(page.documentId) || "Page",
@@ -158,6 +176,113 @@ export function quotePageRows(order: CustomerOrder): QuotePageRow[] {
     skip: page.skip,
     skipReason: page.skipReason,
   }));
+}
+
+function rowsHaveBillableUnits(rows: QuotePageRow[]): boolean {
+  return rows.some((row) => typeof row.billableUnits === "number" && Number.isFinite(row.billableUnits));
+}
+
+/** Split the order's billed page count across files that have no per-page units. */
+function billedShares(
+  order: CustomerOrder,
+  byDocument: Map<string, QuotePageRow[]>,
+): Map<string, number> {
+  const targets: Array<{ id: string; weight: number }> = [];
+  let known = 0;
+  for (const document of order.documents) {
+    const fileRows = byDocument.get(document.id) ?? [];
+    if (rowsHaveBillableUnits(fileRows)) {
+      known += sumQuotedBillable(fileRows);
+      continue;
+    }
+    targets.push({
+      id: document.id,
+      weight: Math.max(document.pageCount ?? fileRows.length, 0),
+    });
+  }
+  for (const [id, fileRows] of byDocument) {
+    if (order.documents.some((document) => document.id === id)) continue;
+    if (rowsHaveBillableUnits(fileRows)) {
+      known += sumQuotedBillable(fileRows);
+      continue;
+    }
+    targets.push({ id, weight: fileRows.length });
+  }
+
+  if (order.billablePages == null) {
+    return new Map(targets.map((target) => [target.id, target.weight]));
+  }
+  return allocateShares(targets, Math.max(order.billablePages - known, 0));
+}
+
+function allocateShares(
+  targets: Array<{ id: string; weight: number }>,
+  total: number,
+): Map<string, number> {
+  const shares = new Map<string, number>();
+  if (targets.length === 0) return shares;
+  const weightSum = targets.reduce((sum, target) => sum + target.weight, 0);
+  if (weightSum <= 0) {
+    targets.forEach((target, index) => shares.set(target.id, index === 0 ? total : 0));
+    return shares;
+  }
+  const raw = targets.map((target) => (total * target.weight) / weightSum);
+  const floors = raw.map((value) => Math.floor(value));
+  let left = total - floors.reduce((sum, value) => sum + value, 0);
+  const order = raw
+    .map((value, index) => ({ index, frac: value - Math.floor(value) }))
+    .sort((a, b) => b.frac - a.frac || a.index - b.index);
+  for (const item of order) {
+    if (left <= 0) break;
+    floors[item.index] += 1;
+    left -= 1;
+  }
+  targets.forEach((target, index) => shares.set(target.id, floors[index] ?? 0));
+  return shares;
+}
+
+/** One group per uploaded file, with that file's page rows underneath. */
+export function quoteFileGroups(order: CustomerOrder): QuoteFileGroup[] {
+  const rows = quotePageRows(order);
+  const byDocument = new Map<string, QuotePageRow[]>();
+  for (const row of rows) {
+    const list = byDocument.get(row.documentId) ?? [];
+    list.push(row);
+    byDocument.set(row.documentId, list);
+  }
+  const shares = billedShares(order, byDocument);
+
+  const seen = new Set<string>();
+  const groups: QuoteFileGroup[] = [];
+  for (const document of order.documents) {
+    seen.add(document.id);
+    const fileRows = byDocument.get(document.id) ?? [];
+    const billable = rowsHaveBillableUnits(fileRows)
+      ? sumQuotedBillable(fileRows)
+      : (shares.get(document.id) ?? document.pageCount ?? 0);
+    groups.push({
+      id: document.id,
+      filename: document.filename,
+      pages: fileRows.length > 0 ? fileRows.length : document.pageCount,
+      billable,
+      rows: fileRows,
+    });
+  }
+
+  for (const [id, fileRows] of byDocument) {
+    if (seen.has(id) || fileRows.length === 0) continue;
+    const billable = rowsHaveBillableUnits(fileRows)
+      ? sumQuotedBillable(fileRows)
+      : (shares.get(id) ?? fileRows.length);
+    groups.push({
+      id,
+      filename: fileRows[0]?.filename || "File",
+      pages: fileRows.length,
+      billable,
+      rows: fileRows,
+    });
+  }
+  return groups;
 }
 
 function pagesMatch(

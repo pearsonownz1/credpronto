@@ -3,27 +3,25 @@
 import Link from "next/link";
 import { useState, type ChangeEvent } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
-import { formatMoney, pageLabel } from "@/lib/flow/pricing";
+import { formatMoney } from "@/lib/flow/pricing";
 import {
-  UPLOAD_ORDER_NOTE,
   billablePriceLabel,
   canOpenConfirm,
   canSetSourceLanguage,
   displayedPageRule,
+  fileCountLabel,
   languageChoices,
   languageLine,
-  quoteCounts,
-  quotePageRows,
-  quoteSummaryLabel,
+  quoteFileGroups,
   servicePriceLines,
   settleTargetLanguageUpdate,
   showTargetLanguagePicker,
-  skipPageNote,
   skippedPageIndexes,
   targetChoices,
   totalLabel,
   type QuotePageRow,
 } from "@/lib/flow/present";
+import { pageStatusTag, sumQuotedBillable } from "@/lib/orders/skip-pages";
 import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
@@ -104,26 +102,36 @@ export function QuoteBody({
   const [target, setTarget] = useState(order.targetLanguage || "en");
   const [notice, setNotice] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [openDetails, setOpenDetails] = useState<Record<string, boolean>>({});
   const sourceCode = picker ? language : (live.sourceLanguage ?? language);
   const targetCode = sameLanguage ? target : live.targetLanguage;
   const line = live.sourceLanguage
     ? languageLine({ sourceLanguage: sourceCode, targetLanguage: targetCode })
     : languageLine(live);
-  const pages = live.billablePages ?? 0;
   const qualityHold = live.reviewReason === IMAGE_QUALITY_REASON;
   const evaluation = live.orderType === "evaluation";
   const showPrice = !qualityHold;
   const priceLines = showPrice ? quoteSummaryPrices(live) : [];
   const showContinue = canOpenConfirm(live);
-  const orderedPages = live.pageOrder && live.pageOrder.pages.length > 1 ? live.pageOrder : null;
-  const pageRows = quotePageRows(live);
-  const counts = quoteSummaryLabel(quoteCounts(live));
 
   function rowSkipped(row: QuotePageRow): boolean {
     if (row.pageIndex == null) return row.skip === true;
     if (pendingSkip) return pendingSkip.includes(row.pageIndex);
     return row.skip === true;
   }
+
+  const files = quoteFileGroups(live).map((group) => {
+    const unitsKnown = group.rows.some(
+      (row) => typeof row.billableUnits === "number" && Number.isFinite(row.billableUnits),
+    );
+    if (!unitsKnown) return group;
+    return {
+      ...group,
+      billable: sumQuotedBillable(
+        group.rows.map((row) => ({ billableUnits: row.billableUnits, skip: rowSkipped(row) })),
+      ),
+    };
+  });
 
   async function onPageSkip(row: QuotePageRow, skip: boolean) {
     if (row.pageIndex == null || skipPending) return;
@@ -237,94 +245,84 @@ export function QuoteBody({
               "A reviewer will confirm the language before this price is final."}
           </p>
         ) : null}
-        <p data-testid="quote-counts" className="mt-5 text-[13px] text-ink-muted">
-          {counts}
-        </p>
         <div
           data-testid="file-list"
-          className="mt-2 overflow-hidden rounded-[var(--cp-radius)] border border-line"
+          className="mt-5 overflow-hidden rounded-[var(--cp-radius)] border border-line"
         >
-          {live.documents.map((file, index) => (
-            <div
-              key={file.id}
-              className={`grid grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3.5 text-sm md:gap-4 ${index > 0 ? "border-t border-line" : ""}`}
-            >
+          {files.map((file, index) => {
+            const open = openDetails[file.id] === true;
+            return (
               <div
-                className={`h-[66px] w-[52px] border border-line ${file.filename.toLowerCase().endsWith(".pdf") ? "bg-[#fbf8ef]" : "bg-[#e9e4d6]"}`}
-                aria-hidden
-              />
-              <div className="min-w-0">
-                <b className="block break-words">{file.filename}</b>
-                <div className="text-[12.5px] text-ink-muted">
-                  {file.detectedLanguage ? languageLine({
-                    sourceLanguage: file.detectedLanguage,
-                    targetLanguage: targetCode,
-                  }) : "Language not detected"}
-                </div>
-              </div>
-              <span className="whitespace-nowrap">
-                {file.pageCount == null ? "—" : pageLabel(file.pageCount)}
-              </span>
-            </div>
-          ))}
-        </div>
-        {pageRows.length > 0 ? (
-          <div data-testid="page-order" className="mt-4">
-            {orderedPages ? (
-              <p data-testid="page-order-basis" className="text-[13px] text-ink-muted">
-                {orderedPages.basis === "logical"
-                  ? "We ordered these pages from the printed page numbers."
-                  : UPLOAD_ORDER_NOTE}
-              </p>
-            ) : null}
-            <ol className="mt-2 list-decimal space-y-2 pl-5 text-[13px]">
-              {pageRows.map((row) => {
-                const skipped = rowSkipped(row);
-                const dense = !skipped && row.billableUnits != null && row.billableUnits > 1;
-                return (
-                  <li key={row.key} data-testid="page-row">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className={skipped ? "line-through" : undefined}>
-                        <span className="font-semibold">{row.filename}</span>
-                        {row.logicalPage != null
-                          ? ` · printed page ${row.logicalPage}`
-                          : ` · page ${row.appliedPage}`}
-                        {row.hint ? ` · ${row.hint}` : ""}
-                        {row.moved ? " · moved from the upload order" : ""}
-                      </span>
-                      {dense ? (
-                        <span data-testid="billed-as" className="text-ink-muted">
-                          billed as {row.billableUnits}
-                        </span>
-                      ) : null}
-                      {skipped ? (
-                        <span data-testid="skip-note" className="text-ink-muted">
-                          {skipPageNote(row.skipReason)}
-                        </span>
-                      ) : null}
-                      {row.pageIndex != null ? (
-                        <PageSkipToggle
-                          pageIndex={row.pageIndex}
-                          skipped={skipped}
-                          disabled={skipPending}
-                          onChange={(skip) => void onPageSkip(row, skip)}
-                        />
-                      ) : null}
+                key={file.id}
+                data-testid="file-row"
+                className={index > 0 ? "border-t border-line" : undefined}
+              >
+                <div className="grid grid-cols-[52px_minmax(0,1fr)] items-start gap-3 px-4 py-3.5 text-sm md:gap-4">
+                  <FileThumb filename={file.filename} />
+                  <div className="min-w-0">
+                    <b className="block break-words">{file.filename}</b>
+                    <div data-testid="file-billable" className="text-[12.5px] text-ink-muted">
+                      {file.pages == null ? "—" : fileCountLabel(file.billable)}
                     </div>
-                  </li>
-                );
-              })}
-            </ol>
-            {skipError ? (
-              <p role="alert" data-testid="skip-error" className="mt-2 text-[13px] text-[var(--cp-warn)]">
-                {skipError}
-              </p>
-            ) : null}
-          </div>
+                    {file.rows.length > 0 ? (
+                      <button
+                        type="button"
+                        data-testid="page-details"
+                        aria-expanded={open}
+                        onClick={() =>
+                          setOpenDetails((current) => ({ ...current, [file.id]: !open }))
+                        }
+                        className="mt-2 text-[13px] font-semibold text-primary"
+                      >
+                        Page details
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+                {open ? (
+                  <div className="space-y-2 px-4 pb-3.5">
+                    {file.rows.map((row, pageNumber) => {
+                      const skipped = rowSkipped(row);
+                      return (
+                        <div
+                          key={row.key}
+                          data-testid="page-row"
+                          className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]"
+                        >
+                          <FileThumb filename={file.filename} small />
+                          <span>Page {pageNumber + 1}</span>
+                          <span
+                            data-testid="page-status"
+                            className="rounded-[var(--cp-radius)] border border-line px-1.5 py-0.5 text-[12px] text-ink-muted"
+                          >
+                            {pageStatusTag({
+                              skip: skipped,
+                              skipReason: row.skipReason,
+                              billableUnits: row.billableUnits,
+                            })}
+                          </span>
+                          {row.pageIndex != null ? (
+                            <PageSkipToggle
+                              pageIndex={row.pageIndex}
+                              skipped={skipped}
+                              disabled={skipPending}
+                              onChange={(skip) => void onPageSkip(row, skip)}
+                            />
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+        {skipError ? (
+          <p role="alert" data-testid="skip-error" className="mt-2 text-[13px] text-[var(--cp-warn)]">
+            {skipError}
+          </p>
         ) : null}
-        <p data-testid="page-rule" className="mt-3 text-[12.5px] leading-normal text-ink-muted">
-          {displayedPageRule(live)}
-        </p>
       </div>
       <div>
         <Summary>
@@ -337,10 +335,7 @@ export function QuoteBody({
               />
             ))
           ) : (
-            <SummaryRow
-              label="Pages"
-              value={pages > 0 ? pageLabel(pages) : "Pending"}
-            />
+            <SummaryRow label="Pages" value="Pending" />
           )}
           <SummaryRow label="Certification" value="Included" />
           <SummaryRow
@@ -355,6 +350,7 @@ export function QuoteBody({
             emphasize
           />
         </Summary>
+        <BillingNote note={displayedPageRule(live)} />
         {qualityHold ? (
           <ImageQuality order={live} token={token} onReplaced={onReplaced} />
         ) : (
@@ -409,6 +405,40 @@ export function QuoteBody({
         </div>
       </div>
     </FlowColumns>
+  );
+}
+
+function BillingNote({ note }: { note: string }) {
+  return (
+    <p
+      data-testid="page-rule"
+      className="mt-3 flex items-start gap-1.5 text-[12.5px] leading-normal text-ink-muted"
+    >
+      <span title={note} data-testid="billing-info" className="mt-px inline-flex shrink-0" aria-hidden>
+        <InfoIcon />
+      </span>
+      <span>{note}</span>
+    </p>
+  );
+}
+
+function InfoIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M7 6.2V10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <circle cx="7" cy="4.1" r="0.7" fill="currentColor" />
+    </svg>
+  );
+}
+
+function FileThumb({ filename, small = false }: { filename: string; small?: boolean }) {
+  const pdf = filename.toLowerCase().endsWith(".pdf");
+  return (
+    <div
+      className={`shrink-0 border border-line ${small ? "h-9 w-7" : "h-[66px] w-[52px]"} ${pdf ? "bg-[#fbf8ef]" : "bg-[#e9e4d6]"}`}
+      aria-hidden
+    />
   );
 }
 

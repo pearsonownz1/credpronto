@@ -18,7 +18,9 @@ import {
   joinParents,
   languageLine,
   orderHubStep,
+  fileCountLabel,
   quoteCounts,
+  quoteFileGroups,
   quotePageRows,
   quoteSummaryLabel,
   servicePriceLines,
@@ -284,8 +286,8 @@ describe("quote counts", () => {
     expect(rows[0]?.billableUnits).toBe(2);
     expect(rows[1]?.skipReason).toBe("already English");
     expect(skippedPageIndexes(dense)).toEqual([1]);
-    expect(billablePriceLabel(2, 995)).toBe("2 billable pages × $9.95");
-    expect(billablePriceLabel(1, 995)).toBe("1 billable page × $9.95");
+    expect(billablePriceLabel(2, 995)).toBe("2 pages × $9.95");
+    expect(billablePriceLabel(1, 995)).toBe("1 page × $9.95");
   });
 
   it("leaves page rows off when the new fields are missing", () => {
@@ -361,6 +363,98 @@ describe("quote counts", () => {
     });
     expect(quotePageRows(reordered).map((row) => row.pageIndex)).toEqual([1, 0]);
     expect(skippedPageIndexes(reordered)).toEqual([1]);
+  });
+
+  it("groups pages under each file", () => {
+    const grouped = order({
+      documents: [
+        {
+          id: "cv",
+          filename: "cv.pdf",
+          pageCount: 2,
+          detectedLanguage: "es",
+          confidence: 0.9,
+          uploadPosition: 1,
+          appliedPosition: 1,
+        },
+        {
+          id: "photo",
+          filename: "back.jpg",
+          pageCount: 1,
+          detectedLanguage: "es",
+          confidence: 0.9,
+          uploadPosition: 2,
+          appliedPosition: 2,
+        },
+      ],
+      pages: [
+        {
+          id: "p1",
+          documentId: "cv",
+          pageNumber: 1,
+          uploadPage: 1,
+          logicalPage: null,
+          orderHint: "第 1 页",
+          qualityScore: null,
+          qualityFlags: [],
+          qualityMessage: null,
+          billableUnits: 2,
+        },
+        {
+          id: "p2",
+          documentId: "cv",
+          pageNumber: 2,
+          uploadPage: 2,
+          logicalPage: 4,
+          orderHint: null,
+          qualityScore: null,
+          qualityFlags: [],
+          qualityMessage: null,
+          skip: true,
+          skipReason: "not a document",
+        },
+      ],
+    });
+    const groups = quoteFileGroups(grouped);
+    expect(groups.map((group) => group.filename)).toEqual(["cv.pdf", "back.jpg"]);
+    expect(groups[0]?.pages).toBe(2);
+    expect(groups[0]?.billable).toBe(2);
+    expect(fileCountLabel(groups[0]?.billable ?? 0)).toBe("2 billable pages");
+    expect(groups[0]?.rows.map((row) => row.documentId)).toEqual(["cv", "cv"]);
+    expect(groups[1]?.rows).toEqual([]);
+    expect(fileCountLabel(1)).toBe("1 billable page");
+  });
+
+  it("uses the order's billed count when page units are missing", () => {
+    const quoted = order({
+      billablePages: 6,
+      documents: [
+        {
+          id: "cv",
+          filename: "cv.pdf",
+          pageCount: 3,
+          detectedLanguage: "es",
+          confidence: 0.9,
+          uploadPosition: 1,
+          appliedPosition: 1,
+        },
+      ],
+      pages: [1, 2, 3].map((pageNumber) => ({
+        id: `p${pageNumber}`,
+        documentId: "cv",
+        pageNumber,
+        uploadPage: pageNumber,
+        logicalPage: pageNumber,
+        orderHint: "第 1 页",
+        qualityScore: null,
+        qualityFlags: [],
+        qualityMessage: null,
+      })),
+    });
+    const [file] = quoteFileGroups(quoted);
+    expect(file?.billable).toBe(6);
+    expect(fileCountLabel(file?.billable ?? 0)).toBe("6 billable pages");
+    expect(quotePageRows(quoted).every((row) => row.filename !== "")).toBe(true);
   });
 });
 
