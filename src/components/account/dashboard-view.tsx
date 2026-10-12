@@ -26,7 +26,7 @@ const ROW_HOVER =
 const STRETCH_LINK = "after:absolute after:inset-0 after:z-0 after:content-['']";
 
 const ACTION_LINK =
-  "relative z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2";
+  "relative z-10 whitespace-nowrap focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2";
 
 const TONE: Record<ChipTone, string> = {
   blue: "bg-[#eaf0ff] text-primary",
@@ -58,7 +58,7 @@ export function DashboardView() {
         <Link
           href="/translate"
           data-testid="new-translation"
-          className="inline-flex h-10 items-center justify-center rounded-[var(--cp-radius)] bg-primary px-[18px] text-sm font-semibold text-white"
+          className="inline-flex h-10 items-center justify-center whitespace-nowrap rounded-[var(--cp-radius)] bg-primary px-[18px] text-sm font-semibold text-white"
         >
           + New translation
         </Link>
@@ -80,7 +80,7 @@ export function DashboardView() {
                 {presentOrder(waiting[0], now).documents} · {formatOrderMoney(waiting[0].totalCents)} to buy
               </span>
             </span>
-            <span className="ml-auto text-[13px] font-semibold text-primary">Review →</span>
+            <span className="ml-auto whitespace-nowrap text-[13px] font-semibold text-primary">Review →</span>
           </Link>
         ) : (
           <div className="flex items-center gap-3.5 rounded-[var(--cp-radius)] border border-line bg-white p-[18px]">
@@ -114,7 +114,7 @@ export function DashboardView() {
             <span className="block text-[15px] font-semibold">Credential evaluation</span>
             <span className="mt-0.5 block text-[13px] text-ink-muted">Diploma or course-by-course</span>
           </span>
-          <span className="ml-auto text-[13px] font-semibold text-primary">Start →</span>
+          <span className="ml-auto whitespace-nowrap text-[13px] font-semibold text-primary">Start →</span>
         </Link>
       </div>
       {ordersError ? (
@@ -167,7 +167,7 @@ export function DashboardView() {
             </p>
             <Link
               href="/translate"
-              className="mt-6 inline-flex h-11 items-center justify-center rounded-[var(--cp-radius)] bg-primary px-5 text-sm font-semibold text-white"
+              className="mt-6 inline-flex h-11 items-center justify-center whitespace-nowrap rounded-[var(--cp-radius)] bg-primary px-5 text-sm font-semibold text-white"
             >
               Get your free preview
             </Link>
@@ -316,7 +316,7 @@ function NextStep({ view }: { view: OrderPresentation }) {
       </Link>
     );
   }
-  return <span className="text-ink-muted">{action.label}</span>;
+  return <span className="whitespace-nowrap text-ink-muted">{action.label}</span>;
 }
 
 function IconBox({ children }: { children: React.ReactNode }) {

@@ -41,7 +41,7 @@ describe("customer order presentation", () => {
 
   it("matches the dashboard comp from the account order shape", () => {
     expect(orders.map((item) => [item.id, presentOrder(item, NOW).chip.label, presentOrder(item, NOW).action.label])).toEqual([
-      ["CP-24817", "Preview ready", "Review & buy"],
+      ["CP-24817", "Preview ready", "Buy now"],
       ["CP-24815", "Translating · ~6 min", "—"],
       ["CP-24790", "Paid · being certified", "In staff review"],
       ["CP-24702", "Needs your check", "Confirm details"],
@@ -78,7 +78,7 @@ describe("customer order presentation", () => {
       const view = presentOrder(order(status), NOW);
       if (view.action.emphasis === "primary") {
         expect(status).toBe("preview_ready");
-        expect(view.action.label).toBe("Review & buy");
+        expect(view.action.label).toBe("Buy now");
       }
     }
     expect(presentOrder({ ...order("delivered"), paymentStatus: "refunded", downloadAvailable: false }, NOW).tab).toBe(

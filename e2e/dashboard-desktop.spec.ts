@@ -24,7 +24,10 @@ test("maria sees the order dashboard", async ({ page }) => {
   await expect(page.getByTestId("order-CP-24815").locator('a[href="/order/tok-progress-24815"]')).toHaveCount(1);
   await expect(page.getByTestId("order-CP-24790").locator('a[href="/order/tok-paid-24790"]')).toHaveCount(1);
   await expect(page.getByTestId("order-CP-24611").locator('a[href="/order/tok-ready-24611"]')).toHaveCount(2);
-  await expect(page.getByRole("link", { name: "Review & buy" })).toHaveAttribute("href", "/preview/tok-preview-24817");
+  await expect(page.getByRole("link", { name: "Buy now" })).toHaveAttribute("href", "/preview/tok-preview-24817");
+  await expect(page.getByRole("link", { name: "Buy now" })).toHaveClass(/whitespace-nowrap/);
+  await expect(page.getByRole("link", { name: "Confirm details" })).toHaveClass(/whitespace-nowrap/);
+  await expect(page.getByRole("link", { name: "Download", exact: true }).first()).toHaveClass(/whitespace-nowrap/);
   await expect(page.locator("[data-emphasis='primary']:visible")).toHaveCount(1);
   await expect(page.getByText("1 preview waiting")).toBeVisible();
   await expect(page.getByTestId("nav-evaluation")).toHaveAttribute("href", "/evaluations");
