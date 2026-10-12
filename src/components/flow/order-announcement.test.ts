@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PAID_REVIEW_COPY } from "@/lib/flow/present";
+import { FINALIZING_COPY, PAID_REVIEW_COPY } from "@/lib/flow/present";
 import { orderLiveMessage } from "./order-announcement";
 
 const order = {
@@ -9,12 +9,12 @@ const order = {
 };
 
 describe("order live message", () => {
-  it("says payment is being confirmed instead of calling a checkout return missing", () => {
-    expect(orderLiveMessage({ loading: true, confirming: true, checkout: "success", order: null })).toBe(
-      "Confirming payment.",
+  it("says the certified PDF is finalizing instead of calling a checkout return missing", () => {
+    expect(orderLiveMessage({ loading: true, phase: "finalizing", checkout: "success", order: null })).toBe(
+      FINALIZING_COPY,
     );
-    expect(orderLiveMessage({ loading: false, confirming: true, checkout: "success", order })).toBe(
-      "Confirming payment.",
+    expect(orderLiveMessage({ loading: false, phase: "finalizing", checkout: "success", order })).toBe(
+      FINALIZING_COPY,
     );
     expect(orderLiveMessage({ loading: false, checkout: "cancel", order: null })).toBe("Payment canceled.");
     expect(

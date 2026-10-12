@@ -196,10 +196,10 @@ export const MOCK_ADMIN_ORDERS: AdminOrder[] = [
   },
 ];
 
-/** Recent mock waits so the certification badges stay one fresh and one past 15 minutes. */
+/** Recent mock waits so one certification badge is under 2 minutes and one is past it. */
 const FRESH_PAID_WAIT_MS: Record<string, number> = {
-  "CP-24902": 22 * 60_000,
-  "CP-24901": 4 * 60_000,
+  "CP-24902": 3 * 60_000,
+  "CP-24901": 70_000,
 };
 
 function withFreshPaidAt(order: AdminOrder, now: number): AdminOrder {

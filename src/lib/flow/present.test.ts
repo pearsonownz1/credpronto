@@ -14,6 +14,8 @@ import {
   checkoutFailureMessage,
   displayedPageRule,
   ORDER_STATUS_POLL_MS,
+  FINALIZING_COPY,
+  FINALIZING_POLL_MS,
   PAID_REVIEW_COPY,
   downloadReadyCopy,
   documentIdForPage,
@@ -484,8 +486,8 @@ describe("quote counts", () => {
 });
 
 describe("download phase", () => {
-  it("waits for payment, then certification, then the files", () => {
-    expect(downloadPhase(order({ status: "preview_ready" }))).toBe("confirming");
+  it("finalizes a release, then waits only when the order is flagged", () => {
+    expect(downloadPhase(order({ status: "preview_ready" }))).toBe("finalizing");
     expect(
       downloadPhase(
         order({
@@ -527,10 +529,11 @@ describe("download phase", () => {
       ),
     ).toBe("ready");
     expect(orderStatusPollDelay("certifying")).toBe(ORDER_STATUS_POLL_MS);
-    expect(orderStatusPollDelay("confirming")).toBe(5_000);
+    expect(orderStatusPollDelay("finalizing")).toBe(FINALIZING_POLL_MS);
     expect(orderStatusPollDelay("ready")).toBeNull();
+    expect(FINALIZING_COPY).toBe("Finalizing your certified PDF…");
     expect(PAID_REVIEW_COPY).toBe(
-      "Paid. Our certified translator is doing a final check, and your PDF will be emailed and appear right here.",
+      "Paid. Our certified translator is doing a quick final check, and your PDF will be emailed and appear right here.",
     );
     expect(paidReviewEmailLine("ada@example.com")).toBe(
       "We'll email ada@example.com when the certified PDF is ready to download.",

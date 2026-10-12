@@ -130,18 +130,18 @@ describe("certification queue", () => {
     expect(certificationQueue(parsed ? [parsed] : []).map((item) => item.id)).toEqual(["CP-1"]);
   });
 
-  it("labels the wait and turns red at 15 minutes", () => {
-    expect(waitingMinutes({ paidAt: "2026-10-12T12:26:00.000Z", createdAt: "2026-10-01T00:00:00.000Z" }, NOW)).toBe(4);
+  it("labels the wait and turns red at 2 minutes", () => {
+    expect(waitingMinutes({ paidAt: "2026-10-12T12:29:00.000Z", createdAt: "2026-10-01T00:00:00.000Z" }, NOW)).toBe(1);
     expect(waitingMinutes({ paidAt: null, createdAt: "2026-10-12T12:10:00.000Z" }, NOW)).toBe(20);
     expect(waitingMinutes({ paidAt: "nope", createdAt: "also-nope" }, NOW)).toBeNull();
     expect(waitingMinutes({ paidAt: "2026-10-12T12:40:00.000Z", createdAt: "2026-10-12T12:00:00.000Z" }, NOW)).toBe(0);
-    expect(waitingLabel(4)).toBe("Waiting 4 min");
-    expect(waitingLabel(15)).toBe("Waiting 15 min");
-    expect(waitingIsLate(14)).toBe(false);
-    expect(waitingIsLate(15)).toBe(true);
+    expect(waitingLabel(1)).toBe("Waiting 1 min");
+    expect(waitingLabel(2)).toBe("Waiting 2 min");
+    expect(waitingIsLate(1)).toBe(false);
+    expect(waitingIsLate(2)).toBe(true);
   });
 
-  it("renders a live waiting badge that is red after 15 minutes", () => {
+  it("renders a live waiting badge that is red after 2 minutes", () => {
     const html = renderToStaticMarkup(
       createElement(CertificationQueue, {
         now: NOW,
@@ -150,7 +150,7 @@ describe("certification queue", () => {
             id: "CP-OLD",
             status: "paid",
             createdAt: "2026-10-12T11:00:00.000Z",
-            paidAt: "2026-10-12T12:08:00.000Z",
+            paidAt: "2026-10-12T12:27:00.000Z",
             fulfillment: "awaiting_review",
             email: "old@example.com",
           }),
@@ -158,7 +158,7 @@ describe("certification queue", () => {
             id: "CP-NEW",
             status: "paid",
             createdAt: "2026-10-12T12:00:00.000Z",
-            paidAt: "2026-10-12T12:26:00.000Z",
+            paidAt: "2026-10-12T12:29:00.000Z",
             fulfillment: "awaiting_review",
             email: "new@example.com",
           }),
@@ -169,8 +169,8 @@ describe("certification queue", () => {
     const newAt = html.indexOf("CP-NEW");
     expect(oldAt).toBeGreaterThan(-1);
     expect(newAt).toBeGreaterThan(oldAt);
-    expect(html).toContain("Waiting 22 min");
-    expect(html).toContain("Waiting 4 min");
+    expect(html).toContain("Waiting 3 min");
+    expect(html).toContain("Waiting 1 min");
     expect(html).toContain('data-testid="waiting-badge"');
     expect(html).toContain('data-late="true"');
     expect(html).toContain('data-late="false"');

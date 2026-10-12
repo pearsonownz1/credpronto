@@ -95,7 +95,7 @@ describe("download page", () => {
     });
     const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
     expect(html).toContain(
-      "Paid. Our certified translator is doing a final check, and your PDF will be emailed and appear right here.",
+      "Paid. Our certified translator is doing a quick final check, and your PDF will be emailed and appear right here.",
     );
     expect(html).toContain("buyer@example.com");
     expect(html).toContain("when the certified PDF is ready to download.");
@@ -108,5 +108,38 @@ describe("download page", () => {
     expect(html).not.toContain("Order not found");
     expect(html).not.toContain("flag-correction");
     expect(html).not.toContain("Pay ");
+    expect(html).not.toContain("Finalizing your certified PDF");
+  });
+
+  it("shows the download button as soon as a paid order is released", () => {
+    state.order = readyOrder({
+      status: "approved",
+      payment: { status: "paid" },
+      delivery: { status: "approved" },
+      fulfillment: "released",
+    });
+    const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1", pendingPayment: true }));
+    expect(html).toContain("Your certified translation is ready.");
+    expect(html).toContain('data-testid="download-certified"');
+    expect(html).toContain('data-state="current" data-step="download"');
+    expect(html).not.toContain("Finalizing your certified PDF");
+    expect(html).not.toContain('data-testid="paid-preview"');
+  });
+
+  it("finalizes on Download while payment has not been recorded yet", () => {
+    state.order = readyOrder({
+      status: "preview_ready",
+      payment: null,
+      delivery: null,
+      fulfillment: null,
+      paidAt: null,
+    });
+    const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1", pendingPayment: true }));
+    expect(html).toContain("Finalizing your certified PDF…");
+    expect(html).toContain('data-state="current" data-step="download"');
+    expect(html).toContain('data-state="done" data-step="preview"');
+    expect(html).not.toContain('data-testid="paid-preview"');
+    expect(html).not.toContain('data-testid="download-certified"');
+    expect(html).not.toContain("quick final check");
   });
 });

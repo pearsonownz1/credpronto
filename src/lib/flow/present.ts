@@ -519,11 +519,14 @@ export function downloadReadyCopy(order: {
   };
 }
 
-export type DownloadPhase = "confirming" | "certifying" | "ready";
+export type DownloadPhase = "finalizing" | "certifying" | "ready";
 
-/** Status heading while a paid order is still with the translator. */
+/** Checkout return, while payment and an immediate release are still landing. */
+export const FINALIZING_COPY = "Finalizing your certified PDF…";
+
+/** Status heading while a flagged paid order is still with the translator. */
 export const PAID_REVIEW_COPY =
-  "Paid. Our certified translator is doing a final check, and your PDF will be emailed and appear right here.";
+  "Paid. Our certified translator is doing a quick final check, and your PDF will be emailed and appear right here.";
 
 export function paidReviewEmailLine(email: string | null | undefined): string {
   const address = email?.trim();
@@ -535,8 +538,13 @@ export function paidReviewEmailLine(email: string | null | undefined): string {
 /** How often the paid page asks for order status until the PDF is released. */
 export const ORDER_STATUS_POLL_MS = 5_000;
 
+/** Faster checks while the webhook and release are still landing. */
+export const FINALIZING_POLL_MS = 1_000;
+
 export function orderStatusPollDelay(phase: DownloadPhase): number | null {
-  return phase === "ready" ? null : ORDER_STATUS_POLL_MS;
+  if (phase === "ready") return null;
+  if (phase === "finalizing") return FINALIZING_POLL_MS;
+  return ORDER_STATUS_POLL_MS;
 }
 
 export function downloadPhase(order: {
@@ -553,7 +561,7 @@ export function downloadPhase(order: {
     order.status === "delivered" ||
     order.payment?.status === "paid" ||
     order.payment?.status === "paid_test";
-  if (!paid) return "confirming";
+  if (!paid) return "finalizing";
   const delivery = order.delivery?.status;
   if (
     order.fulfillment === "released" ||
