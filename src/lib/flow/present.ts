@@ -661,6 +661,56 @@ export function documentIdForPage(
   return documents.length === 1 ? documents[0].id : null;
 }
 
+/** Enough to open the PDFs before GET /api/orders/:id (which includes every page's OCR text) returns. */
+export function previewShellOrder(id: string, preview: PreviewResponse): PreviewOrder {
+  const pages = preview.billablePages ?? preview.original.pageCount;
+  const mapPages = (input: PreviewResponse["original"]["pages"]) =>
+    input.map((page) => ({
+      page: page.number,
+      widthPt: page.widthPt,
+      heightPt: page.heightPt,
+      documentId: page.documentId,
+    }));
+  const filename = preview.original.pages[0]?.documentName || "document.pdf";
+
+  return {
+    id,
+    status: "preview_ready",
+    sourceLanguage: LANGUAGE_PENDING,
+    targetLanguage: "English",
+    filename,
+    pageCount: preview.original.pageCount,
+    original: {
+      url: preview.original.url,
+      subtitle: "Original",
+      pages: mapPages(preview.original.pages),
+    },
+    translation: {
+      url: preview.translation.url,
+      subtitle: "English · watermarked preview",
+      pages: mapPages(preview.translation.pages),
+    },
+    pricing: {
+      perPageCents: preview.unitPriceCents,
+      pages,
+      certificationIncluded: true,
+      totalCents: preview.totalCents ?? 0,
+    },
+    included: PREVIEW_INCLUDED,
+    corrections: preview.corrections
+      .filter((correction) => correction.page != null)
+      .map((correction) => ({
+        id: correction.id,
+        page: correction.page ?? 1,
+        passage: correction.quote,
+        note: correction.note ?? "",
+        status: "sent" as const,
+        label: correction.note?.trim() || "Correction",
+        detail: correction.status,
+      })),
+  };
+}
+
 export function toPreviewOrder(
   order: CustomerOrder,
   preview: PreviewResponse,

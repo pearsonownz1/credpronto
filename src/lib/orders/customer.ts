@@ -11,7 +11,6 @@ import {
   DOWNLOAD_URL_SECONDS,
   FINALS_BUCKET,
   ORIGINALS_BUCKET,
-  PREVIEW_URL_SECONDS,
   SOURCE_URL_SECONDS,
 } from "./constants";
 import {
@@ -26,8 +25,6 @@ import {
   insertPayment,
   latestPayment,
   latestReadyPreview,
-  listCorrections,
-  listReadyPreviewPaths,
   listDocuments,
   listOrderAddons,
   listPages,
@@ -40,7 +37,6 @@ import {
   paymentBySession,
   replaceOrderAddons,
   restorePreviewReadyOrder,
-  requireOrderByHash,
   setPageSkipped,
   settledPayment,
   updateDocument,
@@ -66,29 +62,13 @@ import { parseQuotePatch, quotePriceAfterSkip, sumQuotedBillable } from "./skip-
 import { loadCustomerOrder } from "./pipeline";
 import { originalDownloadResponse, originalTargets } from "./originals";
 import { sourceFileBody, sourceFileTarget, type SourceFileResponse } from "./source-file";
-import { evaluationPreviewSources } from "./preview-documents";
-import { previewSignedTargets } from "./preview-targets";
 import { serviceDb, signedObjectUrl, uploadObject, type Db } from "./storage";
-import { requireUser } from "@/lib/auth/session";
 import { checkoutReturnUrl, orderTokenFromReturnUrl } from "./checkout-return";
-import { assertOrderTokenShape, hashOrderToken, isOrderId } from "./token";
 import { parseCorrectionBody } from "./corrections";
 import { decideChargeRefunded, decideCheckoutCompleted, decideCheckoutExpired } from "./webhook";
 import { checkedProgress } from "./translation-watch";
-import { previewPages, type CustomerOrder, type PreviewResponse } from "./view";
-
-async function orderForToken(token: string) {
-  const db = serviceDb();
-  if (isOrderId(token)) {
-    const user = await requireUser();
-    const owned = await getOrderById(db, token);
-    if (!owned || owned.userId !== user.id) throw new HttpError("Order not found", 404);
-    return { db, order: owned, token };
-  }
-  assertOrderTokenShape(token);
-  const order = await requireOrderByHash(db, hashOrderToken(token));
-  return { db, order, token };
-}
+import { orderForToken } from "./order-access";
+import type { CustomerOrder } from "./view";
 
 export async function getOrder(token: string): Promise<CustomerOrder> {
   const { db, order } = await orderForToken(token);
@@ -312,90 +292,6 @@ export async function addCorrection(token: string, body: unknown) {
     quote: correction.passage,
     note: correction.note,
     status: "correction_requested" as const,
-  };
-}
-
-/** One signature per preview object, so two links to the same path share one URL. */
-async function signPreviewPaths(
-  db: Db,
-  combinedOriginalPath: string,
-  paths: readonly string[],
-): Promise<Map<string, string>> {
-  const entries = await Promise.all(
-    paths.map(async (path) => {
-      const target = previewSignedTargets({
-        combinedOriginalPath,
-        previewPath: path,
-      }).translation;
-      const url = await signedObjectUrl(db, target.bucket, target.path, PREVIEW_URL_SECONDS);
-      return [path, url] as const;
-    }),
-  );
-  return new Map(entries);
-}
-
-export async function getPreview(token: string): Promise<PreviewResponse> {
-  const { db, order } = await orderForToken(token);
-  const preview = await latestReadyPreview(db, order.id);
-  if (!preview || !order.combinedOriginalPath) {
-    throw new HttpError("Preview is not ready", 409);
-  }
-
-  const documents = await listDocuments(db, order.id);
-  const pages = previewPages(
-    documents,
-    withCombinedNumbers(documents, await listPages(db, documents.map((document) => document.id))),
-  );
-  const sources = evaluationPreviewSources({
-    service: order.service,
-    previewPath: preview.previewPath,
-    previewPaths: await listReadyPreviewPaths(db, order.id),
-  });
-  const originalTarget = previewSignedTargets({
-    combinedOriginalPath: order.combinedOriginalPath,
-    previewPath: sources.viewerPath,
-  }).original;
-  const previewPaths = [
-    ...new Set(
-      [sources.viewerPath, sources.reportPath, sources.translationPath].filter(
-        (path): path is string => Boolean(path),
-      ),
-    ),
-  ];
-  const [originalUrl, signedPreviews] = await Promise.all([
-    signedObjectUrl(db, originalTarget.bucket, originalTarget.path, PREVIEW_URL_SECONDS),
-    signPreviewPaths(db, order.combinedOriginalPath, previewPaths),
-  ]);
-  const translationUrl = signedPreviews.get(sources.viewerPath);
-  if (!translationUrl) throw new HttpError("Preview is not ready", 409);
-  const reportUrl = sources.reportPath ? signedPreviews.get(sources.reportPath) ?? null : null;
-  await insertEvent(db, order.id, "preview_viewed", { version: preview.version });
-
-  const corrections = await listCorrections(db, order.id);
-  return {
-    status: order.status,
-    totalCents: order.totalCents,
-    unitPriceCents: order.unitPriceCents,
-    billablePages: order.billablePages,
-    original: { url: originalUrl, pageCount: pages.length, pages },
-    translation: {
-      url: sources.translationPath ? signedPreviews.get(sources.translationPath) ?? translationUrl : translationUrl,
-      pageCount: pages.length,
-      pages,
-      version: preview.version,
-    },
-    report: reportUrl
-      ? { url: reportUrl, pageCount: order.evaluationResult?.pageCount ?? pages.length }
-      : null,
-    corrections: corrections.map((correction) => ({
-      id: correction.id,
-      documentId: correction.documentId,
-      page: correction.pageNumber,
-      quote: correction.passage,
-      note: correction.note,
-      status: correction.status,
-      createdAt: correction.createdAt,
-    })),
   };
 }
 

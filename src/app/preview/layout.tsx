@@ -10,5 +10,10 @@ export default function PreviewLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return children;
+  return (
+    <>
+      <link rel="preload" href="/pdfium/pdfium.wasm" as="fetch" crossOrigin="anonymous" />
+      {children}
+    </>
+  );
 }
