@@ -7,7 +7,7 @@ import {
   upsertCustomer,
   type Db,
 } from "./db";
-import { assertEmail, assertUploadBudget, resolveUploadMime, safeFilename } from "./files";
+import { assertEmail, assertUploadBudget, dedupeUploads, resolveUploadMime, safeFilename } from "./files";
 import { serviceDb, uploadObject } from "./storage";
 import { generateOrderToken, hashOrderToken } from "./token";
 import { evaluationFeeCents, parseOrderChoice } from "./evaluation-price";
@@ -40,7 +40,8 @@ export async function createOrder(request: Request): Promise<{
     if (bytes.byteLength === 0) throw new HttpError("Empty files are not accepted", 400);
     prepared.push({ filename: file.name || "upload", mime, bytes });
   }
-  assertUploadBudget(prepared.map((file) => ({ size: file.bytes.byteLength })));
+  const files = dedupeUploads(prepared);
+  assertUploadBudget(files.map((file) => ({ size: file.bytes.byteLength })));
 
   const choice = parseOrderChoice({
     orderType: textField(form, "orderType"),
@@ -69,9 +70,9 @@ export async function createOrder(request: Request): Promise<{
     landingPath: textField(form, "landing_path"),
   });
 
-  await insertEvent(db, order.id, "upload_started", { fileCount: prepared.length });
-  await storeFiles(db, order.id, prepared);
-  await insertEvent(db, order.id, "upload_done", { fileCount: prepared.length });
+  await insertEvent(db, order.id, "upload_started", { fileCount: files.length });
+  await storeFiles(db, order.id, files);
+  await insertEvent(db, order.id, "upload_done", { fileCount: files.length });
   await insertEvent(db, order.id, "staff_notified", { channel: "event" });
 
   return { orderToken, orderId: order.id, email };

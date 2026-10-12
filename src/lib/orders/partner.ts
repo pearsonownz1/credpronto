@@ -26,7 +26,7 @@ import {
 } from "./db";
 import { orderDownloadFilename } from "./download-name";
 import { HttpError } from "./errors";
-import { assertUploadBudget, resolveUploadMime } from "./files";
+import { assertUploadBudget, dedupeUploads, resolveUploadMime } from "./files";
 import { findActiveApiKey, orderByExternalRef, type ApiKeyRow } from "./integrations-db";
 import { isSupportedSourceLanguage } from "./languages";
 import { chargeOffSession, type OffSessionCharge } from "./off-session";
@@ -453,12 +453,13 @@ async function prepareFiles(form: FormData): Promise<Array<{ filename: string; m
     if (bytes.byteLength === 0) throw new HttpError("Empty files are not accepted", 400, "validation_error");
     prepared.push({ filename: file.name || "upload", mime, bytes });
   }
+  const files = dedupeUploads(prepared);
   try {
-    assertUploadBudget(prepared.map((file) => ({ size: file.bytes.byteLength })));
+    assertUploadBudget(files.map((file) => ({ size: file.bytes.byteLength })));
   } catch (error) {
     rethrowValidation(error);
   }
-  return prepared;
+  return files;
 }
 
 function rethrowValidation(error: unknown): never {
