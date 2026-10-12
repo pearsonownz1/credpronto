@@ -46,6 +46,33 @@ export function MarketingHeader({
   );
 }
 
+const RESOURCES = [
+  { href: "/blog", label: "Blog" },
+  { href: "/guides", label: "Guides" },
+  { href: "/faq", label: "FAQ" },
+] as const;
+
+function ResourcesMenu() {
+  return (
+    <details className="relative">
+      <summary className="cursor-pointer list-none text-ink-muted [&::-webkit-details-marker]:hidden">
+        Resources
+      </summary>
+      <div className="absolute left-0 z-30 mt-2 min-w-40 rounded-[var(--cp-radius)] border border-line bg-bg p-1 shadow-lg">
+        {RESOURCES.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="block rounded px-3 py-2 text-ink hover:bg-bg-muted"
+          >
+            {item.label}
+          </Link>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 function SectionNav({
   section,
   className,
@@ -65,6 +92,7 @@ function SectionNav({
           {item.label}
         </Link>
       ))}
+      <ResourcesMenu />
     </nav>
   );
 }
