@@ -432,6 +432,172 @@ A `paid_test` refund returns `{ "paymentStatus": "refunded", "mode": "paid_test"
 
 After translation, QA runs before `preview_ready`. A failing QA retranslates up to 2 times. If it still fails, the order becomes `needs_review` and `reviewReason` names the QA issues. `failed` can be retried with `POST /api/orders/[token]/process`. `cancelled` is unused by these routes.
 
+## Evaluations
+
+An evaluation is an order whose `orderType` is `evaluation`. `service` is `diploma` or `course_by_course`. A translation order leaves `service` null and `orderType` as `translation`. This `service` is the evaluation kind. It is not the partner field `service` on `POST /api/v1/orders`, which is still `translation` or `evaluation` (`orders.service_type`).
+
+### Upload choice
+
+`POST /api/orders` accepts these extra form fields. The front end sends them with the files.
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `orderType` | no | `translation` (default) or `evaluation` |
+| `service` | yes when `orderType` is `evaluation` | `diploma` or `course_by_course` |
+| `degreeCount` | yes when `orderType` is `evaluation` | Integer ≥ 1. The number of degrees to price |
+
+`400` when an evaluation is missing `service` or `degreeCount`, or when `service` is not one of those two values.
+
+`GET /api/orders/[token]` echoes the choice on every status:
+
+```json
+{
+  "orderType": "evaluation",
+  "service": "diploma",
+  "degreeCount": 1
+}
+```
+
+`orderType` is `translation` and `service` and `degreeCount` are null on a translation order.
+
+### Price
+
+Amounts are integer cents. The evaluation fee and, when the source is not English, the translation fee are separate Stripe line items on one Checkout session.
+
+| `service` | Per degree |
+| --- | --- |
+| `diploma` | `1995` ($19.95) |
+| `course_by_course` | `3995` ($39.95) |
+
+`evaluationCents` is `degreeCount` times that unit. When `sourceLanguage` is `en`, there is no translation line and `translationCents` is `0`. Otherwise the translation uses the same billable-page rule as a translation order (`unitPriceCents` `995`) and `translationCents` is `billablePages * 995`. `totalCents` is `evaluationCents + translationCents`. It is not `billablePages * unitPriceCents`.
+
+```json
+{
+  "evaluationCents": 1995,
+  "translationCents": 1990,
+  "totalCents": 3985,
+  "lineItems": [
+    {
+      "kind": "evaluation",
+      "description": "Diploma evaluation",
+      "quantity": 1,
+      "unitAmountCents": 1995,
+      "amountCents": 1995
+    },
+    {
+      "kind": "translation",
+      "description": "Certified translation",
+      "quantity": 2,
+      "unitAmountCents": 995,
+      "amountCents": 1990
+    }
+  ]
+}
+```
+
+A course-by-course evaluation uses the description `Course-by-course evaluation` and `unitAmountCents` `3995`. The translation line is omitted when `translationCents` is `0`. `lineItems` is an empty array until the quote exists.
+
+### Flow
+
+Upload, then a watermarked preview of the evaluation report, then payment, then staff approval before the clean report is released. The statuses are `draft` → `preview_ready` or `needs_review` → `paid` → `approved` → `delivered`. Checkout is allowed only at `preview_ready`, the same gate as a translation. There is no 10-minute preview promise and no one-hour delivery promise. `etaAt` is null.
+
+The watermark is the same diagonal `PREVIEW · CREDPRONTO · NOT FOR OFFICIAL USE` used on translation previews. `preview.report` is that watermarked PDF (`url`, `pageCount`). It is null before the report exists. `GET /api/orders/[token]/download?file=evaluation` returns the clean report only after payment and staff approval, the same gate as `file=translation`.
+
+`needs_review` is used when the credential or the grades cannot be mapped. Staff resolve it with the existing resolve-review route.
+
+### Diploma result
+
+`evaluation` is null until the report is built. `credentials` has one object per degree.
+
+```json
+{
+  "kind": "diploma",
+  "credentials": [
+    {
+      "applicant": "Ada Lovelace",
+      "institution": "Université de Paris",
+      "country": "France",
+      "credential": "Licence",
+      "field": "Mathematics",
+      "dates": "2016–2019",
+      "usEquivalency": "Bachelor's degree",
+      "documentsReviewed": ["fr_diplome-licence.pdf"]
+    }
+  ]
+}
+```
+
+`dates` is the period as printed. `documentsReviewed` lists the uploaded filenames that support that degree. `usEquivalency` is one of `High school diploma`, `Associate degree`, `Bachelor's degree`, `Master's degree`, or `Doctoral degree`.
+
+| Printed credential | `usEquivalency` |
+| --- | --- |
+| high school, bachillerato, baccalauréat | High school diploma |
+| associate | Associate degree |
+| bachelor, licenciatura, licence, bachelor's | Bachelor's degree |
+| master, maestría, maîtrise, master's | Master's degree |
+| doctor, doctorado, doctorat, doctoral | Doctoral degree |
+
+Anything else stays `needs_review`. The preview PDF prints a blue equivalency box at the top, then these fields, then the documents reviewed.
+
+### Course-by-course result
+
+```json
+{
+  "kind": "course_by_course",
+  "applicant": "Ada Lovelace",
+  "institution": "Université de Paris",
+  "country": "France",
+  "credential": "Licence",
+  "years": [
+    {
+      "year": "2018–2019",
+      "courses": [
+        {
+          "originalName": "Algèbre",
+          "englishName": "Algebra",
+          "localCredits": 6,
+          "localGrade": "14",
+          "usSemesterHours": 6,
+          "usGrade": "A-",
+          "gradePoints": 22.2
+        }
+      ]
+    }
+  ],
+  "totalHours": 6,
+  "gpa": 3.7,
+  "gradeScale": "Grades are on a 20-point scale. 16–20 is A (4.0), 14–15.99 is A- (3.7), 12–13.99 is B (3.0), 10–11.99 is C (2.0), and below 10 is F (0)."
+}
+```
+
+Rows are grouped by `year`. Each course has the original name, the English name, local credits, the local grade as printed, US semester hours, the US grade, and grade points. `totalHours` is the sum of US semester hours. `gpa` is total grade points divided by `totalHours`, rounded to two decimals. `gradeScale` explains the scale that was applied.
+
+US semester hours equal local credits. Grade points for a row are US semester hours times the point value, rounded to two decimals.
+
+A 10-point scale (passing mark 6), used when printed grades are out of 10:
+
+| Local grade | US grade | Points |
+| --- | --- | --- |
+| 9.0–10 | A | 4.0 |
+| 8.0–8.9 | B | 3.0 |
+| 7.0–7.9 | C | 2.0 |
+| 6.0–6.9 | D | 1.0 |
+| below 6 | F | 0 |
+
+A 20-point scale (passing mark 10), used when printed grades are out of 20:
+
+| Local grade | US grade | Points |
+| --- | --- | --- |
+| 16–20 | A | 4.0 |
+| 14–15.99 | A- | 3.7 |
+| 12–13.99 | B | 3.0 |
+| 10–11.99 | C | 2.0 |
+| below 10 | F | 0 |
+
+A letter grade already printed as A–F, with an optional `+` or `-`, keeps that letter. Points are A 4.0, A- 3.7, B+ 3.3, B 3.0, B- 2.7, C+ 2.3, C 2.0, C- 1.7, D+ 1.3, D 1.0, D- 0.7, F 0. A grade that matches neither scale sets the order to `needs_review`.
+
+The preview PDF prints total hours and GPA at the top, then a table grouped by year with a totals row (hours and GPA again), then `gradeScale` beneath the table.
+
 ## Events
 
 `order_events` records `upload_started`, `upload_done`, `quote_shown`, `preview_ready`, `preview_viewed`, `checkout_started`, `paid`, `refunded`, `downloaded`, `account_linked`, `translation_edited`, `note_added`, `approved`, and `staff_notified`. The raw token is never written on those rows. `staff_notified` is written once when a new order finishes upload. It is the staff notification for now. Email to staff comes later. The payload is `{ "channel": "event" }`.
