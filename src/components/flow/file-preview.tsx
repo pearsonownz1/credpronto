@@ -1,13 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { getFlowClient } from "@/lib/flow/client";
 import { openPdfDocument, renderPdfPage } from "@/lib/flow/pdf-preview";
+import { pageStatusTag } from "@/lib/orders/skip-pages";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 
-const PREVIEW_PAGES = 3;
-const PREVIEW_WIDTH = 680;
+const RENDER_WIDTH = 960;
+
+export type ViewerPage = {
+  skip?: boolean;
+  skipReason?: string | null;
+  billableUnits?: number | null;
+};
 
 export function previewKind(filename: string): "pdf" | "image" | "file" {
   const name = filename.trim().toLowerCase();
@@ -27,47 +33,68 @@ export function inlineSourceUrl(document: object | null | undefined): string | n
   return null;
 }
 
+export function freePageLabel(page: ViewerPage | undefined): string | null {
+  if (!page?.skip) return null;
+  const label = pageStatusTag(page);
+  return label.startsWith("Free") ? label : null;
+}
+
 export function FilePreview({
   token,
   fileId,
   filename,
   sourceUrl,
+  pages: pageMeta = [],
+  renderThumb,
 }: {
   token: string;
   fileId: string;
   filename: string;
   sourceUrl?: string | null;
+  pages?: ViewerPage[];
+  renderThumb: (thumb: ReactNode) => ReactNode;
 }) {
   const kind = previewKind(filename);
   const requestKey = `${token}\n${fileId}\n${sourceUrl ?? ""}\n${kind}`;
   const [request, setRequest] = useState(requestKey);
   const [phase, setPhase] = useState<"loading" | "ready" | "error">(kind === "file" ? "error" : "loading");
   const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [pages, setPages] = useState<string[]>([]);
+  const [urls, setUrls] = useState<string[]>([]);
   const [pageCount, setPageCount] = useState(0);
+  const [index, setIndex] = useState(0);
   const [open, setOpen] = useState(false);
   if (request !== requestKey) {
     setRequest(requestKey);
     setPhase(kind === "file" ? "error" : "loading");
     setImageUrl(null);
-    setPages([]);
+    setUrls([]);
     setPageCount(0);
+    setIndex(0);
     setOpen(false);
   }
   const docRef = useRef<PDFDocumentProxy | null>(null);
+  const urlsRef = useRef<string[]>([]);
   const blobs = useRef<string[]>([]);
-  const buttonRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  function track(url: string) {
-    blobs.current.push(url);
-    return url;
-  }
-
-  function revokeTracked() {
+  const revokeTracked = useCallback(() => {
     for (const url of blobs.current) URL.revokeObjectURL(url);
     blobs.current = [];
-  }
+    urlsRef.current = [];
+  }, []);
+
+  const storePage = useCallback((pageIndex: number, url: string) => {
+    if (urlsRef.current[pageIndex]) {
+      URL.revokeObjectURL(url);
+      return;
+    }
+    blobs.current.push(url);
+    const copy = urlsRef.current.slice();
+    copy[pageIndex] = url;
+    urlsRef.current = copy;
+    setUrls(copy);
+  }, []);
 
   useEffect(() => {
     if (kind === "file") return;
@@ -90,12 +117,12 @@ export function FilePreview({
       }
       docRef.current = pdf;
       setPageCount(pdf.numPages);
-      const first = await renderPdfPage(pdf, 1, PREVIEW_WIDTH);
+      const first = await renderPdfPage(pdf, 1, RENDER_WIDTH);
       if (cancelled) {
         URL.revokeObjectURL(first);
         return;
       }
-      setPages([track(first)]);
+      storePage(0, first);
       setPhase("ready");
     }
 
@@ -109,47 +136,30 @@ export function FilePreview({
       void pdf?.loadingTask.destroy();
       revokeTracked();
     };
-  }, [token, fileId, kind, sourceUrl]);
+  }, [token, fileId, kind, sourceUrl, storePage, revokeTracked]);
 
   useEffect(() => {
-    if (!open) return;
+    if (kind !== "pdf" || phase !== "ready" || urlsRef.current[index]) return;
     const pdf = docRef.current;
+    if (!pdf || index < 0 || index >= pdf.numPages) return;
     let cancelled = false;
-    async function more() {
-      if (!pdf) return;
-      const last = Math.min(PREVIEW_PAGES, pdf.numPages);
-      for (let number = 2; number <= last; number += 1) {
-        let nextUrl = "";
-        try {
-          nextUrl = await renderPdfPage(pdf, number, PREVIEW_WIDTH);
-        } catch {
-          return;
-        }
+    void renderPdfPage(pdf, index + 1, RENDER_WIDTH)
+      .then((url) => {
         if (cancelled) {
-          URL.revokeObjectURL(nextUrl);
+          URL.revokeObjectURL(url);
           return;
         }
-        const index = number - 1;
-        setPages((current) => {
-          if (current[index]) {
-            URL.revokeObjectURL(nextUrl);
-            return current;
-          }
-          const copy = current.slice();
-          copy[index] = track(nextUrl);
-          return copy;
-        });
-      }
-    }
-    void more();
+        storePage(index, url);
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [index, phase, kind, storePage]);
 
   useEffect(() => {
     if (!open) return;
-    const button = buttonRef.current;
+    const trigger = triggerRef.current;
     dialogRef.current?.focus();
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -160,26 +170,39 @@ export function FilePreview({
     return () => {
       document.body.style.overflow = previous;
       document.removeEventListener("keydown", onKey);
-      button?.focus();
+      trigger?.focus();
     };
   }, [open]);
 
-  const thumbClass = "h-24 w-[72px] shrink-0 border border-line";
+  const total = kind === "pdf" && pageCount > 0 ? pageCount : Math.max(pageMeta.length, 1);
+  const safeIndex = Math.min(index, Math.max(total - 1, 0));
+  const freeLabel = freePageLabel(pageMeta[safeIndex]);
+  const currentSrc = kind === "image" ? imageUrl : (urls[safeIndex] ?? null);
+  const showViewer = kind !== "file";
 
-  function close() {
-    setOpen(false);
+  function openFrom(button: HTMLButtonElement) {
+    triggerRef.current = button;
+    setOpen(true);
   }
 
-  const previewCount = kind === "pdf" ? Math.min(PREVIEW_PAGES, pageCount || 1) : 1;
-  const slots = open ? Array.from({ length: previewCount }, (_, index) => pages[index] ?? null) : [];
-  const showSkeleton = phase === "loading" && !(kind === "image" && imageUrl);
+  const thumb = (
+    <FileThumb
+      kind={kind}
+      phase={phase}
+      filename={filename}
+      src={kind === "image" ? imageUrl : (urls[0] ?? null)}
+      onOpen={openFrom}
+      onReady={() => setPhase("ready")}
+      onFail={() => setPhase("error")}
+    />
+  );
 
   const dialog =
     open && typeof document !== "undefined"
       ? createPortal(
           <div
             className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0b1220]/60 p-4 sm:items-center"
-            onClick={close}
+            onClick={() => setOpen(false)}
           >
             <div
               ref={dialogRef}
@@ -189,38 +212,39 @@ export function FilePreview({
               tabIndex={-1}
               data-testid="file-preview"
               onClick={(event) => event.stopPropagation()}
-              className="my-auto w-full max-w-[760px] rounded-[var(--cp-radius)] border border-line bg-white p-4 shadow-xl outline-none"
+              className="my-auto w-full max-w-[960px] rounded-[var(--cp-radius)] border border-line bg-white p-4 shadow-xl outline-none"
             >
               <div className="mb-3 flex items-start justify-between gap-3">
                 <p className="min-w-0 break-words text-sm font-semibold">{filename}</p>
-                <button type="button" onClick={close} className="shrink-0 text-[13px] font-semibold text-primary">
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="shrink-0 text-[13px] font-semibold text-primary"
+                >
                   Close
                 </button>
               </div>
-              <div className="space-y-4">
-                {slots.map((src, index) =>
-                  src ? (
-                    <figure key={src}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        data-testid="file-preview-page"
-                        alt=""
-                        src={src}
-                        className="w-full border border-line object-contain"
-                      />
-                      {kind === "pdf" ? (
-                        <figcaption className="mt-1 text-[12px] text-ink-muted">Page {index + 1}</figcaption>
-                      ) : null}
-                    </figure>
-                  ) : (
-                    <div
-                      key={`pending-${index}`}
-                      data-testid="file-preview-pending"
-                      className="h-64 animate-pulse border border-line bg-bg-muted"
-                    />
-                  ),
-                )}
-              </div>
+              {currentSrc ? (
+                <figure>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    data-testid="file-preview-page"
+                    alt=""
+                    src={currentSrc}
+                    className={`w-full border border-line object-contain ${freeLabel ? "opacity-40" : ""}`}
+                  />
+                  <figcaption className="mt-2 flex items-center gap-2 text-[13px] text-ink-muted">
+                    <span>Page {safeIndex + 1}</span>
+                    {freeLabel ? (
+                      <span className="rounded-[var(--cp-radius)] border border-line bg-white px-1.5 py-0.5 text-[12px]">
+                        {freeLabel}
+                      </span>
+                    ) : null}
+                  </figcaption>
+                </figure>
+              ) : (
+                <div data-testid="file-preview-pending" className="aspect-[8.5/11] animate-pulse bg-bg-muted" />
+              )}
             </div>
           </div>,
           document.body,
@@ -229,62 +253,172 @@ export function FilePreview({
 
   return (
     <>
-      {showSkeleton ? (
-        <div data-testid="file-thumb-skeleton" className={`${thumbClass} animate-pulse bg-bg-muted`} aria-hidden />
-      ) : null}
-      {phase === "error" ? (
-        <div
-          data-testid="file-thumb-fallback"
-          className={`${thumbClass} flex items-center justify-center bg-bg-muted text-ink-muted`}
-          aria-hidden
-        >
-          <FileIcon />
+      {renderThumb(thumb)}
+      {showViewer ? (
+        <div data-testid="page-viewer" className="px-4 pb-8">
+          <div
+            data-testid="page-viewer-frame"
+            className="relative mx-auto w-full md:w-[420px]"
+          >
+            <button
+              type="button"
+              data-testid="page-viewer-page"
+              aria-label={`Open page ${safeIndex + 1}`}
+              onClick={(event) => openFrom(event.currentTarget)}
+              className="block w-full overflow-hidden border border-line bg-white p-0 shadow-[0_12px_28px_-12px_rgba(18,18,18,0.38)]"
+            >
+              {currentSrc && phase !== "error" ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  alt=""
+                  src={currentSrc}
+                  ref={(node) => {
+                    if (kind === "image" && node?.complete && node.naturalWidth > 0) setPhase("ready");
+                  }}
+                  onLoad={() => {
+                    if (kind === "image") setPhase("ready");
+                  }}
+                  onError={() => {
+                    if (kind === "image") setPhase("error");
+                  }}
+                  className={`block w-full ${freeLabel ? "opacity-40" : ""}`}
+                />
+              ) : phase === "error" ? (
+                <div
+                  className={`flex aspect-[8.5/11] items-center justify-center bg-bg-muted text-ink-muted ${freeLabel ? "opacity-40" : ""}`}
+                >
+                  <FileIcon />
+                </div>
+              ) : (
+                <div
+                  data-testid="page-viewer-skeleton"
+                  className={`aspect-[8.5/11] animate-pulse bg-bg-muted ${freeLabel ? "opacity-40" : ""}`}
+                />
+              )}
+            </button>
+            {freeLabel ? (
+              <span
+                data-testid="page-viewer-status"
+                className="pointer-events-none absolute top-3 left-3 rounded-[var(--cp-radius)] border border-line bg-white px-1.5 py-0.5 text-[12px] text-ink-muted"
+              >
+                {freeLabel}
+              </span>
+            ) : null}
+            <ViewerArrow
+              testId="page-viewer-prev"
+              label="Previous page"
+              disabled={safeIndex <= 0}
+              className="left-2"
+              onClick={() => setIndex((current) => Math.max(0, current - 1))}
+            >
+              <path d="M9 4.5 5.5 8 9 11.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </ViewerArrow>
+            <ViewerArrow
+              testId="page-viewer-next"
+              label="Next page"
+              disabled={safeIndex >= total - 1}
+              className="right-2"
+              onClick={() => setIndex((current) => Math.min(total - 1, current + 1))}
+            >
+              <path d="M6 4.5 9.5 8 6 11.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </ViewerArrow>
+          </div>
+          <p data-testid="page-viewer-label" className="mt-3 text-center text-[13px] text-ink-muted">
+            Page {safeIndex + 1}
+          </p>
         </div>
-      ) : null}
-      {kind === "image" && imageUrl && phase !== "error" ? (
-        <button
-          ref={buttonRef}
-          type="button"
-          data-testid="file-thumb-button"
-          aria-label={`Preview ${filename}`}
-          aria-busy={phase !== "ready"}
-          onClick={() => {
-            if (phase === "ready") setOpen(true);
-          }}
-          className={`${thumbClass} relative overflow-hidden bg-bg-muted p-0`}
-        >
-          {phase !== "ready" ? (
-            <span data-testid="file-thumb-skeleton" className="absolute inset-0 animate-pulse bg-bg-muted" />
-          ) : null}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            data-testid="file-thumb"
-            alt=""
-            src={imageUrl}
-            ref={(node) => {
-              if (node?.complete && node.naturalWidth > 0) setPhase("ready");
-            }}
-            onLoad={() => setPhase("ready")}
-            onError={() => setPhase("error")}
-            className="h-full w-full object-cover"
-          />
-        </button>
-      ) : null}
-      {kind === "pdf" && phase === "ready" && pages[0] ? (
-        <button
-          ref={buttonRef}
-          type="button"
-          data-testid="file-thumb-button"
-          aria-label={`Preview ${filename}`}
-          onClick={() => setOpen(true)}
-          className={`${thumbClass} overflow-hidden bg-white p-0`}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img data-testid="file-thumb" alt="" src={pages[0]} className="h-full w-full object-cover" />
-        </button>
       ) : null}
       {dialog}
     </>
+  );
+}
+
+function FileThumb({
+  kind,
+  phase,
+  filename,
+  src,
+  onOpen,
+  onReady,
+  onFail,
+}: {
+  kind: "pdf" | "image" | "file";
+  phase: "loading" | "ready" | "error";
+  filename: string;
+  src: string | null;
+  onOpen: (button: HTMLButtonElement) => void;
+  onReady: () => void;
+  onFail: () => void;
+}) {
+  const thumbClass = "h-24 w-[72px] shrink-0 border border-line";
+  if (phase === "error" || kind === "file") {
+    return (
+      <div
+        data-testid="file-thumb-fallback"
+        className={`${thumbClass} flex items-center justify-center bg-bg-muted text-ink-muted`}
+        aria-hidden
+      >
+        <FileIcon />
+      </div>
+    );
+  }
+  if (!src) {
+    return <div data-testid="file-thumb-skeleton" className={`${thumbClass} animate-pulse bg-bg-muted`} aria-hidden />;
+  }
+  return (
+    <button
+      type="button"
+      data-testid="file-thumb-button"
+      aria-label={`Preview ${filename}`}
+      onClick={(event) => onOpen(event.currentTarget)}
+      className={`${thumbClass} overflow-hidden bg-white p-0`}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        data-testid="file-thumb"
+        alt=""
+        src={src}
+        ref={(node) => {
+          if (kind === "image" && node?.complete && node.naturalWidth > 0) onReady();
+        }}
+        onLoad={() => {
+          if (kind === "image") onReady();
+        }}
+        onError={onFail}
+        className="h-full w-full object-cover"
+      />
+    </button>
+  );
+}
+
+function ViewerArrow({
+  testId,
+  label,
+  disabled,
+  className,
+  onClick,
+  children,
+}: {
+  testId: string;
+  label: string;
+  disabled: boolean;
+  className: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className={`absolute top-1/2 z-10 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-line bg-white text-ink shadow-[0_4px_12px_-6px_rgba(18,18,18,0.45)] disabled:opacity-40 ${className}`}
+    >
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+        {children}
+      </svg>
+    </button>
   );
 }
 

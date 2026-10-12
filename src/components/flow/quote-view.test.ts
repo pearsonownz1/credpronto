@@ -86,6 +86,9 @@ describe("quote step actions", () => {
     expect(html).toContain("text-[var(--cp-ok)]");
     expect(html).toContain("md:flex-row");
     expect(html).toContain('data-testid="file-thumb-skeleton"');
+    expect(html).toContain('data-testid="page-viewer"');
+    expect(html).toContain("md:w-[420px]");
+    expect(html).toContain("Page 1");
   });
 
   it("shows Continue for a quoted order with a page line and a total", () => {

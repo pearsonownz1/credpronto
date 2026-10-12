@@ -13,6 +13,15 @@ test("the turnaround stacks under the filename on a phone", async ({ page }) => 
   expect(turnBox).toBeTruthy();
   expect(turnBox!.y).toBeGreaterThan(nameBox!.y + nameBox!.height - 2);
   expect(turnBox!.x).toBeLessThan(nameBox!.x + 24);
+  const frame = row.getByTestId("page-viewer-frame");
+  await expect(frame).toBeVisible();
+  await expect(row.getByTestId("page-viewer-label")).toHaveText("Page 1");
+  const rowBox = await row.boundingBox();
+  const frameBox = await frame.boundingBox();
+  expect(rowBox).toBeTruthy();
+  expect(frameBox).toBeTruthy();
+  expect(frameBox!.width).toBeGreaterThan(rowBox!.width - 48);
+  expect(frameBox!.width).toBeLessThan(400);
 });
 
 test("customer flow fits a 390px phone", async ({ page }) => {
