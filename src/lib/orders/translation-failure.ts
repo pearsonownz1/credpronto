@@ -17,6 +17,22 @@ export const TRANSLATION_DEADLINE_MS = TRANSLATION_MAX_DURATION_SEC * 1000 - TRA
  */
 export const TRANSLATION_PAGE_DEADLINE_MS = TRANSLATION_DEADLINE_MS;
 
+const PAID_OR_RELEASED = new Set(["paid", "approved", "delivered"]);
+
+/**
+ * A failed translation can be started over. Paid orders and released
+ * certifications (approved or delivered) stay where they are.
+ */
+export function canRetryFailedTranslation(order: {
+  status: string;
+  reviewReason: string | null;
+  languageConfirmed: boolean;
+}): boolean {
+  if (PAID_OR_RELEASED.has(order.status)) return false;
+  if (order.status !== "failed" || !order.languageConfirmed) return false;
+  return /translation/i.test(order.reviewReason?.trim() ?? "");
+}
+
 export function isTemporaryTranslationError(error: unknown): boolean {
   if (error instanceof AiUnavailableError) return true;
   if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) return true;
