@@ -1,5 +1,3 @@
-import { getDocumentProxy } from "unpdf";
-import { joinTextItems, type TextItemLike } from "./text-layer";
 import { z } from "zod";
 import { generateObject } from "./ai";
 import { SPARSE_PAGE_WORDS } from "./constants";
@@ -18,7 +16,7 @@ import {
 } from "./db";
 import { AiUnavailableError } from "./errors";
 import { CONFIRMATION_FIELD_KEYS, blankToNull, type DateFormat } from "./fields";
-import { failsImageQuality, isQualityFlag, retakeMessage, type QualityFlag } from "./image-quality";
+import { isQualityFlag, pageQuality, type QualityFlag } from "./image-quality";
 import { normalizeLanguage } from "./languages";
 import {
   applyPageOrder,
@@ -30,6 +28,7 @@ import {
   type PageCue,
 } from "./page-order";
 import { buildCombinedOriginal, type SourceFile } from "./pdf/combine";
+import { pdfPageTexts } from "./pdf-text";
 import { decideQuote, etaFromNow } from "./quote";
 import { notifyOrder } from "./webhook-delivery";
 import { downloadObject, uploadObject } from "./storage";
@@ -99,8 +98,8 @@ type ModelCue = {
 const CUE_INSTRUCTIONS = `logicalPage: the printed page number when one is visible, including the N in "page N/M", "1/2", or "2 sur 2". Use 0 when there is no printed number and no sequence cue. Do not invent a number from the order the files were uploaded.
 orderHint: the cue itself, such as "page 1/2", "2/2", or "suite". Use an empty string when there is none.
 orderConfidence: a number from 0 to 1. Use 0.8 or higher only when the printed number or a continuation cue (suite, continued, siguiente) is clear. Use a lower score when you are guessing.
-legibility: a number from 0 to 1. 1 is sharp and complete. Score a photo or scan down for blur, crop, glare, darkness, or fields that cannot be read.
-flags: any of blurry, cropped, glare, too_dark, unreadable_fields that apply. Use an empty array when the page is readable. A blank page is unreadable for transcription but is not an image-quality failure: set legibility to 1, flags to [], and unreadable to true.`;
+legibility: a number from 0 to 1. 1 is sharp and complete. Score a photo or scan down for blur, crop, glare, darkness, or fields that cannot be read. If you set blurry, too_dark, unreadable_fields, or cropped, the score must be below 0.6. A high score does not cancel those flags.
+flags: any of blurry, cropped, glare, too_dark, unreadable_fields that apply. Set cropped only when the crop cuts off text, not when a margin is missing and every line is still readable. Use an empty array when the page is readable. A blank page is unreadable for transcription but is not an image-quality failure: set legibility to 1, flags to [], and unreadable to true.`;
 
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -136,17 +135,6 @@ function applyCue(read: PageRead, cue: ModelCue, visual: boolean): PageRead {
     flags: cue.flags.filter(isQualityFlag),
     visual: visual || read.visual,
   };
-}
-
-async function pdfTexts(bytes: Uint8Array): Promise<string[]> {
-  const proxy = await getDocumentProxy(bytes);
-  const texts: string[] = [];
-  for (let pageNumber = 1; pageNumber <= proxy.numPages; pageNumber += 1) {
-    const page = await proxy.getPage(pageNumber);
-    const content = await page.getTextContent();
-    texts.push(joinTextItems(content.items as TextItemLike[]));
-  }
-  return texts;
 }
 
 async function imageBytesForModel(bytes: Uint8Array, mime: string): Promise<{ bytes: Uint8Array; mime: string }> {
@@ -312,7 +300,7 @@ export async function analyzeOrder(db: Db, orderId: string): Promise<void> {
     for (const document of documents) {
       const bytes = await downloadObject(db, "originals", document.originalPath);
       const mime = document.mime ?? "application/pdf";
-      const texts = mime === "application/pdf" ? await pdfTexts(bytes) : [];
+      const texts = mime === "application/pdf" ? await pdfPageTexts(bytes) : [];
       const pageCount = mime === "application/pdf" ? texts.length : 1;
       const reads = await assessFile(bytes, mime, pageCount, texts);
       slots.push({
@@ -408,13 +396,17 @@ export async function analyzeOrder(db: Db, orderId: string): Promise<void> {
           const read = slot.reads[page.uploadPage - 1] ?? blankRead("");
           const meta = metaByKey.get(`${slot.documentId}:${page.uploadPage}`);
           if (!meta) throw new Error("A page is missing its size");
-          const qualityFailed = failsImageQuality(read.legibility, read.visual);
-          if (qualityFailed) imageQuality = true;
+          const quality = pageQuality({
+            score: read.legibility,
+            visual: read.visual,
+            flags: read.flags,
+          });
+          if (quality.failed) imageQuality = true;
           const words = countWords(read.text);
           const counted = cjk ? countCjkUnits(read.text) : words;
           const billed = cjk ? billableCjkUnits(counted) : billableUnits(words);
           pageBillable.push(billed);
-          const needsReview = read.needsReview || qualityFailed;
+          const needsReview = read.needsReview || quality.failed;
           pageNeedsReview.push(needsReview);
           return {
             pageNumber: page.appliedPage,
@@ -428,9 +420,9 @@ export async function analyzeOrder(db: Db, orderId: string): Promise<void> {
             uploadPage: page.uploadPage,
             logicalPage: page.logicalPage,
             orderHint: page.hint,
-            qualityScore: read.legibility,
+            qualityScore: quality.score,
             qualityFlags: read.flags,
-            qualityMessage: qualityFailed ? retakeMessage(read.flags) : null,
+            qualityMessage: quality.message,
           };
         }),
       );
@@ -478,7 +470,7 @@ export async function analyzeOrder(db: Db, orderId: string): Promise<void> {
   } catch (error) {
     await markDocuments(db, orderId, "failed");
     const message = error instanceof Error ? error.message : "We could not read the upload.";
-    console.error(`analysis failed for ${orderId}: ${message}`);
+    console.error(`analysis failed for ${orderId}: ${message}`, error);
     await updateOrder(db, orderId, {
       status: "needs_review",
       review_reason: message,
