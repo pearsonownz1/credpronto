@@ -96,11 +96,6 @@ export function SideBySideViewer({
   const panel = useAddonPanel(order, onBuy);
   const original = order.original.url;
   const translation = order.translation.url;
-  const translationLabel = evaluationViewerLabel({
-    product: order.product,
-    reportUrl: order.report?.url,
-    translationUrl: translation,
-  });
   const wasmUrl = new URL("/pdfium/pdfium.wasm", window.location.origin).href;
   const { engine, isLoading, error } = usePdfiumEngine({ wasmUrl });
   const plugins = useMemo(
@@ -233,6 +228,11 @@ function ViewerWorkspace({
   notice?: string;
   noticeTestId?: string;
 }) {
+  const translationLabel = evaluationViewerLabel({
+    product: order.product,
+    reportUrl: order.report?.url,
+    translationUrl: order.translation.url,
+  });
   const isMobile = useIsMobile();
   const [role, setRole] = useState<Role>("original");
   const [lead, setLead] = useState<Role>("original");
