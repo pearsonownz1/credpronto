@@ -88,10 +88,12 @@ test("page order and a blurry photo are shown before a quote", async ({ page }) 
   });
 
   await page.goto("/quote");
-  const order = page.getByTestId("page-order").filter({ visible: true });
-  await expect(order).toContainText("printed page numbers");
-  await expect(order).toContainText("scan-page-1.jpg");
-  await expect(order).toContainText("printed page 1");
+  const files = page.getByTestId("file-list").filter({ visible: true });
+  await expect(files).toContainText("scan-page-1.jpg");
+  await expect(files).toContainText("scan-page-2.jpg");
+  await expect(files).not.toContainText("printed page");
+  await expect(files).not.toContainText("We kept the pages in the order you uploaded them.");
+  await expect(page.getByText("Page 1").filter({ visible: true })).toHaveCount(0);
   const quality = page.getByTestId("image-quality").filter({ visible: true });
   await expect(quality).toContainText("blurry");
   await expect(quality).toContainText("Upload a replacement");
@@ -157,10 +159,15 @@ test("an English quote can pick a target language and continue", async ({ page }
     "GuyPearsonCV_under2MB.pdf",
   );
   await expect(page.getByTestId("file-list").filter({ visible: true }).getByText("GuyPearsonCV_under2MB.pdf")).toHaveCount(1);
-  await expect(page.getByTestId("page-order-basis").filter({ visible: true })).toHaveText(
-    "We kept the pages in the order you uploaded them.",
+  await expect(page.getByTestId("file-billable").filter({ visible: true })).toHaveText(
+    "3 pages, 3 billable",
   );
-  await expect(page.getByTestId("page-order").filter({ visible: true })).toContainText("page 1");
+  await expect(page.getByTestId("page-details").filter({ visible: true })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await expect(page.getByText("Page 1").filter({ visible: true })).toHaveCount(0);
+  await expect(page.getByText("We kept the pages in the order you uploaded them.")).toHaveCount(0);
   await expect(page.getByTestId("quote-total").filter({ visible: true })).toContainText("$29.85");
   await expect(page.locator("[data-testid=logo] img").first()).toHaveAttribute(
     "src",
@@ -254,8 +261,15 @@ test("a quote shows billable pages and can skip one", async ({ page }) => {
   await page.goto("/quote");
   const counts = page.getByTestId("quote-counts").filter({ visible: true });
   await expect(counts).toHaveText("1 file, 3 pages, 3 billable");
+  await expect(page.getByTestId("file-billable").filter({ visible: true })).toHaveText(
+    "3 pages, 3 billable",
+  );
   await expect(page.getByText("3 billable pages × $9.95").filter({ visible: true })).toBeVisible();
   await expect(page.getByTestId("quote-total").filter({ visible: true })).toContainText("$29.85");
+  await expect(page.getByTestId("billed-as")).toHaveCount(0);
+  await page.getByTestId("page-details").filter({ visible: true }).click();
+  await expect(page.getByTestId("page-row").filter({ visible: true })).toHaveCount(3);
+  await expect(page.getByTestId("page-row").filter({ hasText: "diploma.pdf" })).toHaveCount(0);
   await expect(page.getByTestId("billed-as").filter({ visible: true })).toHaveText("billed as 2");
   const skipped = page.getByTestId("page-row").filter({ hasText: "Skipped: not a document" });
   await expect(skipped).toBeVisible();
@@ -264,9 +278,12 @@ test("a quote shows billable pages and can skip one", async ({ page }) => {
 
   await page.getByTestId("page-skip-1").getByRole("button", { name: "Skip" }).click();
   await expect(counts).toHaveText("1 file, 3 pages, 1 billable");
+  await expect(page.getByTestId("file-billable").filter({ visible: true })).toHaveText(
+    "3 pages, 1 billable",
+  );
   await expect(page.getByText("1 billable page × $9.95").filter({ visible: true })).toBeVisible();
   await expect(page.getByTestId("quote-total").filter({ visible: true })).toContainText("$9.95");
-  const dense = page.getByTestId("page-row").filter({ hasText: "page 2" });
+  const dense = page.getByTestId("page-row").filter({ hasText: "Page 2" });
   await expect(dense.locator("span.line-through")).toBeVisible();
   await expect(dense).toContainText("Skipped");
   await expect(page.getByTestId("page-skip-1").getByRole("button", { name: "Skip" })).toHaveAttribute(

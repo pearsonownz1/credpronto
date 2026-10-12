@@ -18,7 +18,9 @@ import {
   joinParents,
   languageLine,
   orderHubStep,
+  fileCountLabel,
   quoteCounts,
+  quoteFileGroups,
   quotePageRows,
   quoteSummaryLabel,
   servicePriceLines,
@@ -361,6 +363,66 @@ describe("quote counts", () => {
     });
     expect(quotePageRows(reordered).map((row) => row.pageIndex)).toEqual([1, 0]);
     expect(skippedPageIndexes(reordered)).toEqual([1]);
+  });
+
+  it("groups pages under each file", () => {
+    const grouped = order({
+      documents: [
+        {
+          id: "cv",
+          filename: "cv.pdf",
+          pageCount: 2,
+          detectedLanguage: "es",
+          confidence: 0.9,
+          uploadPosition: 1,
+          appliedPosition: 1,
+        },
+        {
+          id: "photo",
+          filename: "back.jpg",
+          pageCount: 1,
+          detectedLanguage: "es",
+          confidence: 0.9,
+          uploadPosition: 2,
+          appliedPosition: 2,
+        },
+      ],
+      pages: [
+        {
+          id: "p1",
+          documentId: "cv",
+          pageNumber: 1,
+          uploadPage: 1,
+          logicalPage: null,
+          orderHint: "第 1 页",
+          qualityScore: null,
+          qualityFlags: [],
+          qualityMessage: null,
+          billableUnits: 2,
+        },
+        {
+          id: "p2",
+          documentId: "cv",
+          pageNumber: 2,
+          uploadPage: 2,
+          logicalPage: 4,
+          orderHint: null,
+          qualityScore: null,
+          qualityFlags: [],
+          qualityMessage: null,
+          skip: true,
+          skipReason: "not a document",
+        },
+      ],
+    });
+    const groups = quoteFileGroups(grouped);
+    expect(groups.map((group) => group.filename)).toEqual(["cv.pdf", "back.jpg"]);
+    expect(groups[0]?.pages).toBe(2);
+    expect(groups[0]?.billable).toBe(2);
+    expect(fileCountLabel(groups[0]?.pages ?? 0, groups[0]?.billable ?? 0)).toBe("2 pages, 2 billable");
+    expect(groups[0]?.rows.map((row) => row.documentId)).toEqual(["cv", "cv"]);
+    expect(groups[1]?.rows).toEqual([]);
+    expect(fileCountLabel(1, 1)).toBe("1 page, 1 billable");
   });
 });
 

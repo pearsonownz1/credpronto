@@ -94,6 +94,11 @@ export function quoteSummaryLabel(counts: QuoteCounts): string {
   return `${files}, ${pages}, ${counts.billable} billable`;
 }
 
+export function fileCountLabel(pages: number, billable: number): string {
+  const noun = pages === 1 ? "page" : "pages";
+  return `${pages} ${noun}, ${billable} billable`;
+}
+
 export function billablePriceLabel(pages: number, unitPriceCents: number): string {
   const noun = pages === 1 ? "billable page" : "billable pages";
   return `${pages} ${noun} × ${formatMoney(unitPriceCents)}`;
@@ -101,6 +106,7 @@ export function billablePriceLabel(pages: number, unitPriceCents: number): strin
 
 export type QuotePageRow = {
   key: string;
+  documentId: string;
   /** Index into the line items `skipPages` addresses. Missing when this row is not one of those lines. */
   pageIndex?: number;
   pageId?: string;
@@ -112,6 +118,15 @@ export type QuotePageRow = {
   billableUnits?: number | null;
   skip?: boolean;
   skipReason?: string | null;
+};
+
+export type QuoteFileGroup = {
+  id: string;
+  filename: string;
+  /** Null when the file has no page rows and no page count. */
+  pages: number | null;
+  billable: number;
+  rows: QuotePageRow[];
 };
 
 export function quotePageRows(order: CustomerOrder): QuotePageRow[] {
@@ -127,6 +142,7 @@ export function quotePageRows(order: CustomerOrder): QuotePageRow[] {
       const fallback = indexingPages ? page : match;
       return {
         key: `${page.documentId}-${page.uploadPage}-${page.appliedPage}-${index}`,
+        documentId: page.documentId,
         pageIndex: indexingPages ? (matchIndex >= 0 ? matchIndex : undefined) : index,
         pageId: match?.id ?? page.id,
         filename: page.filename || names.get(page.documentId) || "Page",
@@ -147,6 +163,7 @@ export function quotePageRows(order: CustomerOrder): QuotePageRow[] {
   if (!detailed) return [];
   return order.pages.map((page, index) => ({
     key: page.id ?? `${page.documentId}-${page.pageNumber}-${index}`,
+    documentId: page.documentId,
     pageIndex: index,
     pageId: page.id,
     filename: names.get(page.documentId) || "Page",
@@ -158,6 +175,53 @@ export function quotePageRows(order: CustomerOrder): QuotePageRow[] {
     skip: page.skip,
     skipReason: page.skipReason,
   }));
+}
+
+/** One group per uploaded file, with that file's page rows underneath. */
+export function quoteFileGroups(order: CustomerOrder): QuoteFileGroup[] {
+  const rows = quotePageRows(order);
+  const byDocument = new Map<string, QuotePageRow[]>();
+  for (const row of rows) {
+    const list = byDocument.get(row.documentId) ?? [];
+    list.push(row);
+    byDocument.set(row.documentId, list);
+  }
+
+  const seen = new Set<string>();
+  const groups: QuoteFileGroup[] = [];
+  for (const document of order.documents) {
+    seen.add(document.id);
+    const fileRows = byDocument.get(document.id) ?? [];
+    if (fileRows.length > 0) {
+      groups.push({
+        id: document.id,
+        filename: document.filename,
+        pages: fileRows.length,
+        billable: sumQuotedBillable(fileRows),
+        rows: fileRows,
+      });
+      continue;
+    }
+    groups.push({
+      id: document.id,
+      filename: document.filename,
+      pages: document.pageCount,
+      billable: document.pageCount ?? 0,
+      rows: [],
+    });
+  }
+
+  for (const [id, fileRows] of byDocument) {
+    if (seen.has(id) || fileRows.length === 0) continue;
+    groups.push({
+      id,
+      filename: fileRows[0]?.filename || "File",
+      pages: fileRows.length,
+      billable: sumQuotedBillable(fileRows),
+      rows: fileRows,
+    });
+  }
+  return groups;
 }
 
 function pagesMatch(
