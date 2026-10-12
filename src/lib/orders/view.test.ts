@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addonOptions } from "./addons";
+import { offeredAddonOptions } from "./addons";
 import { WORD_PAGE_RULE } from "./billing";
 import type { OrderRecord, PageRecord } from "./types";
 import { previewPages, toCustomerOrder } from "./view";
@@ -88,7 +88,8 @@ describe("customer order", () => {
     expect(order.pageRule).toBe(WORD_PAGE_RULE);
     expect(order.pageLineItems).toEqual([]);
     expect(order.addons).toEqual([]);
-    expect(order.addonOptions).toEqual(addonOptions(2));
+    expect(order.addonOptions.map((option) => option.id)).toEqual(["notarization", "mail"]);
+    expect(order.addonOptions).toEqual(offeredAddonOptions(2, "translation"));
     expect(order.shippingAddress).toBeNull();
     expect(order.totalCents).toBe(1990);
     expect(order).not.toHaveProperty("combinedOriginalPath");

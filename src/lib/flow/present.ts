@@ -1,4 +1,4 @@
-import { serviceCents } from "@/lib/orders/addons";
+import { serviceCents, withoutExpedited } from "@/lib/orders/addons";
 import { evaluationCheckoutTotal, lineItemsForOrder } from "@/lib/orders/evaluation-price";
 import { TRANSLATION_TIMEOUT_REASON } from "@/lib/orders/translation-failure";
 import {
@@ -664,7 +664,7 @@ export function toPreviewOrder(
         0,
       lines: servicePriceLines(order),
     },
-    addonOptions: order.addonOptions,
+    addonOptions: withoutExpedited(order.addonOptions, order.orderType !== "evaluation"),
     addons: order.addons,
     shippingAddress: order.shippingAddress,
     included: order.orderType === "evaluation" ? EVALUATION_INCLUDED : PREVIEW_INCLUDED,

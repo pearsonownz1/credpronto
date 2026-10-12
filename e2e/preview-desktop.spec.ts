@@ -30,7 +30,7 @@ test("side-by-side preview syncs page and zoom", async ({ page }) => {
   await expect(page.getByTestId("addon-panel")).toContainText("$17.95");
   await expect(page.getByTestId("addon-panel")).toContainText("USPS Priority hard copy");
   await expect(page.getByTestId("addon-panel")).toContainText("$12.95");
-  await expect(page.getByTestId("addon-expedited")).toBeVisible();
+  await expect(page.getByTestId("addon-expedited")).toHaveCount(0);
   await page.getByTestId("addon-mail").check();
   await expect(page.getByTestId("shipping-address")).toBeVisible();
   await expect(page.getByLabel("Street address")).toBeVisible();

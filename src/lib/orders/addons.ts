@@ -53,6 +53,19 @@ export function addonOptions(billablePages: number | null): AddonOption[] {
   }));
 }
 
+/** Evaluations still offer Expedited. Translation orders do not. */
+export function offeredAddonOptions(
+  billablePages: number | null,
+  orderType: string | null | undefined,
+): AddonOption[] {
+  return withoutExpedited(addonOptions(billablePages), orderType !== "evaluation");
+}
+
+export function withoutExpedited<T extends { id: string }>(options: readonly T[], hide: boolean): T[] {
+  if (!hide) return [...options];
+  return options.filter((item) => item.id !== "expedited");
+}
+
 export function serviceCents(order: {
   billablePages: number | null;
   unitPriceCents: number;
