@@ -1,9 +1,16 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { dispatchTranslation, internalOrigin, TRANSLATION_PAGE_PATH } from "./translation-dispatch";
+import {
+  dispatchTranslation,
+  internalOrigin,
+  TRANSLATION_ASSEMBLE_PATH,
+  TRANSLATION_PAGE_PATH,
+  withTranslationDispatch,
+} from "./translation-dispatch";
 import {
   TRANSLATION_PAGE_CONCURRENCY,
+  dispatchConcurrency,
   isSkippedTranslationPage,
   jobsToDispatch,
   pageAttemptResult,
@@ -115,8 +122,12 @@ describe("billable page translation", () => {
     );
     expect(pageRoute).toMatch(/maxDuration = 300/);
     expect(pageRoute).toMatch(/after\(/);
+    expect(pageRoute).toMatch(/withTranslationDispatch/);
     expect(assembleRoute).toMatch(/runTranslationAssemble/);
+    expect(assembleRoute).toMatch(/withTranslationDispatch/);
     expect(pageRoute).toMatch(/internalTranslationAuthorized/);
+    const jobsSource = readFileSync(path.join(process.cwd(), "src/lib/orders/translation-jobs.ts"), "utf8");
+    expect(jobsSource).not.toMatch(/\bfetch\(/);
   });
 });
 
@@ -145,6 +156,55 @@ describe("translation dispatch", () => {
         body: JSON.stringify({ orderId: "order-1", version: 2, jobId: "job-1" }),
       }),
     );
+  });
+
+  it("continues a page, retry, or assemble in-process instead of fetching this deployment again", async () => {
+    process.env.CRON_SECRET = "secret";
+    process.env.VERCEL_URL = "preview.example.vercel.app";
+    const fetchMock = vi.fn(async () => new Response("Infinite loop detected", { status: 508 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const inline = vi.fn(async () => {});
+    const first = { orderId: "order-1", version: 1, jobId: "job-1" };
+    const continuations = [2, 3, 4, 5].map((job) => ({
+      orderId: "order-1",
+      version: 1,
+      jobId: `job-${job}`,
+    }));
+
+    await dispatchTranslation(TRANSLATION_PAGE_PATH, first, inline);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(inline).not.toHaveBeenCalled();
+
+    fetchMock.mockClear();
+    await withTranslationDispatch(async () => {
+      for (const body of continuations) {
+        await dispatchTranslation(TRANSLATION_PAGE_PATH, body, inline);
+      }
+      await dispatchTranslation(TRANSLATION_ASSEMBLE_PATH, { orderId: "order-1", version: 1 }, inline);
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(inline).toHaveBeenCalledTimes(5);
+    const pending = [
+      { id: "running-a", status: "running" as const },
+      { id: "running-b", status: "running" as const },
+      { id: "next-a", status: "pending" as const },
+      { id: "next-b", status: "pending" as const },
+      { id: "next-c", status: "pending" as const },
+    ];
+    expect(jobsToDispatch(pending, dispatchConcurrency(2, true)).map((job) => job.id)).toEqual(["next-a"]);
+    const full = [
+      { id: "running-a", status: "running" as const },
+      { id: "running-b", status: "running" as const },
+      { id: "running-c", status: "running" as const },
+      { id: "next-a", status: "pending" as const },
+    ];
+    expect(jobsToDispatch(full, dispatchConcurrency(3, true))).toEqual([]);
+    expect(jobsToDispatch(pending, dispatchConcurrency(0, false)).map((job) => job.id)).toEqual([
+      "next-a",
+      "next-b",
+      "next-c",
+    ]);
   });
 
   it("returns the public app origin when VERCEL_ENV is production", () => {

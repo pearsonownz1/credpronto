@@ -46,6 +46,15 @@ export type DispatchJob = {
   status: "pending" | "running" | "ready" | "failed";
 };
 
+/**
+ * The outer fan-out uses the full cap. A worker that is already translating
+ * starts at most one more page, and never past the cap.
+ */
+export function dispatchConcurrency(running: number, nested: boolean): number {
+  if (!nested) return TRANSLATION_PAGE_CONCURRENCY;
+  return Math.min(TRANSLATION_PAGE_CONCURRENCY, running + 1);
+}
+
 /** Pending jobs that fit in the open slots. */
 export function jobsToDispatch<T extends DispatchJob>(jobs: readonly T[], concurrency: number): T[] {
   const running = jobs.filter((job) => job.status === "running").length;
