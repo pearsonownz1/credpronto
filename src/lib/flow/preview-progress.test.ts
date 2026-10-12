@@ -8,6 +8,7 @@ import {
   previewStepPercent,
   previewWork,
   translatingEase,
+  translatingPercent,
 } from "./preview-progress";
 
 describe("preview step progress", () => {
@@ -78,6 +79,22 @@ describe("preview step progress", () => {
     expect(eased.percent).toBeCloseTo(later);
     expect(eased.displayPercent).toBeGreaterThanOrEqual(92);
     expect(eased.displayPercent).toBeLessThan(100);
+  });
+
+  it("moves with translating page counts and never presets 75", () => {
+    expect(translatingPercent({ pagesRead: 0, pagesTotal: 4, translatingElapsedMs: 0 })).toBe(92);
+    expect(translatingPercent({ pagesRead: 1, pagesTotal: 4, translatingElapsedMs: 0 })).toBe(93.5);
+    expect(translatingPercent({ pagesRead: 2, pagesTotal: 2, translatingElapsedMs: 0 })).toBe(92);
+    for (const step of ["uploaded", "reading", "language", "counting", "quoting", "translating"] as const) {
+      expect(
+        previewStepPercent({
+          progressStep: step,
+          pagesRead: 1,
+          pagesTotal: 4,
+          translatingElapsedMs: 0,
+        }),
+      ).not.toBe(75);
+    }
   });
 
   it("does not open at 75 when the step is missing or already translating", () => {

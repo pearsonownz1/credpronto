@@ -35,9 +35,19 @@ export type ConfirmDocumentInput = {
   date_format: string;
 };
 
+export type EvaluationConfirmDocument = {
+  documentId: string;
+  holder_name: string;
+  school: string;
+  degree: string;
+  dates_attended: string;
+  date_awarded: string;
+};
+
 export type ConfirmInput = {
   sourceLanguage: string;
-  documents: ConfirmDocumentInput[];
+  documents?: Array<ConfirmDocumentInput | EvaluationConfirmDocument>;
+  includeTranslation?: boolean;
 };
 
 export type CheckoutResult =
@@ -316,21 +326,32 @@ const mockClient: FlowClient = {
   },
   async confirm(_token, body) {
     const current = readMockOrder();
+    const documents = body.documents ?? [];
+    const confirmed = new Map(
+      documents.flatMap((document) =>
+        Object.entries(document)
+          .filter((entry): entry is [string, string] => entry[0] !== "documentId" && typeof entry[1] === "string")
+          .map(([fieldKey, value]) => [`${document.documentId}:${fieldKey}`, value]),
+      ),
+    );
+    const seen = new Set(current.confirmations.map((field) => `${field.documentId}:${field.fieldKey}`));
+    const confirmations = current.confirmations.map((field) => {
+      const value = confirmed.get(`${field.documentId}:${field.fieldKey}`);
+      return value == null ? field : { ...field, confirmedValue: value };
+    });
+    for (const [key, value] of confirmed) {
+      if (seen.has(key)) continue;
+      const [documentId, fieldKey] = key.split(":");
+      if (!documentId || !fieldKey) continue;
+      confirmations.push({ documentId, fieldKey, originalValue: null, confirmedValue: value });
+    }
     const next: CustomerOrder = {
       ...current,
       status: "processing",
       sourceLanguage: body.sourceLanguage,
       languageConfirmed: true,
       progress: { ...current.progress, step: "translating" },
-      confirmations: current.confirmations.map((field) => {
-        const document = body.documents.find((item) => item.documentId === field.documentId);
-        if (!document) return field;
-        const value = (document as Record<string, string>)[field.fieldKey];
-        return {
-          ...field,
-          confirmedValue: typeof value === "string" ? value : field.confirmedValue,
-        };
-      }),
+      confirmations,
     };
     writeMockOrder(next);
     return next;

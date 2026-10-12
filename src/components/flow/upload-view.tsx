@@ -4,6 +4,19 @@ import { parseEvaluationService } from "@/lib/flow/order-choice";
 import { FlowHeader } from "./flow-header";
 import { UploadCard } from "./upload-card";
 
+/** Shown while the upload route resolves. It has no email field, so the form is not duplicated. */
+export function UploadPageFallback() {
+  return (
+    <div>
+      <FlowHeader current="upload" />
+      <main className="mx-auto w-full max-w-[560px] px-4 py-10 md:py-16">
+        <h1 className="text-[32px] font-bold tracking-[-0.6px]">Upload your documents</h1>
+        <p className="mt-2 text-[15px] text-ink-muted">Loading the upload form…</p>
+      </main>
+    </div>
+  );
+}
+
 export function UploadView({
   initialService,
   sessionEmail,

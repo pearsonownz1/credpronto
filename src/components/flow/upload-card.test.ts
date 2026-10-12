@@ -15,6 +15,7 @@ vi.mock("@/lib/supabase/client", () => ({
 }));
 
 import { UploadCard } from "./upload-card";
+import { UploadPageFallback } from "./upload-view";
 
 function html(sessionEmail?: string | null) {
   return renderToStaticMarkup(createElement(UploadCard, { sessionEmail }));
@@ -37,5 +38,11 @@ describe("quote email field", () => {
     expect(markup).toContain("Preview link goes to ada@example.com");
     expect(markup).not.toContain("Email for your preview link");
     expect(markup).not.toContain('data-testid="email"');
+  });
+
+  it("does not render an email field in the loading fallback", () => {
+    const markup = renderToStaticMarkup(createElement(UploadPageFallback));
+    expect(markup).not.toContain('type="email"');
+    expect(markup).toContain("Loading the upload form");
   });
 });

@@ -15,7 +15,8 @@ describe("live reading progress", () => {
     expect(liveReadingPercent({ step: "reading", pagesRead: 6, pagesTotal: 9 })).toBeCloseTo(
       5 + 55 * (6 / 9),
     );
-    expect(liveReadingPercent({ step: "language" })).toBe(75);
+    expect(liveReadingPercent({ step: "language" })).toBe(70);
+    expect(liveReadingPercent({ step: "language" })).not.toBe(75);
     expect(liveReadingPercent({ step: "counting" })).toBe(90);
     expect(liveReadingPercent({ step: "quoting" })).toBe(95);
     expect(liveReadingPercent({ step: "done" })).toBe(100);

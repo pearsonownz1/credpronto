@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { getAccount } from "@/lib/account/session";
-import { UploadView } from "@/components/flow/upload-view";
+import { UploadPageFallback, UploadView } from "@/components/flow/upload-view";
 import { TRANSLATE_CANONICAL, TRANSLATE_DESCRIPTION, TRANSLATE_TITLE } from "@/lib/seo";
 
 export const metadata: Metadata = {
@@ -18,7 +18,7 @@ export default function TranslatePage({
   searchParams: Promise<{ service?: string | string[] }>;
 }) {
   return (
-    <Suspense fallback={<UploadView />}>
+    <Suspense fallback={<UploadPageFallback />}>
       <TranslateUpload searchParams={searchParams} />
     </Suspense>
   );

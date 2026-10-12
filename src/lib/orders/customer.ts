@@ -50,7 +50,13 @@ import {
 import { HttpError } from "./errors";
 import { assertUploadBudget, resolveUploadMime, safeFilename } from "./files";
 import { replacementAllowed } from "./image-quality";
-import { CONFIRMATION_FIELD_KEYS, normalizeDateFormat, type ConfirmationFieldKey } from "./fields";
+import {
+  CONFIRMATION_FIELD_KEYS,
+  EVALUATION_FIELD_KEYS,
+  normalizeDateFormat,
+  type ConfirmationFieldKey,
+  type EvaluationFieldKey,
+} from "./fields";
 import { appOrigin, orderLink, sendPaymentReceipt } from "./email";
 import { formatPaymentMethod, receiptLineItems } from "./email-templates";
 import { applySucceededSetupIntent } from "./saved-card";
@@ -214,6 +220,16 @@ export async function confirmOrder(token: string, body: unknown): Promise<Custom
     if (!byId.has(document.documentId)) throw new HttpError("Unknown document.", 400);
     if (seen.has(document.documentId)) throw new HttpError("Confirm each document once.", 400);
     seen.add(document.documentId);
+    if (document.kind === "evaluation") {
+      for (const key of EVALUATION_FIELD_KEYS) {
+        fields.push({
+          documentId: document.documentId,
+          fieldKey: key,
+          confirmedValue: document.fields[key].trim(),
+        });
+      }
+      continue;
+    }
     for (const key of CONFIRMATION_FIELD_KEYS) {
       const value = document.fields[key];
       fields.push({
@@ -733,10 +749,9 @@ async function emailPaymentReceipt(
   }
 }
 
-type ConfirmDocument = {
-  documentId: string;
-  fields: Record<ConfirmationFieldKey, string>;
-};
+type ConfirmDocument =
+  | { kind: "translation"; documentId: string; fields: Record<ConfirmationFieldKey, string> }
+  | { kind: "evaluation"; documentId: string; fields: Record<EvaluationFieldKey, string> };
 
 async function expireCheckoutSession(db: Db, session: Stripe.Checkout.Session) {
   const payment = await paymentBySession(db, session.id);
@@ -790,6 +805,29 @@ async function refundCharge(db: Db, charge: Stripe.Charge) {
   return { received: true };
 }
 
+function readConfirmDocument(entry: unknown): ConfirmDocument {
+  if (!entry || typeof entry !== "object") throw new HttpError("Invalid document confirmation", 400);
+  const document = entry as Record<string, unknown>;
+  if (typeof document.documentId !== "string") throw new HttpError("documentId is required", 400);
+  const evaluation = EVALUATION_FIELD_KEYS.some((key) => key in document);
+  if (evaluation) {
+    const fields = {} as Record<EvaluationFieldKey, string>;
+    for (const key of EVALUATION_FIELD_KEYS) {
+      const value = document[key];
+      if (typeof value !== "string") throw new HttpError(`${key} is required`, 400);
+      fields[key] = value;
+    }
+    return { kind: "evaluation", documentId: document.documentId, fields };
+  }
+  const fields = {} as Record<ConfirmationFieldKey, string>;
+  for (const key of CONFIRMATION_FIELD_KEYS) {
+    const value = document[key];
+    if (typeof value !== "string") throw new HttpError(`${key} is required`, 400);
+    fields[key] = value;
+  }
+  return { kind: "translation", documentId: document.documentId, fields };
+}
+
 function readConfirmBody(body: unknown): {
   sourceLanguage: string;
   documents: ConfirmDocument[] | null;
@@ -806,18 +844,7 @@ function readConfirmBody(body: unknown): {
   if (record.documents == null) return { sourceLanguage: record.sourceLanguage, documents: null, includeTranslation };
   if (!Array.isArray(record.documents)) throw new HttpError("documents is required", 400);
 
-  const documents = record.documents.map((entry) => {
-    if (!entry || typeof entry !== "object") throw new HttpError("Invalid document confirmation", 400);
-    const document = entry as Record<string, unknown>;
-    if (typeof document.documentId !== "string") throw new HttpError("documentId is required", 400);
-    const fields = {} as Record<ConfirmationFieldKey, string>;
-    for (const key of CONFIRMATION_FIELD_KEYS) {
-      const value = document[key];
-      if (typeof value !== "string") throw new HttpError(`${key} is required`, 400);
-      fields[key] = value;
-    }
-    return { documentId: document.documentId, fields };
-  });
+  const documents = record.documents.map((entry) => readConfirmDocument(entry));
 
   return { sourceLanguage: record.sourceLanguage, documents, includeTranslation };
 }

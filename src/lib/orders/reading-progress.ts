@@ -109,7 +109,7 @@ export function liveReadingPercent(progress: OrderReadProgress): number {
     case "reading":
       return 5 + 55 * readRatio(progress);
     case "language":
-      return 75;
+      return 70;
     case "counting":
       return 90;
     case "quoting":
@@ -128,7 +128,7 @@ export function fallbackReadingPercent(elapsedMs: number): number {
 
 function fallbackStep(percent: number): ReadingListStep {
   if (percent >= 80) return "quoting";
-  if (percent >= 75) return "counting";
+  if (percent >= 70) return "counting";
   if (percent >= 60) return "language";
   if (percent >= 5) return "reading";
   return "uploaded";

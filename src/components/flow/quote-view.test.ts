@@ -80,9 +80,9 @@ describe("quote step actions", () => {
     expect(CJK_PAGE_RULE).not.toContain("400 units");
   });
 
-  it("shows the turnaround beside the file name", () => {
+  it("keeps the turnaround in the sidebar after the quote is ready", () => {
     const html = htmlFor(sampleCustomerOrder());
-    expect(html).toContain('data-testid="file-turnaround"');
+    expect(html).not.toContain('data-testid="file-turnaround"');
     expect(html).toContain("Ready in a few minutes");
     expect(html).not.toContain("10 minutes");
     expect(html).toContain("text-[var(--cp-ok)]");
@@ -147,7 +147,12 @@ describe("quote step actions", () => {
     expect(html).toContain('data-testid="include-translation"');
     expect(html).toContain("Certified translation");
     expect(html).toContain("$9.95");
+    expect(html).toContain("Diploma evaluation");
     expect(html).toContain("Evaluation report");
+    expect(html).not.toContain("1 degree ×");
+    expect(html).not.toContain(QUOTE_BILLING_NOTE);
+    expect(html).not.toContain('data-testid="file-billable"');
+    expect(html).not.toContain("Page details");
     expect(html).not.toContain("$29.90");
     expect(html).toContain('data-testid="continue"');
   });

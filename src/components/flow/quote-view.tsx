@@ -135,6 +135,7 @@ export function QuoteBody({
     : languageLine(live);
   const qualityHold = live.reviewReason === IMAGE_QUALITY_REASON;
   const evaluation = live.orderType === "evaluation" || live.service != null;
+  const showPages = !evaluation || live.includeTranslation;
   const showPrice = !qualityHold;
   const priceLines = showPrice ? quoteSummaryPrices(live) : [];
   const showContinue = canOpenConfirm(live);
@@ -239,10 +240,14 @@ export function QuoteBody({
           {qualityHold
             ? "A photo was too hard to read, so this is not a quote yet. Retake it and upload a replacement. A reviewer can also accept the file you already sent."
             : showContinue
-              ? "We read your files. Check the language and pages, then continue. You won’t be charged now."
+              ? evaluation
+                ? "We read your files. Check the language, then continue. You won’t be charged now."
+                : "We read your files. Check the language and pages, then continue. You won’t be charged now."
               : sameLanguage
                 ? "Choose the language you want, then update this quote. You won’t be charged now."
-                : "We read your files. Check the language and pages. You won’t be charged now."}
+                : evaluation
+                  ? "We read your files. Check the language. You won’t be charged now."
+                  : "We read your files. Check the language and pages. You won’t be charged now."}
         </p>
         <div>
           <span className="mb-1.5 block text-[13px] font-semibold">Detected language</span>
@@ -321,18 +326,13 @@ export function QuoteBody({
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-col gap-1 md:flex-row md:items-start md:justify-between md:gap-3">
                           <b className="min-w-0 break-words md:flex-1">{file.filename}</b>
-                          <p
-                            data-testid="file-turnaround"
-                            className="flex shrink-0 items-center gap-1 text-[13px] font-semibold leading-5 text-[var(--cp-ok)]"
-                          >
-                            <ClockIcon />
-                            Ready in a few minutes
-                          </p>
                         </div>
-                        <div data-testid="file-billable" className="text-[12.5px] text-ink-muted">
-                          {file.pages == null ? "—" : fileCountLabel(file.billable)}
-                        </div>
-                        {file.rows.length > 0 ? (
+                        {showPages ? (
+                          <div data-testid="file-billable" className="text-[12.5px] text-ink-muted">
+                            {file.pages == null ? "—" : fileCountLabel(file.billable)}
+                          </div>
+                        ) : null}
+                        {showPages && file.rows.length > 0 ? (
                           <button
                             type="button"
                             data-testid="page-details"
@@ -349,7 +349,7 @@ export function QuoteBody({
                     </div>
                   )}
                 />
-                {open ? (
+                {showPages && open ? (
                   <PageDetails
                     token={token}
                     fileId={file.id}
@@ -406,6 +406,8 @@ export function QuoteBody({
                 value={formatMoney(line.amountCents)}
               />
             ))
+          ) : evaluation ? (
+            <SummaryRow label="Evaluation" value="Pending" />
           ) : (
             <SummaryRow label="Pages" value="Pending" />
           )}
@@ -443,7 +445,7 @@ export function QuoteBody({
             emphasize
           />
         </Summary>
-        <BillingNote note={displayedPageRule(live)} />
+        {evaluation ? null : <BillingNote note={displayedPageRule(live)} />}
         {qualityHold ? (
           <ImageQuality order={live} token={token} onReplaced={onReplaced} />
         ) : (
@@ -512,15 +514,6 @@ function BillingNote({ note }: { note: string }) {
       </span>
       <span>{note}</span>
     </p>
-  );
-}
-
-function ClockIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
-      <circle cx="7" cy="7" r="5.4" stroke="currentColor" strokeWidth="1.2" />
-      <path d="M7 4.1V7.1L9 8.3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }
 

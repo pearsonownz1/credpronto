@@ -76,13 +76,41 @@ function pageRatio(pagesRead: number | null | undefined, pagesTotal: number | nu
 }
 
 /**
- * Ease from 92 toward 98 while `progress.step` stays `translating`.
- * Elapsed time is real time on that step. The value stays under 100 until `done`.
+ * Ease from 92 toward 98 while `progress.step` stays `translating`
+ * and the payload has no unfinished page count. Elapsed time is real
+ * time on that step. The value stays under 100 until `done`.
  */
 export function translatingEase(elapsedMs: number): number {
   const elapsed = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0;
   const eased = TRANSLATING_SPAN * (1 - Math.exp(-elapsed / TRANSLATING_EASE_MS));
   return Math.min(TRANSLATING_CAP, TRANSLATING_FLOOR + eased);
+}
+
+/**
+ * Translating percent. Unfinished `pagesRead` / `pagesTotal` is the
+ * sub-progress and moves the bar from 92 toward 98. A full page count is
+ * the quote, not translation progress, so that case eases with real time.
+ * This never returns 75.
+ */
+export function translatingPercent(input: {
+  pagesRead?: number | null;
+  pagesTotal?: number | null;
+  translatingElapsedMs?: number;
+}): number {
+  const total = input.pagesTotal;
+  const read = input.pagesRead;
+  if (
+    typeof total === "number" &&
+    Number.isFinite(total) &&
+    total > 0 &&
+    typeof read === "number" &&
+    Number.isFinite(read) &&
+    read >= 0 &&
+    read < total
+  ) {
+    return TRANSLATING_FLOOR + TRANSLATING_SPAN * (read / total);
+  }
+  return translatingEase(input.translatingElapsedMs ?? 0);
 }
 
 /**
@@ -108,7 +136,7 @@ export function previewStepPercent(input: {
     case "quoting":
       return 90;
     case "translating":
-      return translatingEase(input.translatingElapsedMs ?? 0);
+      return translatingPercent(input);
     case "done":
       return 100;
     default:
@@ -158,9 +186,7 @@ export function previewWork(input: {
   const current = currentStep(input.progressStep);
   const index = steps.findIndex((step) => step.id === current);
   const percent =
-    input.progressStep === "done"
-      ? translatingEase(input.translatingElapsedMs ?? 0)
-      : previewStepPercent(input);
+    input.progressStep === "done" ? translatingPercent(input) : previewStepPercent(input);
   return {
     phase: "working",
     percent,
