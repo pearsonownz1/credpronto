@@ -150,6 +150,13 @@ function paragraphsOf(value: unknown): string[] {
 function equivalencyCredentials(value: unknown): StaffDetail["equivalencyCredentials"] {
   if (!value || typeof value !== "object") return [];
   const result = value as Record<string, unknown>;
+  if (result.kind === "course_by_course") {
+    const name = text(result.credential);
+    const country = text(result.country);
+    const usEquivalency = text(result.usEquivalency);
+    if (!name || !country || !usEquivalency) return [];
+    return [{ credential: name, country, field: "Course-by-course", dates: "—", usEquivalency }];
+  }
   if (result.kind !== "diploma" || !Array.isArray(result.credentials)) return [];
   return result.credentials.flatMap((entry) => {
     if (!entry || typeof entry !== "object") return [];
@@ -229,6 +236,7 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
     createdAt,
     reviewReason: text(row.reviewReason),
     equivalencyCredentials: equivalencyCredentials(row.evaluationResult),
+    edge: parseEdge(row.edge),
     filename,
     pages,
     corrections,
@@ -247,6 +255,33 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
     expedited: row.expedited === true,
     fulfillment: parseFulfillment(row.fulfillment),
   };
+}
+
+function parseEdge(value: unknown): StaffDetail["edge"] {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  const title = text(row.title);
+  if (!title) return null;
+  const scale = row.gradingScale && typeof row.gradingScale === "object" ? (row.gradingScale as Record<string, unknown>) : null;
+  const scaleTitle = scale ? text(scale.title) : null;
+  const rows = scale && Array.isArray(scale.rows) ? scale.rows.flatMap(parseEdgeGrade) : [];
+  return {
+    title,
+    levelNumber: amount(row.levelNumber),
+    levelTitle: text(row.levelTitle),
+    contentExcerpt: text(row.contentExcerpt) ?? "",
+    url: text(row.url),
+    gradingScale: scaleTitle ? { title: scaleTitle, rows } : null,
+  };
+}
+
+function parseEdgeGrade(value: unknown): Array<{ indigenousGrade: string; usEquivalent: string }> {
+  if (!value || typeof value !== "object") return [];
+  const row = value as Record<string, unknown>;
+  const indigenousGrade = text(row.indigenousGrade);
+  const usEquivalent = text(row.usEquivalent);
+  if (!indigenousGrade || !usEquivalent) return [];
+  return [{ indigenousGrade, usEquivalent }];
 }
 
 function parseFulfillment(value: unknown): StaffDetail["fulfillment"] {

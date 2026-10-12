@@ -38,6 +38,8 @@ function orderRecord(): OrderRecord {
     mailStatus: null,
     mailTracking: null,
     notarizationStatus: null,
+    edgeCredentialId: null,
+    edgeGradingScaleId: null,
     createdAt: "2026-10-12T00:00:00.000Z",
   };
 }
@@ -121,6 +123,9 @@ describe("customer order", () => {
     expect(order.degreeCount).toBe(1);
     expect(order.lineItems.map((item) => item.kind)).toEqual(["evaluation", "translation"]);
     expect(order.evaluation).toBeNull();
+    expect(order).not.toHaveProperty("edge");
+    expect(order).not.toHaveProperty("edgeCredentialId");
+    expect(JSON.stringify(order)).not.toContain("edge_credential");
   });
 
   it("returns the selected add-ons in catalog order with the stored address", () => {

@@ -33,6 +33,43 @@ const SideBySideViewer = dynamic(
 
 const EDITABLE = new Set(["preview_ready", "correction_requested", "paid", "approved", "delivered"]);
 
+function EdgeReference({ edge }: { edge: NonNullable<StaffDetail["edge"]> }) {
+  const level = [edge.levelNumber != null ? `Level ${edge.levelNumber}` : null, edge.levelTitle]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <section
+      data-testid="edge-reference"
+      className="mt-3 grid gap-2 rounded-[var(--cp-radius)] border border-line bg-white p-4"
+    >
+      <p className="text-sm font-semibold">EDGE reference</p>
+      <p className="text-sm">{edge.title}</p>
+      {level ? <p className="text-sm text-ink-muted">{level}</p> : null}
+      {edge.contentExcerpt ? <p className="text-sm">{edge.contentExcerpt}</p> : null}
+      {edge.url ? (
+        <a href={edge.url} target="_blank" rel="noreferrer" className="text-sm font-semibold text-primary">
+          Open EDGE entry
+        </a>
+      ) : null}
+      {edge.gradingScale ? (
+        <div className="grid gap-1">
+          <p className="text-sm font-semibold">{edge.gradingScale.title}</p>
+          <table className="w-full text-sm">
+            <tbody>
+              {edge.gradingScale.rows.slice(0, 40).map((row) => (
+                <tr key={`${row.indigenousGrade}-${row.usEquivalent}`}>
+                  <td className="py-0.5 pr-4">{row.indigenousGrade}</td>
+                  <td className="py-0.5">{row.usEquivalent}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function OrderStudio({
   detail,
   notes,
@@ -202,6 +239,7 @@ export function OrderStudio({
             Needs review: {detail.reviewReason}
           </p>
         ) : null}
+        {detail.edge ? <EdgeReference edge={detail.edge} /> : null}
         {message ? (
           <p role="status" data-testid="studio-status" className="mt-3 text-sm text-[var(--cp-ok)]">
             {message}

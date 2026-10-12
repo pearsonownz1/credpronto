@@ -1,4 +1,12 @@
 import { ADDON_CATALOG, type PricedAddon } from "./addons";
+import {
+  countrySlugFallbackFilter,
+  mapEdgeCredentialRow,
+  mapEdgeGradingScaleRow,
+  resolveStoredCountrySlug,
+  type EdgeCredentialRecord,
+  type EdgeGradingScaleRecord,
+} from "./edge";
 import { parseEvaluationResult } from "./evaluation-price";
 import { parseStoredPageOrder, compareCombinedPages } from "./page-order";
 import type { Db } from "./storage";
@@ -81,6 +89,8 @@ function mapOrder(row: Row): OrderRecord {
     mailTracking: str(row.mail_tracking),
     notarizationStatus:
       row.notarization_status === "pending" || row.notarization_status === "done" ? row.notarization_status : null,
+    edgeCredentialId: str(row.edge_credential_id),
+    edgeGradingScaleId: str(row.edge_grading_scale_id),
     createdAt: str(row.created_at) ?? new Date().toISOString(),
   };
 }
@@ -676,6 +686,110 @@ export async function markPreview(
     .eq("order_id", orderId)
     .eq("version", version);
   fail(error);
+}
+
+const EDGE_SLUG_PAGE = 1000;
+const EDGE_SLUG_MAX = 5000;
+
+/**
+ * Exact country_slug wins. When the order slug is only part of the loaded
+ * country name (`south-korea` inside `korea-republic-of-south-korea`), use the
+ * one stored slug that contains it on a hyphen boundary.
+ */
+export async function resolveEdgeCountrySlug(db: Db, orderSlug: string): Promise<string | null> {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(orderSlug)) return null;
+  if (await edgeCountrySlugExists(db, orderSlug)) return orderSlug;
+  const filter = countrySlugFallbackFilter(orderSlug);
+  if (!filter) return null;
+  const [credentialSlugs, scaleSlugs] = await Promise.all([
+    collectEdgeCountrySlugs(db, "edge_credentials", filter),
+    collectEdgeCountrySlugs(db, "edge_grading_scales", filter),
+  ]);
+  if (!credentialSlugs || !scaleSlugs) return null;
+  return resolveStoredCountrySlug(orderSlug, [...credentialSlugs, ...scaleSlugs]);
+}
+
+async function edgeCountrySlugExists(db: Db, slug: string): Promise<boolean> {
+  const [credentials, scales] = await Promise.all([
+    db.from("edge_credentials").select("country_slug").eq("country_slug", slug).limit(1),
+    db.from("edge_grading_scales").select("country_slug").eq("country_slug", slug).limit(1),
+  ]);
+  fail(credentials.error);
+  fail(scales.error);
+  return (credentials.data?.length ?? 0) > 0 || (scales.data?.length ?? 0) > 0;
+}
+
+async function collectEdgeCountrySlugs(
+  db: Db,
+  table: "edge_credentials" | "edge_grading_scales",
+  filter: string,
+): Promise<string[] | null> {
+  const slugs: string[] = [];
+  for (let from = 0; from < EDGE_SLUG_MAX; from += EDGE_SLUG_PAGE) {
+    const { data, error } = await db
+      .from(table)
+      .select("country_slug")
+      .or(filter)
+      .range(from, from + EDGE_SLUG_PAGE - 1);
+    fail(error);
+    const rows = (data ?? []) as Row[];
+    for (const row of rows) {
+      const slug = str(row.country_slug);
+      if (slug) slugs.push(slug);
+    }
+    if (rows.length < EDGE_SLUG_PAGE) return slugs;
+  }
+  return null;
+}
+
+export async function listEdgeCredentialsForCountry(
+  db: Db,
+  countrySlug: string,
+): Promise<EdgeCredentialRecord[]> {
+  const { data, error } = await db
+    .from("edge_credentials")
+    .select("id, country_slug, country, title, content, level_number, level_title, url, us_equivalency")
+    .eq("country_slug", countrySlug);
+  fail(error);
+  return ((data ?? []) as Row[]).flatMap((row) => {
+    const mapped = mapEdgeCredentialRow(row);
+    return mapped ? [mapped] : [];
+  });
+}
+
+export async function listEdgeGradingScalesForCountry(
+  db: Db,
+  countrySlug: string,
+): Promise<EdgeGradingScaleRecord[]> {
+  const { data, error } = await db
+    .from("edge_grading_scales")
+    .select("id, country_slug, title, raw, rows")
+    .eq("country_slug", countrySlug);
+  fail(error);
+  return ((data ?? []) as Row[]).flatMap((row) => {
+    const mapped = mapEdgeGradingScaleRow(row);
+    return mapped ? [mapped] : [];
+  });
+}
+
+export async function getEdgeCredential(db: Db, id: string): Promise<EdgeCredentialRecord | null> {
+  const { data, error } = await db
+    .from("edge_credentials")
+    .select("id, country_slug, country, title, content, level_number, level_title, url, us_equivalency")
+    .eq("id", id)
+    .maybeSingle();
+  fail(error);
+  return data ? mapEdgeCredentialRow(data as Row) : null;
+}
+
+export async function getEdgeGradingScale(db: Db, id: string): Promise<EdgeGradingScaleRecord | null> {
+  const { data, error } = await db
+    .from("edge_grading_scales")
+    .select("id, country_slug, title, raw, rows")
+    .eq("id", id)
+    .maybeSingle();
+  fail(error);
+  return data ? mapEdgeGradingScaleRow(data as Row) : null;
 }
 
 export async function nextTranslationVersion(db: Db, documentIds: string[]): Promise<number> {

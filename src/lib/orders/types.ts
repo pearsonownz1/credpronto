@@ -106,6 +106,7 @@ export type EvaluationResult =
       totalHours: number;
       gpa: number;
       gradeScale: string;
+      usEquivalency?: string;
       pageCount?: number;
     };
 
@@ -154,6 +155,8 @@ export type OrderRecord = {
   mailStatus: "pending" | "shipped" | null;
   mailTracking: string | null;
   notarizationStatus: "pending" | "done" | null;
+  edgeCredentialId: string | null;
+  edgeGradingScaleId: string | null;
   createdAt: string;
 };
 

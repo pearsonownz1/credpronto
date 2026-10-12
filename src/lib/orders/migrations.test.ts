@@ -69,6 +69,19 @@ describe("auth migrations", () => {
     expect(deliveries).toMatch(/create table public\.webhook_deliveries/);
     expect(externalRef).toMatch(/external_ref text/);
     expect(billing).toMatch(/create table public\.billing_customers/);
+    const edge = readFileSync(path.join(migrationsDir, "20261012090000_edge_reference.sql"), "utf8");
+    expect(edge).toMatch(/create table public\.edge_credentials/);
+    expect(edge).toMatch(/create table public\.edge_grading_scales/);
+    expect(edge).toMatch(/on public\.edge_credentials \(country_slug, lower\(title\)\)/);
+    expect(edge).toMatch(/us_equivalency text/);
+    expect(edge).toMatch(/rows jsonb not null/);
+    expect(edge).toMatch(/enable row level security/);
+    expect(edge.toLowerCase()).not.toMatch(/create policy/);
+    expect(edge.toLowerCase()).not.toMatch(/grant [^;]*to (anon|authenticated)/);
+    expect(edge).toMatch(/to service_role/);
+    expect(edge.toLowerCase()).not.toMatch(/insert into/);
+    expect(edge).toMatch(/edge_credential_id uuid/);
+    expect(edge).toMatch(/edge_grading_scale_id uuid/);
     expect(billing).toMatch(/stripe_customer_id text not null/);
     expect(billing).not.toMatch(/card_number/);
     for (const sql of [apiKeys, endpoints, deliveries, externalRef, billing]) {

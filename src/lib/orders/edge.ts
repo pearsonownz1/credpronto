@@ -1,0 +1,484 @@
+import { mapEdgeGrade, usEquivalency } from "./grades";
+import { PENDING_EQUIVALENCY } from "./equivalency";
+
+export const US_EQUIVALENCY_LABELS = [
+  "High school diploma",
+  "Associate degree",
+  "Bachelor's degree",
+  "Master's degree",
+  "Doctoral degree",
+] as const;
+
+export type EdgeGradeRow = {
+  indigenousGrade: string;
+  usEquivalent: string;
+};
+
+export type { EdgeGradePoints } from "./grades";
+
+export type EdgeCredentialRecord = {
+  id: string;
+  countrySlug: string;
+  country: string;
+  title: string;
+  content: string;
+  levelNumber: number | null;
+  levelTitle: string | null;
+  url: string | null;
+  usEquivalency: string | null;
+};
+
+export type EdgeGradingScaleRecord = {
+  id: string;
+  countrySlug: string;
+  title: string;
+  raw: string | null;
+  rows: EdgeGradeRow[];
+};
+
+export type EdgeCredentialInsert = {
+  country_slug: string;
+  country: string;
+  title: string;
+  content: string;
+  level_number: number | null;
+  level_title: string | null;
+  url: string | null;
+  us_equivalency: string | null;
+};
+
+export type EdgeGradingScaleInsert = {
+  country_slug: string;
+  title: string;
+  raw: string | null;
+  rows: Array<{ indigenous_grade: string; us_equivalent: string }>;
+};
+
+const EXCERPT_CHARS = 400;
+
+/** Slug used as edge_credentials.country_slug and as the source-object key. */
+export function countrySlug(country: string): string {
+  return country
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Exact slug wins. Otherwise the order slug must sit on a hyphen boundary inside
+ * exactly one stored slug (prefix, suffix, or middle), so "South Korea" and
+ * "Korea" can match `korea-republic-of-south-korea` without guessing between Koreas.
+ */
+export function resolveStoredCountrySlug(orderSlug: string, storedSlugs: readonly string[]): string | null {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(orderSlug)) return null;
+  const unique = [...new Set(storedSlugs.filter((slug) => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)))];
+  if (unique.includes(orderSlug)) return orderSlug;
+  const matches = unique.filter((stored) => countrySlugOverlaps(orderSlug, stored));
+  return matches.length === 1 ? (matches[0] ?? null) : null;
+}
+
+/** PostgREST `or` filter for slugs that contain orderSlug on a hyphen boundary. */
+export function countrySlugFallbackFilter(orderSlug: string): string | null {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(orderSlug)) return null;
+  return [
+    `country_slug.like.${orderSlug}-*`,
+    `country_slug.like.*-${orderSlug}`,
+    `country_slug.like.*-${orderSlug}-*`,
+  ].join(",");
+}
+
+function countrySlugOverlaps(orderSlug: string, stored: string): boolean {
+  return (
+    stored.startsWith(`${orderSlug}-`) ||
+    stored.endsWith(`-${orderSlug}`) ||
+    stored.includes(`-${orderSlug}-`)
+  );
+}
+
+export function normalizeCredentialTitle(title: string): string {
+  return title
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+export function mapEdgeCredentialRow(row: Record<string, unknown>): EdgeCredentialRecord | null {
+  const id = text(row.id);
+  const countrySlugValue = text(row.country_slug);
+  const country = text(row.country);
+  const title = text(row.title);
+  if (!id || !countrySlugValue || !country || !title) return null;
+  const levelNumber = typeof row.level_number === "number" && Number.isFinite(row.level_number) ? row.level_number : null;
+  return {
+    id,
+    countrySlug: countrySlugValue,
+    country,
+    title,
+    content: text(row.content) ?? "",
+    levelNumber,
+    levelTitle: text(row.level_title),
+    url: text(row.url),
+    usEquivalency: text(row.us_equivalency),
+  };
+}
+
+export function mapEdgeGradingScaleRow(row: Record<string, unknown>): EdgeGradingScaleRecord | null {
+  const id = text(row.id);
+  const countrySlugValue = text(row.country_slug);
+  const title = text(row.title);
+  if (!id || !countrySlugValue || !title) return null;
+  const rows = Array.isArray(row.rows) ? row.rows.flatMap(storedGradeRow) : [];
+  return {
+    id,
+    countrySlug: countrySlugValue,
+    title,
+    raw: text(row.raw),
+    rows,
+  };
+}
+
+function storedGradeRow(entry: unknown): EdgeGradeRow[] {
+  if (!entry || typeof entry !== "object") return [];
+  const row = entry as Record<string, unknown>;
+  const indigenous = text(row.indigenous_grade);
+  const equivalent = text(row.us_equivalent);
+  if (!indigenous || !equivalent) return [];
+  return [{ indigenousGrade: indigenous, usEquivalent: equivalent }];
+}
+
+export function edgeContentExcerpt(content: string, max = EXCERPT_CHARS): string {
+  const trimmed = content.replace(/\s+/g, " ").trim();
+  if (trimmed.length <= max) return trimmed;
+  return `${trimmed.slice(0, max).trimEnd()}…`;
+}
+
+export function safeEdgeUrl(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+export function canonicalUsEquivalency(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === PENDING_EQUIVALENCY) return null;
+  const exact = US_EQUIVALENCY_LABELS.find((label) => label.toLowerCase() === trimmed.toLowerCase());
+  if (exact) return exact;
+  return usEquivalency(trimmed);
+}
+
+/**
+ * One country group from the licensed source, which is not stored in the repo.
+ * The object key is the country slug when it is already lowercase and hyphenated.
+ * Otherwise the slug is countrySlug(country), then countrySlug(key).
+ */
+export function edgeRowsFromSource(source: unknown): {
+  credentials: EdgeCredentialInsert[];
+  gradingScales: EdgeGradingScaleInsert[];
+} {
+  const credentials: EdgeCredentialInsert[] = [];
+  const gradingScales: EdgeGradingScaleInsert[] = [];
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    return { credentials, gradingScales };
+  }
+  for (const [key, group] of Object.entries(source as Record<string, unknown>)) {
+    if (!group || typeof group !== "object" || Array.isArray(group)) continue;
+    const record = group as Record<string, unknown>;
+    const countryName = text(record.country) || key.trim();
+    const slug = slugFromKey(key, countryName);
+    if (!slug || !countryName) continue;
+    const credentialRows = Array.isArray(record.credentials) ? record.credentials : [];
+    for (const entry of credentialRows) {
+      const row = credentialInsert(slug, countryName, entry);
+      if (row) credentials.push(row);
+    }
+    const scaleRows = Array.isArray(record.grading_scales) ? record.grading_scales : [];
+    for (const entry of scaleRows) {
+      const row = scaleInsert(slug, entry);
+      if (row) gradingScales.push(row);
+    }
+  }
+  return { credentials, gradingScales };
+}
+
+export function matchEdgeCredential(
+  rows: readonly EdgeCredentialRecord[],
+  input: { country: string; title: string },
+): EdgeCredentialRecord | null {
+  const title = normalizeCredentialTitle(input.title);
+  if (!title || input.country === PENDING_EQUIVALENCY) return null;
+  const pool = rowsForCountry(rows, input.country);
+  const exact = pool.find((row) => normalizeCredentialTitle(row.title) === title);
+  if (exact) return exact;
+
+  const ranked = pool
+    .map((row) => ({ row, score: titleScore(title, normalizeCredentialTitle(row.title)) }))
+    .filter((item) => item.score >= 0.8)
+    .sort((a, b) => b.score - a.score || b.row.title.length - a.row.title.length);
+  const best = ranked[0];
+  const next = ranked[1];
+  if (!best) return null;
+  if (next && best.score - next.score < 0.05) return null;
+  return best.row;
+}
+
+export function matchEdgeGradingScale(
+  scales: readonly EdgeGradingScaleRecord[],
+  input: { country: string; title: string; grades: readonly string[] },
+): EdgeGradingScaleRecord | null {
+  if (input.country === PENDING_EQUIVALENCY) return null;
+  const pool = rowsForCountry(scales, input.country);
+  if (pool.length === 0) return null;
+  const grades = input.grades.map((grade) => grade.trim()).filter(Boolean);
+  if (grades.length === 0) {
+    if (pool.length === 1) return pool[0] ?? null;
+    return matchScaleByCredential(pool, input.title);
+  }
+
+  const ranked = pool
+    .map((scale) => ({
+      scale,
+      hits: grades.filter((grade) => mapEdgeGrade(grade, scale.rows) != null).length,
+    }))
+    .filter((item) => item.hits > 0)
+    .sort((a, b) => b.hits - a.hits);
+  const best = ranked[0];
+  const next = ranked[1];
+  if (!best) return null;
+  if (next && best.hits === next.hits) return null;
+  return best.scale;
+}
+
+export function staffEdgeView(input: {
+  credential: EdgeCredentialRecord | null;
+  scale: EdgeGradingScaleRecord | null;
+}): {
+  title: string;
+  levelNumber: number | null;
+  levelTitle: string | null;
+  contentExcerpt: string;
+  url: string | null;
+  gradingScale: { title: string; rows: EdgeGradeRow[] } | null;
+} | null {
+  if (!input.credential && !input.scale) return null;
+  return {
+    title: input.credential?.title ?? input.scale?.title ?? "",
+    levelNumber: input.credential?.levelNumber ?? null,
+    levelTitle: input.credential?.levelTitle ?? null,
+    contentExcerpt: edgeContentExcerpt(input.credential?.content ?? ""),
+    url: safeEdgeUrl(input.credential?.url ?? null),
+    gradingScale: input.scale ? { title: input.scale.title, rows: input.scale.rows } : null,
+  };
+}
+
+export function chooseEquivalency(input: {
+  matched: boolean;
+  edgeUsEquivalency: string | null;
+  ai: { usEquivalency: string; confident: boolean } | null;
+  printed: string;
+}): string {
+  if (!input.matched) return usEquivalency(input.printed) ?? PENDING_EQUIVALENCY;
+  if (input.ai?.confident) {
+    const proposed = canonicalUsEquivalency(input.ai.usEquivalency);
+    if (proposed) return proposed;
+  }
+  return canonicalUsEquivalency(input.edgeUsEquivalency) ?? PENDING_EQUIVALENCY;
+}
+
+export function edgeEquivalencyPrompt(input: {
+  country: string;
+  printedTitle: string;
+  edgeTitle: string;
+  levelNumber: number | null;
+  levelTitle: string | null;
+  contentExcerpt: string;
+  usEquivalencyHint: string | null;
+  gradingRows: readonly EdgeGradeRow[];
+}): string {
+  const level = [input.levelNumber != null ? `number ${input.levelNumber}` : null, input.levelTitle]
+    .filter(Boolean)
+    .join(", ");
+  const rows = input.gradingRows
+    .slice(0, 30)
+    .map((row) => `${row.indigenousGrade} = ${row.usEquivalent}`)
+    .join("\n");
+  return `Propose one U.S. equivalency for this foreign credential.
+Choose only one of: ${US_EQUIVALENCY_LABELS.join("; ")}.
+Set confident to true only when the EDGE level supports that label. Otherwise return an empty usEquivalency and confident false.
+Do not invent a degree that the EDGE entry does not support.
+
+Printed credential: ${input.printedTitle}
+Country: ${input.country}
+EDGE title: ${input.edgeTitle}
+EDGE level: ${level || "(none)"}
+EDGE note: ${input.usEquivalencyHint?.trim() || "(none)"}
+EDGE excerpt: ${input.contentExcerpt || "(none)"}
+Grading rows:
+${rows || "(none)"}`;
+}
+
+function rowsForCountry<T extends { countrySlug: string }>(rows: readonly T[], country: string): T[] {
+  const slug = countrySlug(country);
+  if (!slug) return [];
+  const resolved = resolveStoredCountrySlug(
+    slug,
+    rows.map((row) => row.countrySlug),
+  );
+  if (!resolved) return [];
+  return rows.filter((row) => row.countrySlug === resolved);
+}
+
+const SCALE_TITLE_SEPARATOR = /\s+[—–]\s+/;
+
+function matchScaleByCredential(
+  pool: readonly EdgeGradingScaleRecord[],
+  title: string,
+): EdgeGradingScaleRecord | null {
+  const printed = normalizeCredentialTitle(title);
+  if (!printed) return null;
+  const ranked = pool
+    .map((scale) => ({ scale, score: scaleLabelScore(printed, scale) }))
+    .filter((item) => item.score >= 0.8)
+    .sort((a, b) => b.score - a.score || b.scale.title.length - a.scale.title.length);
+  const best = ranked[0];
+  const next = ranked[1];
+  if (!best) return null;
+  if (next && best.score - next.score < 0.05) return null;
+  return best.scale;
+}
+
+function scaleLabelScore(printed: string, scale: EdgeGradingScaleRecord): number {
+  return scaleSearchTexts(scale).reduce((best, text) => {
+    const reference = normalizeCredentialTitle(text);
+    const score = titleScore(printed, reference);
+    if (reference.length >= 8 && printed.startsWith(`${reference} `)) return Math.max(best, score, 0.95);
+    return Math.max(best, score);
+  }, 0);
+}
+
+function scaleSearchTexts(scale: EdgeGradingScaleRecord): string[] {
+  const segments = scale.title
+    .split(SCALE_TITLE_SEPARATOR)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const texts = [scale.title, ...segments];
+  if (scale.raw) texts.push(scale.raw);
+  return texts;
+}
+
+function slugFromKey(key: string, countryName: string): string {
+  const trimmed = key.trim();
+  if (/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(trimmed)) return trimmed;
+  return countrySlug(countryName) || countrySlug(trimmed);
+}
+
+function credentialInsert(slug: string, country: string, entry: unknown): EdgeCredentialInsert | null {
+  if (!entry || typeof entry !== "object") return null;
+  const row = entry as Record<string, unknown>;
+  const title = text(row.title);
+  if (!title) return null;
+  const level = row.level && typeof row.level === "object" ? (row.level as Record<string, unknown>) : {};
+  const levelNumber = typeof level.number === "number" && Number.isFinite(level.number) ? Math.trunc(level.number) : null;
+  return {
+    country_slug: slug,
+    country,
+    title,
+    content: text(row.content) ?? "",
+    level_number: levelNumber,
+    level_title: text(level.title),
+    url: text(row.url),
+    us_equivalency: text(row.us_equivalency),
+  };
+}
+
+function scaleInsert(slug: string, entry: unknown): EdgeGradingScaleInsert | null {
+  if (!entry || typeof entry !== "object") return null;
+  const row = entry as Record<string, unknown>;
+  const title = text(row.title);
+  if (!title) return null;
+  const rows = Array.isArray(row.rows) ? row.rows.flatMap(gradeRow) : [];
+  return {
+    country_slug: slug,
+    title,
+    raw: text(row.raw),
+    rows,
+  };
+}
+
+function gradeRow(entry: unknown): Array<{ indigenous_grade: string; us_equivalent: string }> {
+  if (!entry || typeof entry !== "object") return [];
+  const row = entry as Record<string, unknown>;
+  const indigenous = text(row.indigenous_grade);
+  const equivalent = text(row.us_equivalent);
+  if (!indigenous || !equivalent) return [];
+  return [{ indigenous_grade: indigenous, us_equivalent: equivalent }];
+}
+
+function text(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function titleScore(printed: string, reference: string): number {
+  if (!printed || !reference) return 0;
+  if (printed === reference) return 1;
+  const left = printed.split(" ");
+  const right = reference.split(" ");
+  const shorter = left.length <= right.length ? left : right;
+  const longer = left.length <= right.length ? right : left;
+  let score = jaccard(left, right);
+  if (shorter.join(" ").length >= 8 && containsSequence(longer, shorter)) {
+    score = Math.max(score, 0.9);
+  }
+  const max = Math.max(printed.length, reference.length);
+  const similar = max === 0 ? 0 : 1 - levenshtein(printed, reference) / max;
+  if (similar >= 0.88) score = Math.max(score, similar);
+  return score;
+}
+
+function jaccard(left: string[], right: string[]): number {
+  const a = new Set(left);
+  const b = new Set(right);
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersection = 0;
+  for (const token of a) if (b.has(token)) intersection += 1;
+  const union = new Set([...a, ...b]).size;
+  return union === 0 ? 0 : intersection / union;
+}
+
+function containsSequence(haystack: string[], needle: string[]): boolean {
+  if (needle.length === 0) return false;
+  let index = 0;
+  for (const token of haystack) {
+    if (token === needle[index]) index += 1;
+    if (index === needle.length) return true;
+  }
+  return false;
+}
+
+function levenshtein(left: string, right: string): number {
+  const a = left.slice(0, 80);
+  const b = right.slice(0, 80);
+  const rows = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+  for (let i = 0; i <= a.length; i += 1) rows[i]![0] = i;
+  for (let j = 0; j <= b.length; j += 1) rows[0]![j] = j;
+  for (let i = 1; i <= a.length; i += 1) {
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      rows[i]![j] = Math.min(rows[i - 1]![j]! + 1, rows[i]![j - 1]! + 1, rows[i - 1]![j - 1]! + cost);
+    }
+  }
+  return rows[a.length]![b.length]!;
+}
