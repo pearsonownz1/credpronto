@@ -79,6 +79,15 @@ describe("quote step actions", () => {
     expect(CJK_PAGE_RULE).not.toContain("400 units");
   });
 
+  it("shows the turnaround beside the file name", () => {
+    const html = htmlFor(sampleCustomerOrder());
+    expect(html).toContain('data-testid="file-turnaround"');
+    expect(html).toContain("Ready in about 10 minutes");
+    expect(html).toContain("text-[var(--cp-ok)]");
+    expect(html).toContain("md:flex-row");
+    expect(html).toContain('data-testid="file-thumb-skeleton"');
+  });
+
   it("shows Continue for a quoted order with a page line and a total", () => {
     const html = htmlFor(sampleCustomerOrder());
     expect(html).toContain('data-testid="continue"');
