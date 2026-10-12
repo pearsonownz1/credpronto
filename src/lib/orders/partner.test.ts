@@ -122,7 +122,10 @@ describe("partner orders", () => {
       totalCents: 2985,
       currency: "usd",
       payment: { status: "paid" },
+      progress: { step: "done", pagesRead: 3, pagesTotal: 3 },
+      delayed: false,
     });
+    expect(body.totalCents).toBe(body.billablePages! * body.unitPriceCents);
     const detail = toPartnerOrder({
       order: order({ status: "needs_review", reviewReason: EVALUATION_REVIEW_REASON, serviceType: "evaluation" }),
       paymentStatus: null,
@@ -132,5 +135,75 @@ describe("partner orders", () => {
     expect(detail.reviewReason).toBe("Credential evaluation is reviewed by staff.");
     expect(detail.qa).toBeNull();
     expect(detail.payment).toBeNull();
+    expect(detail.progress).toEqual({ step: "done", pagesRead: 3, pagesTotal: 3 });
+    expect(detail.delayed).toBe(false);
+  });
+
+  it("reports translation progress and a delayed preview without internal fields", () => {
+    const body = toPartnerOrder({
+      order: order({
+        status: "processing",
+        updatedAt: "2026-10-12T00:00:00.000Z",
+        reviewReason: "Language detection confidence is low (0.20).",
+        pageOrderBasis: "logical",
+        pageOrder: {
+          basis: "logical",
+          pages: [
+            {
+              documentId: "doc-1",
+              uploadPosition: 1,
+              appliedPosition: 1,
+              uploadPage: 1,
+              appliedPage: 1,
+              logicalPage: 1,
+              hint: "page 1/2",
+              confidence: 0.93,
+            },
+          ],
+        },
+        edgeCredentialId: "cred-1",
+        edgeMatchMethod: "base",
+        progress: {
+          step: "translating",
+          pagesRead: 12,
+          pagesTotal: 12,
+          pagesDone: 4,
+          pagesTranslateTotal: 9,
+          retries: 2,
+        },
+      }),
+      paymentStatus: "paid",
+      detail: true,
+      qa: null,
+      previewVersion: null,
+      now: Date.parse("2026-10-12T00:20:00.000Z"),
+    });
+    expect(body.progress).toEqual({
+      step: "translating",
+      pagesRead: 12,
+      pagesTotal: 12,
+      pagesDone: 4,
+      pagesTranslateTotal: 9,
+    });
+    expect(body.progress).not.toHaveProperty("retries");
+    expect(body.delayed).toBe(true);
+    expect(body.reviewReason).toBeNull();
+    const json = JSON.stringify(body);
+    expect(json).not.toMatch(/retries|equivalencyBasis|edgeMatch|edge_|"confidence"|"basis"/);
+    expect(json).not.toMatch(/\bEDGE\b/);
+
+    const ready = toPartnerOrder({
+      order: order({
+        status: "processing",
+        updatedAt: "2026-10-12T00:00:00.000Z",
+        progress: { step: "translating", pagesRead: 12, pagesTotal: 12, pagesDone: 9, pagesTranslateTotal: 9 },
+      }),
+      paymentStatus: "paid",
+      detail: false,
+      qa: null,
+      previewVersion: 1,
+      now: Date.parse("2026-10-12T00:20:00.000Z"),
+    });
+    expect(ready.delayed).toBe(false);
   });
 });

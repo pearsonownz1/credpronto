@@ -6,6 +6,7 @@ import {
   liveOrderPostBlocked,
   type ApiKeyPrefix,
 } from "./api-key";
+import { consumeApiKeyRate } from "./api-rate-limit";
 import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET, IMAGE_QUALITY_REASON } from "./constants";
 import { storeFiles } from "./create";
 import {
@@ -17,6 +18,7 @@ import {
   insertOrder,
   insertPayment,
   latestPayment,
+  latestReadyPreview,
   listDocuments,
   listQaRuns,
   settledPayment,
@@ -30,6 +32,7 @@ import { partnerReviewReason } from "./equivalency";
 import { assertUploadBudget, dedupeUploads, resolveUploadMime } from "./files";
 import { findActiveApiKey, orderByExternalRef, touchApiKeyLastUsed, type ApiKeyRow } from "./integrations-db";
 import { isSupportedSourceLanguage } from "./languages";
+import { asOrderProgress, publicOrderProgress, UPLOADED_PROGRESS, type OrderProgress } from "./reading-progress";
 import { chargeOffSession, type OffSessionCharge } from "./off-session";
 import { notifyLifecycle, notifyOrder } from "./webhook-delivery";
 import { originalTargets } from "./originals";
@@ -38,6 +41,7 @@ import { signedObjectUrl, serviceDb } from "./storage";
 import { generateOrderToken, hashOrderToken } from "./token";
 import type { OrderRecord } from "./types";
 import { downloadGate } from "./access";
+import { isPreviewDelayed } from "./translation-watch";
 
 export const EVALUATION_REVIEW_REASON = "Credential evaluation is reviewed by staff.";
 
@@ -55,6 +59,8 @@ export type PartnerOrderBody = {
   totalCents: number | null;
   currency: string;
   payment: { status: string } | null;
+  progress: Omit<OrderProgress, "retries">;
+  delayed: boolean;
   reviewReason?: string | null;
   qa?: ReturnType<typeof qaSummary>;
 };
@@ -109,7 +115,10 @@ export function toPartnerOrder(input: {
   paymentStatus: string | null;
   detail: boolean;
   qa: ReturnType<typeof qaSummary>;
+  previewVersion?: number | null;
+  now?: number;
 }): PartnerOrderBody {
+  const progress = publicOrderProgress(asOrderProgress(input.order.progress) ?? UPLOADED_PROGRESS);
   const body: PartnerOrderBody = {
     id: input.order.id,
     status: input.order.status,
@@ -122,6 +131,15 @@ export function toPartnerOrder(input: {
     totalCents: input.order.totalCents,
     currency: input.order.currency,
     payment: input.paymentStatus ? { status: input.paymentStatus } : null,
+    progress,
+    delayed: isPreviewDelayed({
+      status: input.order.status,
+      previewVersion: input.previewVersion ?? null,
+      updatedAt: input.order.updatedAt,
+      progress: input.order.progress,
+      now: input.now ?? Date.now(),
+      reviewReason: input.order.reviewReason,
+    }),
   };
   if (!input.detail) return body;
   return { ...body, reviewReason: partnerReviewReason(input.order.reviewReason), qa: input.qa };
@@ -132,6 +150,12 @@ export async function requireApiKey(request: Request): Promise<ApiKeyRow> {
   if (!secret) throw new HttpError("Invalid API key", 401, "invalid_api_key");
   const row = await findActiveApiKey(serviceDb(), hashApiKey(secret));
   if (!row) throw new HttpError("Invalid API key", 401, "invalid_api_key");
+  const rate = consumeApiKeyRate(row.id);
+  if (!rate.allowed) {
+    throw new HttpError("Too many requests", 429, "rate_limited", {
+      retryAfterSeconds: rate.retryAfterSeconds,
+    });
+  }
   await touchApiKeyLastUsed(serviceDb(), row.id);
   return row;
 }
@@ -199,12 +223,17 @@ export async function createV1Order(request: Request, key: ApiKeyRow): Promise<C
 export async function partnerOrder(userId: string, orderId: string, detail: boolean): Promise<PartnerOrderBody> {
   const db = serviceDb();
   const order = await ownedOrder(db, userId, orderId);
-  const [payment, runs] = await Promise.all([latestPayment(db, order.id), listQaRuns(db, order.id)]);
+  const [payment, runs, preview] = await Promise.all([
+    latestPayment(db, order.id),
+    listQaRuns(db, order.id),
+    latestReadyPreview(db, order.id),
+  ]);
   return toPartnerOrder({
     order,
     paymentStatus: payment?.status ?? null,
     detail,
     qa: detail ? qaSummary(runs) : null,
+    previewVersion: preview?.version ?? null,
   });
 }
 
@@ -384,13 +413,17 @@ async function finishPartnerOrder(
 }
 
 async function present(db: Db, order: OrderRecord, detail: boolean): Promise<PartnerOrderBody> {
-  const payment = await latestPayment(db, order.id);
-  const runs = detail ? await listQaRuns(db, order.id) : [];
+  const [payment, runs, preview] = await Promise.all([
+    latestPayment(db, order.id),
+    detail ? listQaRuns(db, order.id) : Promise.resolve([]),
+    latestReadyPreview(db, order.id),
+  ]);
   return toPartnerOrder({
     order,
     paymentStatus: payment?.status ?? null,
     detail,
     qa: detail ? qaSummary(runs) : null,
+    previewVersion: preview?.version ?? null,
   });
 }
 

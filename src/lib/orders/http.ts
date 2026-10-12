@@ -21,7 +21,7 @@ export async function run(fn: () => Promise<Response>): Promise<Response> {
     return await fn();
   } catch (error) {
     if (error instanceof HttpError) {
-      return json(
+      const response = json(
         {
           error: error.message,
           ...(error.code ? { code: error.code } : {}),
@@ -29,6 +29,11 @@ export async function run(fn: () => Promise<Response>): Promise<Response> {
         },
         error.status,
       );
+      const retry = error.details.retryAfterSeconds;
+      if (typeof retry === "number" && Number.isInteger(retry) && retry > 0) {
+        response.headers.set("Retry-After", String(retry));
+      }
+      return response;
     }
     const message = reportedError(error);
     console.error(error instanceof Error ? error.message : message);

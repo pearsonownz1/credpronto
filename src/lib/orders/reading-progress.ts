@@ -43,6 +43,17 @@ export type OrderProgress = {
 
 export const UPLOADED_PROGRESS: OrderProgress = { step: "uploaded", pagesRead: 0, pagesTotal: 0 };
 
+/** Customer and partner JSON. Keeps page counts and drops the internal retry counter. */
+export function publicOrderProgress(progress: OrderProgress): Omit<OrderProgress, "retries"> {
+  return {
+    step: progress.step,
+    pagesRead: progress.pagesRead,
+    pagesTotal: progress.pagesTotal,
+    ...(progress.pagesDone != null ? { pagesDone: progress.pagesDone } : {}),
+    ...(progress.pagesTranslateTotal != null ? { pagesTranslateTotal: progress.pagesTranslateTotal } : {}),
+  };
+}
+
 function integerCount(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isInteger(value)) return null;
   return value;

@@ -1,6 +1,6 @@
 import { ADDON_CATALOG, addonOptions, type AddonOption } from "./addons";
 import { lineItemForStoredPage, pageRuleForLanguages, type PageLineItem } from "./billing";
-import { asOrderProgress, UPLOADED_PROGRESS, type OrderProgress } from "./reading-progress";
+import { asOrderProgress, publicOrderProgress, UPLOADED_PROGRESS, type OrderProgress } from "./reading-progress";
 import { isPreviewDelayed } from "./translation-watch";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
 import { lineItemsForOrder, translationOfferCents } from "./evaluation-price";
@@ -213,7 +213,7 @@ export function toCustomerOrder(input: {
     translationOfferCents: translationOfferCents(input.order),
     lineItems: lineItemsForOrder(input.order),
     evaluation: publicEvaluation(input.order.evaluationResult),
-    progress: publicProgress(asOrderProgress(input.order.progress) ?? UPLOADED_PROGRESS),
+    progress: publicOrderProgress(asOrderProgress(input.order.progress) ?? UPLOADED_PROGRESS),
     delayed: isPreviewDelayed({
       status: input.order.status,
       previewVersion: input.previewVersion,
@@ -222,16 +222,6 @@ export function toCustomerOrder(input: {
       now: input.now ?? Date.now(),
       reviewReason: input.order.reviewReason,
     }),
-  };
-}
-
-function publicProgress(progress: OrderProgress): OrderProgress {
-  return {
-    step: progress.step,
-    pagesRead: progress.pagesRead,
-    pagesTotal: progress.pagesTotal,
-    ...(progress.pagesDone != null ? { pagesDone: progress.pagesDone } : {}),
-    ...(progress.pagesTranslateTotal != null ? { pagesTranslateTotal: progress.pagesTranslateTotal } : {}),
   };
 }
 
