@@ -10,12 +10,14 @@ import type {
   DeliveryStatus,
   DocumentRecord,
   OrderEventType,
+  OrderNoteRecord,
   OrderRecord,
   OrderStatus,
   PageRecord,
   PaymentRecord,
   PaymentStatus,
   PreviewRecord,
+  TranslationRecord,
 } from "./types";
 
 type Row = Record<string, unknown>;
@@ -41,6 +43,7 @@ function mapOrder(row: Row): OrderRecord {
   return {
     id: String(row.id),
     customerId: String(row.customer_id),
+    userId: str(row.user_id),
     status: String(row.status) as OrderStatus,
     sourceLanguage: str(row.source_language),
     targetLanguage: str(row.target_language) ?? "en",
@@ -130,12 +133,14 @@ function mapPayment(row: Row): PaymentRecord {
     amountCents: num(row.amount_cents) ?? 0,
     status: String(row.status) as PaymentStatus,
     paidAt: str(row.paid_at),
+    createdAt: str(row.created_at) ?? "",
   };
 }
 
 function mapDelivery(row: Row): DeliveryRecord {
   return {
     id: String(row.id),
+    orderId: String(row.order_id),
     status: String(row.status) as DeliveryStatus,
     finalPath: str(row.final_path),
     certificationPath: str(row.certification_path),
@@ -699,18 +704,44 @@ export async function hasEvent(db: Db, orderId: string, type: OrderEventType): P
   return (data ?? []).length > 0;
 }
 
-export async function listOrders(db: Db, status: OrderStatus | null) {
+function mapTranslation(row: Row): TranslationRecord {
+  return {
+    id: String(row.id),
+    documentId: String(row.document_id),
+    version: num(row.version) ?? 1,
+    model: str(row.model),
+    status: String(row.status),
+    output: row.output ?? null,
+  };
+}
+
+function mapNote(row: Row): OrderNoteRecord {
+  return {
+    id: String(row.id),
+    orderId: String(row.order_id),
+    authorId: String(row.author_id),
+    body: String(row.body),
+    createdAt: str(row.created_at) ?? new Date().toISOString(),
+  };
+}
+
+export async function listOrders(
+  db: Db,
+  status: OrderStatus | null,
+  page: { limit: number; offset: number },
+) {
   let query = db
     .from("orders")
     .select(
       "id, status, service_type, source_language, billable_pages, total_cents, currency, created_at, review_reason, customer_id, customers(email)",
+      { count: "exact" },
     )
     .order("created_at", { ascending: false })
-    .limit(100);
+    .range(page.offset, page.offset + page.limit - 1);
   if (status) query = query.eq("status", status);
-  const { data, error } = await query;
+  const { data, error, count } = await query;
   fail(error);
-  return ((data ?? []) as Row[]).map((row) => {
+  const orders = ((data ?? []) as Row[]).map((row) => {
     const customer = row.customers as { email?: string } | { email?: string }[] | null;
     const email = Array.isArray(customer) ? customer[0]?.email : customer?.email;
     return {
@@ -726,4 +757,137 @@ export async function listOrders(db: Db, status: OrderStatus | null) {
       email: email ?? null,
     };
   });
+  return { orders, total: count ?? orders.length };
+}
+
+export async function listTranslations(db: Db, documentIds: string[]): Promise<TranslationRecord[]> {
+  if (documentIds.length === 0) return [];
+  const { data, error } = await db
+    .from("translations")
+    .select("*")
+    .in("document_id", documentIds)
+    .order("version", { ascending: false });
+  fail(error);
+  return ((data ?? []) as Row[]).map(mapTranslation);
+}
+
+export async function paymentForRefund(db: Db, orderId: string): Promise<PaymentRecord | null> {
+  const { data, error } = await db
+    .from("payments")
+    .select("*")
+    .eq("order_id", orderId)
+    .in("status", ["paid", "paid_test", "refunded"])
+    .order("created_at", { ascending: false })
+    .limit(5);
+  fail(error);
+  const rows = ((data ?? []) as Row[]).map(mapPayment);
+  return (
+    rows.find((row) => row.status === "paid" || row.status === "paid_test") ??
+    rows.find((row) => row.status === "refunded") ??
+    null
+  );
+}
+
+export async function listOrderNotes(db: Db, orderId: string): Promise<OrderNoteRecord[]> {
+  const { data, error } = await db
+    .from("order_notes")
+    .select("*")
+    .eq("order_id", orderId)
+    .order("created_at", { ascending: true });
+  fail(error);
+  return ((data ?? []) as Row[]).map(mapNote);
+}
+
+export async function insertOrderNote(
+  db: Db,
+  input: { orderId: string; authorId: string; body: string },
+): Promise<OrderNoteRecord> {
+  const { data, error } = await db
+    .from("order_notes")
+    .insert({
+      order_id: input.orderId,
+      author_id: input.authorId,
+      body: input.body,
+    })
+    .select("*")
+    .single();
+  fail(error);
+  return mapNote(data as Row);
+}
+
+export type OwnedOrderRow = {
+  id: string;
+  status: string;
+  serviceType: string;
+  billablePages: number | null;
+  unitPriceCents: number;
+  totalCents: number | null;
+  currency: string;
+  createdAt: string;
+};
+
+export async function listOwnedOrderRows(db: Db, userId: string): Promise<OwnedOrderRow[]> {
+  const { data, error } = await db
+    .from("orders")
+    .select(
+      "id, status, service_type, billable_pages, unit_price_cents, total_cents, currency, created_at",
+    )
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  fail(error);
+  return ((data ?? []) as Row[]).map((row) => ({
+    id: String(row.id),
+    status: String(row.status),
+    serviceType: String(row.service_type),
+    billablePages: num(row.billable_pages),
+    unitPriceCents: num(row.unit_price_cents) ?? 995,
+    totalCents: num(row.total_cents),
+    currency: str(row.currency) ?? "usd",
+    createdAt: str(row.created_at) ?? new Date().toISOString(),
+  }));
+}
+
+export async function listReadyPreviewOrderIds(db: Db, orderIds: string[]): Promise<Set<string>> {
+  if (orderIds.length === 0) return new Set();
+  const { data, error } = await db
+    .from("previews")
+    .select("order_id")
+    .in("order_id", orderIds)
+    .eq("status", "ready");
+  fail(error);
+  return new Set(((data ?? []) as Row[]).map((row) => String(row.order_id)));
+}
+
+export async function listPaymentsForOrders(db: Db, orderIds: string[]): Promise<PaymentRecord[]> {
+  if (orderIds.length === 0) return [];
+  const { data, error } = await db.from("payments").select("*").in("order_id", orderIds);
+  fail(error);
+  return ((data ?? []) as Row[]).map(mapPayment);
+}
+
+export async function listDeliveriesForOrders(db: Db, orderIds: string[]): Promise<DeliveryRecord[]> {
+  if (orderIds.length === 0) return [];
+  const { data, error } = await db.from("deliveries").select("*").in("order_id", orderIds);
+  fail(error);
+  return ((data ?? []) as Row[]).map(mapDelivery);
+}
+
+export async function claimOrdersByCustomerEmail(
+  db: Db,
+  userId: string,
+  email: string,
+): Promise<string[]> {
+  const customers = await db.from("customers").select("id").eq("email", email);
+  fail(customers.error);
+  const customerIds = ((customers.data ?? []) as Row[]).map((row) => String(row.id));
+  if (customerIds.length === 0) return [];
+
+  const updated = await db
+    .from("orders")
+    .update({ user_id: userId })
+    .in("customer_id", customerIds)
+    .is("user_id", null)
+    .select("id");
+  fail(updated.error);
+  return ((updated.data ?? []) as Row[]).map((row) => String(row.id));
 }

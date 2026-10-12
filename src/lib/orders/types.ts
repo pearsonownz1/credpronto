@@ -35,11 +35,16 @@ export type OrderEventType =
   | "checkout_started"
   | "paid"
   | "refunded"
-  | "downloaded";
+  | "downloaded"
+  | "account_linked"
+  | "translation_edited"
+  | "note_added"
+  | "approved";
 
 export type OrderRecord = {
   id: string;
   customerId: string;
+  userId: string | null;
   status: OrderStatus;
   sourceLanguage: string | null;
   targetLanguage: string;
@@ -117,10 +122,29 @@ export type PaymentRecord = {
   amountCents: number;
   status: PaymentStatus;
   paidAt: string | null;
+  createdAt: string;
+};
+
+export type TranslationRecord = {
+  id: string;
+  documentId: string;
+  version: number;
+  model: string | null;
+  status: string;
+  output: unknown;
+};
+
+export type OrderNoteRecord = {
+  id: string;
+  orderId: string;
+  authorId: string;
+  body: string;
+  createdAt: string;
 };
 
 export type DeliveryRecord = {
   id: string;
+  orderId: string;
   status: DeliveryStatus;
   finalPath: string | null;
   certificationPath: string | null;

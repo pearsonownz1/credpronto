@@ -1,0 +1,60 @@
+import { describe, expect, it } from "vitest";
+import { paymentStatusForCustomer, summarizeCustomerOrder } from "./account-summary";
+
+describe("customer order summary", () => {
+  it("prefers a settled payment over a newer failure", () => {
+    expect(
+      paymentStatusForCustomer([
+        { status: "failed", createdAt: "2026-10-12T02:00:00Z" },
+        { status: "paid", createdAt: "2026-10-12T01:00:00Z" },
+      ]),
+    ).toBe("paid");
+  });
+
+  it("reports the newest status when nothing has settled", () => {
+    expect(
+      paymentStatusForCustomer([
+        { status: "pending", createdAt: "2026-10-12T01:00:00Z" },
+        { status: "refunded", createdAt: "2026-10-12T02:00:00Z" },
+      ]),
+    ).toBe("refunded");
+  });
+
+  it("exposes preview and download availability", () => {
+    const ready = summarizeCustomerOrder({
+      id: "order-1",
+      status: "paid",
+      serviceType: "translation",
+      totalCents: 995,
+      currency: "usd",
+      billablePages: 1,
+      unitPriceCents: 995,
+      createdAt: "2026-10-12T00:00:00Z",
+      previewReady: true,
+      paymentStatus: "paid_test",
+      deliveryStatus: "approved",
+    });
+    expect(ready.previewAvailable).toBe(true);
+    expect(ready.downloadAvailable).toBe(true);
+    expect(ready.paymentStatus).toBe("paid_test");
+    expect(ready.totalCents).toBe(995);
+
+    const refunded = summarizeCustomerOrder({
+      ...{
+        id: "order-1",
+        status: "paid",
+        serviceType: "translation",
+        totalCents: 995,
+        currency: "usd",
+        billablePages: 1,
+        unitPriceCents: 995,
+        createdAt: "2026-10-12T00:00:00Z",
+        previewReady: true,
+        paymentStatus: "refunded",
+        deliveryStatus: "delivered",
+      },
+    });
+    expect(refunded.downloadAvailable).toBe(false);
+    expect(refunded.previewAvailable).toBe(true);
+  });
+});

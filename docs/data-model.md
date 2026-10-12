@@ -2,17 +2,19 @@
 
 CredPronto sells a certified translation before the customer pays. The customer uploads documents and an email address, sees an exact price, checks a watermarked preview, and only then pays. Staff approve the certification, and the clean PDF plus the certification page are released by a short-lived signed link.
 
-There is no customer account. `customers` is an email address, not a row in `auth.users`. Later products (credential evaluation, expert letters) are additional `orders.service_type` values on this same model, not a second schema.
+A buyer can stay anonymous and come back with the order token, or sign in. `customers` is still the email address on the order. `profiles` is the `auth.users` row (one per account) and `orders.user_id` is set when a verified sign-in claims orders for that email. Later products (credential evaluation, expert letters) are additional `orders.service_type` values on this same model, not a second schema.
 
-The database is Postgres on Supabase. Files live in private Storage buckets. The Next.js server on Vercel is the only component that talks to Postgres for a customer, and it does so with the service role.
+The database is Postgres on Supabase. Files live in private Storage buckets. Token routes on the Next.js server still use the service role after checking the order token. A signed-in customer may also select their own rows under RLS. Staff select and write under RLS, and the admin routes use the service role after the same staff check.
 
 ## Access
 
-Row level security is enabled on every application table. There are no policies for `anon`. The only policies are `staff_all` on each table: an `authenticated` user may read and write a row when `private.is_staff()` is true.
+Row level security is enabled on every application table. There are no policies for `anon`. `staff_all` on each table lets an `authenticated` user read and write a row when `private.is_staff()` is true.
 
-`private.is_staff()` is `security definer` and lives in the `private` schema, which the Data API does not expose. It returns true when `auth.uid()` matches `staff.user_id`. Because it runs as the owner, the staff policy can read `staff` without the policy calling itself. `search_path` is empty so the function cannot be redirected at a different table.
+`private.is_staff()` is `security definer` and lives in the `private` schema, which the Data API does not expose. It returns true when `auth.uid()` matches `staff.user_id`, or when `profiles.is_admin` is true for that user. Because it runs as the owner, the staff policy can read `staff` and `profiles` without the policy calling itself. `search_path` is empty so the function cannot be redirected at a different table.
 
-Customers never hold a Supabase JWT for these tables. Server routes check the order token, then use the service role, which bypasses RLS. Staff use the admin UI as `authenticated` users who have a `staff` row. The first admin is inserted with the service role (SQL editor or a seed), because a non-staff session cannot insert into `staff`.
+Customers who are signed in may `select` their own orders (`orders.user_id = auth.uid()`) and the documents, previews, and payment rows on those orders. Those policies are select-only. Payment rows include status, amount, timestamps, and the Stripe ids stored on the row. Card data is not stored. They cannot select other customers' rows, and they cannot select source text, translations, notes, or deliveries through the Data API. Token routes do not use the customer JWT. They check the order token, then use the service role, which bypasses RLS.
+
+Staff use the admin API as `authenticated` users who have a `staff` row or `profiles.is_admin`. The first admin is a service-role update of `profiles.is_admin` (SQL editor or a seed), because a non-staff session cannot update that column. A reviewer is still a `staff` row. Approving a delivery writes `deliveries.approved_by`, which references `staff`. An `is_admin` profile with no staff row is inserted into `staff` as `admin` at approval time so that foreign key holds.
 
 `anon` is revoked from every application table. A leaked anon key cannot read orders, documents, or payments even if a policy is added later by mistake and forgotten for one table — the grant is gone too. Do not grant these tables back to `anon`.
 
@@ -88,13 +90,17 @@ Related statuses:
 
 ## Tables
 
+### `profiles`
+
+One row per `auth.users` id. A trigger on `auth.users` insert creates it, and existing users are backfilled. `is_admin` defaults to false. The signed-in user can select their own row. Only staff can update it, so a customer cannot set `is_admin` on themselves.
+
 ### `customers`
 
-The buyer. `email` is `citext` and unique, so `Ada@example.com` and `ada@example.com` are one person. `name` is optional until they confirm it. No password, no `auth.users` foreign key.
+The buyer email captured at upload. `email` is `citext` and unique, so `Ada@example.com` and `ada@example.com` are one person. `name` is optional until they confirm it. This table is not the login. The login is `auth.users` plus `profiles`.
 
 ### `orders`
 
-One purchase of one `service_type`: `translation`, `evaluation`, or `expert_letter`. `target_language` defaults to `en`. `source_language` is filled by detection and then confirmed. `eta_at` is the promise shown with the quote. `public_token_hash` is the return-link secret described above. `updated_at` is maintained by `private.set_updated_at` on every update.
+One purchase of one `service_type`: `translation`, `evaluation`, or `expert_letter`. `target_language` defaults to `en`. `source_language` is filled by detection and then confirmed. `eta_at` is the promise shown with the quote. `public_token_hash` is the return-link secret described above. `user_id` is a nullable foreign key to `auth.users`. It stays null until a verified sign-in claims the order. Claim matches `customers.email` to the verified account email and only updates rows whose `user_id` is still null. `updated_at` is maintained by `private.set_updated_at` on every update.
 
 ### `documents`
 
@@ -132,13 +138,19 @@ The release of the certified files. One row per order. Created when payment succ
 
 Product-funnel events, separate from the UTM columns (those record where the visitor came from; these record what they did):
 
-`landing_view`, `upload_started`, `upload_done`, `quote_shown`, `preview_ready`, `preview_viewed`, `checkout_started`, `paid`, `downloaded`.
+`landing_view`, `upload_started`, `upload_done`, `quote_shown`, `preview_ready`, `preview_viewed`, `checkout_started`, `paid`, `refunded`, `downloaded`, `account_linked`, `translation_edited`, `note_added`, `approved`.
+
+`account_linked` is recorded when a verified sign-in claims the order. `translation_edited` is a staff edit of the translation text. `note_added` is a staff note. `approved` is staff certification. `refunded` is a Stripe refund or the `paid_test` placeholder. The enum values for the account events are added in their own migration and are not inserted by that file.
 
 `landing_view` may be inserted before a draft order exists, so `order_id` is nullable only for that type. Later events require an order. `data` is extra context (page path, document id, preview version). Do not put the raw order token in `data`.
 
+### `order_notes`
+
+A staff note on an order. `author_id` references `auth.users`. `body` is 1 to 4000 characters after trim. Customers have no policy. Deleting the order deletes its notes. Deleting the author is restricted while a note names them.
+
 ### `staff`
 
-`user_id` references `auth.users`. `role` is `admin` or `reviewer`. Both roles have full read and write through RLS; the role is for the admin UI, not for a second set of policies. Deleting the auth user deletes the staff row unless a delivery still names them as `approved_by`.
+`user_id` references `auth.users`. `role` is `admin` or `reviewer`. Both roles have full read and write through RLS; the role is for the admin UI, not for a second set of policies. `profiles.is_admin` is a second way into `private.is_staff()`. Deleting the auth user deletes the staff row unless a delivery still names them as `approved_by`.
 
 ## Storage
 
