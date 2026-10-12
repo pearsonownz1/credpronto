@@ -736,7 +736,7 @@ One Stripe Customer per profile (`billing_customers.user_id`). Card numbers are 
 | Method | Path | Result |
 | --- | --- | --- |
 | `POST` | `/api/me/billing/setup-intent` | `{ "clientSecret": "seti_…", "customerId": "cus_…" }`. Creates the Stripe Customer on first use and a SetupIntent with `usage: off_session`. |
-| `GET` | `/api/me/billing` | `{ "card": { "brand": "visa", "last4": "4242" } }` or `{ "card": null }` |
+| `GET` | `/api/me/billing` | `{ "card": { "brand": "visa", "last4": "4242", "expMonth": 4, "expYear": 2028 } }` or `{ "card": null }`. `expMonth` and `expYear` come from the saved Stripe PaymentMethod when `STRIPE_SECRET_KEY` starts with `sk_test_`. They are `null` when Stripe is not in test mode or the card expiry cannot be read. |
 | `DELETE` | `/api/me/billing` | Detaches the payment method and clears `payment_method_id`, `brand`, and `last4`. The Stripe Customer id stays. `{ "card": null }` |
 
 SetupIntent and the off-session charge run only when `STRIPE_SECRET_KEY` starts with `sk_test_`. Otherwise `503` `{ "error": "Payments not configured", "code": "payments_not_configured" }`. The webhook `setup_intent.succeeded` copies `brand` and `last4` onto the row. `POST /api/me/billing/setup-intent` can also be confirmed by the client; `GET` reads whatever is stored.
