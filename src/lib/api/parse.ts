@@ -83,6 +83,7 @@ export function parseAdminOrder(value: unknown): AdminOrder | null {
     createdAt,
     reviewReason: text(row.reviewReason),
     email: text(row.email),
+    expedited: row.expedited === true,
   };
 }
 
@@ -225,7 +226,48 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
     originalUrl: text(row.originalUrl),
     translationUrl: text(row.translationUrl),
     qa: parseQa(row.qa),
+    expedited: row.expedited === true,
+    fulfillment: parseFulfillment(row.fulfillment),
   };
+}
+
+function parseFulfillment(value: unknown): StaffDetail["fulfillment"] {
+  const row = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    mail: parseMailTask(row.mail),
+    notarization: parseNotarizationTask(row.notarization),
+  };
+}
+
+function parseMailTask(value: unknown): StaffDetail["fulfillment"]["mail"] {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  const status = text(row.status);
+  if (status !== "pending" && status !== "shipped") return null;
+  return {
+    status,
+    trackingNumber: text(row.trackingNumber),
+    address: parseAddress(row.address),
+  };
+}
+
+function parseNotarizationTask(value: unknown): StaffDetail["fulfillment"]["notarization"] {
+  if (!value || typeof value !== "object") return null;
+  const status = text((value as Record<string, unknown>).status);
+  if (status !== "pending" && status !== "done") return null;
+  return { status };
+}
+
+function parseAddress(value: unknown): NonNullable<StaffDetail["fulfillment"]["mail"]>["address"] {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  const name = text(row.name);
+  const line1 = text(row.line1);
+  const city = text(row.city);
+  const state = text(row.state);
+  const postalCode = text(row.postalCode);
+  if (!name || !line1 || !city || !state || !postalCode || text(row.country) !== "US") return null;
+  return { name, line1, line2: text(row.line2), city, state, postalCode, country: "US" };
 }
 
 export function parseNotes(body: unknown): StaffNote[] | null {

@@ -111,6 +111,7 @@ describe("customer order presentation", () => {
       page: { limit: 50, offset: 0, total: 1 },
     });
     expect(list?.page.total).toBe(1);
+    expect(list?.orders[0]?.expedited).toBe(false);
     expect(adminBucket("needs_review")).toBe("incoming");
     expect(adminBucket("paid")).toBe("active");
     expect(adminBucket("delivered")).toBe("closed");
@@ -211,6 +212,29 @@ describe("customer order presentation", () => {
     })?.qa).toBeNull();
     expect(mockStaffDetail("CP-24802")?.qa).toBeNull();
     expect(mockStaffDetail("CP-24790")?.qa?.status).toBe("fail");
+    expect(mockStaffDetail("CP-24790")?.fulfillment.mail?.status).toBe("pending");
+    expect(mockStaffDetail("CP-24790")?.fulfillment.notarization?.status).toBe("pending");
+    expect(parseStaffDetail({
+      id: "ord-4",
+      status: "paid",
+      createdAt: "2026-10-12T00:00:00.000Z",
+      fulfillment: {
+        mail: {
+          status: "shipped",
+          trackingNumber: "9400111899223856927645",
+          address: {
+            name: "Ada Lovelace",
+            line1: "2520 Venture Oaks Way",
+            line2: null,
+            city: "Sacramento",
+            state: "CA",
+            postalCode: "95833",
+            country: "US",
+          },
+        },
+        notarization: { status: "done" },
+      },
+    })?.fulfillment.mail?.trackingNumber).toBe("9400111899223856927645");
   });
 
   it("derives the staff activity log from the detail fields", () => {

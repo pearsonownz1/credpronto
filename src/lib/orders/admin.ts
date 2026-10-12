@@ -22,6 +22,7 @@ import {
   withCombinedNumbers,
 } from "./db";
 import { sendDeliveryReady } from "./email";
+import { fulfillmentFor, parseTrackingNumber } from "./fulfillment";
 import { HttpError } from "./errors";
 import { normalizeLanguage } from "./languages";
 import { etaFromNow } from "./quote";
@@ -101,6 +102,7 @@ export async function staffOrder(orderId: string) {
     corrections,
     payment,
     delivery,
+    fulfillment: fulfillmentFor(order),
     qa: latestQa
       ? {
           status: latestQa.status,
@@ -261,4 +263,26 @@ export async function resolveCorrections(orderId: string, body: unknown) {
   }
 
   throw new HttpError("action must be dismiss or regenerate", 400);
+}
+
+export async function shipOrder(orderId: string, body: unknown) {
+  const { db } = await requireStaff();
+  const order = await getOrderById(db, orderId);
+  if (!order) throw new HttpError("Order not found", 404);
+  if (!order.mailStatus) throw new HttpError("This order has no mail add-on", 409);
+  const trackingNumber = parseTrackingNumber(body);
+  await updateOrder(db, order.id, { mail_status: "shipped", mail_tracking: trackingNumber });
+  return { task: "mail" as const, status: "shipped" as const, trackingNumber };
+}
+
+export async function notarizeOrder(orderId: string) {
+  const { db } = await requireStaff();
+  const order = await getOrderById(db, orderId);
+  if (!order) throw new HttpError("Order not found", 404);
+  if (!order.notarizationStatus) throw new HttpError("This order has no notarization add-on", 409);
+  if (order.notarizationStatus === "done") {
+    return { task: "notarization" as const, status: "done" as const, duplicate: true as const };
+  }
+  await updateOrder(db, order.id, { notarization_status: "done" });
+  return { task: "notarization" as const, status: "done" as const };
 }

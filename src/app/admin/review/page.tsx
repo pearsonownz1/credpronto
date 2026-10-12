@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { OrdersBoard } from "@/components/admin/orders-board";
 import { listAdminOrders } from "@/lib/api/server";
 import type { AdminList } from "@/lib/api/types";
+import { expeditedFirst } from "@/lib/orders/fulfillment";
 
 const REVIEW_STATUSES = ["needs_review", "correction_requested"] as const;
 
@@ -42,11 +43,13 @@ async function loadStatuses(statuses: string[]): Promise<{ ok: true; data: Admin
   if (failed && !failed.ok) return { ok: false, error: failed.error };
   const orders = results.flatMap((item) => (item.ok ? item.data.orders : []));
   const seen = new Set<string>();
-  const unique = orders.filter((order) => {
-    if (seen.has(order.id)) return false;
-    seen.add(order.id);
-    return true;
-  });
+  const unique = expeditedFirst(
+    orders.filter((order) => {
+      if (seen.has(order.id)) return false;
+      seen.add(order.id);
+      return true;
+    }),
+  );
   const total = results.reduce((sum, item) => sum + (item.ok ? item.data.page.total : 0), 0);
   return { ok: true, data: { orders: unique, page: { limit: 100, offset: 0, total } } };
 }

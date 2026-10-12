@@ -43,6 +43,28 @@ export async function refundOrder(
   return browserJson(`/api/admin/orders/${encodeURIComponent(id)}/refund`, { method: "POST" });
 }
 
+export async function shipOrder(
+  id: string,
+  trackingNumber: string,
+): Promise<ApiResult<{ task: string; status: string; trackingNumber: string }>> {
+  if (publicMockMode()) {
+    return { ok: true, status: 200, data: { task: "mail", status: "shipped", trackingNumber } };
+  }
+  return browserJson(`/api/admin/orders/${encodeURIComponent(id)}/ship`, {
+    method: "POST",
+    body: JSON.stringify({ trackingNumber }),
+  });
+}
+
+export async function notarizeOrder(
+  id: string,
+): Promise<ApiResult<{ task: string; status: string; duplicate?: boolean }>> {
+  if (publicMockMode()) {
+    return { ok: true, status: 200, data: { task: "notarization", status: "done" } };
+  }
+  return browserJson(`/api/admin/orders/${encodeURIComponent(id)}/notarize`, { method: "POST" });
+}
+
 export async function addNote(id: string, body: string): Promise<ApiResult<StaffNote>> {
   if (publicMockMode()) {
     return {

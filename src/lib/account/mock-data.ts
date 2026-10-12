@@ -1,4 +1,5 @@
 import type { AdminList, AdminOrder, CustomerOrder, StaffDetail, StaffNote } from "@/lib/api/types";
+import { expeditedFirst } from "@/lib/orders/fulfillment";
 
 export const MOCK_CUSTOMER_EMAIL = "maria.ruiz@email.com";
 export const MOCK_ADMIN_EMAIL = "admin@credpronto.com";
@@ -99,6 +100,7 @@ export const MOCK_ADMIN_ORDERS: AdminOrder[] = [
     createdAt: "2026-10-11T12:00:00.000Z",
     reviewReason: null,
     email: MOCK_CUSTOMER_EMAIL,
+    expedited: false,
   },
   {
     id: "CP-24802",
@@ -111,6 +113,7 @@ export const MOCK_ADMIN_ORDERS: AdminOrder[] = [
     createdAt: "2026-10-11T09:00:00.000Z",
     reviewReason: "Low confidence on page 2",
     email: "ada@example.com",
+    expedited: false,
   },
   {
     id: "CP-24790",
@@ -123,6 +126,7 @@ export const MOCK_ADMIN_ORDERS: AdminOrder[] = [
     createdAt: "2026-10-10T12:00:00.000Z",
     reviewReason: null,
     email: MOCK_CUSTOMER_EMAIL,
+    expedited: false,
   },
   {
     id: "CP-24740",
@@ -135,6 +139,7 @@ export const MOCK_ADMIN_ORDERS: AdminOrder[] = [
     createdAt: "2026-10-08T12:00:00.000Z",
     reviewReason: null,
     email: "joao@example.com",
+    expedited: true,
   },
   {
     id: "CP-24611",
@@ -147,6 +152,7 @@ export const MOCK_ADMIN_ORDERS: AdminOrder[] = [
     createdAt: "2026-10-02T12:00:00.000Z",
     reviewReason: null,
     email: MOCK_CUSTOMER_EMAIL,
+    expedited: false,
   },
 ];
 
@@ -155,9 +161,10 @@ export function mockAdminList(query: { status?: string | null; limit?: number; o
   const filtered = status ? MOCK_ADMIN_ORDERS.filter((order) => order.status === status) : MOCK_ADMIN_ORDERS;
   const offset = query.offset ?? 0;
   const limit = query.limit ?? 50;
+  const ordered = expeditedFirst(filtered);
   return {
-    orders: filtered.slice(offset, offset + limit),
-    page: { limit, offset, total: filtered.length },
+    orders: ordered.slice(offset, offset + limit),
+    page: { limit, offset, total: ordered.length },
   };
 }
 
@@ -217,6 +224,26 @@ export function mockStaffDetail(id: string): StaffDetail | null {
         : summary.status === "paid"
           ? { status: "pending", approvedAt: null, deliveredAt: null }
           : null,
+    expedited: summary.expedited,
+    fulfillment:
+      id === "CP-24790"
+        ? {
+            mail: {
+              status: "pending",
+              trackingNumber: null,
+              address: {
+                name: "Ada Lovelace",
+                line1: "2520 Venture Oaks Way",
+                line2: "Suite 120",
+                city: "Sacramento",
+                state: "CA",
+                postalCode: "95833",
+                country: "US",
+              },
+            },
+            notarization: { status: "pending" },
+          }
+        : { mail: null, notarization: null },
     qa:
       id === "CP-24790"
         ? {
