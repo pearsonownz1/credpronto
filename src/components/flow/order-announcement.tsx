@@ -9,7 +9,10 @@ const LOADING_ORDER = "Loading your order";
 export function orderLiveMessage(input: {
   loading: boolean;
   error?: string | null;
-  order: (Pick<CustomerOrder, "status" | "billablePages" | "totalCents"> & { delayed?: boolean }) | null;
+  order: (Pick<CustomerOrder, "status" | "billablePages" | "totalCents"> & {
+    delayed?: boolean;
+    progress?: { step?: string | null } | null;
+  }) | null;
 }): string {
   const order = input.order;
   if (!order) {
@@ -26,10 +29,10 @@ export function orderLiveMessage(input: {
   }
   if (order.status === "draft") return "Reading your files…";
   if (order.status === "failed") return "We couldn't read these files.";
-  if (order.status === "preview_ready") return "Your preview is ready.";
   if (order.status === "paid" || order.status === "approved" || order.status === "delivered") {
     return "Your translation is ready.";
   }
+  if (order.status === "preview_ready" || order.progress?.step === "done") return "Your preview is ready.";
   if (
     order.status === "processing" ||
     order.status === "confirmed" ||

@@ -66,16 +66,17 @@ describe("processing view", () => {
     expect(markup).not.toContain('data-testid="view-preview"');
   });
 
-  it("shows the preview button as soon as the watermarked preview version exists", () => {
+  it("shows the preview button when progress.step is done, before the status field catches up", () => {
     state.delayed = false;
     state.status = "processing";
-    state.previewVersion = 1;
-    state.progressStep = "translating";
+    state.previewVersion = null;
+    state.progressStep = "done";
     const markup = html();
     expect(markup).toContain("Your preview is ready");
     expect(markup).toContain('data-testid="view-preview"');
     expect(markup).not.toContain('data-testid="preview-steps"');
-    state.previewVersion = null;
+    expect(markup).not.toContain("Translating and laying out");
+    state.progressStep = "translating";
   });
 
   it("shows the preview button only after the preview exists", () => {

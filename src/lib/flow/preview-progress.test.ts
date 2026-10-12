@@ -36,33 +36,38 @@ describe("preview step progress", () => {
     expect(received.displayPercent).toBeLessThanOrEqual(PREVIEW_BAR_MAX);
     expect(reading.displayPercent).toBeLessThanOrEqual(PREVIEW_BAR_MAX);
 
-    const afterQuote = previewWork({ status: "confirmed", progressStep: "done" });
-    expect(afterQuote.steps.find((step) => step.id === "translating")?.state).toBe("current");
-    expect(afterQuote.displayPercent).toBeLessThan(100);
+    const quoting = previewWork({ status: "confirmed", progressStep: "quoting" });
+    expect(quoting.steps.find((step) => step.id === "read")?.state).toBe("current");
+    expect(quoting.displayPercent).toBeLessThan(100);
   });
 
-  it("is ready when the watermarked preview version exists, before staff approval", () => {
-    expect(previewIsReady({ status: "processing", previewVersion: null })).toBe(false);
-    expect(previewIsReady({ status: "processing", previewVersion: 1 })).toBe(true);
-    expect(previewIsReady({ status: "preview_ready", previewVersion: null })).toBe(true);
-    expect(previewIsReady({ status: "approved", previewVersion: null })).toBe(false);
-    expect(previewIsReady({ status: "paid", previewVersion: 2 })).toBe(true);
-    const ready = previewWork({ status: "preview_ready", progressStep: "translating" });
+  it("is ready when status is preview_ready or progress.step is done", () => {
+    expect(previewIsReady({ status: "processing", progress: { step: "translating" } })).toBe(false);
+    expect(previewIsReady({ status: "processing", progressStep: "uploaded" })).toBe(false);
+    expect(previewIsReady({ status: "processing", progress: { step: "done" } })).toBe(true);
+    expect(previewIsReady({ status: "confirmed", progressStep: "done" })).toBe(true);
+    expect(previewIsReady({ status: "preview_ready", progress: { step: "translating" } })).toBe(true);
+    expect(previewIsReady({ status: "approved", progress: { step: "translating" } })).toBe(false);
+    const ready = previewWork({ status: "processing", progressStep: "done" });
     expect(ready.phase).toBe("ready");
     expect(ready.displayPercent).toBe(100);
+    expect(ready.label).toBe("Preview ready");
     expect(ready.steps.every((step) => step.state === "done")).toBe(true);
+    const byStatus = previewWork({ status: "preview_ready", progressStep: "translating" });
+    expect(byStatus.phase).toBe("ready");
   });
 
   it("polls quickly, then every 15 seconds, until a preview or an order error", () => {
     expect(previewPollDelay(0)).toBe(PREVIEW_POLL_FAST_MS);
     expect(previewPollDelay(5)).toBe(PREVIEW_POLL_FAST_MS);
     expect(previewPollDelay(6)).toBe(PREVIEW_POLL_SLOW_MS);
-    const waiting = { status: "processing", previewVersion: null };
+    const waiting = { status: "processing", progress: { step: "translating" } };
     expect(previewPollContinues(waiting, null)).toBe(true);
     expect(previewPollContinues(waiting, 500)).toBe(true);
-    expect(previewPollContinues({ status: "needs_review", previewVersion: null }, 200)).toBe(true);
-    expect(previewPollContinues({ status: "processing", previewVersion: 1 }, 200)).toBe(false);
-    expect(previewPollContinues({ status: "failed", previewVersion: null }, 200)).toBe(false);
+    expect(previewPollContinues({ status: "needs_review", progress: { step: "translating" } }, 200)).toBe(true);
+    expect(previewPollContinues({ status: "processing", progress: { step: "done" } }, 200)).toBe(false);
+    expect(previewPollContinues({ status: "preview_ready", progress: { step: "translating" } }, 200)).toBe(false);
+    expect(previewPollContinues({ status: "failed", progress: { step: "translating" } }, 200)).toBe(false);
     expect(previewPollContinues(null, 404)).toBe(false);
   });
 

@@ -256,6 +256,7 @@ const mockClient: FlowClient = {
       status: "processing",
       sourceLanguage: body.sourceLanguage,
       languageConfirmed: true,
+      progress: { ...current.progress, step: "translating" },
       confirmations: current.confirmations.map((field) => {
         const document = body.documents.find((item) => item.documentId === field.documentId);
         if (!document) return field;

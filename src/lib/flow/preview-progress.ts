@@ -35,24 +35,28 @@ export const PREVIEW_LONG_WAIT_MS = 15 * 60 * 1000;
 
 export type PreviewReadyOrder = {
   status?: string | null;
-  /**
-   * `GET /api/orders/[token]` field. Version of the latest `previews` row with
-   * `status: "ready"` — the watermarked preview. Null until that file is saved.
-   * Staff approval (`approved` / delivery `approved`) is not this field.
-   */
-  previewVersion?: number | null;
+  /** Customer payload shape from `GET /api/orders/[token]`. */
+  progress?: { step?: string | null } | null;
+  /** Same step, when the caller already pulled it off `progress`. */
+  progressStep?: string | null;
 };
+
+function orderProgressStep(order: PreviewReadyOrder): string | null {
+  if (typeof order.progressStep === "string") return order.progressStep;
+  const step = order.progress?.step;
+  return typeof step === "string" ? step : null;
+}
 
 /**
  * The watermarked preview exists.
- * Keyed on `previewVersion` >= 1 from `GET /api/orders/[token]` (latest preview
- * row marked `ready`), or `status === "preview_ready"` when that version is
- * not on the payload yet. `approved` and `delivery.status` are not consulted.
+ * Keyed on `GET /api/orders/[token]`: `status === "preview_ready"` or
+ * `progress.step === "done"`. Still working while that step is `translating`
+ * or an earlier step (`uploaded`, `reading`, `language`, `counting`, `quoting`).
  */
 export function previewIsReady(order: PreviewReadyOrder | null | undefined): boolean {
   if (!order) return false;
-  if (typeof order.previewVersion === "number" && order.previewVersion >= 1) return true;
-  return order.status === "preview_ready";
+  if (order.status === "preview_ready") return true;
+  return orderProgressStep(order) === "done";
 }
 
 export function previewPollDelay(completedPolls: number): number {
@@ -90,7 +94,6 @@ function currentStep(status: string, progressStep: string | null | undefined): E
     return "read";
   }
   if (
-    progressStep === "done" ||
     progressStep === "translating" ||
     status === "confirmed" ||
     status === "processing" ||
@@ -102,8 +105,8 @@ function currentStep(status: string, progressStep: string | null | undefined): E
 }
 
 /**
- * Progress for the preview step. The bar moves through the four steps and
- * reaches 100 only after the order status is `preview_ready`.
+ * Progress for the preview step. The bar moves through the working steps and
+ * reaches 100 only once the preview is ready (`preview_ready` or step `done`).
  */
 export function previewWork(input: {
   status: string;
@@ -114,7 +117,7 @@ export function previewWork(input: {
   const steps = PREVIEW_WORK_STEPS.map((step) =>
     step.id === "translating" ? { ...step, label: translatingLabel } : step,
   );
-  if (input.status === "preview_ready") {
+  if (previewIsReady({ status: input.status, progressStep: input.progressStep })) {
     return {
       phase: "ready",
       percent: 100,
