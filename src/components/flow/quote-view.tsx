@@ -393,7 +393,7 @@ export function QuoteBody({
             items={
               evaluation
                 ? ["Pay only after you’ve seen it", "Staff sign off before release", "Free corrections"]
-                : ["Pay only after you’ve seen it", "Ready in a few minutes", "Free corrections"]
+                : ["Pay only after you’ve seen it", "Ready in 3 minutes", "Free corrections"]
             }
           />
         </div>

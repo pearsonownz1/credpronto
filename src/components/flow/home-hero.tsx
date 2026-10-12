@@ -9,7 +9,7 @@ import { buttonClasses } from "./ui";
 
 const STATS = [
   ["$0", "to see your preview"],
-  ["A few min", "typical preview time"],
+  ["3 min", "Average preview time"],
   ["USCIS", "certification included"],
 ];
 
@@ -46,7 +46,7 @@ export function HomeHero() {
         </h1>
         <p className="mt-5 max-w-[520px] text-[17px] leading-normal text-ink-muted md:text-[19px]">
           Certified translations from <b className="text-ink">$9.95/page</b>. Upload now, see the full
-          translation in a few minutes, and only pay if it’s right.
+          translation in 3 minutes, and only pay if it’s right.
         </p>
         <div className="mt-7 grid grid-cols-3 gap-3 text-[13px] text-ink-muted md:flex md:gap-7 md:text-sm">
           {STATS.map(([value, label]) => (

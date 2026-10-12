@@ -46,7 +46,7 @@ describe("processing view", () => {
     state.progressStep = "translating";
     const markup = html();
     expect(markup).toContain("Translating your document");
-    expect(markup).toContain("Usually ready in a few minutes. We&#x27;ll email you when your preview is ready.");
+    expect(markup).toContain("Usually ready in 3 minutes. We&#x27;ll email you when your preview is ready.");
     expect(markup).not.toContain("reading-fill");
     expect(markup).not.toContain("reading-shine");
     expect(markup).toContain('data-testid="preview-steps"');
@@ -109,7 +109,7 @@ describe("processing view", () => {
     expect(markup).toContain("Your preview is ready");
     expect(markup).toContain('data-testid="view-preview"');
     expect(markup).toContain("View preview");
-    expect(markup).not.toContain("Usually ready in a few minutes");
+    expect(markup).not.toContain("Usually ready in 3 minutes");
     expect(markup).not.toContain('data-testid="preview-steps"');
     expect(markup).not.toContain('data-testid="progress-bar"');
   });

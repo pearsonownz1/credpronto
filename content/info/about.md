@@ -6,7 +6,7 @@ description: Certified translations you can see before you pay. CredPronto prepa
 # About CredPronto
 Certified translations you can see before you pay.
 
-Immigration, school, and job applications shouldn't stall on paperwork. CredPronto turns your documents into certified English translations in minutes, not days.
+Immigration, school, and job applications shouldn't stall on paperwork. CredPronto turns your documents into certified English translations in 3 minutes, not days.
 
 ## How we're different
 - **Preview before you pay.** See your full translation side by side with the original, free. Pay only when it looks right.
