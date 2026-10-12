@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 import robots from "@/app/robots";
 import sitemap from "@/app/sitemap";
 import { EVALUATIONS_CANONICAL_URL } from "@/lib/evaluations/catalog";
-import { BLOG_CANONICAL, FAQ_CANONICAL, GUIDES_CANONICAL } from "@/lib/content/faq";
+import { FAQ_CANONICAL, GUIDES_CANONICAL } from "@/lib/content/faq";
 import {
   HOME_CANONICAL,
   ROBOTS_NOINDEX,
   SITE_ORIGIN,
   TRANSLATE_CANONICAL,
+  blogRedirects,
   privateCrawlHeaders,
 } from "./seo";
 
@@ -28,14 +29,28 @@ describe("crawl policy", () => {
       HOME_CANONICAL,
       TRANSLATE_CANONICAL,
       EVALUATIONS_CANONICAL_URL,
-      BLOG_CANONICAL,
       GUIDES_CANONICAL,
       FAQ_CANONICAL,
-      "https://www.credpronto.com/blog/what-a-certified-translation-includes",
-      "https://www.credpronto.com/blog/preview-your-translation-before-you-pay",
+      "https://www.credpronto.com/guides/birth-certificate-translation-uscis",
+      "https://www.credpronto.com/guides/certified-vs-notarized-translation",
+      "https://www.credpronto.com/guides/uscis-certified-translation",
+      "https://www.credpronto.com/guides/what-a-certified-translation-includes",
+      "https://www.credpronto.com/guides/preview-your-translation-before-you-pay",
       "https://www.credpronto.com/guides/prepare-a-document-for-translation",
     ]);
-    expect(sitemap().some((entry) => entry.url.includes("uscis"))).toBe(false);
+    expect(sitemap().some((entry) => entry.url.includes("/blog"))).toBe(false);
+    expect(
+      sitemap().some((entry) =>
+        entry.url.endsWith("/guides/does-uscis-require-a-certified-translation"),
+      ),
+    ).toBe(false);
+  });
+
+  it("redirects /blog to /guides with 301", () => {
+    expect(blogRedirects()).toEqual([
+      { source: "/blog", destination: "/guides", statusCode: 301 },
+      { source: "/blog/:slug", destination: "/guides/:slug", statusCode: 301 },
+    ]);
   });
 
   it("sets X-Robots-Tag on every preview and order path, including errors", () => {

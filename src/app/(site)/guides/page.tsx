@@ -5,7 +5,8 @@ import { publishedPosts } from "@/lib/content/posts";
 
 export const metadata: Metadata = {
   title: "Guides · CredPronto",
-  description: "Practical guides for uploading documents and ordering a certified translation.",
+  description:
+    "Guides on certified translations for USCIS, notarization, birth certificates, and preparing a document.",
   alternates: { canonical: GUIDES_CANONICAL },
 };
 
@@ -14,7 +15,7 @@ export default function GuidesIndexPage() {
     <PostList
       kicker="Resources"
       title="Guides"
-      lede="Short guides for preparing a document and ordering a certified translation you can preview first."
+      lede="Certified translation guides, including what USCIS asks for, notarization, birth certificates, and how to prepare a document."
       posts={publishedPosts("guides")}
     />
   );

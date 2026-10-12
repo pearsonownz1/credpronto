@@ -7,6 +7,7 @@ import {
   TRANSLATION_ADDON,
   TRANSLATION_PAGE_LABEL,
 } from "@/lib/evaluations/catalog";
+import { HomeSections } from "@/components/content/approved-sections";
 import { HomeHero } from "./home-hero";
 import { MarketingHeader } from "./marketing-header";
 
@@ -15,6 +16,7 @@ export function LandingView() {
     <div>
       <MarketingHeader section="translations" />
       <HomeHero />
+      <HomeSections />
       <section id="pricing" className="border-t border-line" aria-labelledby="pricing-heading">
         <div className="mx-auto w-full max-w-[1280px] px-4 py-12 md:px-16">
           <p className="preview-kicker">Pricing</p>

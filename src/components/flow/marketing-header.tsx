@@ -11,7 +11,6 @@ const SECTIONS = [
 ] as const;
 
 const RESOURCES = [
-  { href: "/blog", label: "Blog" },
   { href: "/guides", label: "Guides" },
   { href: "/faq", label: "FAQ" },
 ] as const;

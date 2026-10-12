@@ -4,7 +4,9 @@ import Link from "next/link";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import { MarketingHeader } from "@/components/flow/marketing-header";
 import { buttonClasses } from "@/components/flow/ui";
-import { formatPostDate, type Post } from "@/lib/content/posts";
+import { jsonLdScript } from "@/lib/content/jsonld";
+import { articleJsonLd, formatPostDate, type Post } from "@/lib/content/posts";
+import { MarkdownBody } from "./markdown-body";
 
 export function ContentShell({ children }: { children: ReactNode }) {
   return (
@@ -54,7 +56,7 @@ export function PostList({
             </time>
             <h2 className="mt-1 text-2xl font-bold tracking-tight">
               <Link href={`/${post.section}/${post.slug}`} className="hover:text-primary">
-                {post.title}
+                {post.headline}
               </Link>
             </h2>
             <p className="mt-2 text-[15px] leading-normal text-ink-muted">{post.description}</p>
@@ -73,21 +75,37 @@ const mdxComponents = {
 };
 
 export function PostArticle({ post }: { post: Post }) {
+  if (post.author) {
+    const jsonLd = articleJsonLd(post);
+    return (
+      <ContentShell>
+        <article>
+          {jsonLd ? (
+            <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }} />
+          ) : null}
+          <MarkdownBody source={post.body} />
+        </article>
+      </ContentShell>
+    );
+  }
+
   return (
     <ContentShell>
       <article>
-        <p className="preview-kicker blue">{post.section === "blog" ? "Blog" : "Guide"}</p>
-        <h1 className="mt-3 text-4xl font-bold tracking-tight">{post.title}</h1>
+        <p className="preview-kicker blue">Guide</p>
+        <h1 className="mt-3 text-4xl font-bold tracking-tight">{post.headline}</h1>
         <time dateTime={post.date} className="mt-3 block text-sm text-ink-muted">
           {formatPostDate(post.date)}
         </time>
-        <Image
-          src={post.cover}
-          alt=""
-          width={1200}
-          height={630}
-          className="mt-6 aspect-[1200/630] h-auto w-full rounded-[var(--cp-radius)] object-cover"
-        />
+        {post.cover ? (
+          <Image
+            src={post.cover}
+            alt=""
+            width={1200}
+            height={630}
+            className="mt-6 aspect-[1200/630] h-auto w-full rounded-[var(--cp-radius)] object-cover"
+          />
+        ) : null}
         <div className="mt-8 space-y-4 text-[17px] leading-relaxed text-ink [&_h2]:mt-8 [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:tracking-tight [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-5">
           <MDXRemote source={post.body} components={mdxComponents} />
         </div>

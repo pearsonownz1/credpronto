@@ -4,18 +4,24 @@ import type { Metadata } from "next";
 import matter from "gray-matter";
 import { SITE_ORIGIN } from "@/lib/seo";
 
-export type ContentSection = "blog" | "guides";
+export type ContentSection = "guides";
 
 export type Post = {
   section: ContentSection;
+  /** Short title used for legacy posts. Authored guides store the document title here. */
   title: string;
+  /** Exact document `<title>`. */
+  documentTitle: string;
+  /** Visible article heading. */
+  headline: string;
   description: string;
   slug: string;
   date: string;
-  cover: string;
+  cover: string | null;
   canonical: string;
   draft: boolean;
   body: string;
+  author: string | null;
 };
 
 const CONTENT_ROOT = path.join(process.cwd(), "content");
@@ -28,15 +34,25 @@ function requiredString(value: unknown, field: string, file: string): string {
   return value.trim();
 }
 
-function dateString(value: unknown, file: string): string {
+function dateString(value: unknown, file: string, field = "date"): string {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return value.toISOString().slice(0, 10);
   }
-  return requiredString(value, "date", file);
+  const date = requiredString(value, field, file);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error(`${file}: ${field} must be YYYY-MM-DD`);
+  }
+  return date;
 }
 
-function loadFile(section: ContentSection, dir: string, name: string): Post {
-  const slug = name.slice(0, -".mdx".length);
+function headlineFromBody(body: string, file: string): string {
+  const match = body.match(/^#\s+(.+)$/m);
+  if (!match) throw new Error(`${file}: guide must include a level-1 heading`);
+  return match[1].trim();
+}
+
+function loadLegacy(section: ContentSection, dir: string, name: string): Post {
+  const slug = name.replace(/\.mdx$/, "");
   const parsed = matter(fs.readFileSync(path.join(dir, name), "utf8"));
   const data = parsed.data;
   const title = requiredString(data.title, "title", name);
@@ -51,9 +67,6 @@ function loadFile(section: ContentSection, dir: string, name: string): Post {
   }
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || frontSlug !== slug) {
     throw new Error(`${name}: slug must match the filename`);
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    throw new Error(`${name}: date must be YYYY-MM-DD`);
   }
   if (!cover.startsWith("/") || cover.includes("..")) {
     throw new Error(`${name}: cover must be a site path`);
@@ -72,6 +85,8 @@ function loadFile(section: ContentSection, dir: string, name: string): Post {
   return {
     section,
     title,
+    documentTitle: `${title} · CredPronto`,
+    headline: title,
     description,
     slug,
     date,
@@ -79,6 +94,46 @@ function loadFile(section: ContentSection, dir: string, name: string): Post {
     canonical,
     draft: data.draft === true,
     body: parsed.content.trim(),
+    author: null,
+  };
+}
+
+function loadAuthoredGuide(section: ContentSection, dir: string, name: string): Post {
+  const slug = name.replace(/\.md$/, "");
+  const parsed = matter(fs.readFileSync(path.join(dir, name), "utf8"));
+  const data = parsed.data;
+  const title = requiredString(data.title, "title", name);
+  const description = requiredString(data.description, "description", name);
+  const url = requiredString(data.url, "url", name);
+  const canonical = requiredString(data.canonical, "canonical", name);
+  const author = requiredString(data.author, "author", name);
+  const date = dateString(data.last_updated, name, "last_updated");
+  const body = parsed.content.trim();
+
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+    throw new Error(`${name}: slug must match the filename`);
+  }
+  if (url !== `/${section}/${slug}`) {
+    throw new Error(`${name}: url must be /${section}/${slug}`);
+  }
+  const expectedCanonical = `${SITE_ORIGIN}/${section}/${slug}`;
+  if (canonical !== expectedCanonical) {
+    throw new Error(`${name}: canonical must be ${expectedCanonical}`);
+  }
+
+  return {
+    section,
+    title,
+    documentTitle: title,
+    headline: headlineFromBody(body, name),
+    description,
+    slug,
+    date,
+    cover: null,
+    canonical,
+    draft: false,
+    body,
+    author,
   };
 }
 
@@ -86,16 +141,20 @@ function loadSection(section: ContentSection): Post[] {
   const dir = path.join(CONTENT_ROOT, section);
   return fs
     .readdirSync(dir)
-    .filter((name) => name.endsWith(".mdx"))
+    .filter((name) => name.endsWith(".md") || name.endsWith(".mdx"))
     .sort()
-    .map((name) => loadFile(section, dir, name));
+    .map((name) =>
+      name.endsWith(".mdx")
+        ? loadLegacy(section, dir, name)
+        : loadAuthoredGuide(section, dir, name),
+    );
 }
 
 let cached: Post[] | null = null;
 
 export function allPosts(): Post[] {
   if (!cached) {
-    cached = [...loadSection("blog"), ...loadSection("guides")].sort((a, b) => {
+    cached = loadSection("guides").sort((a, b) => {
       if (a.date !== b.date) return a.date < b.date ? 1 : -1;
       return a.canonical < b.canonical ? -1 : 1;
     });
@@ -122,17 +181,43 @@ export function formatPostDate(isoDate: string): string {
 }
 
 export function postMetadata(post: Post): Metadata {
-  const image = new URL(post.cover, SITE_ORIGIN).toString();
+  const openGraph: NonNullable<Metadata["openGraph"]> = {
+    title: post.author ? post.documentTitle : post.title,
+    description: post.description,
+    url: post.canonical,
+    type: "article",
+  };
+  if (post.cover) {
+    openGraph.images = [{ url: new URL(post.cover, SITE_ORIGIN).toString(), alt: post.headline }];
+  }
   return {
-    title: `${post.title} · CredPronto`,
+    title: post.documentTitle,
     description: post.description,
     alternates: { canonical: post.canonical },
-    openGraph: {
-      title: post.title,
-      description: post.description,
-      url: post.canonical,
-      type: "article",
-      images: [{ url: image, alt: post.title }],
+    openGraph,
+  };
+}
+
+export function articleJsonLd(post: Post) {
+  if (!post.author) return null;
+  return {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: post.headline,
+    description: post.description,
+    datePublished: post.date,
+    dateModified: post.date,
+    author: {
+      "@type": "Person",
+      name: post.author,
+    },
+    mainEntityOfPage: post.canonical,
+    url: post.canonical,
+    publisher: {
+      "@type": "Organization",
+      name: "CredPronto",
+      url: `${SITE_ORIGIN}/`,
+      logo: `${SITE_ORIGIN}/logo-1080.png`,
     },
   };
 }
