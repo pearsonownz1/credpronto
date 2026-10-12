@@ -21,13 +21,16 @@ export function waitsForCheckoutOrder(checkout: string | null | undefined): bool
   return checkout === "success" || checkout === "cancel";
 }
 
-/** How long to keep asking for the order after Stripe redirects back. */
+/** How long to ask once a second after Stripe redirects back. Checks continue after this. */
 export const CHECKOUT_ORDER_RETRY_MS = 12_000;
 
 const CHECKOUT_ORDER_RETRY_DELAY_MS = 1_000;
+const CHECKOUT_ORDER_RETRY_SLOW_MS = 5_000;
 
-/** Delay before the next attempt, or null once the wait is over. */
-export function checkoutOrderRetryDelay(elapsedMs: number): number | null {
-  if (!Number.isFinite(elapsedMs) || elapsedMs >= CHECKOUT_ORDER_RETRY_MS) return null;
-  return CHECKOUT_ORDER_RETRY_DELAY_MS;
+/** Delay before the next attempt. A late webhook still has a page to land on. */
+export function checkoutOrderRetryDelay(elapsedMs: number): number {
+  if (!Number.isFinite(elapsedMs) || elapsedMs < CHECKOUT_ORDER_RETRY_MS) {
+    return CHECKOUT_ORDER_RETRY_DELAY_MS;
+  }
+  return CHECKOUT_ORDER_RETRY_SLOW_MS;
 }

@@ -521,18 +521,29 @@ export function downloadReadyCopy(order: {
 
 export type DownloadPhase = "finalizing" | "certifying" | "ready";
 
-/** Checkout return, while payment and an immediate release are still landing. */
-export const FINALIZING_COPY = "Finalizing your certified PDF…";
+/** Checkout return, before the payment webhook has recorded the order. */
+export const CONFIRMING_PAYMENT_COPY = "Confirming payment";
 
-/** Status heading while a flagged paid order is still with the translator. */
-export const PAID_REVIEW_COPY =
-  "Paid. Our certified translator is doing a quick final check, and your PDF will be emailed and appear right here.";
+export const CONFIRMING_PAYMENT_DETAIL =
+  "Stripe sent you back before the payment showed on this order. This page keeps checking.";
+
+/** Heading while a paid order is still awaiting release. */
+export const QUICK_CHECK_COPY = "Quick final check";
+
+export const QUICK_CHECK_DETAIL =
+  "The certified PDF is not released yet. This page switches to Download when it is.";
 
 export function paidReviewEmailLine(email: string | null | undefined): string {
   const address = email?.trim();
   return address
-    ? `We'll email ${address} when the certified PDF is ready to download.`
-    : "We'll email you when the certified PDF is ready to download.";
+    ? `We'll email ${address} when it is released.`
+    : "We'll email you when it is released.";
+}
+
+/** Ready-state line. The certified file is already in the customer's inbox. */
+export function downloadEmailedLine(email: string | null | undefined): string {
+  const address = email?.trim();
+  return address ? `We also emailed it to ${address}.` : "We also emailed it to you.";
 }
 
 /** How often the paid page asks for order status until the PDF is released. */

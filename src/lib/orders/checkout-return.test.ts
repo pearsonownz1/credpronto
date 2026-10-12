@@ -20,12 +20,13 @@ describe("checkout return", () => {
     expect(orderTokenFromReturnUrl("https://www.credpronto.com/checkout/success")).toBeNull();
   });
 
-  it("retries a missing order only for a short time after checkout", () => {
+  it("keeps retrying after checkout and slows down once the first window passes", () => {
     expect(waitsForCheckoutOrder("success")).toBe(true);
     expect(waitsForCheckoutOrder("cancel")).toBe(true);
     expect(waitsForCheckoutOrder(null)).toBe(false);
     expect(checkoutOrderRetryDelay(0)).toBe(1_000);
     expect(checkoutOrderRetryDelay(CHECKOUT_ORDER_RETRY_MS - 1)).toBe(1_000);
-    expect(checkoutOrderRetryDelay(CHECKOUT_ORDER_RETRY_MS)).toBeNull();
+    expect(checkoutOrderRetryDelay(CHECKOUT_ORDER_RETRY_MS)).toBe(5_000);
+    expect(checkoutOrderRetryDelay(Number.NaN)).toBe(1_000);
   });
 });

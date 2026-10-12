@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { FlowApiError, getFlowClient, flowUsesMock } from "@/lib/flow/client";
 import { checkoutOrderRetryDelay } from "@/lib/orders/checkout-return";
 import { PREVIEW_POLL_MS, previewPollContinues } from "@/lib/flow/preview-progress";
-import { downloadPhase, orderStatusPollDelay } from "@/lib/flow/present";
+import { ORDER_STATUS_POLL_MS, downloadPhase, orderStatusPollDelay } from "@/lib/flow/present";
 import {
   EMAIL_KEY,
   MOCK_TOKEN,
@@ -131,11 +131,13 @@ export function useCustomerOrder(
     }
 
     const startedAt = Date.now();
+    let seenOrder = false;
 
     async function load() {
       try {
         const next = await getFlowClient().getOrder(token);
         if (cancelled) return;
+        seenOrder = true;
         setSnapshot({ token, order: next, error: null });
         if (mode === "until-download" || mode === "checkout") {
           const delay = orderStatusPollDelay(downloadPhase(next));
@@ -145,12 +147,15 @@ export function useCustomerOrder(
         }
       } catch (cause) {
         if (cancelled) return;
-        if (mode === "checkout") {
-          const delay = checkoutOrderRetryDelay(Date.now() - startedAt);
-          if (delay != null) {
-            timer = window.setTimeout(load, delay);
-            return;
-          }
+        // Checkout success keeps asking until the webhook records the order.
+        // A later blip on a page that already has an order keeps that order up.
+        if (mode === "checkout" || (mode === "until-download" && seenOrder)) {
+          const delay =
+            mode === "checkout"
+              ? checkoutOrderRetryDelay(Date.now() - startedAt)
+              : ORDER_STATUS_POLL_MS;
+          timer = window.setTimeout(load, delay);
+          return;
         }
         setSnapshot({
           token,

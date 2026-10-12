@@ -4,8 +4,11 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { flowUsesMock, getFlowClient } from "@/lib/flow/client";
 import {
-  FINALIZING_COPY,
-  PAID_REVIEW_COPY,
+  CONFIRMING_PAYMENT_COPY,
+  CONFIRMING_PAYMENT_DETAIL,
+  QUICK_CHECK_COPY,
+  QUICK_CHECK_DETAIL,
+  downloadEmailedLine,
   downloadPhase,
   downloadReadyCopy,
   paidReviewEmailLine,
@@ -37,8 +40,8 @@ export function DownloadStates({
   const { order, error, loading } = useCustomerOrder(token, pendingPayment ? "checkout" : "until-download");
   const phase = order ? downloadPhase(order) : "finalizing";
   const email = order?.email?.trim() || storedEmail;
-  const onDownloadStep =
-    pendingPayment || phase === "certifying" || phase === "ready" || (order != null && phase === "finalizing");
+  const confirming = pendingPayment ? phase !== "certifying" && phase !== "ready" : phase === "finalizing" && order != null;
+  const onDownloadStep = confirming || phase === "certifying" || phase === "ready";
 
   useEffect(() => {
     if (order) onOrder?.(order);
@@ -54,23 +57,20 @@ export function DownloadStates({
             : "mx-auto w-full max-w-[640px] px-4 pt-10 md:pt-16"
         }
       >
-        {loading && !order ? (
+        {confirming ? (
           <FlowStatus
             testId="download-phase"
-            title={pendingPayment ? FINALIZING_COPY : "Loading your order…"}
-            body={pendingPayment ? "This usually takes a few seconds." : ""}
+            phase="confirming"
+            kicker={order ? `Order ${order.orderId}` : undefined}
+            title={CONFIRMING_PAYMENT_COPY}
+            body={CONFIRMING_PAYMENT_DETAIL}
           />
+        ) : loading && !order ? (
+          <FlowStatus title="Loading your order…" body="" />
         ) : error && !order ? (
           <FlowStatus title="We couldn't load this order" body={error} />
         ) : !order ? (
           <FlowStatus title="No order yet" body="Start a translation to get a download." />
-        ) : phase === "finalizing" ? (
-          <FlowStatus
-            testId="download-phase"
-            kicker={`Order ${order.orderId}`}
-            title={FINALIZING_COPY}
-            body="This usually takes a few seconds."
-          />
         ) : phase === "certifying" ? (
           <Certifying order={order} token={token} email={email} />
         ) : (
@@ -92,12 +92,13 @@ function Certifying({
 }) {
   return (
     <>
-      <div data-testid="download-phase" className="mx-auto w-full max-w-[720px] text-center">
+      <div data-testid="download-phase" data-phase="review" className="mx-auto w-full max-w-[720px] text-center">
         <p className="preview-kicker blue">Order {order.orderId}</p>
         <h1 className="mt-3 text-[28px] font-bold leading-tight tracking-[-0.5px] md:text-[32px]">
-          {PAID_REVIEW_COPY}
+          {QUICK_CHECK_COPY}
         </h1>
-        <p data-testid="email-note" className="mt-3 text-base text-ink-muted">
+        <p className="mt-3 text-base text-ink-muted">{QUICK_CHECK_DETAIL}</p>
+        <p data-testid="email-note" className="mt-2 text-base text-ink-muted">
           {paidReviewEmailLine(email)}
         </p>
       </div>
@@ -123,7 +124,7 @@ function Ready({
   const copy = downloadReadyCopy(order);
   const names = order.documents.map((document) => document.filename);
   return (
-    <>
+    <div data-testid="download-phase" data-phase="ready">
       <div className="flex size-12 items-center justify-center rounded-full bg-[#e8f6f0] text-2xl font-bold text-[var(--cp-ok)]">
         ✓
       </div>
@@ -131,8 +132,7 @@ function Ready({
         {copy.title}
       </h1>
       <p data-testid="email-note" className="mt-2.5 mb-7 text-base text-ink-muted">
-        Paid {totalLabel(order.totalCents)} · Order {order.orderId}.{" "}
-        {email ? `A copy is on its way to ${email}.` : "A copy is on its way by email."}
+        Paid {totalLabel(order.totalCents)} · Order {order.orderId}. {downloadEmailedLine(email)}
       </p>
       <div className="overflow-hidden rounded-[var(--cp-radius)] border border-line">
         <FileRow
@@ -165,7 +165,7 @@ function Ready({
           Start a new order
         </Link>
       </p>
-    </>
+    </div>
   );
 }
 
@@ -189,7 +189,9 @@ function FileRow({
   const href = MOCK_HREF;
   const className = buttonClasses(
     primary ? "primary" : "secondary",
-    "h-10 shrink-0 px-[18px] text-[15px]",
+    primary
+      ? "h-12 w-full px-6 text-base sm:w-auto"
+      : "h-10 w-full shrink-0 px-[18px] text-[15px] sm:w-auto",
   );
 
   return (
@@ -201,7 +203,7 @@ function FileRow({
       </div>
       {mock ? (
         <a data-testid={testId} href={href} download={filename} className={className}>
-          {primary ? "Download PDF" : "Download"}
+          Download
         </a>
       ) : (
         <button
@@ -219,7 +221,7 @@ function FileRow({
               });
           }}
         >
-          {primary ? "Download PDF" : "Download"}
+          Download
         </button>
       )}
     </div>

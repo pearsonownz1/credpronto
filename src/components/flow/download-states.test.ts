@@ -6,6 +6,8 @@ import type { CustomerOrder } from "@/lib/orders/view";
 
 const state = vi.hoisted(() => ({
   order: null as CustomerOrder | null,
+  error: null as string | null,
+  loading: false,
 }));
 
 vi.mock("next/link", () => ({
@@ -18,8 +20,8 @@ vi.mock("./use-order", () => ({
   useStoredEmail: () => "ada@example.com",
   useCustomerOrder: () => ({
     order: state.order,
-    error: null,
-    loading: false,
+    error: state.error,
+    loading: state.loading,
     reload: () => undefined,
   }),
 }));
@@ -49,6 +51,8 @@ function readyOrder(patch: Partial<CustomerOrder>): CustomerOrder {
 
 describe("download page", () => {
   it("names the evaluation report and does not offer a translation certificate", () => {
+    state.error = null;
+    state.loading = false;
     state.order = readyOrder({
       orderType: "evaluation",
       service: "diploma",
@@ -94,11 +98,12 @@ describe("download page", () => {
       service: null,
     });
     const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
-    expect(html).toContain(
-      "Paid. Our certified translator is doing a quick final check, and your PDF will be emailed and appear right here.",
-    );
+    expect(html).toContain("Quick final check");
+    expect(html).toContain("The certified PDF is not released yet.");
     expect(html).toContain("buyer@example.com");
-    expect(html).toContain("when the certified PDF is ready to download.");
+    expect(html).toContain("when it is released.");
+    expect(html).not.toMatch(/second|minute|countdown|usually/i);
+    expect(html).not.toContain("being certified");
     expect(html).toContain('data-testid="paid-preview"');
     expect(html).toContain('data-testid="email-note"');
     expect(html).toContain('data-state="done" data-step="preview"');
@@ -122,7 +127,7 @@ describe("download page", () => {
       service: null,
     });
     const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
-    expect(html).toContain("quick final check");
+    expect(html).toContain("Quick final check");
     expect(html).toContain('data-testid="paid-preview"');
     expect(html).not.toContain('data-testid="download-certified"');
   });
@@ -137,9 +142,12 @@ describe("download page", () => {
     });
     const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1", pendingPayment: true }));
     expect(html).toContain("Your certified translation is ready.");
+    expect(html).toContain("We also emailed it to maria.ruiz@email.com.");
     expect(html).toContain('data-testid="download-certified"');
-    expect(html).not.toContain("Finalizing your certified PDF");
-    expect(html).not.toContain("quick final check");
+    expect(html).toContain('data-phase="ready"');
+    expect(html).toContain(">Download<");
+    expect(html).not.toContain("Confirming payment");
+    expect(html).not.toContain("Quick final check");
   });
 
   it("shows the download button as soon as a paid order is released", () => {
@@ -153,11 +161,11 @@ describe("download page", () => {
     expect(html).toContain("Your certified translation is ready.");
     expect(html).toContain('data-testid="download-certified"');
     expect(html).toContain('data-state="current" data-step="download"');
-    expect(html).not.toContain("Finalizing your certified PDF");
+    expect(html).not.toContain("Confirming payment");
     expect(html).not.toContain('data-testid="paid-preview"');
   });
 
-  it("finalizes on Download while payment has not been recorded yet", () => {
+  it("confirms payment on Download while the webhook has not recorded it", () => {
     state.order = readyOrder({
       status: "preview_ready",
       payment: null,
@@ -166,11 +174,26 @@ describe("download page", () => {
       paidAt: null,
     });
     const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1", pendingPayment: true }));
-    expect(html).toContain("Finalizing your certified PDF…");
+    expect(html).toContain("Confirming payment");
+    expect(html).toContain("This page keeps checking.");
+    expect(html).toContain('data-phase="confirming"');
     expect(html).toContain('data-state="current" data-step="download"');
     expect(html).toContain('data-state="done" data-step="preview"');
     expect(html).not.toContain('data-testid="paid-preview"');
     expect(html).not.toContain('data-testid="download-certified"');
-    expect(html).not.toContain("quick final check");
+    expect(html).not.toContain("Quick final check");
+    expect(html).not.toMatch(/second|minute|countdown|usually/i);
+  });
+
+  it("stays on confirming payment when the order cannot be loaded yet", () => {
+    state.order = null;
+    state.error = "Order not found";
+    state.loading = false;
+    const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1", pendingPayment: true }));
+    expect(html).toContain("Confirming payment");
+    expect(html).toContain('data-state="current" data-step="download"');
+    expect(html).not.toContain("We couldn't load this order");
+    expect(html).not.toContain("Order not found");
+    expect(html).not.toContain('data-testid="download-certified"');
   });
 });
