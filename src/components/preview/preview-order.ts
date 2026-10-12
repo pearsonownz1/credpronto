@@ -40,9 +40,15 @@ export type PreviewDocument = {
   pages: PreviewPageSize[];
 };
 
+export type PreviewPriceLine = {
+  label: string;
+  amountCents: number;
+};
+
 export type PreviewOrder = {
   id: string;
   status: "preview_ready";
+  product?: "translation" | "evaluation";
   sourceLanguage: string;
   targetLanguage: string;
   filename: string;
@@ -54,6 +60,8 @@ export type PreviewOrder = {
     pages: number;
     certificationIncluded: boolean;
     totalCents: number;
+    /** Set from the order API. Evaluation orders list the evaluation fee here. */
+    lines?: PreviewPriceLine[];
   };
   included: string[];
   corrections: PreviewCorrection[];

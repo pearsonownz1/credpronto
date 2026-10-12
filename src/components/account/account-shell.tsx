@@ -103,9 +103,15 @@ export function AccountShell({
           <NavLink href="/translate" active={false} icon={<DocIcon />} onClick={() => setOpen(false)}>
             Certified translation
           </NavLink>
-          <SoonItem testId="nav-evaluation" icon={<CapIcon />}>
+          <NavLink
+            href="/evaluations"
+            active={pathname === "/evaluations"}
+            icon={<CapIcon />}
+            testId="nav-evaluation"
+            onClick={() => setOpen(false)}
+          >
             Credential evaluation
-          </SoonItem>
+          </NavLink>
           <div className="mt-auto border-t border-line pt-2">
             <AccountMenu account={account} />
           </div>
@@ -194,16 +200,6 @@ function NavLink({
       {icon}
       {children}
     </Link>
-  );
-}
-
-function SoonItem({ testId, icon, children }: { testId: string; icon: ReactNode; children: string }) {
-  return (
-    <div data-testid={testId} className="flex items-center gap-2.5 rounded-[var(--cp-radius)] px-2.5 py-2 text-sm text-[#374151]">
-      {icon}
-      <span>{children}</span>
-      <span className="ml-auto rounded-[3px] border border-line px-[5px] text-[10.5px] text-ink-muted">Soon</span>
-    </div>
   );
 }
 

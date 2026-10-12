@@ -13,6 +13,7 @@ import {
   languageLine,
   orderHubStep,
   splitParents,
+  servicePriceLines,
   toPreviewOrder,
   totalLabel,
 } from "./present";
@@ -212,9 +213,68 @@ describe("preview mapping", () => {
     });
     expect(mapped.pricing.totalCents).toBe(2985);
     expect(mapped.addonOptions?.map((option) => option.totalCents)).toEqual([1795, 1295, 2985]);
+    expect(mapped.pricing.lines).toEqual([
+      { label: "3 pages × $9.95", amountCents: 2985 },
+    ]);
+    expect(mapped.product).toBe("translation");
     expect(mapped.corrections[0]?.note).toBe("use the passport spelling");
     expect(documentIdForPage(order().documents, 2)).toBe("doc-a");
     expect(documentIdForPage(order().documents, 3)).toBe("doc-b");
+  });
+});
+
+describe("evaluation prices", () => {
+  it("uses API line items instead of the translation page price", () => {
+    const diploma = order({
+      orderType: "evaluation",
+      service: "diploma",
+      degreeCount: 1,
+      evaluationCents: 1995,
+      translationCents: 1990,
+      totalCents: 3985,
+      billablePages: 2,
+      lineItems: [
+        {
+          kind: "evaluation",
+          description: "Diploma evaluation",
+          quantity: 1,
+          unitAmountCents: 1995,
+          amountCents: 1995,
+        },
+        {
+          kind: "translation",
+          description: "Certified translation",
+          quantity: 2,
+          unitAmountCents: 995,
+          amountCents: 1990,
+        },
+      ],
+    });
+    expect(servicePriceLines(diploma)).toEqual([
+      { label: "Diploma evaluation · 1 degree × $19.95", amountCents: 1995 },
+      { label: "Certified translation · 2 pages × $9.95", amountCents: 1990 },
+    ]);
+
+    const course = order({
+      orderType: "evaluation",
+      service: "course_by_course",
+      degreeCount: 2,
+      evaluationCents: 7990,
+      translationCents: 0,
+      totalCents: 7990,
+      lineItems: [
+        {
+          kind: "evaluation",
+          description: "Course-by-course evaluation",
+          quantity: 2,
+          unitAmountCents: 3995,
+          amountCents: 7990,
+        },
+      ],
+    });
+    expect(servicePriceLines(course)).toEqual([
+      { label: "Course-by-course evaluation · 2 degrees × $39.95", amountCents: 7990 },
+    ]);
   });
 });
 

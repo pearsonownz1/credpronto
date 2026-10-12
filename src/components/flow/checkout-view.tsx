@@ -7,6 +7,7 @@ import { formatMoney } from "@/lib/flow/pricing";
 import {
   checkoutFailureMessage,
   languageLine,
+  servicePriceLines,
   totalLabel,
 } from "@/lib/flow/present";
 import { US_STATE_CODES, chargeCents, serviceCents } from "@/lib/orders/addons";
@@ -63,12 +64,11 @@ function CheckoutForm({
   });
 
   const notReady = order.status !== "preview_ready";
+  const evaluation = order.orderType === "evaluation" || order.service != null;
   const service = serviceCents(order);
   const due = chargeCents(service, order.addonOptions, selected);
   const mail = selected.includes("mail");
-  const serviceLabel = order.service
-    ? "Evaluation"
-    : `${order.billablePages ?? 0} pages × ${formatMoney(order.unitPriceCents)}`;
+  const priceLines = servicePriceLines(order);
 
   function toggle(id: AddonId) {
     setSelected((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
@@ -130,9 +130,13 @@ function CheckoutForm({
   return (
     <FlowColumns columns="md:grid-cols-[minmax(0,1fr)_420px] md:gap-14">
       <div>
-        <h1 className="text-[32px] font-bold tracking-[-0.6px]">Buy your certified translation</h1>
+        <h1 className="text-[32px] font-bold tracking-[-0.6px]">
+          {evaluation ? "Buy your credential evaluation" : "Buy your certified translation"}
+        </h1>
         <p className="mt-2 mb-6 text-[15px] text-ink-muted">
-          You’ve reviewed it. Pay once and download right away.
+          {evaluation
+            ? "You’ve reviewed the report. Pay once. Staff sign off before it is released."
+            : "You’ve reviewed it. Pay once and download right away."}
         </p>
         <label className="block">
           <span className="mb-1.5 block text-[13px] font-semibold">Email</span>
@@ -233,7 +237,9 @@ function CheckoutForm({
         ) : null}
         {notReady ? (
           <p data-testid="checkout-waiting" className="mt-4 text-sm text-ink-muted">
-            Your preview isn&apos;t ready yet. You can pay as soon as the translation is ready to review.
+            {evaluation
+              ? "Your preview isn't ready yet. You can pay as soon as the report is ready to review."
+              : "Your preview isn't ready yet. You can pay as soon as the translation is ready to review."}
           </p>
         ) : null}
         {notice ? (
@@ -270,7 +276,20 @@ function CheckoutForm({
         </div>
         <div className="mt-3.5">
           <Summary>
-            <SummaryRow label={serviceLabel} value={service != null ? formatMoney(service) : "Pending"} />
+            {priceLines.length > 0 ? (
+              priceLines.map((line, index) => (
+                <SummaryRow
+                  key={`${line.label}-${index}`}
+                  label={line.label}
+                  value={formatMoney(line.amountCents)}
+                />
+              ))
+            ) : (
+              <SummaryRow
+                label={evaluation ? "Evaluation" : "Pages"}
+                value={service != null ? formatMoney(service) : "Pending"}
+              />
+            )}
             <SummaryRow label="Certificate of accuracy" value="Included" />
             {order.addonOptions
               .filter((option) => selected.includes(option.id) && option.totalCents != null)

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   choiceFields,
-  evaluationsLive,
   parseEvaluationService,
   uploadChoiceFromSelection,
 } from "./order-choice";
@@ -22,18 +21,6 @@ describe("upload order choice", () => {
       service: "course_by_course",
       degreeCount: "2",
     });
-  });
-
-  it("is off unless NEXT_PUBLIC_EVALUATIONS_LIVE is 1", () => {
-    const previous = process.env.NEXT_PUBLIC_EVALUATIONS_LIVE;
-    delete process.env.NEXT_PUBLIC_EVALUATIONS_LIVE;
-    expect(evaluationsLive()).toBe(false);
-    process.env.NEXT_PUBLIC_EVALUATIONS_LIVE = "1";
-    expect(evaluationsLive()).toBe(true);
-    process.env.NEXT_PUBLIC_EVALUATIONS_LIVE = "true";
-    expect(evaluationsLive()).toBe(false);
-    if (previous === undefined) delete process.env.NEXT_PUBLIC_EVALUATIONS_LIVE;
-    else process.env.NEXT_PUBLIC_EVALUATIONS_LIVE = previous;
   });
 
   it("accepts only the two evaluation services", () => {

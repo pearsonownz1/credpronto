@@ -1,3 +1,4 @@
+import { evaluationQuote } from "@/lib/orders/evaluation-price";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import { appendOrderChoice, type UploadChoice } from "./order-choice";
 import { sampleCustomerOrder } from "./sample-order";
@@ -182,9 +183,35 @@ function writeMockOrder(order: CustomerOrder) {
   window.dispatchEvent(new Event(ORDER_EVENT));
 }
 
+function withEvaluationChoice(
+  base: CustomerOrder,
+  choice: Extract<UploadChoice, { orderType: "evaluation" }>,
+): CustomerOrder {
+  const billablePages = base.billablePages ?? 0;
+  const quote = evaluationQuote({
+    service: choice.service,
+    degreeCount: choice.degreeCount,
+    sourceLanguage: base.sourceLanguage,
+    billablePages,
+  });
+  return {
+    ...base,
+    orderType: "evaluation",
+    service: choice.service,
+    degreeCount: choice.degreeCount,
+    evaluationCents: quote.evaluationCents,
+    translationCents: quote.translationCents,
+    totalCents: quote.totalCents,
+    lineItems: quote.lineItems,
+  };
+}
+
 const mockClient: FlowClient = {
-  async upload({ email }) {
-    const order = readMockOrder();
+  async upload({ email, choice = { orderType: "translation" } }) {
+    const order =
+      choice.orderType === "evaluation"
+        ? withEvaluationChoice(sampleCustomerOrder(), choice)
+        : sampleCustomerOrder();
     writeToken(MOCK_TOKEN);
     writeEmail(email);
     writeMockOrder(order);

@@ -6,7 +6,6 @@ import { knownPageCount } from "@/lib/analytics/google-ads";
 import { trackOrderUpload } from "@/lib/analytics/gtag-events";
 import { FlowApiError, flowUsesMock, getFlowClient } from "@/lib/flow/client";
 import {
-  evaluationsLive,
   parseEvaluationService,
   uploadChoiceFromSelection,
   type UploadChoice,
@@ -56,12 +55,11 @@ export function UploadCard({
 }) {
   const router = useRouter();
   const mock = flowUsesMock();
-  const live = evaluationsLive();
   const inputRef = useRef<HTMLInputElement>(null);
   const [email, setEmail] = useState(mock ? "maria.ruiz@email.com" : "");
   const [picked, setPicked] = useState<File[]>([]);
   const [product, setProduct] = useState<"translation" | EvaluationService>(
-    live ? (parseEvaluationService(initialService) ?? "translation") : "translation",
+    parseEvaluationService(initialService) ?? "translation",
   );
   const [degrees, setDegrees] = useState("1");
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +84,7 @@ export function UploadCard({
   }
 
   function choice(): UploadChoice | null {
-    if (!live || product === "translation") return { orderType: "translation" };
+    if (product === "translation") return { orderType: "translation" };
     const degreeCount = Number(degrees);
     if (!Number.isInteger(degreeCount) || degreeCount < 1) return null;
     return uploadChoiceFromSelection(product, degreeCount);
@@ -140,8 +138,6 @@ export function UploadCard({
         </>
       ) : null}
       <form onSubmit={onSubmit}>
-        {live ? (
-        <>
         <fieldset data-testid="order-choice" className="mb-4">
           <legend className="mb-1.5 text-[13px] font-semibold">What do you need?</legend>
           <div className="grid gap-2">
@@ -190,8 +186,6 @@ export function UploadCard({
             </span>
           </label>
         )}
-        </>
-        ) : null}
         <div
           data-testid="upload-drop"
           className="rounded-[var(--cp-radius)] border-[1.5px] border-dashed border-[#b9c3d6] bg-[var(--cp-blue-l)] px-4 py-6 text-center"

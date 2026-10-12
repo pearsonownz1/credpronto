@@ -26,11 +26,6 @@ export function uploadChoiceFromSelection(
   return { orderType: "evaluation", service, degreeCount };
 }
 
-/** Evaluation uploads stay off until this is `1`. Translation uploads are unchanged. */
-export function evaluationsLive(): boolean {
-  return process.env.NEXT_PUBLIC_EVALUATIONS_LIVE === "1";
-}
-
 export function appendOrderChoice(form: FormData, choice: UploadChoice) {
   if (choice.orderType !== "evaluation") return;
   form.set("orderType", "evaluation");

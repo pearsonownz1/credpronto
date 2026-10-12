@@ -19,24 +19,42 @@ export function OrderRail({
   panel: AddonPanelState;
 }) {
   const { pricing } = order;
+  const evaluation = order.product === "evaluation";
+  const lines =
+    pricing.lines && pricing.lines.length > 0
+      ? pricing.lines
+      : [
+          {
+            label: `${pricing.pages} pages × ${formatMoney(pricing.perPageCents)}`,
+            amountCents: pricing.totalCents,
+          },
+        ];
 
   return (
     <div data-testid="order-rail" className="flex min-h-full flex-col gap-[18px]">
       <div>
-        <p className="preview-kicker mb-2">Your translation is ready</p>
-        <h2 className="text-xl tracking-[-0.3px]">Review every page, then buy.</h2>
+        <p className="preview-kicker mb-2">
+          {evaluation ? "Your evaluation is ready" : "Your translation is ready"}
+        </p>
+        <h2 className="text-xl tracking-[-0.3px]">
+          {evaluation ? "Review the report, then buy." : "Review every page, then buy."}
+        </h2>
       </div>
       <p className="text-[13.5px] leading-normal text-ink-muted">
-        Check names, dates and numbers against your original. Corrections are
-        free and come back as a new preview.
+        {evaluation
+          ? "Check the equivalency against your documents. Staff sign off before the report is released."
+          : "Check names, dates and numbers against your original. Corrections are free and come back as a new preview."}
       </p>
-      <div className="rounded-[var(--cp-radius)] border border-line text-sm">
-        <div className="flex justify-between px-3.5 py-[11px]">
-          <span>
-            {pricing.pages} pages × {formatMoney(pricing.perPageCents)}
-          </span>
-          <span>{formatMoney(pricing.totalCents)}</span>
-        </div>
+      <div data-testid="preview-price" className="rounded-[var(--cp-radius)] border border-line text-sm">
+        {lines.map((line, index) => (
+          <div
+            key={`${line.label}-${index}`}
+            className={`flex justify-between gap-3 px-3.5 py-[11px] ${index > 0 ? "border-t border-line" : ""}`}
+          >
+            <span>{line.label}</span>
+            <span className="shrink-0">{formatMoney(line.amountCents)}</span>
+          </div>
+        ))}
         <div className="flex justify-between border-t border-line px-3.5 py-[11px]">
           <span>Certification</span>
           <span>{pricing.certificationIncluded ? "Included" : "Extra"}</span>
