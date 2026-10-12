@@ -38,6 +38,8 @@ export function ProcessingView({
         progressStep: order.progress?.step,
         pagesRead: order.progress?.pagesRead,
         pagesTotal: order.progress?.pagesTotal,
+        pagesDone: order.progress?.pagesDone,
+        pagesTranslateTotal: order.progress?.pagesTranslateTotal,
         translatingElapsedMs: translatingElapsed,
       })
     : null;

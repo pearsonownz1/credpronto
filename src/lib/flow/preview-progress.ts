@@ -29,7 +29,13 @@ const TRANSLATING_CAP = 98;
 export type PreviewReadyOrder = {
   status?: string | null;
   /** Customer payload shape from `GET /api/orders/[token]`. */
-  progress?: { step?: string | null; pagesRead?: number | null; pagesTotal?: number | null } | null;
+  progress?: {
+    step?: string | null;
+    pagesRead?: number | null;
+    pagesTotal?: number | null;
+    pagesDone?: number | null;
+    pagesTranslateTotal?: number | null;
+  } | null;
   /** Same step, when the caller already pulled it off `progress`. */
   progressStep?: string | null;
 };
@@ -86,35 +92,49 @@ export function translatingEase(elapsedMs: number): number {
   return Math.min(TRANSLATING_CAP, TRANSLATING_FLOOR + eased);
 }
 
-/**
- * Translating percent. Unfinished `pagesRead` / `pagesTotal` is the
- * sub-progress and moves the bar from 92 toward 98. A full page count is
- * the quote, not translation progress, so that case eases with real time.
- * This never returns 75.
- */
-export function translatingPercent(input: {
-  pagesRead?: number | null;
-  pagesTotal?: number | null;
-  translatingElapsedMs?: number;
-}): number {
-  const total = input.pagesTotal;
-  const read = input.pagesRead;
-  if (
-    typeof total === "number" &&
-    Number.isFinite(total) &&
-    total > 0 &&
-    typeof read === "number" &&
-    Number.isFinite(read) &&
-    read >= 0 &&
-    read < total
-  ) {
-    return TRANSLATING_FLOOR + TRANSLATING_SPAN * (read / total);
+function billableRatio(
+  pagesDone: number | null | undefined,
+  pagesTranslateTotal: number | null | undefined,
+): number | null {
+  if (typeof pagesTranslateTotal !== "number" || !Number.isFinite(pagesTranslateTotal) || pagesTranslateTotal <= 0) {
+    return null;
   }
-  return translatingEase(input.translatingElapsedMs ?? 0);
+  if (typeof pagesDone !== "number" || !Number.isFinite(pagesDone) || pagesDone < 0) return null;
+  return Math.min(1, pagesDone / pagesTranslateTotal);
 }
 
 /**
- * Bar percent from `progress.step`, `pagesRead`, and `pagesTotal`.
+ * Translating percent. `pagesDone` / `pagesTranslateTotal` are the billable
+ * pages and move the bar from 92 toward 98. Physical `pagesRead` /
+ * `pagesTotal` are not translation progress. When the billable counts are
+ * absent, the bar eases from the translating step. This never returns 75.
+ */
+export function translatingPercent(input: {
+  pagesDone?: number | null;
+  pagesTranslateTotal?: number | null;
+  translatingElapsedMs?: number;
+}): number {
+  const ratio = billableRatio(input.pagesDone, input.pagesTranslateTotal);
+  if (ratio != null) return TRANSLATING_FLOOR + TRANSLATING_SPAN * ratio;
+  return translatingEase(input.translatingElapsedMs ?? 0);
+}
+
+/** Status line for translating. It counts pages finished, never "page N of M". */
+export function translatingStatusLabel(input: {
+  orderType?: string | null;
+  pagesDone?: number | null;
+}): string {
+  if (input.orderType === "evaluation") return "Building the report";
+  const done = input.pagesDone;
+  if (typeof done === "number" && Number.isFinite(done) && done >= 0) {
+    return `Translating… ${Math.floor(done)} pages done`;
+  }
+  return "Translating and laying out";
+}
+
+/**
+ * Bar percent from `progress.step`. Reading uses `pagesRead` / `pagesTotal`.
+ * Translating uses billable `pagesDone` / `pagesTranslateTotal` when present.
  * uploaded 5, reading 5–60, language 70, counting 80, quoting 90,
  * translating ~92, done 100.
  */
@@ -122,6 +142,8 @@ export function previewStepPercent(input: {
   progressStep?: string | null;
   pagesRead?: number | null;
   pagesTotal?: number | null;
+  pagesDone?: number | null;
+  pagesTranslateTotal?: number | null;
   translatingElapsedMs?: number;
 }): number {
   switch (input.progressStep) {
@@ -167,9 +189,11 @@ export function previewWork(input: {
   progressStep?: string | null;
   pagesRead?: number | null;
   pagesTotal?: number | null;
+  pagesDone?: number | null;
+  pagesTranslateTotal?: number | null;
   translatingElapsedMs?: number;
 }): PreviewWork {
-  const translatingLabel = input.orderType === "evaluation" ? "Building the report" : "Translating and laying out";
+  const translatingLabel = translatingStatusLabel(input);
   const steps = PREVIEW_WORK_STEPS.map((step) =>
     step.id === "translating" ? { ...step, label: translatingLabel } : step,
   );
@@ -191,7 +215,7 @@ export function previewWork(input: {
     phase: "working",
     percent,
     displayPercent: Math.round(percent),
-    label: steps[index]?.label ?? translatingLabel,
+    label: current === "translating" ? translatingLabel : (steps[index]?.label ?? translatingLabel),
     steps: steps.map((step, position) => ({
       ...step,
       state: position < index ? "done" : position === index ? "current" : "pending",
