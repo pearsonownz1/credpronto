@@ -6,6 +6,8 @@ export const MAX_FILES = 15;
 export const MAX_TOTAL_BYTES = 100 * 1024 * 1024;
 export const PREVIEW_URL_SECONDS = 10 * 60;
 export const DOWNLOAD_URL_SECONDS = 5 * 60;
+/** Signed URL lifetime for the customer's original upload. */
+export const SOURCE_URL_SECONDS = 10 * 60;
 export const LOW_LANGUAGE_CONFIDENCE = 0.75;
 export const SPARSE_PAGE_WORDS = 20;
 /** Printed page numbers and continuation cues at or above this score can reorder a document. */

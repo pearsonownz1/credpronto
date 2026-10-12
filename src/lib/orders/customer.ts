@@ -6,7 +6,13 @@ import { downloadGate } from "./access";
 import { checkoutPreviewImageUrl } from "./checkout-image";
 import { checkoutLineProduct, checkoutProductDescription } from "./checkout-preview";
 import { checkoutPriceLines } from "./evaluation-price";
-import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET, ORIGINALS_BUCKET, PREVIEW_URL_SECONDS } from "./constants";
+import {
+  DOWNLOAD_URL_SECONDS,
+  FINALS_BUCKET,
+  ORIGINALS_BUCKET,
+  PREVIEW_URL_SECONDS,
+  SOURCE_URL_SECONDS,
+} from "./constants";
 import {
   confirmFields,
   customerEmail,
@@ -53,6 +59,7 @@ import { parseQuotePatch, quotePriceAfterSkip, sumQuotedBillable } from "./skip-
 import { loadCustomerOrder } from "./pipeline";
 import { orderDownloadFilename } from "./download-name";
 import { originalDownloadResponse, originalTargets } from "./originals";
+import { sourceFileBody, sourceFileTarget, type SourceFileResponse } from "./source-file";
 import { evaluationPreviewSources } from "./preview-documents";
 import { previewSignedTargets } from "./preview-targets";
 import { serviceDb, signedObjectUrl, uploadObject, type Db } from "./storage";
@@ -361,6 +368,14 @@ export async function downloadOrderFile(
   const url = await signedObjectUrl(db, FINALS_BUCKET, path, DOWNLOAD_URL_SECONDS, { download: filename });
   await insertEvent(db, order.id, "downloaded", { file });
   return { url, filename, expiresInSeconds: DOWNLOAD_URL_SECONDS };
+}
+
+/** Original upload for one file on this order. The token is the same grant as GET /api/orders/[token]. */
+export async function getSourceFile(token: string, fileId: string): Promise<SourceFileResponse> {
+  const { db, order } = await orderForToken(token);
+  const target = sourceFileTarget(await listDocuments(db, order.id), fileId);
+  const url = await signedObjectUrl(db, target.bucket, target.path, SOURCE_URL_SECONDS);
+  return sourceFileBody(url);
 }
 
 /** The customer's own uploads. The token is enough at any status; payment is not required. */
