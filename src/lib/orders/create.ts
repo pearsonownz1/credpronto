@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { optionalUser } from "@/lib/auth/session";
 import { ORIGINALS_BUCKET } from "./constants";
 import {
   insertDocument,
@@ -12,6 +13,23 @@ import { serviceDb, uploadObject } from "./storage";
 import { generateOrderToken, hashOrderToken } from "./token";
 import { evaluationFeeCents, parseOrderChoice } from "./evaluation-price";
 import { HttpError } from "./errors";
+
+/**
+ * A validated session owns the customer email. The body email is used only
+ * when there is no session, and is never a fallback for a session user.
+ */
+export function resolveOrderCustomer(input: {
+  session: { id: string; email: string | null } | null;
+  bodyEmail: string | null;
+}): { email: string; userId: string | null } {
+  if (input.session) {
+    return {
+      email: assertEmail(input.session.email ?? ""),
+      userId: input.session.id || null,
+    };
+  }
+  return { email: assertEmail(input.bodyEmail ?? ""), userId: null };
+}
 
 function textField(form: FormData, key: string): string | null {
   const value = form.get(key);
@@ -30,7 +48,12 @@ export async function createOrder(request: Request): Promise<{
   targetLanguage: string;
 }> {
   const form = await request.formData();
-  const email = assertEmail(String(form.get("email") ?? ""));
+  const session = await optionalUser();
+  const bodyEmail = form.get("email");
+  const { email, userId } = resolveOrderCustomer({
+    session: session ? { id: session.id, email: session.email } : null,
+    bodyEmail: typeof bodyEmail === "string" ? bodyEmail : null,
+  });
   const uploads = [...form.getAll("files"), ...form.getAll("file")].filter(
     (entry): entry is File => entry instanceof File,
   );
@@ -72,6 +95,7 @@ export async function createOrder(request: Request): Promise<{
     utmCampaign: textField(form, "utm_campaign"),
     gclid: textField(form, "gclid"),
     landingPath: textField(form, "landing_path"),
+    userId,
   });
 
   await insertEvent(db, order.id, "upload_started", { fileCount: files.length });

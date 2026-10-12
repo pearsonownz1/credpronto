@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { createClient } from "@/lib/supabase/client";
 import { knownPageCount } from "@/lib/analytics/google-ads";
 import { trackOrderUpload } from "@/lib/analytics/gtag-events";
 import { FlowApiError, flowUsesMock, getFlowClient } from "@/lib/flow/client";
@@ -49,15 +50,42 @@ const PRODUCTS: Array<{
   { id: "course_by_course", label: "Course-by-course", price: COURSE_BY_COURSE_PRICE_LABEL },
 ];
 
+function useQuoteEmail(serverEmail: string | null | undefined): string | null {
+  const seeded = serverEmail?.trim() || null;
+  const [browserEmail, setBrowserEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const supabase = createClient();
+        const { data } = await supabase.auth.getUser();
+        const next = data.user?.email?.trim() || "";
+        if (!cancelled && next) setBrowserEmail(next);
+      } catch {
+        // Auth is not configured in this environment. Keep the server email.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return browserEmail ?? seeded;
+}
+
 export function UploadCard({
   intro,
   initialService,
+  sessionEmail,
 }: {
   intro?: { title: string; lede: string };
   initialService?: string | null;
+  sessionEmail?: string | null;
 }) {
   const router = useRouter();
   const mock = flowUsesMock();
+  const signedInEmail = useQuoteEmail(sessionEmail);
   const { beginUpload, setUploadRatio, orderCreated, endHandoff } = useReadingHandoff();
   const inputRef = useRef<HTMLInputElement>(null);
   const [email, setEmail] = useState(mock ? "maria.ruiz@email.com" : "");
@@ -106,19 +134,24 @@ export function UploadCard({
       setError("Add at least one PDF or photo.");
       return;
     }
+    const address = (signedInEmail ?? email).trim();
+    if (!address) {
+      setError("Enter a valid email address");
+      return;
+    }
     beginUpload();
     setPending(true);
     try {
       const client = getFlowClient();
       const result = await client.upload({
-        email,
+        email: address,
         files: mock ? [] : picked,
         choice: selected,
         onProgress: setUploadRatio,
       });
       trackOrderUpload(result.orderId, pageCount);
       writeToken(result.orderToken);
-      writeEmail(email);
+      writeEmail(address);
       rememberUpload(result.orderToken, picked);
       orderCreated();
       const useOrderRoute =
@@ -253,20 +286,26 @@ export function UploadCard({
             ))}
           </ul>
         ) : null}
-        <label className="mt-4 block">
-          <span className="mb-1.5 block text-[13px] font-semibold">
-            Email for your preview link
-          </span>
-          <input
-            data-testid="email"
-            type="email"
-            required
-            autoComplete="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            className={fieldClass}
-          />
-        </label>
+        {signedInEmail ? (
+          <p data-testid="preview-email" className="mt-4 text-[13px] text-ink-muted">
+            Preview link goes to {signedInEmail}
+          </p>
+        ) : (
+          <label className="mt-4 block">
+            <span className="mb-1.5 block text-[13px] font-semibold">
+              Email for your preview link
+            </span>
+            <input
+              data-testid="email"
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              className={fieldClass}
+            />
+          </label>
+        )}
         {error ? (
           <p role="alert" className="mt-3 text-sm text-[var(--cp-warn)]">
             {error}
