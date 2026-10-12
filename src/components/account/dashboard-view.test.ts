@@ -1,9 +1,10 @@
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { AccountShell } from "@/components/account/account-shell";
 import { mockAccountFor } from "@/lib/account/names";
 import { MOCK_CUSTOMER_EMAIL, mockOrdersFor } from "@/lib/account/mock-data";
+
+const NOW = Date.parse("2026-10-12T12:00:00.000Z");
 
 vi.mock("next/link", () => ({
   default: ({ children, href, ...props }: { children?: ReactNode; href: string }) =>
@@ -15,23 +16,21 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: () => undefined }),
 }));
 
+vi.mock("@/components/account/account-shell", () => ({
+  useAccountShell: () => ({
+    account: mockAccountFor(MOCK_CUSTOMER_EMAIL),
+    orders: mockOrdersFor(MOCK_CUSTOMER_EMAIL, NOW),
+    ordersError: null,
+    now: NOW,
+    query: "",
+    setQuery: () => undefined,
+  }),
+}));
+
 import { DashboardView } from "./dashboard-view";
 
-const NOW = Date.parse("2026-10-12T12:00:00.000Z");
-
 function dashboardHtml() {
-  return renderToStaticMarkup(
-    createElement(
-      AccountShell,
-      {
-        account: mockAccountFor(MOCK_CUSTOMER_EMAIL),
-        orders: mockOrdersFor(MOCK_CUSTOMER_EMAIL, NOW),
-        ordersError: null,
-        now: NOW,
-      },
-      createElement(DashboardView),
-    ),
-  );
+  return renderToStaticMarkup(createElement(DashboardView));
 }
 
 function row(html: string, testId: string) {
