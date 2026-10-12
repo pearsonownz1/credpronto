@@ -553,9 +553,11 @@ export function downloadPhase(order: {
   delivery: { status: string } | null;
   fulfillment?: "released" | "awaiting_review" | null;
 }): DownloadPhase {
+  // `fulfillment` from the order payload is the switch. Delivery and status
+  // only apply when that field has not been set yet.
+  if (order.fulfillment === "released") return "ready";
+  if (order.fulfillment === "awaiting_review") return "certifying";
   const paid =
-    order.fulfillment === "released" ||
-    order.fulfillment === "awaiting_review" ||
     order.status === "paid" ||
     order.status === "approved" ||
     order.status === "delivered" ||
@@ -564,7 +566,6 @@ export function downloadPhase(order: {
   if (!paid) return "finalizing";
   const delivery = order.delivery?.status;
   if (
-    order.fulfillment === "released" ||
     delivery === "approved" ||
     delivery === "delivered" ||
     order.status === "approved" ||

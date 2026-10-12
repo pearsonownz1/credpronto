@@ -520,13 +520,25 @@ describe("download phase", () => {
     expect(
       downloadPhase(
         order({
-          status: "approved",
+          status: "paid",
           payment: { status: "paid" },
-          delivery: { status: "approved" },
+          delivery: { status: "pending" },
           fulfillment: "released",
+          paidAt: "2026-04-01T00:00:00.000Z",
         }),
       ),
     ).toBe("ready");
+    expect(
+      downloadPhase(
+        order({
+          status: "approved",
+          payment: { status: "paid" },
+          delivery: { status: "approved" },
+          fulfillment: "awaiting_review",
+          paidAt: "2026-04-01T00:00:00.000Z",
+        }),
+      ),
+    ).toBe("certifying");
     expect(orderStatusPollDelay("certifying")).toBe(ORDER_STATUS_POLL_MS);
     expect(orderStatusPollDelay("finalizing")).toBe(FINALIZING_POLL_MS);
     expect(orderStatusPollDelay("ready")).toBeNull();

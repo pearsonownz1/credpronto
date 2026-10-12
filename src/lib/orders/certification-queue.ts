@@ -18,10 +18,15 @@ function instant(value: string | null | undefined): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
-/** Paid and not yet approved. A missing paid_at still counts when status or fulfillment says so. */
+/**
+ * `fulfillment` is the switch: `awaiting_review` waits, `released` does not.
+ * When that field is missing, a paid or unapproved order with `paidAt` still waits.
+ */
 export function onCertificationQueue(order: CertificationOrder): boolean {
-  if (order.fulfillment === "released" || CLOSED.has(order.status)) return false;
-  if (order.fulfillment === "awaiting_review" || order.status === "paid") return true;
+  if (order.fulfillment === "released") return false;
+  if (order.fulfillment === "awaiting_review") return true;
+  if (CLOSED.has(order.status)) return false;
+  if (order.status === "paid") return true;
   return (
     instant(order.paidAt) != null &&
     (order.status === "needs_review" || order.status === "correction_requested")
