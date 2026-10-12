@@ -327,10 +327,23 @@ export async function renderCertificationPdf(input: RenderInput): Promise<Uint8A
  * The preview is produced by its own pass with the watermark drawn into the
  * page content. It is not a copy of the clean file.
  */
+async function prependPdf(cover: Uint8Array, body: Uint8Array): Promise<Uint8Array> {
+  const merged = await PDFDocument.create();
+  const coverDoc = await PDFDocument.load(cover);
+  const bodyDoc = await PDFDocument.load(body);
+  const pages = [
+    ...(await merged.copyPages(coverDoc, coverDoc.getPageIndices())),
+    ...(await merged.copyPages(bodyDoc, bodyDoc.getPageIndices())),
+  ];
+  for (const page of pages) merged.addPage(page);
+  return merged.save();
+}
+
 export async function renderOrderPdfs(input: RenderInput): Promise<RenderedFiles> {
   const [cleanPass, previewPass] = translationRenderPasses();
-  const cleanTranslation = await renderTranslationPdf(input, cleanPass.watermark);
-  const watermarkedPreview = await renderTranslationPdf(input, previewPass.watermark);
   const certification = await renderCertificationPdf(input);
+  const cleanBody = await renderTranslationPdf(input, cleanPass.watermark);
+  const cleanTranslation = cleanPass.includeCertification ? await prependPdf(certification, cleanBody) : cleanBody;
+  const watermarkedPreview = await renderTranslationPdf(input, previewPass.watermark);
   return { cleanTranslation, watermarkedPreview, certification };
 }

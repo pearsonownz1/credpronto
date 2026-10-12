@@ -2,17 +2,17 @@ import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT, PREVIEW_WATERMARK } from "../constan
 
 export type TranslationRenderPass = {
   watermark: boolean;
-  includeCertification: false;
+  includeCertification: boolean;
   bucket: "finals" | "previews";
 };
 
 /**
  * Two independent render passes. The preview pass is not a stamp applied to
- * the clean file, and neither pass appends the certification page.
+ * the clean file. The clean file starts with the certification cover page.
  */
 export function translationRenderPasses(): [TranslationRenderPass, TranslationRenderPass] {
   return [
-    { watermark: false, includeCertification: false, bucket: "finals" },
+    { watermark: false, includeCertification: true, bucket: "finals" },
     { watermark: true, includeCertification: false, bucket: "previews" },
   ];
 }

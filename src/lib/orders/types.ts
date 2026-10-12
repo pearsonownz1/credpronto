@@ -40,7 +40,8 @@ export type OrderEventType =
   | "account_linked"
   | "translation_edited"
   | "note_added"
-  | "approved";
+  | "approved"
+  | "staff_notified";
 
 export type PageOrderBasis = "logical" | "upload";
 

@@ -10,12 +10,14 @@ import {
   getOrderById,
   insertEvent,
   insertPreview,
+  insertQaRun,
   insertTranslation,
   latestReadyPreview,
   listConfirmations,
   listCorrections,
   listDocuments,
   listPages,
+  listQaRuns,
   markPreview,
   nextPreviewVersion,
   resolveCorrections,
@@ -25,6 +27,7 @@ import {
 } from "./db";
 import { sendPreviewReady } from "./email";
 import { HttpError } from "./errors";
+import { QA_REVIEW_REASON, assessTranslation, qaStatusForRun, qaWillRetry, type QaIssue } from "./qa";
 import { uploadObject } from "./storage";
 import type { ConfirmationRecord, CorrectionRecord, PageRecord } from "./types";
 
@@ -102,6 +105,7 @@ async function translateDocument(input: {
   fields: ConfirmationRecord[];
   pages: Array<PageRecord & { number: number }>;
   corrections: CorrectionRecord[];
+  qaIssues: QaIssue[];
 }) {
   const notes = input.corrections
     .map((correction) => {
@@ -116,6 +120,10 @@ async function translateDocument(input: {
     .map((page) => `Page ${page.number}:\n${(page.ocrText ?? "").slice(0, 6000)}`)
     .join("\n\n");
 
+  const qaNotes = input.qaIssues
+    .map((item) => `Page ${item.page ?? "all"} (${item.type}): ${item.note} Original: ${item.original}`)
+    .join("\n");
+
   const prompt = `Translate this document into English, one original page to one translated page.
 Source language: ${input.sourceLanguage}.
 File: ${input.filename}.
@@ -127,6 +135,8 @@ Confirmed fields:
 ${confirmedBlock(input.fields)}
 
 ${notes.length ? `The customer asked for these corrections:\n${notes.join("\n")}` : "There are no correction notes."}
+
+${qaNotes ? `A previous translation failed QA. Fix every item and keep confirmed names, dates, and numbers:\n${qaNotes}` : "There are no QA notes."}
 
 Return one object per page number, with blocks in the original top-to-bottom order.
 Keep names, CURPs, and place spellings exactly as printed or confirmed. Do not join a label and its value into a paragraph.
@@ -159,6 +169,7 @@ ${pageText}`;
 }
 
 export async function translateOrder(db: Db, orderId: string, token: string | null): Promise<void> {
+  let pendingQa: QaIssue[] = [];
   for (let round = 0; round < 3; round += 1) {
     const order = await getOrderById(db, orderId);
     if (!order) return;
@@ -210,6 +221,7 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
           fields,
           pages: documentPages,
           corrections: open,
+          qaIssues: pendingQa,
         });
         await insertTranslation(db, {
           documentId: document.id,
@@ -249,12 +261,40 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
       await uploadObject(db, "finals", translationPath, files.cleanTranslation, "application/pdf");
       await uploadObject(db, "finals", certificationPath, files.certification, "application/pdf");
       await uploadObject(db, "previews", previewPath, files.watermarkedPreview, "application/pdf");
-      await markPreview(db, orderId, version, "ready");
-      await resolveCorrections(db, open.map((correction) => correction.id), version);
       await updateOrder(db, orderId, {
         final_translation_path: translationPath,
         certification_path: certificationPath,
       });
+
+      const assessment = assessTranslation({
+        originalPages: pages.map((page) => ({ number: page.number, text: page.ocrText ?? "" })),
+        translatedPages: renderedPages.map((page) => ({
+          number: page.combinedPageNumber,
+          text: page.paragraphs.join("\n"),
+        })),
+        confirmations,
+      });
+      const attempt = (await listQaRuns(db, orderId)).length + 1;
+      const status = qaStatusForRun({ pass: assessment.pass, attempt });
+      await insertQaRun(db, {
+        orderId,
+        attempt,
+        status,
+        score: assessment.score,
+        issues: assessment.pass ? [] : assessment.issues,
+      });
+      if (!assessment.pass) {
+        await markPreview(db, orderId, version, "failed");
+        if (qaWillRetry({ pass: false, attempt })) {
+          pendingQa = assessment.issues;
+          continue;
+        }
+        await updateOrder(db, orderId, { status: "needs_review", review_reason: QA_REVIEW_REASON });
+        return;
+      }
+
+      await markPreview(db, orderId, version, "ready");
+      await resolveCorrections(db, open.map((correction) => correction.id), version);
 
       const email = await customerEmail(db, order.customerId);
       if (email) await sendPreviewReady(email, token);

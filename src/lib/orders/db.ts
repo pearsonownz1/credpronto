@@ -20,6 +20,7 @@ import type {
   PreviewRecord,
   TranslationRecord,
 } from "./types";
+import { type QaIssue, type QaRunRecord, type QaStatus } from "./qa";
 
 type Row = Record<string, unknown>;
 
@@ -717,6 +718,46 @@ export async function updateDelivery(
   patch: Record<string, unknown>,
 ): Promise<void> {
   const { error } = await db.from("deliveries").update(patch).eq("order_id", orderId);
+  fail(error);
+}
+
+export type { QaIssue, QaRunRecord, QaStatus } from "./qa";
+
+function mapQaRun(row: Row): QaRunRecord {
+  const issues = Array.isArray(row.issues) ? (row.issues as QaIssue[]) : [];
+  const status = row.status === "pass" || row.status === "fail" || row.status === "retranslated" ? row.status : "fail";
+  return {
+    id: String(row.id),
+    orderId: String(row.order_id),
+    attempt: num(row.attempt) ?? 1,
+    status,
+    score: num(row.score) ?? 0,
+    issues,
+    createdAt: str(row.created_at) ?? new Date().toISOString(),
+  };
+}
+
+export async function listQaRuns(db: Db, orderId: string): Promise<QaRunRecord[]> {
+  const { data, error } = await db
+    .from("order_qa_runs")
+    .select("*")
+    .eq("order_id", orderId)
+    .order("attempt", { ascending: true });
+  fail(error);
+  return ((data ?? []) as Row[]).map(mapQaRun);
+}
+
+export async function insertQaRun(
+  db: Db,
+  input: { orderId: string; attempt: number; status: QaStatus; score: number; issues: QaIssue[] },
+): Promise<void> {
+  const { error } = await db.from("order_qa_runs").insert({
+    order_id: input.orderId,
+    attempt: input.attempt,
+    status: input.status,
+    score: input.score,
+    issues: input.issues,
+  });
   fail(error);
 }
 
