@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
+import { writeToken } from "@/lib/flow/session";
 import { pageLabel } from "@/lib/flow/pricing";
 import {
   canOpenConfirm,
@@ -37,8 +38,13 @@ type DocFields = {
 };
 
 export function ConfirmView({ token: pathToken }: { token?: string }) {
-  const token = useStoredToken(pathToken);
+  const params = useSearchParams();
+  const token = useStoredToken(pathToken ?? params.get("token"));
   const { order, error, loading } = useCustomerOrder(token, "once");
+
+  useEffect(() => {
+    if (token) writeToken(token);
+  }, [token]);
 
   return (
     <div>

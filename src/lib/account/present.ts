@@ -26,6 +26,8 @@ export type OrderPresentation = {
   tab: DashboardTab | "refunded" | "cancelled";
   chip: { label: string; tone: ChipTone };
   action: NextAction;
+  /** Page for this order's current step. Null until the order has a token. */
+  rowHref: string | null;
   pages: number | null;
   documents: string;
   pair: string;
@@ -86,15 +88,26 @@ function languagePair(order: CustomerOrder): string {
   return `${languageLabel(order.sourceLanguage)} → ${languageLabel(target)}`;
 }
 
+/** Where a dashboard row opens for this order. The token stays in the URL so a new tab can load it. */
+export function orderStepHref(order: { status: string; orderToken?: string | null }): string | null {
+  const token = order.orderToken;
+  if (!token) return null;
+  const id = encodeURIComponent(token);
+  if (order.status === "preview_ready") return `/preview/${id}`;
+  if (order.status === "quoted") return `/confirm?token=${id}`;
+  return `/order/${id}`;
+}
+
 export function presentOrder(order: CustomerOrder, now = Date.now()): OrderPresentation {
+  const rowHref = orderStepHref(order);
   const base = {
+    rowHref,
     pages: order.billablePages,
     documents: order.documentsLabel || serviceLabel(order.serviceType),
     pair: languagePair(order),
     placed: formatOrderDate(order.createdAt),
     total: formatOrderMoney(order.totalCents),
   };
-  const token = order.orderToken ?? null;
 
   if (order.paymentStatus === "refunded") {
     return { ...base, tab: "refunded", chip: { label: "Refunded", tone: "neutral" }, action: NONE };
@@ -126,7 +139,7 @@ export function presentOrder(order: CustomerOrder, now = Date.now()): OrderPrese
           kind: "confirm",
           label: "Confirm details",
           emphasis: "link",
-          href: token ? `/order/${token}` : null,
+          href: rowHref,
         },
       };
     case "preview_ready":
@@ -138,7 +151,7 @@ export function presentOrder(order: CustomerOrder, now = Date.now()): OrderPrese
           kind: "review",
           label: "Review & buy",
           emphasis: "primary",
-          href: token ? `/preview/${token}` : null,
+          href: rowHref,
         },
       };
     case "paid":
@@ -155,7 +168,7 @@ export function presentOrder(order: CustomerOrder, now = Date.now()): OrderPrese
         tab: "ready",
         chip: { label: "Ready to download", tone: "ok" },
         action: order.downloadAvailable
-          ? { kind: "download", label: "Download", emphasis: "link", href: token }
+          ? { kind: "download", label: "Download", emphasis: "link", href: rowHref }
           : NONE,
       };
     case "cancelled":

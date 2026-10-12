@@ -9,6 +9,7 @@ import {
   formatOrderDate,
   initials,
   messageForGoogleError,
+  orderStepHref,
   ordersInTab,
   presentOrder,
   previewWaiting,
@@ -49,6 +50,14 @@ describe("customer order presentation", () => {
     ]);
     expect(orders.filter((item) => presentOrder(item, NOW).action.emphasis === "primary")).toHaveLength(1);
     expect(presentOrder(orders[0], NOW).action.href).toBe("/preview/tok-preview-24817");
+    expect(presentOrder(orders[0], NOW).rowHref).toBe("/preview/tok-preview-24817");
+    expect(orderStepHref(orders[1])).toBe("/order/tok-progress-24815");
+    expect(orderStepHref(orders[2])).toBe("/order/tok-paid-24790");
+    expect(orderStepHref(orders[3])).toBe("/confirm?token=tok-quoted-24702");
+    expect(presentOrder(orders[3], NOW).action.href).toBe("/confirm?token=tok-quoted-24702");
+    expect(orderStepHref(orders[4])).toBe("/order/tok-ready-24611");
+    expect(presentOrder(orders[4], NOW).action.href).toBe("/order/tok-ready-24611");
+    expect(orderStepHref({ status: "preview_ready", orderToken: null })).toBeNull();
     expect(ordersInTab(orders, "ready", NOW)).toHaveLength(2);
     expect(previewWaiting(orders, NOW)).toHaveLength(1);
     expect(formatOrderDate("2026-10-11T12:00:00.000Z")).toBe("Oct 11");
