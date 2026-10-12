@@ -429,9 +429,11 @@ const mockClient: FlowClient = {
         : addons.includes("mail")
           ? current.shippingAddress
           : null,
-      status: "paid",
+      status: "approved",
       payment: { status: "paid_test" },
       delivery: { status: "approved" },
+      paidAt: new Date().toISOString(),
+      fulfillment: "released",
     });
     writeToken(token || MOCK_TOKEN);
     return {

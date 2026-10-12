@@ -118,6 +118,29 @@ describe("certification queue", () => {
     expect(sorted.map((item) => item.id)).toEqual(["old-paid", "new-paid", "no-stamp-old", "no-stamp-new"]);
   });
 
+  it("keeps paidAt and fulfillment from the admin payload", () => {
+    const released = parseAdminOrder({
+      id: "CP-2",
+      status: "paid",
+      createdAt: "2026-10-12T10:00:00.000Z",
+      paidAt: "2026-10-12T11:00:00.000Z",
+      fulfillment: "released",
+    });
+    expect(released?.paidAt).toBe("2026-10-12T11:00:00.000Z");
+    expect(released?.fulfillment).toBe("released");
+    expect(released ? onCertificationQueue(released) : true).toBe(false);
+
+    const waiting = parseAdminOrder({
+      id: "CP-3",
+      status: "approved",
+      createdAt: "2026-10-12T10:00:00.000Z",
+      paidAt: "2026-10-12T11:05:00.000Z",
+      fulfillment: "awaiting_review",
+    });
+    expect(waiting?.fulfillment).toBe("awaiting_review");
+    expect(waiting ? certificationQueue([waiting]).map((item) => item.id) : []).toEqual(["CP-3"]);
+  });
+
   it("reads paid_at when the admin payload has not switched to paidAt", () => {
     const parsed = parseAdminOrder({
       id: "CP-1",

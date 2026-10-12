@@ -111,6 +111,37 @@ describe("download page", () => {
     expect(html).not.toContain("Finalizing your certified PDF");
   });
 
+  it("stays on the quick check when fulfillment is awaiting_review", () => {
+    state.order = readyOrder({
+      status: "approved",
+      payment: { status: "paid" },
+      delivery: { status: "approved" },
+      fulfillment: "awaiting_review",
+      paidAt: "2026-04-01T00:00:00.000Z",
+      orderType: "translation",
+      service: null,
+    });
+    const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
+    expect(html).toContain("quick final check");
+    expect(html).toContain('data-testid="paid-preview"');
+    expect(html).not.toContain('data-testid="download-certified"');
+  });
+
+  it("shows the download button as soon as fulfillment is released", () => {
+    state.order = readyOrder({
+      status: "paid",
+      payment: { status: "paid" },
+      delivery: { status: "pending" },
+      fulfillment: "released",
+      paidAt: "2026-04-01T00:00:00.000Z",
+    });
+    const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1", pendingPayment: true }));
+    expect(html).toContain("Your certified translation is ready.");
+    expect(html).toContain('data-testid="download-certified"');
+    expect(html).not.toContain("Finalizing your certified PDF");
+    expect(html).not.toContain("quick final check");
+  });
+
   it("shows the download button as soon as a paid order is released", () => {
     state.order = readyOrder({
       status: "approved",
