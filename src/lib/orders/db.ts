@@ -660,7 +660,7 @@ export async function markPaymentExpired(db: Db, paymentId: string): Promise<voi
   fail(error);
 }
 
-/** Keeps an unpaid preview order payable. Does not overwrite a later status. */
+/** Sets an order that is still on the preview step back to preview_ready. A later status is left alone. */
 export async function restorePreviewReadyOrder(db: Db, orderId: string): Promise<void> {
   const { error } = await db
     .from("orders")

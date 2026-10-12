@@ -192,7 +192,7 @@ HTTP 503.
 
 ## `POST /api/stripe/webhook`
 
-`checkout.session.completed`, `checkout.session.expired`, and `charge.refunded`. The body must be the raw payload. `Stripe-Signature` is verified with `STRIPE_WEBHOOK_SECRET`.
+`checkout.session.completed`, `checkout.session.expired`, and `charge.refunded`. The body must be the raw payload. `Stripe-Signature` is verified with `STRIPE_WEBHOOK_SECRET`. The route runs on the Node.js runtime.
 
 `checkout.session.completed` is applied once per Checkout Session id. A second delivery returns `{ "received": true, "duplicate": true }` and does not create a second payment or a second `paid` event. The payment is marked `paid`, a `deliveries` row is ensured at `pending`, and the order becomes `paid` only when `amount_total` equals `orders.total_cents` and `currency` equals `orders.currency` (case-insensitive). A mismatch does not mark the order paid.
 
