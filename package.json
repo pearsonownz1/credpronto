@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "postinstall": "node scripts/copy-pdfium.mjs",
-    "prebuild": "node scripts/copy-pdfium.mjs",
+    "postinstall": "node scripts/copy-pdfium.mjs && node scripts/copy-pdfjs.mjs",
+    "prebuild": "node scripts/copy-pdfium.mjs && node scripts/copy-pdfjs.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -36,6 +36,7 @@
     "next": "16.4.0",
     "next-mdx-remote": "^6.0.0",
     "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.4.299",
     "pinyin-pro": "^3.29.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",

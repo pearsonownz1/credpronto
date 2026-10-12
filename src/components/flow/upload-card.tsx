@@ -14,6 +14,7 @@ import { pageLabel } from "@/lib/flow/pricing";
 import { dedupeUploads } from "@/lib/flow/uploads";
 import { sampleCustomerOrder } from "@/lib/flow/sample-order";
 import { writeEmail, writeToken } from "@/lib/flow/session";
+import { rememberUpload } from "@/lib/flow/upload-blobs";
 import {
   COURSE_BY_COURSE_PRICE_LABEL,
   DIPLOMA_PRICE_LABEL,
@@ -118,6 +119,7 @@ export function UploadCard({
       trackOrderUpload(result.orderId, pageCount);
       writeToken(result.orderToken);
       writeEmail(email);
+      rememberUpload(result.orderToken, picked);
       router.push(`/order/${encodeURIComponent(result.orderToken)}`);
     } catch (cause) {
       const message =

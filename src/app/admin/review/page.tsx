@@ -8,6 +8,7 @@ import {
   EQUIVALENCY_UNMAPPED,
   onStaffReviewQueue,
 } from "@/lib/orders/equivalency";
+import { TRANSLATION_TIMEOUT_REASON } from "@/lib/orders/translation-failure";
 import { expeditedFirst } from "@/lib/orders/fulfillment";
 
 const REVIEW_STATUSES = ["needs_review", "correction_requested"] as const;
@@ -23,9 +24,10 @@ export default function ReviewPage() {
 }
 
 async function ReviewList() {
-  const [result, flagged] = await Promise.all([
+  const [result, flagged, stalled] = await Promise.all([
     loadStatuses([...REVIEW_STATUSES]),
     loadReasons([EQUIVALENCY_UNMAPPED, EQUIVALENCY_QA_REVIEW, EQUIVALENCY_QA_RESEARCH]),
+    listAdminOrders({ reviewReason: TRANSLATION_TIMEOUT_REASON, limit: 100 }),
   ]);
   if (!result.ok) {
     return (
@@ -41,8 +43,15 @@ async function ReviewList() {
       </p>
     );
   }
+  if (!stalled.ok) {
+    return (
+      <p role="alert" className="text-sm text-[#b45309]">
+        {stalled.error}
+      </p>
+    );
+  }
   const orders = expeditedFirst(
-    [...result.data.orders, ...flagged.data.orders].filter((order, index, all) => {
+    [...result.data.orders, ...flagged.data.orders, ...stalled.data.orders].filter((order, index, all) => {
       if (!onStaffReviewQueue(order)) return false;
       return all.findIndex((item) => item.id === order.id) === index;
     }),
@@ -50,7 +59,7 @@ async function ReviewList() {
   return (
     <OrdersBoard
       title="Needs review"
-      lede="Orders the pipeline could not finish, including diploma equivalencies waiting on staff."
+      lede="Orders the pipeline could not finish, including translations that timed out and diploma equivalencies waiting on staff."
       orders={orders}
       page={{ limit: 100, offset: 0, total: orders.length }}
       status={null}

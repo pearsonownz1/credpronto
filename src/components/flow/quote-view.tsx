@@ -21,9 +21,11 @@ import {
   totalLabel,
   type QuotePageRow,
 } from "@/lib/flow/present";
+import { rememberDocument } from "@/lib/flow/upload-blobs";
 import { pageStatusTag, sumQuotedBillable } from "@/lib/orders/skip-pages";
 import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
 import type { CustomerOrder } from "@/lib/orders/view";
+import { FilePreview, inlineSourceUrl, type ViewerPage } from "./file-preview";
 import { FlowHeader } from "./flow-header";
 import { ReadingFiles } from "./reading-files";
 import { FlowStatus } from "./status";
@@ -267,28 +269,52 @@ export function QuoteBody({
                 data-testid="file-row"
                 className={index > 0 ? "border-t border-line" : undefined}
               >
-                <div className="grid grid-cols-[52px_minmax(0,1fr)] items-start gap-3 px-4 py-3.5 text-sm md:gap-4">
-                  <FileThumb filename={file.filename} />
-                  <div className="min-w-0">
-                    <b className="block break-words">{file.filename}</b>
-                    <div data-testid="file-billable" className="text-[12.5px] text-ink-muted">
-                      {file.pages == null ? "—" : fileCountLabel(file.billable)}
+                <FilePreview
+                  token={token}
+                  fileId={file.id}
+                  filename={file.filename}
+                  sourceUrl={inlineSourceUrl(live.documents.find((document) => document.id === file.id))}
+                  pages={file.rows.map(
+                    (row): ViewerPage => ({
+                      skip: rowSkipped(row),
+                      skipReason: row.skipReason,
+                      billableUnits: row.billableUnits,
+                    }),
+                  )}
+                  renderThumb={(thumb) => (
+                    <div className="flex items-start gap-3 px-4 py-3.5 text-sm md:gap-4">
+                      {thumb}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-col gap-1 md:flex-row md:items-start md:justify-between md:gap-3">
+                          <b className="min-w-0 break-words md:flex-1">{file.filename}</b>
+                          <p
+                            data-testid="file-turnaround"
+                            className="flex shrink-0 items-center gap-1 text-[13px] font-semibold leading-5 text-[var(--cp-ok)]"
+                          >
+                            <ClockIcon />
+                            Ready in about 10 minutes
+                          </p>
+                        </div>
+                        <div data-testid="file-billable" className="text-[12.5px] text-ink-muted">
+                          {file.pages == null ? "—" : fileCountLabel(file.billable)}
+                        </div>
+                        {file.rows.length > 0 ? (
+                          <button
+                            type="button"
+                            data-testid="page-details"
+                            aria-expanded={open}
+                            onClick={() =>
+                              setOpenDetails((current) => ({ ...current, [file.id]: !open }))
+                            }
+                            className="mt-2 text-[13px] font-semibold text-primary"
+                          >
+                            Page details
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
-                    {file.rows.length > 0 ? (
-                      <button
-                        type="button"
-                        data-testid="page-details"
-                        aria-expanded={open}
-                        onClick={() =>
-                          setOpenDetails((current) => ({ ...current, [file.id]: !open }))
-                        }
-                        className="mt-2 text-[13px] font-semibold text-primary"
-                      >
-                        Page details
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
+                  )}
+                />
                 {open ? (
                   <div className="space-y-2 px-4 pb-3.5">
                     {file.rows.map((row, pageNumber) => {
@@ -424,6 +450,15 @@ function BillingNote({ note }: { note: string }) {
       </span>
       <span>{note}</span>
     </p>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <circle cx="7" cy="7" r="5.4" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M7 4.1V7.1L9 8.3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -579,6 +614,7 @@ function ReplacementUpload({
     setError(null);
     try {
       await getFlowClient().replaceDocument(token, documentId, file);
+      rememberDocument(token, documentId, file);
       onReplaced();
     } catch (cause) {
       setError(cause instanceof FlowApiError ? cause.message : "We couldn't upload that replacement.");

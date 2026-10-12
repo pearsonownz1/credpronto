@@ -13,6 +13,21 @@ function json(body: unknown, status = 200) {
   });
 }
 
+describe("source file URL", () => {
+  it("requests the signed original for a quote thumbnail", async () => {
+    const fetchSpy = vi.fn(async () =>
+      json({ url: "https://files.example/a.pdf", expiresAt: "2026-10-12T00:10:00.000Z" }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(getFlowClient().sourceFile("order token", "file/1")).resolves.toEqual({
+      url: "https://files.example/a.pdf",
+      expiresAt: "2026-10-12T00:10:00.000Z",
+    });
+    expect(fetchSpy).toHaveBeenCalledWith("/api/orders/order%20token/files/file%2F1/source", undefined);
+  });
+});
+
 describe("target language update", () => {
   it("patches /api/orders/[token] with the chosen target", async () => {
     const fetchSpy = vi.fn(async () => json({ orderId: "order-1", status: "quoted" }));

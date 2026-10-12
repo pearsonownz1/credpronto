@@ -121,6 +121,7 @@ function orderRecord(result: EvaluationResult): OrderRecord {
     edgeCredentialId: "cred-1",
     edgeGradingScaleId: null,
     createdAt: "2026-10-12T00:00:00.000Z",
+    updatedAt: "2026-10-12T00:00:00.000Z",
     progress: { step: "done", pagesRead: 1, pagesTotal: 1 },
   };
 }

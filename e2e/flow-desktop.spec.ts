@@ -8,6 +8,69 @@ test("customer walks from landing through download", async ({ page }) => {
   await walkCustomerFlow(page);
 });
 
+test("a quote file shows a large page viewer and opens it full size", async ({ page }) => {
+  await page.goto("/order/mock-token");
+  await expect(page.getByRole("heading", { name: /exact price/ }).filter({ visible: true })).toBeVisible();
+  const list = page.getByTestId("file-list").filter({ visible: true });
+  const turnaround = list.getByTestId("file-turnaround").first();
+  await expect(turnaround).toContainText("Ready in about 10 minutes");
+  const filename = list.locator("b").first();
+  const nameBox = await filename.boundingBox();
+  const turnBox = await turnaround.boundingBox();
+  expect(nameBox).toBeTruthy();
+  expect(turnBox).toBeTruthy();
+  expect(turnBox!.x).toBeGreaterThan(nameBox!.x + nameBox!.width - 4);
+
+  const row = list.getByTestId("file-row").filter({ hasText: "acta-nacimiento.pdf" });
+  const thumb = row.getByTestId("file-thumb-button");
+  await expect(thumb).toBeVisible();
+  const box = await thumb.boundingBox();
+  expect(box).toBeTruthy();
+  expect(Math.round(box!.width)).toBe(72);
+  expect(Math.round(box!.height)).toBe(96);
+
+  const viewer = row.getByTestId("page-viewer");
+  await expect(viewer.getByTestId("page-viewer-label")).toHaveText("Page 1");
+  await expect(viewer).not.toContainText(/\bof \d+/);
+  const frame = viewer.getByTestId("page-viewer-frame");
+  const frameBox = await frame.boundingBox();
+  expect(frameBox).toBeTruthy();
+  expect(Math.round(frameBox!.width)).toBe(420);
+  await viewer.getByTestId("page-viewer-next").click();
+  await expect(viewer.getByTestId("page-viewer-label")).toHaveText("Page 2");
+  await expect(viewer.getByTestId("page-viewer-page").locator("img")).toBeVisible();
+  await viewer.getByTestId("page-viewer-prev").click();
+  await expect(viewer.getByTestId("page-viewer-label")).toHaveText("Page 1");
+
+  await viewer.getByTestId("page-viewer-page").click();
+  const preview = page.getByTestId("file-preview");
+  await expect(preview).toBeVisible();
+  await expect(preview.getByTestId("file-preview-page")).toHaveCount(1);
+  await expect(preview).toContainText("Page 1");
+  await expect(preview).not.toContainText(/\bof \d+/);
+  await page.keyboard.press("Escape");
+  await expect(preview).toBeHidden();
+
+  await viewer.getByTestId("page-viewer-page").click();
+  await expect(preview).toBeVisible();
+  await page.mouse.click(8, 8);
+  await expect(preview).toBeHidden();
+});
+
+test("a missing source file hides the page viewer", async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem("credpronto-mock-source-missing", "1");
+  });
+  await page.goto("/order/mock-token");
+  await expect(page.getByRole("heading", { name: /exact price/ }).filter({ visible: true })).toBeVisible();
+  await expect(page.getByTestId("page-viewer")).toHaveCount(0);
+  await expect(page.getByTestId("file-thumb-fallback")).toHaveCount(0);
+  await expect(page.getByTestId("file-thumb-skeleton")).toHaveCount(0);
+  await expect(page.getByTestId("file-turnaround").filter({ visible: true }).first()).toContainText(
+    "Ready in about 10 minutes",
+  );
+});
+
 test("a loaded quote replaces the loading announcement", async ({ page }) => {
   await page.goto("/order/mock-token");
   await expect(page.getByRole("heading", { name: /exact price/ }).filter({ visible: true })).toBeVisible();
@@ -102,7 +165,7 @@ test("page order and a blurry photo are shown before a quote", async ({ page }) 
   await expect(files).toContainText("scan-page-2.jpg");
   await expect(files).not.toContainText("printed page");
   await expect(files).not.toContainText("We kept the pages in the order you uploaded them.");
-  await expect(page.getByText("Page 1").filter({ visible: true })).toHaveCount(0);
+  await expect(page.getByTestId("page-row").filter({ visible: true })).toHaveCount(0);
   const quality = page.getByTestId("image-quality").filter({ visible: true });
   await expect(quality).toContainText("blurry");
   await expect(quality).toContainText("Upload a replacement");
@@ -175,7 +238,7 @@ test("an English quote can pick a target language and continue", async ({ page }
     "aria-expanded",
     "false",
   );
-  await expect(page.getByText("Page 1").filter({ visible: true })).toHaveCount(0);
+  await expect(page.getByTestId("page-row").filter({ visible: true })).toHaveCount(0);
   await expect(page.getByText("We kept the pages in the order you uploaded them.")).toHaveCount(0);
   await expect(page.getByTestId("quote-total").filter({ visible: true })).toContainText("$29.85");
   await expect(page.locator("[data-testid=logo] img").first()).toHaveAttribute(
@@ -287,6 +350,17 @@ test("a quote shows billable pages and can skip one", async ({ page }) => {
   await expect(skipped).toBeVisible();
   await expect(page.getByTestId("page-rule").filter({ visible: true })).toHaveText(QUOTE_BILLING_NOTE);
   await expect(page.getByTestId("billing-info")).toHaveAttribute("title", QUOTE_BILLING_NOTE);
+
+  const viewer = page.getByTestId("page-viewer").filter({ visible: true });
+  await expect(viewer.getByTestId("page-viewer-label")).toHaveText("Page 1");
+  await expect(viewer).not.toContainText(/\bof \d+/);
+  await viewer.getByTestId("page-viewer-next").click();
+  await viewer.getByTestId("page-viewer-next").click();
+  await expect(viewer.getByTestId("page-viewer-label")).toHaveText("Page 3");
+  await expect(viewer.getByTestId("page-viewer-status")).toHaveText("Free (not a document)");
+  await expect(viewer.getByTestId("page-viewer-page").locator("img")).toHaveClass(/opacity-40/);
+  await viewer.getByTestId("page-viewer-prev").click();
+  await viewer.getByTestId("page-viewer-prev").click();
 
   await page.getByTestId("page-skip-1").getByRole("button", { name: "Skip" }).click();
   await expect(page.getByTestId("file-billable").filter({ visible: true })).toHaveText(

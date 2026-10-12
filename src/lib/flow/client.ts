@@ -84,6 +84,8 @@ export type FlowClient = {
   ): Promise<CustomerOrder>;
   /** Mock walk-through moves a quoted order to preview_ready before checkout. */
   markPreviewReady(token: string): Promise<void>;
+  /** Short-lived URL for the original upload. `{ url, expiresAt }`. */
+  sourceFile(token: string, fileId: string): Promise<{ url: string; expiresAt: string }>;
 };
 
 export function flowUsesMock(): boolean {
@@ -177,6 +179,11 @@ const liveClient: FlowClient = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
+  },
+  sourceFile(token, fileId) {
+    return request(
+      `/api/orders/${encodeURIComponent(token)}/files/${encodeURIComponent(fileId)}/source`,
+    );
   },
 };
 
@@ -415,6 +422,17 @@ const mockClient: FlowClient = {
     };
     writeMockOrder(saved);
     return saved;
+  },
+  async sourceFile(_token, fileId) {
+    if (typeof sessionStorage !== "undefined" && sessionStorage.getItem("credpronto-mock-source-missing") === "1") {
+      throw new FlowApiError("Not found", 404);
+    }
+    const name =
+      readMockOrder().documents.find((document) => document.id === fileId)?.filename.toLowerCase() ?? "";
+    const url = name.endsWith(".pdf") || !name
+      ? "/samples/birth-certificate-es.pdf"
+      : "/samples/cover-cert-sample.png";
+    return { url, expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString() };
   },
   async replaceDocument(_token, documentId) {
     const current = readMockOrder();

@@ -46,4 +46,13 @@ describe("order live message", () => {
     ).toBe("We couldn't read these files.");
     expect(orderLiveMessage({ loading: true, order })).toBe("Quote ready: 2 pages, $19.90");
   });
+
+  it("says a delayed translation is taking longer than usual", () => {
+    expect(
+      orderLiveMessage({
+        loading: false,
+        order: { status: "processing", billablePages: 2, totalCents: 1990, delayed: true },
+      }),
+    ).toBe("Taking longer than usual, we're on it.");
+  });
 });
