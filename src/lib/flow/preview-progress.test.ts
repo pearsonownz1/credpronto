@@ -9,6 +9,7 @@ import {
   previewWork,
   translatingEase,
   translatingPercent,
+  translatingStatusLabel,
 } from "./preview-progress";
 
 describe("preview step progress", () => {
@@ -81,10 +82,58 @@ describe("preview step progress", () => {
     expect(eased.displayPercent).toBeLessThan(100);
   });
 
-  it("moves with translating page counts and never presets 75", () => {
-    expect(translatingPercent({ pagesRead: 0, pagesTotal: 4, translatingElapsedMs: 0 })).toBe(92);
-    expect(translatingPercent({ pagesRead: 1, pagesTotal: 4, translatingElapsedMs: 0 })).toBe(93.5);
-    expect(translatingPercent({ pagesRead: 2, pagesTotal: 2, translatingElapsedMs: 0 })).toBe(92);
+  it("moves with billable translating counts and never presets 75", () => {
+    expect(translatingPercent({ translatingElapsedMs: 0 })).toBe(92);
+    expect(translatingPercent({ pagesDone: 0, pagesTranslateTotal: 9, translatingElapsedMs: 0 })).toBe(92);
+    expect(translatingPercent({ pagesDone: 4, pagesTranslateTotal: 9, translatingElapsedMs: 0 })).toBeCloseTo(
+      92 + 6 * (4 / 9),
+    );
+    expect(translatingPercent({ pagesDone: 9, pagesTranslateTotal: 9, translatingElapsedMs: 0 })).toBe(98);
+    expect(
+      translatingPercent({
+        pagesDone: 4,
+        pagesTranslateTotal: 9,
+        translatingElapsedMs: 0,
+      }),
+    ).not.toBe(75);
+
+    const work = previewWork({
+      status: "processing",
+      progressStep: "translating",
+      pagesRead: 12,
+      pagesTotal: 12,
+      pagesDone: 3,
+      pagesTranslateTotal: 9,
+      translatingElapsedMs: 0,
+    });
+    expect(work.percent).toBeCloseTo(92 + 6 * (3 / 9));
+    expect(work.label).toBe("Translating… 3 pages done");
+    expect(work.label).not.toMatch(/page \d+ of \d+/);
+    expect(work.label).not.toContain("of 9");
+    expect(work.label).not.toContain("of 12");
+    expect(work.steps.find((step) => step.id === "translating")?.label).toBe("Translating… 3 pages done");
+    expect(work.displayPercent).not.toBe(75);
+
+    expect(translatingStatusLabel({ pagesDone: 3 })).toBe("Translating… 3 pages done");
+    expect(translatingStatusLabel({})).toBe("Translating and laying out");
+    const eased = previewWork({
+      status: "processing",
+      progressStep: "translating",
+      pagesRead: 12,
+      pagesTotal: 12,
+      translatingElapsedMs: 0,
+    });
+    expect(eased.percent).toBe(92);
+    expect(eased.label).toBe("Translating and laying out");
+    expect(
+      previewStepPercent({
+        progressStep: "translating",
+        pagesRead: 1,
+        pagesTotal: 4,
+        translatingElapsedMs: 0,
+      }),
+    ).toBe(92);
+
     for (const step of ["uploaded", "reading", "language", "counting", "quoting", "translating"] as const) {
       expect(
         previewStepPercent({
