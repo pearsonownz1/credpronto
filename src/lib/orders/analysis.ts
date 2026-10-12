@@ -1,4 +1,5 @@
-import { extractText, getDocumentProxy } from "unpdf";
+import { getDocumentProxy } from "unpdf";
+import { joinTextItems, type TextItemLike } from "./text-layer";
 import { z } from "zod";
 import { generateObject } from "./ai";
 import { SPARSE_PAGE_WORDS } from "./constants";
@@ -22,7 +23,7 @@ import { buildCombinedOriginal, type SourceFile } from "./pdf/combine";
 import { decideQuote, etaFromNow } from "./quote";
 import { downloadObject, uploadObject } from "./storage";
 import { billableCjkUnits, billableUnits, isCjkBillingLanguage, countCjkUnits } from "./billing";
-import { countWords } from "./words";
+import { countWords, isCjkDominant } from "./words";
 import type { DocumentRecord } from "./types";
 
 const readingSchema = z.object({
@@ -64,8 +65,13 @@ function guessedDateFormat(value: string): DateFormat | null {
 
 async function pdfTexts(bytes: Uint8Array): Promise<string[]> {
   const proxy = await getDocumentProxy(bytes);
-  const extracted = await extractText(proxy, { mergePages: false });
-  return extracted.text;
+  const texts: string[] = [];
+  for (let pageNumber = 1; pageNumber <= proxy.numPages; pageNumber += 1) {
+    const page = await proxy.getPage(pageNumber);
+    const content = await page.getTextContent();
+    texts.push(joinTextItems(content.items as TextItemLike[]));
+  }
+  return texts;
 }
 
 async function imageBytesForModel(bytes: Uint8Array, mime: string): Promise<{ bytes: Uint8Array; mime: string }> {
@@ -226,7 +232,7 @@ export async function analyzeOrder(db: Db, orderId: string): Promise<void> {
         });
       }
 
-      const cjk = isCjkBillingLanguage(language);
+      const cjk = language ? isCjkBillingLanguage(language) : isCjkDominant(joined);
       await replacePages(
         db,
         document.id,
