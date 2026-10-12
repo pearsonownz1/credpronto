@@ -77,7 +77,8 @@ export function SideBySideViewer({
   original: string;
   translation: string;
 }) {
-  const { engine, isLoading, error } = usePdfiumEngine();
+  const wasmUrl = new URL("/pdfium/pdfium.wasm", window.location.origin).href;
+  const { engine, isLoading, error } = usePdfiumEngine({ wasmUrl });
   const plugins = useMemo(
     () => [
       createPluginRegistration(DocumentManagerPluginPackage, {
@@ -208,6 +209,8 @@ function ViewerWorkspace() {
         return;
       }
 
+      if (pendingRestore.current) return;
+
       const sourceAnchor = visibleAnchor(event.metrics);
       snapshot.current = { ...snapshot.current, ...sourceAnchor };
 
@@ -252,31 +255,61 @@ function ViewerWorkspace() {
       return;
     }
     const documentId = DOCUMENT_ID[role];
-    let tries = 0;
-    const timer = window.setInterval(() => {
-      tries += 1;
-      const mounted = viewportCapability.isViewportMounted(documentId);
-      const scope = scrollCapability.forDocument(documentId);
-      if (mounted && scope.getTotalPages() > 0) {
-        suppressSync.current = true;
-        zoomCapability.forDocument(documentId).requestZoom(snapshot.current.zoom);
-        scope.scrollToPage({
-          pageNumber: snapshot.current.pageNumber,
-          pageCoordinates: { x: snapshot.current.x, y: snapshot.current.y },
-          alignX: 0,
-          alignY: 0,
-          behavior: "instant",
-        });
-        pendingRestore.current = null;
-        window.setTimeout(() => {
-          suppressSync.current = false;
-        }, 200);
-        window.clearInterval(timer);
-      } else if (tries > 40) {
-        window.clearInterval(timer);
+    const shot = { ...snapshot.current };
+    let cancelled = false;
+
+    const place = () => {
+      scrollCapability.forDocument(documentId).scrollToPage({
+        pageNumber: shot.pageNumber,
+        pageCoordinates: { x: shot.x, y: shot.y },
+        alignX: 0,
+        alignY: 0,
+        behavior: "instant",
+      });
+    };
+
+    const zoomMatches = () => {
+      const state = zoomCapability.forDocument(documentId).getState();
+      return typeof shot.zoom === "number"
+        ? typeof state.zoomLevel === "number" &&
+            Math.abs(state.currentZoomLevel - shot.zoom) < 0.02
+        : state.zoomLevel === shot.zoom;
+    };
+
+    const apply = () => {
+      if (cancelled) return;
+      if (!viewportCapability.isViewportMounted(documentId)) return;
+      if (scrollCapability.forDocument(documentId).getTotalPages() <= 0) return;
+      suppressSync.current = true;
+      if (!zoomMatches()) {
+        zoomCapability.forDocument(documentId).requestZoom(shot.zoom);
       }
-    }, 50);
-    return () => window.clearInterval(timer);
+      place();
+    };
+
+    const stopLayout = scrollCapability.onLayoutReady((event) => {
+      if (cancelled || event.documentId !== documentId) return;
+      window.requestAnimationFrame(() => {
+        apply();
+        window.requestAnimationFrame(apply);
+      });
+    });
+
+    const timer = window.setInterval(apply, 50);
+    const stop = window.setTimeout(() => {
+      if (cancelled) return;
+      apply();
+      pendingRestore.current = null;
+      suppressSync.current = false;
+      window.clearInterval(timer);
+    }, 700);
+
+    return () => {
+      cancelled = true;
+      stopLayout();
+      window.clearInterval(timer);
+      window.clearTimeout(stop);
+    };
   }, [isMobile, role, scrollCapability, viewportCapability, zoomCapability]);
 
   function rememberLead(next: Role) {
@@ -493,13 +526,26 @@ function DocumentPane({
   const documentId = DOCUMENT_ID[role];
   const { currentPage, totalPages } = usePageCount(documentId);
   const { state: zoomState } = useZoom(documentId);
+  const { provides: zoomCapability } = useZoomCapability();
   const zoom = Math.round((zoomState.currentZoomLevel || 0) * 100);
+  const [zoomReady, setZoomReady] = useState(false);
+
+  useEffect(() => {
+    if (!zoomCapability) return;
+    return zoomCapability.forDocument(documentId).onZoomChange((event) => {
+      if (event.viewport.clientWidth <= 0) return;
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => setZoomReady(true));
+      });
+    });
+  }, [documentId, zoomCapability]);
 
   return (
     <section
       data-testid={`pane-${role}`}
       data-page={currentPage}
       data-zoom={zoom}
+      data-zoom-ready={zoomReady ? "true" : "false"}
       data-total={totalPages}
       aria-label={label}
       className="flex min-h-0 min-w-0 flex-1 flex-col border-line md:border-l md:first:border-l-0"
@@ -513,6 +559,7 @@ function DocumentPane({
             <ThumbnailsPane documentId={documentId}>
               {(meta: ThumbMeta) => (
                 <button
+                  key={meta.pageIndex}
                   type="button"
                   data-testid={`thumb-${role}-${meta.pageIndex + 1}`}
                   className="absolute right-1 left-1"

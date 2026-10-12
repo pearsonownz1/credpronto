@@ -1,6 +1,16 @@
 import { expect, test } from "@playwright/test";
 
 test("side-by-side preview syncs page and zoom", async ({ page }) => {
+  const consoleText: string[] = [];
+  const pdfiumUrls: string[] = [];
+  page.on("console", (message) => {
+    consoleText.push(message.text());
+  });
+  page.on("request", (request) => {
+    const url = request.url();
+    if (url.includes("pdfium") || url.includes("jsdelivr")) pdfiumUrls.push(url);
+  });
+
   await page.goto("/preview/demo");
 
   const original = page.getByTestId("pane-original");
@@ -10,6 +20,7 @@ test("side-by-side preview syncs page and zoom", async ({ page }) => {
   await expect(translation).toHaveAttribute("data-page", "1");
   await expect(original.locator("img").first()).toBeVisible();
   await expect(translation.locator("img").first()).toBeVisible();
+  await expect(original).toHaveAttribute("data-zoom-ready", "true");
   await expect(page.getByTestId("page-status")).toContainText("Page 1 of 3");
   await expect(page.getByTestId("translation-watermark")).toBeVisible();
   await expect(original.getByTestId("translation-watermark")).toHaveCount(0);
@@ -32,6 +43,10 @@ test("side-by-side preview syncs page and zoom", async ({ page }) => {
   await page.getByTestId("thumb-original-3").click();
   await expect(original).toHaveAttribute("data-page", "3");
   await expect(translation).toHaveAttribute("data-page", "3");
+
+  expect(pdfiumUrls.some((url) => url.includes("/pdfium/pdfium.wasm"))).toBe(true);
+  expect(pdfiumUrls.some((url) => url.includes("jsdelivr"))).toBe(false);
+  expect(consoleText.join("\n")).not.toContain('unique "key" prop');
 });
 
 test("a 12-page sample renders without moving the shell", async ({ page }) => {

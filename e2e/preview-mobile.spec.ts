@@ -7,6 +7,7 @@ test("mobile toggle keeps the page and zoom", async ({ page }) => {
   await expect(original).toHaveAttribute("data-page", "1");
   await expect(page.getByTestId("pane-translation")).toHaveCount(0);
   await expect(original.locator("img").first()).toBeVisible();
+  await expect(original).toHaveAttribute("data-zoom-ready", "true");
 
   await page.getByTestId("next-page").click();
   await expect(original).toHaveAttribute("data-page", "2");

@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "postinstall": "node scripts/copy-pdfium.mjs",
+    "prebuild": "node scripts/copy-pdfium.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -14,6 +16,7 @@
   "dependencies": {
     "@embedpdf/core": "2.15.1",
     "@embedpdf/engines": "2.15.1",
+    "@embedpdf/pdfium": "2.15.1",
     "@embedpdf/plugin-document-manager": "2.15.1",
     "@embedpdf/plugin-interaction-manager": "2.15.1",
     "@embedpdf/plugin-render": "2.15.1",
