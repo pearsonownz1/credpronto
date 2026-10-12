@@ -1,3 +1,4 @@
+import { parseStoredPageOrder, compareCombinedPages } from "./page-order";
 import type { Db } from "./storage";
 
 export type { Db };
@@ -57,6 +58,8 @@ function mapOrder(row: Row): OrderRecord {
     combinedOriginalPath: str(row.combined_original_path),
     finalTranslationPath: str(row.final_translation_path),
     certificationPath: str(row.certification_path),
+    pageOrderBasis: row.page_order_basis === "logical" || row.page_order_basis === "upload" ? row.page_order_basis : null,
+    pageOrder: parseStoredPageOrder(row.page_order),
     createdAt: str(row.created_at) ?? new Date().toISOString(),
   };
 }
@@ -74,7 +77,13 @@ function mapDocument(row: Row): DocumentRecord {
     detectedLanguage: str(row.detected_language),
     confidence: num(row.confidence),
     position: num(row.position) ?? 0,
+    appliedPosition: num(row.applied_position),
   };
+}
+
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
 }
 
 function mapPage(row: Row): PageRecord {
@@ -89,6 +98,12 @@ function mapPage(row: Row): PageRecord {
     needsReview: Boolean(row.needs_review),
     widthPt: num(row.width_pt),
     heightPt: num(row.height_pt),
+    uploadPage: num(row.upload_page),
+    logicalPage: num(row.logical_page),
+    orderHint: str(row.order_hint),
+    qualityScore: num(row.quality_score),
+    qualityFlags: stringList(row.quality_flags),
+    qualityMessage: str(row.quality_message),
   };
 }
 
@@ -311,6 +326,12 @@ export async function replacePages(
     needsReview: boolean;
     widthPt: number;
     heightPt: number;
+    uploadPage: number;
+    logicalPage: number | null;
+    orderHint: string | null;
+    qualityScore: number | null;
+    qualityFlags: string[];
+    qualityMessage: string | null;
   }>,
 ): Promise<void> {
   const deleted = await db.from("document_pages").delete().eq("document_id", documentId);
@@ -327,6 +348,12 @@ export async function replacePages(
       needs_review: page.needsReview,
       width_pt: page.widthPt,
       height_pt: page.heightPt,
+      upload_page: page.uploadPage,
+      logical_page: page.logicalPage,
+      order_hint: page.orderHint,
+      quality_score: page.qualityScore,
+      quality_flags: page.qualityFlags,
+      quality_message: page.qualityMessage,
     })),
   );
   fail(error);
@@ -340,12 +367,7 @@ export async function listPages(db: Db, documentIds: string[]): Promise<PageReco
 }
 
 export function withCombinedNumbers(documents: DocumentRecord[], pages: PageRecord[]) {
-  const position = new Map(documents.map((document) => [document.id, document.position]));
-  const sorted = [...pages].sort((a, b) => {
-    const docDelta = (position.get(a.documentId) ?? 0) - (position.get(b.documentId) ?? 0);
-    if (docDelta !== 0) return docDelta;
-    return a.pageNumber - b.pageNumber;
-  });
+  const sorted = [...pages].sort((a, b) => compareCombinedPages(documents, a, b));
   return sorted.map((page, index) => ({ ...page, number: index + 1 }));
 }
 

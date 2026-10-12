@@ -105,10 +105,40 @@ Idempotent retry of analysis or translation. Safe to call more than once. Return
   "documents": [
     {
       "id": "…",
-      "filename": "diploma.pdf",
-      "pageCount": 2,
-      "detectedLanguage": "es",
-      "confidence": 0.92
+      "filename": "scan-page-2.jpg",
+      "pageCount": 1,
+      "detectedLanguage": "fr",
+      "confidence": 0.92,
+      "uploadPosition": 1,
+      "appliedPosition": 2
+    }
+  ],
+  "pageOrder": {
+    "basis": "logical",
+    "pages": [
+      {
+        "documentId": "…",
+        "filename": "scan-page-1.jpg",
+        "uploadPosition": 2,
+        "appliedPosition": 1,
+        "uploadPage": 1,
+        "appliedPage": 1,
+        "logicalPage": 1,
+        "hint": "page 1/2",
+        "confidence": 0.93
+      }
+    ]
+  },
+  "pages": [
+    {
+      "documentId": "…",
+      "pageNumber": 1,
+      "uploadPage": 1,
+      "logicalPage": 1,
+      "orderHint": "page 1/2",
+      "qualityScore": 0.94,
+      "qualityFlags": [],
+      "qualityMessage": null
     }
   ],
   "billablePages": 3,
@@ -136,7 +166,19 @@ Idempotent retry of analysis or translation. Safe to call more than once. Return
 
 `sourceLanguageConfidence` is the lowest document confidence, from 0 to 1.
 
-Quoted orders set `etaAt` about one hour out. `needs_review` sets it about 24 hours out and explains why in `reviewReason` (low confidence, unreadable page, unsupported language, or detection unavailable).
+`documents` stays in upload order, which is also `documentIndex` on preview pages and original downloads. `uploadPosition` is that upload order. `appliedPosition` is the order used for the combined original after analysis. `pageOrder` is null until analysis finishes. `basis` is `logical` when printed page numbers or continuation cues were confident enough to reorder pages, and `upload` when they were not. Pages inside one file are reordered on their own. Separate one-page files (a scan of page 2 uploaded before page 1) are reordered together only when every page has a confident sequence. Otherwise the upload order is kept. `logicalPage` is the printed number, `hint` is the cue (`page 1/2`, `suite`), and `confidence` is the model's score for that cue. The combined original PDF follows this applied order, so preview page N is still the translation of original page N.
+
+`pages` lists each side after analysis. `pageNumber` is the applied page inside that file. `qualityScore` is legibility from 0 to 1. `qualityFlags` may include `blurry`, `cropped`, `glare`, `too_dark`, and `unreadable_fields`. `qualityMessage` is the retake instruction when that photo failed the image-quality gate, and null otherwise.
+
+Quoted orders set `etaAt` about one hour out. `needs_review` sets it about 24 hours out and explains why in `reviewReason` (low confidence, unreadable page, unsupported language, detection unavailable, or `image_quality`).
+
+A photo or scan the model sees (a phone picture, or a PDF page without a usable text layer) with legibility below `0.6` does not get a quote. `status` is `needs_review` and `reviewReason` is exactly `image_quality`, even if language detection also looks uncertain. `qualityMessage` on each failing page tells the customer how to retake it. Billable pages and `totalCents` are still stored so staff can override. `POST /api/admin/orders/[id]/resolve-review` clears the hold and moves the order to `quoted` without a new photo. Until then, confirm, preview, and checkout stay blocked.
+
+## `POST /api/orders/[token]/documents/[documentId]/replace`
+
+Multipart upload with one `file` (or `files`) field. Allowed only when `status` is `needs_review` and `reviewReason` is `image_quality`. The file replaces that document and every document on the order is read again. The response is the `GET /api/orders/[token]` shape with `status` `draft`. Analysis runs after the response. A readable replacement can then be quoted. Another unreadable photo stays `needs_review` with `reviewReason` `image_quality`.
+
+`400` when the file is missing or empty. `404` when the token or document is unknown. `409` when the order is not waiting on a retake. `415` for an unsupported type. The same size limits as `POST /api/orders` apply.
 
 ## `POST /api/orders/[token]/confirm`
 

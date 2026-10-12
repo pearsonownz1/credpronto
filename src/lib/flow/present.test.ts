@@ -32,6 +32,8 @@ function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
         pageCount: 2,
         detectedLanguage: "es",
         confidence: 0.9,
+        uploadPosition: 1,
+        appliedPosition: 1,
       },
       {
         id: "doc-b",
@@ -39,8 +41,12 @@ function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
         pageCount: 1,
         detectedLanguage: "es",
         confidence: 0.9,
+        uploadPosition: 2,
+        appliedPosition: 2,
       },
     ],
+    pageOrder: null,
+    pages: [],
     billablePages: 3,
     unitPriceCents: 995,
     totalCents: 2985,
@@ -186,7 +192,12 @@ describe("preview mapping", () => {
     };
     const mapped = toPreviewOrder(order(), preview);
     expect(mapped.original.url).toBe("https://files.example/original");
-    expect(mapped.original.pages[1]).toEqual({ page: 2, widthPt: 500, heightPt: 700 });
+    expect(mapped.original.pages[1]).toEqual({
+      page: 2,
+      widthPt: 500,
+      heightPt: 700,
+      documentId: "doc-a",
+    });
     expect(mapped.pricing.totalCents).toBe(2985);
     expect(mapped.corrections[0]?.note).toBe("use the passport spelling");
     expect(documentIdForPage(order().documents, 2)).toBe("doc-a");

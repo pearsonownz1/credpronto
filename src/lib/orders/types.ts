@@ -42,6 +42,24 @@ export type OrderEventType =
   | "note_added"
   | "approved";
 
+export type PageOrderBasis = "logical" | "upload";
+
+export type StoredPage = {
+  documentId: string;
+  uploadPosition: number;
+  appliedPosition: number;
+  uploadPage: number;
+  appliedPage: number;
+  logicalPage: number | null;
+  hint: string | null;
+  confidence: number | null;
+};
+
+export type StoredPageOrder = {
+  basis: PageOrderBasis;
+  pages: StoredPage[];
+};
+
 export type OrderRecord = {
   id: string;
   customerId: string;
@@ -59,6 +77,8 @@ export type OrderRecord = {
   combinedOriginalPath: string | null;
   finalTranslationPath: string | null;
   certificationPath: string | null;
+  pageOrderBasis: PageOrderBasis | null;
+  pageOrder: StoredPageOrder | null;
   createdAt: string;
 };
 
@@ -74,6 +94,7 @@ export type DocumentRecord = {
   detectedLanguage: string | null;
   confidence: number | null;
   position: number;
+  appliedPosition: number | null;
 };
 
 export type PageRecord = {
@@ -87,6 +108,12 @@ export type PageRecord = {
   needsReview: boolean;
   widthPt: number | null;
   heightPt: number | null;
+  uploadPage: number | null;
+  logicalPage: number | null;
+  orderHint: string | null;
+  qualityScore: number | null;
+  qualityFlags: string[];
+  qualityMessage: string | null;
 };
 
 export type ConfirmationRecord = {
