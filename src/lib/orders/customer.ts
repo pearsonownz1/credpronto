@@ -34,6 +34,7 @@ import {
   replaceOrderAddons,
   restorePreviewReadyOrder,
   requireOrderByHash,
+  setPageSkipped,
   settledPayment,
   updateDocument,
   updateOrder,
@@ -47,6 +48,8 @@ import { appOrigin, orderLink, sendPaymentReceipt } from "./email";
 import { formatPaymentMethod, receiptLineItems } from "./email-templates";
 import { applySucceededSetupIntent } from "./saved-card";
 import { normalizeLanguage } from "./languages";
+import { compareCombinedPages } from "./page-order";
+import { parseQuotePatch, quotePriceAfterSkip, sumQuotedBillable } from "./skip-pages";
 import { loadCustomerOrder } from "./pipeline";
 import { orderDownloadFilename } from "./download-name";
 import { originalDownloadResponse, originalTargets } from "./originals";
@@ -112,6 +115,53 @@ export async function replaceOrderDocument(
     page_order: null,
   });
 
+  const updated = await getOrderById(db, order.id);
+  if (!updated) throw new HttpError("Order not found", 404);
+  return loadCustomerOrder(db, updated);
+}
+
+export async function patchOrderQuote(token: string, body: unknown): Promise<CustomerOrder> {
+  const { db, order } = await orderForToken(token);
+  const patch = parseQuotePatch(body);
+  if (order.status !== "quoted" && order.status !== "needs_review") {
+    throw new HttpError("This quote can't be changed.", 409);
+  }
+
+  const orderPatch: Record<string, unknown> = {};
+  if (patch.targetLanguage != null) {
+    const language = normalizeLanguage(patch.targetLanguage);
+    if (!language) throw new HttpError("Choose a target language.", 400);
+    orderPatch.target_language = language;
+  }
+
+  if (patch.skipPages) {
+    const documents = await listDocuments(db, order.id);
+    const pages = [...(await listPages(db, documents.map((document) => document.id)))].sort((a, b) =>
+      compareCombinedPages(documents, a, b),
+    );
+    for (const index of patch.skipPages) {
+      if (index >= pages.length) throw new HttpError("Unknown page.", 400);
+    }
+    const skip = new Set(patch.skipPages);
+    for (const [index, page] of pages.entries()) {
+      const skipped = skip.has(index);
+      if ((page.skip === true) !== skipped) await setPageSkipped(db, page.id, skipped);
+    }
+    const priced = quotePriceAfterSkip(
+      order,
+      sumQuotedBillable(
+        pages.map((page, index) => ({
+          billableUnits: page.billableUnits,
+          skip: skip.has(index),
+        })),
+      ),
+    );
+    orderPatch.billable_pages = priced.billablePages;
+    orderPatch.total_cents = priced.totalCents;
+    if (priced.translationCents != null) orderPatch.translation_cents = priced.translationCents;
+  }
+
+  if (Object.keys(orderPatch).length > 0) await updateOrder(db, order.id, orderPatch);
   const updated = await getOrderById(db, order.id);
   if (!updated) throw new HttpError("Order not found", 404);
   return loadCustomerOrder(db, updated);

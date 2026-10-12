@@ -5,6 +5,7 @@ import {
   sourceLanguageChoices,
   targetLanguageChoices,
 } from "@/lib/orders/languages";
+import { skipPageNote, sumQuotedBillable } from "@/lib/orders/skip-pages";
 import type { EvaluationLine } from "@/lib/orders/types";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import {
@@ -29,9 +30,154 @@ const EVALUATION_INCLUDED = [
   "Emailed and downloadable",
 ];
 
+export const QUOTE_BILLING_NOTE =
+  "Each page is billed once. Very dense pages (over 1,000 characters) may count as 2. English pages and non-documents are skipped automatically.";
+
+/** Quote-screen fine print. The order still carries pageRule for other clients. */
 export function displayedPageRule(order: { pageRule: string }): string {
-  return order.pageRule;
+  void order.pageRule;
+  return QUOTE_BILLING_NOTE;
 }
+
+export type QuoteCounts = {
+  files: number;
+  pages: number;
+  billable: number;
+};
+
+type CountLine = {
+  billableUnits?: number | null;
+  skip?: boolean;
+};
+
+/** Physical pages the quote is counting. Page records win when they cover the ordered pages. */
+export function quoteCountLines(order: {
+  documents: Array<{ pageCount: number | null }>;
+  pages: CountLine[];
+  pageOrder: { pages: CountLine[] } | null;
+}): CountLine[] {
+  const lines = quoteIndexSource(order);
+  if (lines.length > 0) return lines;
+  const count = order.documents.reduce((sum, document) => sum + (document.pageCount ?? 0), 0);
+  return Array.from({ length: count }, () => ({}));
+}
+
+/** The line-item list `skipPages` indexes. Empty when the quote only has a page-count fallback. */
+function quoteIndexSource(order: {
+  pages: CountLine[];
+  pageOrder: { pages: CountLine[] } | null;
+}): CountLine[] {
+  const analyzed = order.pages;
+  const ordered = order.pageOrder?.pages ?? [];
+  if (analyzed.length > 0 && analyzed.length >= ordered.length) return analyzed;
+  if (ordered.length > 0) return ordered;
+  if (analyzed.length > 0) return analyzed;
+  return [];
+}
+
+export function quoteCounts(order: {
+  documents: Array<{ pageCount: number | null }>;
+  pages: CountLine[];
+  pageOrder: { pages: CountLine[] } | null;
+}): QuoteCounts {
+  const lines = quoteCountLines(order);
+  return {
+    files: order.documents.length,
+    pages: lines.length,
+    billable: sumQuotedBillable(lines),
+  };
+}
+
+export function quoteSummaryLabel(counts: QuoteCounts): string {
+  const files = `${counts.files} ${counts.files === 1 ? "file" : "files"}`;
+  const pages = `${counts.pages} ${counts.pages === 1 ? "page" : "pages"}`;
+  return `${files}, ${pages}, ${counts.billable} billable`;
+}
+
+export function billablePriceLabel(pages: number, unitPriceCents: number): string {
+  const noun = pages === 1 ? "billable page" : "billable pages";
+  return `${pages} ${noun} × ${formatMoney(unitPriceCents)}`;
+}
+
+export type QuotePageRow = {
+  key: string;
+  /** Index into the line items `skipPages` addresses. Missing when this row is not one of those lines. */
+  pageIndex?: number;
+  pageId?: string;
+  filename: string;
+  logicalPage: number | null;
+  appliedPage: number;
+  hint: string | null;
+  moved: boolean;
+  billableUnits?: number | null;
+  skip?: boolean;
+  skipReason?: string | null;
+};
+
+export function quotePageRows(order: CustomerOrder): QuotePageRow[] {
+  const names = new Map(order.documents.map((document) => [document.id, document.filename]));
+  const indexingPages =
+    order.pages.length > 0 && order.pages.length >= (order.pageOrder?.pages.length ?? 0);
+  const ordered = order.pageOrder && order.pageOrder.pages.length > 1 ? order.pageOrder.pages : null;
+  if (ordered) {
+    return ordered.map((page, index) => {
+      const matchIndex = order.pages.findIndex((item) => pagesMatch(item, page));
+      const match = matchIndex >= 0 ? order.pages[matchIndex] : undefined;
+      const counted = indexingPages ? match : page;
+      const fallback = indexingPages ? page : match;
+      return {
+        key: `${page.documentId}-${page.uploadPage}-${page.appliedPage}-${index}`,
+        pageIndex: indexingPages ? (matchIndex >= 0 ? matchIndex : undefined) : index,
+        pageId: match?.id ?? page.id,
+        filename: page.filename || names.get(page.documentId) || "Page",
+        logicalPage: page.logicalPage,
+        appliedPage: page.appliedPage,
+        hint: page.hint,
+        moved: page.uploadPosition !== page.appliedPosition || page.uploadPage !== page.appliedPage,
+        billableUnits: counted?.billableUnits ?? fallback?.billableUnits,
+        skip: counted?.skip ?? fallback?.skip,
+        skipReason: counted?.skipReason ?? fallback?.skipReason,
+      };
+    });
+  }
+
+  const detailed = order.pages.some(
+    (page) => page.id != null || page.billableUnits != null || typeof page.skip === "boolean",
+  );
+  if (!detailed) return [];
+  return order.pages.map((page, index) => ({
+    key: page.id ?? `${page.documentId}-${page.pageNumber}-${index}`,
+    pageIndex: index,
+    pageId: page.id,
+    filename: names.get(page.documentId) || "Page",
+    logicalPage: page.logicalPage,
+    appliedPage: page.pageNumber,
+    hint: page.orderHint,
+    moved: false,
+    billableUnits: page.billableUnits,
+    skip: page.skip,
+    skipReason: page.skipReason,
+  }));
+}
+
+function pagesMatch(
+  page: CustomerOrder["pages"][number],
+  row: { documentId: string; uploadPage: number; appliedPage: number },
+): boolean {
+  if (page.documentId !== row.documentId) return false;
+  if (page.uploadPage != null && page.uploadPage === row.uploadPage) return true;
+  return page.pageNumber === row.appliedPage;
+}
+
+/** Indexes to send as `skipPages`: every skipped line in the list the quote is counting. */
+export function skippedPageIndexes(order: {
+  pages: Array<{ skip?: boolean }>;
+  pageOrder: { pages: Array<{ skip?: boolean }> } | null;
+}): number[] {
+  return quoteIndexSource(order).flatMap((line, index) => (line.skip === true ? [index] : []));
+}
+
+export { skipPageNote };
 
 /** Confirm accepts `sourceLanguage` only while the order is quoted. */
 export function canSetSourceLanguage(order: { status: string }): boolean {
