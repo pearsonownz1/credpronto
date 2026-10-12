@@ -41,6 +41,26 @@ export async function downloadObject(db: Db, bucket: ObjectBucket, path: string)
   return new Uint8Array(await data.arrayBuffer());
 }
 
+/** One storage round trip for every path in a bucket. An empty list does not call storage. */
+export async function signedObjectUrls(
+  db: Db,
+  bucket: ObjectBucket,
+  paths: readonly string[],
+  expiresIn: number,
+): Promise<Map<string, string>> {
+  const unique = [...new Set(paths.filter((path) => path.length > 0))];
+  if (unique.length === 0) return new Map();
+  const { data, error } = await db.storage.from(bucket).createSignedUrls(unique, expiresIn);
+  if (error || !data) throw new Error(error?.message ?? "Could not sign URL");
+  const urls = new Map<string, string>();
+  unique.forEach((path, index) => {
+    const item = data[index];
+    if (!item || item.error || !item.signedUrl) throw new Error(item?.error ?? "Could not sign URL");
+    urls.set(path, item.signedUrl);
+  });
+  return urls;
+}
+
 export async function signedObjectUrl(
   db: Db,
   bucket: ObjectBucket,
