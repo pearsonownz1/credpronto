@@ -41,6 +41,7 @@ function orderRecord(): OrderRecord {
     notarizationStatus: null,
     edgeCredentialId: null,
     edgeGradingScaleId: null,
+    edgeMatchMethod: null,
     createdAt: "2026-10-12T00:00:00.000Z",
     updatedAt: "2026-10-12T00:00:00.000Z",
     progress: { step: "done", pagesRead: 2, pagesTotal: 2 },
@@ -132,7 +133,9 @@ describe("customer order", () => {
     expect(order.evaluation).toBeNull();
     expect(order).not.toHaveProperty("edge");
     expect(order).not.toHaveProperty("edgeCredentialId");
+    expect(order).not.toHaveProperty("edgeMatchMethod");
     expect(JSON.stringify(order)).not.toContain("edge_credential");
+    expect(JSON.stringify(order)).not.toContain("edge_match");
   });
 
   it("offers translation on a Spanish diploma without adding it to the total", () => {

@@ -95,6 +95,11 @@ describe("auth migrations", () => {
     expect(equivalencies.toLowerCase()).not.toMatch(/grant [^;]*to (anon|authenticated)/);
     expect(equivalencies).toMatch(/to service_role/);
     expect(equivalencies.toLowerCase()).not.toMatch(/insert into/);
+    const matchMethod = readFileSync(path.join(migrationsDir, "20261012160000_edge_match_method.sql"), "utf8");
+    expect(matchMethod).toMatch(/add column edge_match_method text/);
+    expect(matchMethod).toMatch(/edge_match_method in \('base', 'fuzzy'\)/);
+    expect(matchMethod.toLowerCase()).not.toMatch(/insert into/);
+    expect(matchMethod.toLowerCase()).not.toMatch(/create policy/);
     const lastUsed = readFileSync(path.join(migrationsDir, "20261012100000_api_keys_last_used_at.sql"), "utf8");
     expect(lastUsed).toMatch(/add column last_used_at timestamptz/);
     expect(lastUsed.toLowerCase()).not.toMatch(/create table/);

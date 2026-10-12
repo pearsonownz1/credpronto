@@ -37,6 +37,8 @@ import {
   matchEdgeCredential,
   matchEdgeGradingScale,
   pickEdgeEquivalency,
+  type CredentialMatchMethod,
+  type EdgeCredentialMatch,
   type EdgeCredentialRecord,
   type EdgeEquivalencyRecord,
   type EdgeGradingScaleRecord,
@@ -449,7 +451,7 @@ function languageConfirmed(input: EvaluationContext, language: string | null): b
 }
 
 type EdgeHit = {
-  credential: EdgeCredentialRecord | null;
+  credential: EdgeCredentialMatch | null;
   scale: EdgeGradingScaleRecord | null;
 };
 
@@ -557,6 +559,7 @@ async function buildEvaluatedResult(
   result: EvaluationResult | null;
   edgeCredentialId: string | null;
   edgeGradingScaleId: string | null;
+  edgeMatchMethod: CredentialMatchMethod | null;
   route: EquivalencyRoute;
 }> {
   if (service === "diploma") {
@@ -588,6 +591,7 @@ async function buildEvaluatedResult(
       credentialIds.push(drafted.edgeCredentialId);
     }
     const scale = hits.find((hit) => hit.scale)?.scale ?? null;
+    const chosen = chosenEdgeMatch(hits, credentialIds);
     return {
       result: assembleDiploma({
         extracted: diploma,
@@ -596,8 +600,9 @@ async function buildEvaluatedResult(
         equivalencies: drafts.map((draft) => draft.usEquivalency),
         bases: drafts.map((draft) => draft.basis),
       }),
-      edgeCredentialId: credentialIds.find((id) => id) ?? null,
+      edgeCredentialId: chosen.edgeCredentialId,
       edgeGradingScaleId: scale?.id ?? null,
+      edgeMatchMethod: chosen.edgeMatchMethod,
       route: combineEquivalencyRoutes(drafts.map((draft) => draft.route)),
     };
   }
@@ -618,8 +623,40 @@ async function buildEvaluatedResult(
     }),
     edgeCredentialId: drafted.edgeCredentialId,
     edgeGradingScaleId: hit.scale?.id ?? null,
+    edgeMatchMethod:
+      hit.credential && drafted.edgeCredentialId === hit.credential.id ? hit.credential.matchMethod : null,
     route: drafted.draft.route,
   };
+}
+
+function chosenEdgeMatch(
+  hits: readonly EdgeHit[],
+  credentialIds: readonly (string | null)[],
+): { edgeCredentialId: string | null; edgeMatchMethod: CredentialMatchMethod | null } {
+  for (let index = 0; index < credentialIds.length; index += 1) {
+    const edgeCredentialId = credentialIds[index];
+    if (!edgeCredentialId) continue;
+    const matched = hits[index]?.credential;
+    return {
+      edgeCredentialId,
+      edgeMatchMethod: matched && matched.id === edgeCredentialId ? matched.matchMethod : null,
+    };
+  }
+  return { edgeCredentialId: null, edgeMatchMethod: null };
+}
+
+function storedEdgeMatch(built: {
+  edgeCredentialId: string | null;
+  edgeGradingScaleId: string | null;
+  edgeMatchMethod: CredentialMatchMethod | null;
+}): Record<string, string | null> {
+  const patch: Record<string, string | null> = {
+    edge_credential_id: built.edgeCredentialId,
+    edge_grading_scale_id: built.edgeGradingScaleId,
+  };
+  if (built.edgeMatchMethod) patch.edge_match_method = built.edgeMatchMethod;
+  else if (!built.edgeCredentialId) patch.edge_match_method = null;
+  return patch;
 }
 
 export async function completeEvaluation(
@@ -691,10 +728,7 @@ export async function completeEvaluation(
     if (!result) {
       await markPreview(db, order.id, version, "failed");
       await hold(UNMAPPED_REASON, language);
-      await updateOrder(db, order.id, {
-        edge_credential_id: built.edgeCredentialId,
-        edge_grading_scale_id: built.edgeGradingScaleId,
-      });
+      await updateOrder(db, order.id, storedEdgeMatch(built));
       return;
     }
 
@@ -720,8 +754,7 @@ export async function completeEvaluation(
       ...(quote ? { include_translation: quote.includeTranslation } : {}),
       total_cents: quote?.totalCents ?? null,
       evaluation_result: stored,
-      edge_credential_id: built.edgeCredentialId,
-      edge_grading_scale_id: built.edgeGradingScaleId,
+      ...storedEdgeMatch(built),
     });
     await markPreview(db, order.id, version, "ready");
     if (order.includeTranslation) await storeTranslationPreview(db, order, version, language);
