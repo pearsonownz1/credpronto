@@ -105,7 +105,7 @@ export function sourceLanguageChoices(): Array<{ code: string; label: string }> 
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-/** Target languages, including English. There is no customer route that saves this choice. */
+/** Target languages, including English. The quote page saves a new choice with PATCH. */
 export function targetLanguageChoices(): Array<{ code: string; label: string }> {
   return [{ code: "en", label: languageLabel("en") }, ...sourceLanguageChoices()].sort((a, b) =>
     a.label.localeCompare(b.label),

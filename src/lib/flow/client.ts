@@ -1,4 +1,5 @@
 import { evaluationQuote } from "@/lib/orders/evaluation-price";
+import { languagesEqual } from "@/lib/orders/languages";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import { appendOrderChoice, type UploadChoice } from "./order-choice";
 import { dedupeUploads } from "./uploads";
@@ -75,6 +76,7 @@ export type FlowClient = {
     file: "translation" | "certification",
   ): Promise<{ url: string; expiresInSeconds: number }>;
   replaceDocument(token: string, documentId: string, file: File): Promise<CustomerOrder>;
+  updateTargetLanguage(token: string, targetLanguage: string): Promise<CustomerOrder>;
   /** Mock walk-through moves a quoted order to preview_ready before checkout. */
   markPreviewReady(token: string): Promise<void>;
 };
@@ -156,6 +158,13 @@ const liveClient: FlowClient = {
       `/api/orders/${encodeURIComponent(token)}/documents/${encodeURIComponent(documentId)}/replace`,
       { method: "POST", body: form },
     );
+  },
+  updateTargetLanguage(token, targetLanguage) {
+    return request(`/api/orders/${encodeURIComponent(token)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ targetLanguage }),
+    });
   },
 };
 
@@ -318,6 +327,18 @@ const mockClient: FlowClient = {
   },
   async markPreviewReady() {
     writeMockOrder({ ...readMockOrder(), status: "preview_ready" });
+  },
+  async updateTargetLanguage(_token, targetLanguage) {
+    const current = readMockOrder();
+    const quoted =
+      current.sourceLanguage != null && !languagesEqual(current.sourceLanguage, targetLanguage);
+    const next: CustomerOrder = {
+      ...current,
+      targetLanguage,
+      ...(quoted ? { status: "quoted", reviewReason: null } : {}),
+    };
+    writeMockOrder(next);
+    return next;
   },
   async replaceDocument(_token, documentId) {
     const current = readMockOrder();

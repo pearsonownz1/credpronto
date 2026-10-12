@@ -1,5 +1,4 @@
 import { serviceCents } from "@/lib/orders/addons";
-import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
 import {
   languageLabel,
   languagesEqual,
@@ -56,12 +55,39 @@ export function showTargetLanguagePicker(order: {
 }
 
 /**
- * Confirm is the next step for a quoted order, and for a language review that
- * still has a price. A photo retake stays on the quote.
+ * Continue opens confirm only for a quoted order that has a price: line items
+ * (or billable pages that price as a line) and a total. `needs_review` stays
+ * on the quote, including an English source with no line items.
  */
-export function canOpenConfirm(order: { status: string; reviewReason: string | null }): boolean {
-  if (order.status === "quoted") return true;
-  return order.status === "needs_review" && order.reviewReason !== IMAGE_QUALITY_REASON;
+export function canOpenConfirm(order: {
+  status: string;
+  lineItems: EvaluationLine[];
+  billablePages: number | null;
+  unitPriceCents: number;
+  totalCents: number | null;
+}): boolean {
+  return order.status === "quoted" && order.totalCents != null && servicePriceLines(order).length > 0;
+}
+
+/** Shown when PATCH /api/orders/[token] is not available yet. */
+export const TARGET_LANGUAGE_REVIEW_MESSAGE =
+  "We'll review this order and email you a quote.";
+
+/**
+ * A successful target-language update refetches the order. 404 and 405 mean
+ * the route is not there yet, so the quote stays with a reviewer.
+ */
+export function settleTargetLanguageUpdate(
+  error: { status: number; message: string } | null,
+): { refetch: boolean; message: string | null } {
+  if (!error) return { refetch: true, message: null };
+  if (error.status === 404 || error.status === 405) {
+    return { refetch: false, message: TARGET_LANGUAGE_REVIEW_MESSAGE };
+  }
+  return {
+    refetch: false,
+    message: error.message || "We couldn't update the language.",
+  };
 }
 
 export function languageLine(order: {

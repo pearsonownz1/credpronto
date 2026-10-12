@@ -163,8 +163,14 @@ test("an English quote can pick a target language and continue", async ({ page }
     "/brand/credpronto-logo.svg",
   );
 
+  await expect(page.getByTestId("continue")).toHaveCount(0);
+  await expect(page.getByTestId("update-language").filter({ visible: true })).toBeDisabled();
+
   await page.getByTestId("target-language").filter({ visible: true }).selectOption("es");
   await expect(language).toContainText("English → Spanish");
+  await page.getByTestId("update-language").filter({ visible: true }).click();
+  await expect(page.getByTestId("continue").filter({ visible: true })).toBeVisible();
+  await expect(page.getByTestId("language-update-note")).toHaveCount(0);
   await page.getByTestId("continue").filter({ visible: true }).click();
   await expect(page).toHaveURL(/\/confirm\?/);
   await expect(page.getByRole("heading", { name: "Confirm the important details." })).toBeVisible();
