@@ -1,8 +1,7 @@
-import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { degrees } from "pdf-lib";
 import { PREVIEW_WATERMARK, PREVIEW_WATERMARK_OPACITY, previewWatermarkRgb } from "../constants";
-import { faceForCodePoint, fontFace, type FontFace, type FontFaceId } from "./font";
+import { faceForCodePoint, fontFace, stableFontkit, type FontFace, type FontFaceId } from "./font";
 import {
   assertContiguousPages,
   pageSize,
@@ -59,7 +58,7 @@ function blockText(blocks: RenderBlock[]): string {
 }
 
 async function embedFaces(doc: PDFDocument, blocks: RenderBlock[]): Promise<{ upright: ReadyFace[]; italic: ReadyFace | null; regular: PDFFont }> {
-  doc.registerFontkit(fontkit);
+  doc.registerFontkit(stableFontkit());
   const sample = `${blockText(blocks)}\n${PREVIEW_WATERMARK}\nPage 1 of 1`;
   const ids = new Set<FontFaceId>(["regular"]);
   let italic = false;
@@ -290,7 +289,7 @@ async function renderTranslationPdf(input: RenderInput, watermark: boolean): Pro
 
 export async function renderCertificationPdf(input: RenderInput): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
-  doc.registerFontkit(fontkit);
+  doc.registerFontkit(stableFontkit());
   const font = await doc.embedFont(fontFace("regular").bytes, { subset: true });
   const page = doc.addPage([612, 792]);
   const lines = [

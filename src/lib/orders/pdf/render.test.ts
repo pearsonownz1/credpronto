@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
+import { inflateSync } from "node:zlib";
 import path from "node:path";
+import fontkit from "@pdf-lib/fontkit";
 import { extractText, extractTextItems, getDocumentProxy } from "unpdf";
 import { PDFDocument } from "pdf-lib";
 import { describe, expect, it } from "vitest";
@@ -135,6 +137,95 @@ function assertNoNotdef(text: string) {
   }
 }
 
+function decodeUtf16be(hex: string): string {
+  const bytes = Buffer.from(hex, "hex");
+  let out = "";
+  for (let index = 0; index + 1 < bytes.length; index += 2) {
+    out += String.fromCharCode(((bytes[index] ?? 0) << 8) | (bytes[index + 1] ?? 0));
+  }
+  return out;
+}
+
+function unicodeMap(cmap: string): Map<string, number> {
+  const mapped = new Map<string, number>();
+  for (const block of cmap.matchAll(/beginbfchar([\s\S]*?)endbfchar/g)) {
+    for (const match of (block[1] ?? "").matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g)) {
+      const char = decodeUtf16be(match[2] ?? "");
+      if (char) mapped.set(char, Number.parseInt(match[1] ?? "", 16));
+    }
+  }
+  for (const block of cmap.matchAll(/beginbfrange([\s\S]*?)endbfrange/g)) {
+    for (const match of (block[1] ?? "").matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g)) {
+      const start = Number.parseInt(match[1] ?? "", 16);
+      const end = Number.parseInt(match[2] ?? "", 16);
+      const first = decodeUtf16be(match[3] ?? "").codePointAt(0);
+      if (first == null || end < start || end - start > 512) continue;
+      for (let cid = start; cid <= end; cid += 1) mapped.set(String.fromCodePoint(first + cid - start), cid);
+    }
+  }
+  return mapped;
+}
+
+function decodedStream(object: object): Uint8Array | null {
+  const stream = object as { getContents?: () => Uint8Array };
+  if (typeof stream.getContents !== "function") return null;
+  const raw = stream.getContents();
+  if (raw[0] === 0x78) {
+    try {
+      return inflateSync(raw);
+    } catch {
+      return raw;
+    }
+  }
+  return raw;
+}
+
+async function expectGlyphOutlines(pdf: Uint8Array, chars: string[]) {
+  const doc = await PDFDocument.load(copyBytes(pdf));
+  const programs: Uint8Array[] = [];
+  const maps: Map<string, number>[] = [];
+  for (const [, object] of doc.context.enumerateIndirectObjects()) {
+    const data = decodedStream(object);
+    if (!data) continue;
+    const header = Buffer.from(data.subarray(0, 4)).toString("latin1");
+    if (header === "true" || header === "OTTO") programs.push(data);
+    const text = Buffer.from(data).toString("latin1");
+    if (text.includes("beginbfchar") || text.includes("beginbfrange")) maps.push(unicodeMap(text));
+  }
+  for (const char of chars) {
+    const cid = maps.map((entry) => entry.get(char)).find((value) => value != null);
+    expect(cid, char).toEqual(expect.any(Number));
+    const outlines = programs.map((program) => {
+      try {
+        const font = fontkit.create(program) as { getGlyph(id: number): { path?: { commands?: unknown[] } } };
+        return font.getGlyph(cid ?? 0).path?.commands?.length ?? 0;
+      } catch {
+        return 0;
+      }
+    });
+    expect(Math.max(...outlines), char).toBeGreaterThan(0);
+  }
+}
+
+async function pageItems(file: string): Promise<TextItem[][]> {
+  const bytes = new Uint8Array(readFileSync(path.join(process.cwd(), file)));
+  const extracted = await extractTextItems(bytes);
+  return extracted.items.map((page) =>
+    page.flatMap((item) => {
+      if (!item.str.trim()) return [];
+      return [{ text: item.str, x: item.x, y: item.y, width: item.width, size: item.fontSize }];
+    }),
+  );
+}
+
+async function loadItems(file: string): Promise<TextItem[]> {
+  return (await pageItems(file))[0] ?? [];
+}
+
+async function loadAllPages(file: string): Promise<TextItem[][]> {
+  return pageItems(file);
+}
+
 async function fixtureItems(): Promise<TextItem[]> {
   const bytes = new Uint8Array(readFileSync(FIXTURE));
   const extracted = await extractTextItems(bytes);
@@ -145,11 +236,20 @@ async function fixtureItems(): Promise<TextItem[]> {
 }
 
 describe("form translation layout", () => {
-  it("breaks long tokens anywhere and collapses letter-spaced seal text", () => {
+  it("breaks long tokens on punctuation and keeps dates whole", () => {
     const widthOf = (line: string) => line.length * 10;
     const wrapped = wrapLines(SIGNATURE, widthOf, 80);
     expect(wrapped.length).toBeGreaterThan(1);
     for (const line of wrapped) expect(widthOf(line)).toBeLessThanOrEqual(80);
+
+    const original = "||01482|0003|19/09/1996|SAMPLE-NO-VALIDO||";
+    const lines = wrapLines(original, (line) => line.length * 6, 72);
+    expect(lines.join("")).toBe(original);
+    expect(lines.some((line) => line.includes("19/09/1996"))).toBe(true);
+    for (const line of lines) {
+      expect(line).not.toMatch(/(^|\D)9\/09\/1996/);
+      expect(line).not.toMatch(/19\/09\/199$/);
+    }
 
     expect(collapseLetterSpacing("C I V I L  R E G I S T R Y")).toBe("CIVIL REGISTRY");
     const runOn = structurePage("FIRST NAME(S) VALERIA XIMENA FIRST SURNAME OLVERA SECOND SURNAME TOSTADO");
@@ -236,6 +336,79 @@ describe("form translation layout", () => {
     assertWithinPage(await pdfItems(rendered.cleanTranslation));
     expect(faceForCodePoint("张".codePointAt(0) ?? 0)?.id).toBe("cjk-sc");
     expect(faceForCodePoint("김".codePointAt(0) ?? 0)?.id).toBe("cjk-kr");
+    await expectGlyphOutlines(rendered.cleanTranslation, ["张", "伟", "佐", "藤", "김", "민", "준"]);
+  });
+
+  it("embeds an outline for every drawn glyph of 林志恒 and 陈", async () => {
+    const rendered = await renderOrderPdfs({
+      orderId: "cjk-names",
+      sourceLanguage: "zh",
+      date: "2026-10-12",
+      pages: [
+        {
+          combinedPageNumber: 1,
+          widthPt: 612,
+          heightPt: 792,
+          paragraphs: [],
+          blocks: [
+            { type: "fields", rows: [{ label: "Student", value: "陈浩宇" }, { label: "Father", value: "林志恒" }] },
+          ],
+        },
+      ],
+    });
+    const text = await pdfText(rendered.cleanTranslation);
+    expect(text.text).toContain("陈浩宇");
+    expect(text.text).toContain("林志恒");
+    await expectGlyphOutlines(rendered.cleanTranslation, ["林", "志", "恒", "陈"]);
+  });
+
+  it("keeps CJK names in the embedded font for the Chinese fixtures", async () => {
+    const birthItems = await loadItems("src/lib/orders/__fixtures__/zh_chusheng-yixue-zhengming.pdf");
+    const birthBlocks = structurePositioned(birthItems);
+    const birth = await renderOrderPdfs({
+      orderId: "zh-birth",
+      sourceLanguage: "zh",
+      date: "2026-10-12",
+      pages: [{ combinedPageNumber: 1, widthPt: 612, heightPt: 792, paragraphs: [], blocks: birthBlocks }],
+    });
+    const birthText = await pdfText(birth.watermarkedPreview);
+    const birthPages = await pdfItems(birth.watermarkedPreview);
+    expect(birthText.text.match(/Medical certificate of birth/g)).toHaveLength(1);
+    expect(birthText.text).toContain("No.");
+    expect(birthText.text).toContain("Place of birth");
+    expect(birthText.text).toContain("林志恒");
+    expect(birthText.text).toContain("林晓萱");
+    assertWithinPage(birthPages);
+    assertNoNotdef(birthText.text);
+
+    const title = birthPages[0]?.items.find((item) => item.str.includes("Medical certificate of birth"));
+    const number = birthPages[0]?.items.find((item) => item.str.includes("No."));
+    const place = birthPages[0]?.items.find((item) => item.str.includes("Place of birth"));
+    const placeValue = birthPages[0]?.items.find((item) => item.str.includes("云川") || item.str.includes("南湖"));
+    expect(title && number && place && placeValue).toBeTruthy();
+    expect(title!.y).toBeGreaterThan(number!.y);
+    expect(placeValue!.x).toBeGreaterThan(place!.x + 20);
+    expect(Math.abs(placeValue!.y - place!.y)).toBeLessThan(2);
+    await expectGlyphOutlines(birth.cleanTranslation, ["林", "志", "恒"]);
+
+    const diplomaPages = await loadAllPages("src/lib/orders/__fixtures__/zh_chengjidan_2p.pdf");
+    const diploma = await renderOrderPdfs({
+      orderId: "zh-diploma",
+      sourceLanguage: "zh",
+      date: "2026-10-12",
+      pages: diplomaPages.map((items, index) => ({
+        combinedPageNumber: index + 1,
+        widthPt: 612,
+        heightPt: 792,
+        paragraphs: [],
+        blocks: structurePositioned(items),
+      })),
+    });
+    const diplomaText = await pdfText(diploma.watermarkedPreview);
+    expect(diplomaText.text).toContain("陈浩宇");
+    assertNoNotdef(diplomaText.text);
+    assertWithinPage(await pdfItems(diploma.watermarkedPreview));
+    await expectGlyphOutlines(diploma.cleanTranslation, ["陈", "浩", "宇"]);
   });
 });
 

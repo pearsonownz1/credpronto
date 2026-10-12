@@ -91,6 +91,83 @@ export function faceForCodePoint(codePoint: number, italic = false): FontFace | 
   return null;
 }
 
+type SubsetFont = {
+  getGlyph(id: number): {
+    advanceWidth: number;
+    _decode(): { numberOfContours: number; components?: Array<{ glyphID: number; pos: number }> } | null;
+    _getMetrics(): { leftBearing: number };
+  };
+  loca: { offsets: number[] };
+  _getTableStream(tag: string): { pos: number; readBuffer(length: number): SubsetBuffer };
+  createSubset(): SubsetBuilder;
+};
+
+type SubsetBuffer = Uint8Array & {
+  constructor: { from(input: Uint8Array): SubsetBuffer };
+};
+
+type SubsetBuilder = {
+  font: SubsetFont;
+  glyf: SubsetBuffer[];
+  loca: { offsets: number[] };
+  hmtx: { metrics: Array<{ advance: number; bearing: number }> };
+  offset: number;
+  includeGlyph(glyphId: number): number;
+  _addGlyph(glyphId: number): number;
+};
+
+/**
+ * pdf-lib subsets TrueType with a short `loca` table whenever the subset is
+ * under 64KB. That format stores offsets divided by two, so an odd glyph
+ * length (common in the CJK faces) drops the low bit and every later outline
+ * is shifted. Copy each outline and pad it to 4 bytes before it is packed.
+ */
+function addPaddedGlyph(subset: SubsetBuilder, gid: number): number {
+  const glyph = subset.font.getGlyph(gid);
+  const decoded = glyph._decode();
+  const offsets = subset.font.loca.offsets;
+  const start = offsets[gid] ?? 0;
+  const end = offsets[gid + 1] ?? start;
+  const stream = subset.font._getTableStream("glyf");
+  stream.pos += start;
+  const raw = stream.readBuffer(Math.max(0, end - start));
+  const bytes = Uint8Array.from(raw);
+  if (decoded && decoded.numberOfContours < 0) {
+    for (const component of decoded.components ?? []) {
+      const nextId = subset.includeGlyph(component.glyphID);
+      bytes[component.pos] = (nextId >> 8) & 0xff;
+      bytes[component.pos + 1] = nextId & 0xff;
+    }
+  }
+  const pad = (4 - (bytes.length % 4)) % 4;
+  const padded = new Uint8Array(bytes.length + pad);
+  padded.set(bytes);
+  const buffer = raw.constructor.from(padded);
+  subset.glyf.push(buffer);
+  subset.loca.offsets.push(subset.offset);
+  subset.hmtx.metrics.push({
+    advance: glyph.advanceWidth,
+    bearing: Math.round(glyph._getMetrics().leftBearing),
+  });
+  subset.offset += buffer.length;
+  return subset.glyf.length - 1;
+}
+
+/** Fontkit whose subsets keep every encoded glyph's outline aligned. */
+export function stableFontkit(): typeof fontkit {
+  const create = (data: Uint8Array) => {
+    const font = fontkit.create(data) as unknown as SubsetFont;
+    const original = font.createSubset.bind(font);
+    font.createSubset = () => {
+      const subset = original();
+      subset._addGlyph = (glyphId: number) => addPaddedGlyph(subset, glyphId);
+      return subset;
+    };
+    return font;
+  };
+  return { create } as unknown as typeof fontkit;
+}
+
 export function facesForText(text: string, italic = false): FontFace[] {
   const seen = new Set<FontFaceId>();
   const faces: FontFace[] = [];

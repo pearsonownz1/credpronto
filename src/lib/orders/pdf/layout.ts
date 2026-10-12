@@ -64,37 +64,88 @@ export function pageSize(page: { widthPt: number; heightPt: number }): {
   return { widthPt, heightPt };
 }
 
-function breakToken(token: string, widthOf: (line: string) => number, maxWidth: number): string[] {
+function protectedSpans(token: string): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  for (const match of token.matchAll(/\d{4}-\d{2}-\d{2}|\d{1,2}[/.]\d{1,2}[/.]\d{2,4}|\d+/g)) {
+    const start = match.index ?? 0;
+    spans.push([start, start + match[0].length]);
+  }
+  return spans;
+}
+
+function cutsProtected(spans: Array<[number, number]>, index: number): boolean {
+  return spans.some(([start, end]) => index > start && index < end);
+}
+
+function widestCut(token: string, widthOf: (line: string) => number, maxWidth: number): number {
+  let lo = 1;
+  let hi = Array.from(token).length - 1;
+  let best = 1;
   const chars = Array.from(token);
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (widthOf(chars.slice(0, mid).join("")) <= maxWidth) {
+      best = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return best;
+}
+
+function snapOffProtected(token: string, cut: number, widthOf: (line: string) => number, maxWidth: number): number {
+  const spans = protectedSpans(token);
+  const span = spans.find(([start, end]) => cut > start && cut < end);
+  if (!span) return cut;
+  const [start, end] = span;
+  if (start > 0 && widthOf(token.slice(0, start)) <= maxWidth) return start;
+  if (widthOf(token.slice(0, end)) <= maxWidth) return end;
+  if (start === 0) return end;
+  return start;
+}
+
+/**
+ * Break a token at punctuation. Dates and digit runs stay whole. A leftover
+ * piece with no punctuation (an electronic signature) still breaks by character.
+ */
+function breakToken(token: string, widthOf: (line: string) => number, maxWidth: number): string[] {
+  const spans = protectedSpans(token);
+  if (spans.length === 1 && spans[0]?.[0] === 0 && spans[0]?.[1] === token.length) return [token];
   const lines: string[] = [];
-  let start = 0;
-  while (start < chars.length) {
-    const rest = chars.slice(start).join("");
+  let rest = token;
+  while (rest.length > 0) {
     if (widthOf(rest) <= maxWidth) {
       lines.push(rest);
       break;
     }
-    let lo = start + 1;
-    let hi = chars.length - 1;
-    let best = start + 1;
-    while (lo <= hi) {
-      const mid = Math.floor((lo + hi) / 2);
-      if (widthOf(chars.slice(start, mid).join("")) <= maxWidth) {
-        best = mid;
-        lo = mid + 1;
-      } else {
-        hi = mid - 1;
+    const localSpans = protectedSpans(rest);
+    let cut = -1;
+    const chars = Array.from(rest);
+    for (let index = chars.length - 1; index > 0; index -= 1) {
+      const before = chars[index - 1] ?? "";
+      const after = chars[index] ?? "";
+      const boundary = /[^\p{L}\p{N}]/u.test(before) || /[^\p{L}\p{N}]/u.test(after);
+      if (!boundary || cutsProtected(localSpans, index)) continue;
+      if (widthOf(chars.slice(0, index).join("")) <= maxWidth) {
+        cut = index;
+        break;
       }
     }
-    lines.push(chars.slice(start, best).join(""));
-    start = best;
+    if (cut <= 0) {
+      cut = snapOffProtected(rest, widestCut(rest, widthOf, maxWidth), widthOf, maxWidth);
+    }
+    if (cut <= 0) cut = 1;
+    lines.push(Array.from(rest).slice(0, cut).join(""));
+    rest = Array.from(rest).slice(cut).join("");
   }
   return lines;
 }
 
 /**
- * Wrap on spaces, and break a token anywhere once it is wider than the line
- * (the same rule as CSS overflow-wrap: anywhere). Newlines stay as line breaks.
+ * Wrap on spaces and punctuation. Dates and numbers stay on one line.
+ * A token with no punctuation still breaks so a signature cannot leave the page.
+ * Newlines stay as line breaks.
  */
 export function wrapLines(text: string, widthOf: (line: string) => number, maxWidth: number): string[] {
   const lines: string[] = [];
