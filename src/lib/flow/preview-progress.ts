@@ -16,22 +16,15 @@ export type PreviewWork = {
   steps: Array<{ id: PreviewWorkStepId; label: string; state: "done" | "current" | "pending" }>;
 };
 
+/** Equal slices of the four real steps. The bar sits on the current step. */
 const STEP_PERCENT: Record<Exclude<PreviewWorkStepId, "ready">, number> = {
-  received: 18,
-  read: 46,
-  translating: 95,
+  received: 25,
+  read: 50,
+  translating: 75,
 };
 
-/** The working bar never passes this. 100 is only for a saved preview. */
-export const PREVIEW_BAR_MAX = 95;
-
-/** First polls are quick, then the page settles at a slower interval. */
-export const PREVIEW_POLL_FAST_MS = 5_000;
-export const PREVIEW_POLL_SLOW_MS = 15_000;
-export const PREVIEW_POLL_FAST_TICKS = 6;
-
-/** A translation still on `progress.step === "translating"` after this is late. */
-export const PREVIEW_LONG_WAIT_MS = 15 * 60 * 1000;
+/** One interval for the whole wait. No backoff. */
+export const PREVIEW_POLL_MS = 3_000;
 
 export type PreviewReadyOrder = {
   status?: string | null;
@@ -55,12 +48,14 @@ function orderProgressStep(order: PreviewReadyOrder): string | null {
  */
 export function previewIsReady(order: PreviewReadyOrder | null | undefined): boolean {
   if (!order) return false;
+  // A timed-out translation is `needs_review` with step `done` and no preview.
+  if (order.status === "needs_review") return false;
   if (order.status === "preview_ready") return true;
   return orderProgressStep(order) === "done";
 }
 
-export function previewPollDelay(completedPolls: number): number {
-  return completedPolls < PREVIEW_POLL_FAST_TICKS ? PREVIEW_POLL_FAST_MS : PREVIEW_POLL_SLOW_MS;
+export function previewPollDelay(): number {
+  return PREVIEW_POLL_MS;
 }
 
 /** Keep polling until a watermarked preview exists or the order itself has failed. */
@@ -72,15 +67,6 @@ export function previewPollContinues(
   if (order && previewIsReady(order)) return false;
   if (order && (order.status === "failed" || order.status === "cancelled")) return false;
   return true;
-}
-
-export function translatingTooLong(input: {
-  progressStep?: string | null;
-  startedAt: number | null;
-  now: number;
-}): boolean {
-  if (input.progressStep !== "translating" || input.startedAt == null) return false;
-  return input.now - input.startedAt >= PREVIEW_LONG_WAIT_MS;
 }
 
 function currentStep(status: string, progressStep: string | null | undefined): Exclude<PreviewWorkStepId, "ready"> {
@@ -97,7 +83,8 @@ function currentStep(status: string, progressStep: string | null | undefined): E
     progressStep === "translating" ||
     status === "confirmed" ||
     status === "processing" ||
-    status === "correction_requested"
+    status === "correction_requested" ||
+    status === "needs_review"
   ) {
     return "translating";
   }
@@ -129,11 +116,11 @@ export function previewWork(input: {
 
   const current = currentStep(input.status, input.progressStep);
   const index = steps.findIndex((step) => step.id === current);
-  const percent = Math.min(PREVIEW_BAR_MAX, STEP_PERCENT[current]);
+  const percent = STEP_PERCENT[current];
   return {
     phase: "working",
     percent,
-    displayPercent: Math.min(PREVIEW_BAR_MAX, Math.round(percent)),
+    displayPercent: percent,
     label: steps[index]?.label ?? translatingLabel,
     steps: steps.map((step, position) => ({
       ...step,

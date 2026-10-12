@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 import { trackPreviewReady } from "@/lib/analytics/gtag-events";
 import { orderHubStep } from "@/lib/flow/present";
 import { writeToken } from "@/lib/flow/session";
@@ -11,6 +11,7 @@ import { DownloadStates } from "./download-states";
 import { OrderAnnouncement, orderLiveMessage } from "./order-announcement";
 import { ProcessingView } from "./processing-view";
 import { QuoteView } from "./quote-view";
+import { useReadingHandoff } from "./reading-handoff";
 import { FlowStatus } from "./status";
 import { useCustomerOrder } from "./use-order";
 
@@ -28,7 +29,9 @@ export function OrderHub() {
     setTrackedToken(token);
     setLatest(null);
   }
-  const view = orderHubStep(checkout, (latest ?? order)?.status);
+  const { covering, reportOrder, endHandoff } = useReadingHandoff();
+  const current = latest ?? order;
+  const view = orderHubStep(checkout, current?.status, current);
 
   const reportPreviewReady = useCallback((next: CustomerOrder) => {
     setLatest(next);
@@ -43,6 +46,19 @@ export function OrderHub() {
     if (order) trackPreviewReady(order);
   }, [order]);
 
+  useLayoutEffect(() => {
+    if (!covering) return;
+    if (!order) {
+      if (!loading) endHandoff();
+      return;
+    }
+    if (order.status === "draft") {
+      reportOrder(order);
+      return;
+    }
+    if (view !== "quote") endHandoff();
+  }, [order, loading, covering, view, reportOrder, endHandoff]);
+
   useEffect(() => {
     if (!token) return;
     if (view === "cancel") {
@@ -54,7 +70,6 @@ export function OrderHub() {
     }
   }, [view, token, router, order]);
 
-  const current = latest ?? order;
   let body: ReactNode;
   if (view === "cancel") {
     body = <FlowStatus title="Payment canceled" body="Taking you back to the preview." />;
@@ -66,7 +81,7 @@ export function OrderHub() {
       </>
     );
   } else if (loading && !current) {
-    body = <FlowStatus title="Loading your order…" body="" />;
+    body = covering ? null : <FlowStatus title="Loading your order…" body="" />;
   } else if (error && !current) {
     body = <FlowStatus title="We couldn't load this order" body={error} />;
   } else if (!current) {

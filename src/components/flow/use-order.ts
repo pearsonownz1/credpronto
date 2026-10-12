@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { FlowApiError, getFlowClient, flowUsesMock } from "@/lib/flow/client";
-import { previewPollContinues, previewPollDelay } from "@/lib/flow/preview-progress";
+import { PREVIEW_POLL_MS, previewPollContinues } from "@/lib/flow/preview-progress";
 import { downloadPhase } from "@/lib/flow/present";
 import {
   EMAIL_KEY,
@@ -65,7 +65,6 @@ export function useCustomerOrder(
     let cancelled = false;
     let timer = 0;
     let stopped = false;
-    let polls = 0;
     let running = false;
     let queued = false;
 
@@ -119,8 +118,7 @@ export function useCustomerOrder(
         stopped = true;
         return;
       }
-      polls += 1;
-      arm(previewPollDelay(polls));
+      arm(PREVIEW_POLL_MS);
     }
 
     function onVisibility() {

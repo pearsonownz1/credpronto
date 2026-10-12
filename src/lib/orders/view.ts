@@ -93,7 +93,7 @@ export type CustomerOrder = {
   lineItems: EvaluationLine[];
   evaluation: EvaluationResult | null;
   progress: OrderProgress;
-  /** True after 15 minutes with no preview while translation should be running. */
+  /** True after 15 minutes with no preview, including a translation timeout in review. */
   delayed: boolean;
 };
 
@@ -213,6 +213,7 @@ export function toCustomerOrder(input: {
       updatedAt: input.order.updatedAt,
       progress: input.order.progress,
       now: input.now ?? Date.now(),
+      reviewReason: input.order.reviewReason,
     }),
   };
 }

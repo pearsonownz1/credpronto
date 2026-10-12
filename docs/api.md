@@ -178,7 +178,7 @@ Idempotent retry of analysis or translation. Safe to call more than once. Return
 }
 ```
 
-`progress.step` is `uploaded`, `reading`, `language`, `counting`, `quoting`, `done`, or `translating`. `pagesRead` increases once per page while the text is extracted, and `pagesTotal` is the number of physical pages. A skipped replacement upload resets it to `uploaded` with both counts at 0. A finished quote is `done`. Translation sets `translating` until a preview is saved. `delayed` is true when that preview is still missing more than 15 minutes after the translation started.
+`progress.step` is `uploaded`, `reading`, `language`, `counting`, `quoting`, `done`, or `translating`. `pagesRead` increases once per page while the text is extracted, and `pagesTotal` is the number of physical pages. A skipped replacement upload resets it to `uploaded` with both counts at 0. A finished quote is `done`. Translation sets `translating` until a preview is saved. `delayed` is true when that preview is still missing more than 15 minutes after the translation started. It stays true when the order moves to `needs_review` with `reviewReason` `translation_timeout`.
 
 `email` is the customer address stored for the order. It is `null` only when that customer row is missing. `confirmations` has one row per document for each of `full_name`, `date_of_birth`, `parent_names`, `place_of_birth`, and `date_format`. `originalValue` is what the model read. `confirmedValue` is null until the customer confirms. `payment.status` is `pending`, `paid`, `paid_test`, `failed`, `canceled`, `expired`, or `refunded`. `delivery.status` is `pending`, `approved`, `delivered`, or `failed`.
 

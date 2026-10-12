@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { flowUsesMock, getFlowClient } from "@/lib/flow/client";
-import { PREVIEW_LONG_WAIT_MS, previewIsReady, previewWork } from "@/lib/flow/preview-progress";
+import { previewIsReady, previewWork } from "@/lib/flow/preview-progress";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
 import { FlowStatus } from "./status";
@@ -21,24 +21,13 @@ export function ProcessingView({
   const token = useStoredToken(pathToken);
   const router = useRouter();
   const { order, error, loading, reload } = useCustomerOrder(token, "until-preview");
-  const [translatingLate, setTranslatingLate] = useState(false);
+  const ready = previewIsReady(order);
+  const takingLong = Boolean(order?.delayed) && !ready;
   useEffect(() => {
     if (order) onOrder?.(order);
   }, [order, onOrder]);
-  useEffect(() => {
-    if (!token || order?.progress?.step !== "translating" || previewIsReady(order)) return;
-    const key = `credpronto-translating-since:${token}`;
-    const stored = Number(sessionStorage.getItem(key));
-    const started = Number.isFinite(stored) && stored > 0 ? stored : Date.now();
-    if (!(Number.isFinite(stored) && stored > 0)) sessionStorage.setItem(key, String(started));
-    const remaining = PREVIEW_LONG_WAIT_MS - (Date.now() - started);
-    const id = window.setTimeout(() => setTranslatingLate(true), Math.max(0, remaining));
-    return () => window.clearTimeout(id);
-  }, [token, order]);
   const mock = flowUsesMock();
   const evaluation = order?.orderType === "evaluation";
-  const ready = previewIsReady(order);
-  const takingLong = Boolean(order?.delayed) || (translatingLate && order?.progress?.step === "translating");
   const work = order
     ? previewWork({
         status: order.status,
@@ -87,7 +76,7 @@ export function ProcessingView({
                 <p className={`mt-2.5 text-base text-ink-muted ${takingLong ? "mb-2" : "mb-8"}`}>
                   {evaluation
                     ? "We'll email you when the watermarked report is ready to review."
-                    : "Usually ready in about 10 minutes. We'll email you when your preview is ready."}
+                    : "Usually ready in a few minutes. We'll email you when your preview is ready."}
                 </p>
                 {takingLong ? (
                   <p data-testid="translation-delayed" className="mb-8 text-base font-semibold text-ink">
@@ -113,12 +102,7 @@ export function ProcessingView({
                     data-testid="progress-bar"
                     className="h-2 overflow-hidden rounded-[2px] bg-line"
                   >
-                    <div
-                      className="reading-fill relative h-full overflow-hidden bg-primary"
-                      style={{ width: `${work.percent}%` }}
-                    >
-                      <span className="reading-shine pointer-events-none absolute inset-0 motion-reduce:hidden" aria-hidden />
-                    </div>
+                    <div className="h-full bg-primary" style={{ width: `${work.percent}%` }} />
                   </div>
                   <ol data-testid="preview-steps" className="mt-6 list-none space-y-2.5 p-0">
                     {work.steps.map((step) => (

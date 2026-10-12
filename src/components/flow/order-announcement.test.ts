@@ -76,12 +76,42 @@ describe("order live message", () => {
     ).toBe("Your preview is ready.");
   });
 
-  it("says a delayed translation is taking longer than usual", () => {
+  it("says a translation is taking longer when the order is delayed", () => {
     expect(
       orderLiveMessage({
         loading: false,
-        order: { status: "processing", billablePages: 2, totalCents: 1990, delayed: true },
+        order: {
+          status: "processing",
+          billablePages: 2,
+          totalCents: 1990,
+          delayed: true,
+          progress: { step: "translating" },
+        },
       }),
     ).toBe("Taking longer than usual, we're on it.");
+    expect(
+      orderLiveMessage({
+        loading: false,
+        order: {
+          status: "needs_review",
+          billablePages: 2,
+          totalCents: 1990,
+          delayed: true,
+          progress: { step: "done" },
+        },
+      }),
+    ).toBe("Taking longer than usual, we're on it.");
+    expect(
+      orderLiveMessage({
+        loading: false,
+        order: {
+          status: "needs_review",
+          billablePages: 2,
+          totalCents: 1990,
+          delayed: false,
+          progress: { step: "done" },
+        },
+      }),
+    ).toBe("Quote ready: 2 pages, $19.90");
   });
 });

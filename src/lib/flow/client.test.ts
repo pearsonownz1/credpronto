@@ -28,6 +28,65 @@ describe("source file URL", () => {
   });
 });
 
+describe("order upload", () => {
+  it("reports computable XHR upload progress", async () => {
+    const progress: number[] = [];
+    const sent: { body: FormData | null } = { body: null };
+
+    class FakeXHR {
+      upload: { onprogress: ((event: ProgressEvent) => void) | null } = { onprogress: null };
+      status = 201;
+      responseText = JSON.stringify({ orderToken: "tok", orderId: "ord_1" });
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      open() {}
+      send(body: FormData) {
+        sent.body = body;
+        this.upload.onprogress?.({ lengthComputable: true, loaded: 5, total: 10 } as ProgressEvent);
+        this.onload?.();
+      }
+    }
+
+    vi.stubGlobal("XMLHttpRequest", FakeXHR);
+    const file = new File(["hello"], "notes.pdf", { type: "application/pdf" });
+    const result = await getFlowClient().upload({
+      email: "a@credpronto.com",
+      files: [file],
+      onProgress: (ratio) => progress.push(ratio),
+    });
+
+    expect(result).toEqual({ orderToken: "tok", orderId: "ord_1" });
+    expect(progress).toEqual([0.5]);
+    expect(sent.body?.get("email")).toBe("a@credpronto.com");
+    expect(sent.body?.get("files")).toBeInstanceOf(File);
+  });
+
+  it("leaves progress alone when the browser cannot report a total", async () => {
+    const progress: number[] = [];
+
+    class FakeXHR {
+      upload: { onprogress: ((event: ProgressEvent) => void) | null } = { onprogress: null };
+      status = 200;
+      responseText = JSON.stringify({ orderToken: "tok", orderId: "ord_1" });
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      open() {}
+      send() {
+        this.upload.onprogress?.({ lengthComputable: false, loaded: 5, total: 0 } as ProgressEvent);
+        this.onload?.();
+      }
+    }
+
+    vi.stubGlobal("XMLHttpRequest", FakeXHR);
+    await getFlowClient().upload({
+      email: "a@credpronto.com",
+      files: [new File(["hello"], "notes.pdf", { type: "application/pdf" })],
+      onProgress: (ratio) => progress.push(ratio),
+    });
+    expect(progress).toEqual([]);
+  });
+});
+
 describe("target language update", () => {
   it("patches /api/orders/[token] with the chosen target", async () => {
     const fetchSpy = vi.fn(async () => json({ orderId: "order-1", status: "quoted" }));

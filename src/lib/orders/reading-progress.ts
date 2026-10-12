@@ -158,6 +158,39 @@ function stepStates(current: ReadingListStep, complete: boolean): ReadingPresent
   }));
 }
 
+/** Time constant for the upload ease toward 5% when the browser reports no byte progress. */
+const UPLOAD_EASE_MS = 2_500;
+const UPLOAD_CAP = 4.9;
+
+/** Ease toward 5% and stay under it until the upload reports real progress. */
+export function uploadFallbackPercent(elapsedMs: number): number {
+  const elapsed = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0;
+  const eased = 5 * (1 - Math.exp(-elapsed / UPLOAD_EASE_MS));
+  return Math.min(UPLOAD_CAP, eased);
+}
+
+/**
+ * The 0–5% stage while the order does not exist yet.
+ * `ratio` is upload bytes loaded/total when the browser can report it; otherwise pass null to ease.
+ */
+export function uploadReadingPresentation(input: {
+  ratio: number | null;
+  elapsedMs: number;
+}): ReadingPresentation {
+  const live = typeof input.ratio === "number" && Number.isFinite(input.ratio);
+  const percent = live
+    ? Math.min(5, Math.max(0, input.ratio as number) * 5)
+    : uploadFallbackPercent(input.elapsedMs);
+  return {
+    percent,
+    displayPercent: live ? Math.round(percent) : Math.min(4, Math.round(percent)),
+    label: "Uploading",
+    steps: stepStates("uploaded", false).map((step) =>
+      step.id === "uploaded" ? { ...step, label: "Uploading" } : step,
+    ),
+  };
+}
+
 export function readingPresentation(input: {
   progress: unknown;
   status: string;

@@ -90,7 +90,7 @@ We built CredPronto around this rule. Every order includes a full English transl
 It works like this:
 
 1. **Upload** a photo or scan of your document.
-2. **Check your free preview.** In about 10 minutes you'll get a watermarked, side-by-side preview of the original and the translation. Check every name, date, and place against your document.
+2. **Check your free preview.** In a few minutes you'll get a watermarked, side-by-side preview of the original and the translation. Check every name, date, and place against your document.
 3. **Pay only if it's right.** At $9.95 a page, you pay to unlock the certified PDF, ready to upload to your USCIS account or print for a paper filing.
 
 You see the translation before you pay anything, so a misspelled name or a wrong date gets fixed before it reaches an officer.

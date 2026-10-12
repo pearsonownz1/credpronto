@@ -45,7 +45,12 @@ export type CheckoutResult =
   | { mode: "paid_test"; paymentStatus: "paid_test"; orderStatus: "paid" };
 
 export type FlowClient = {
-  upload(input: { email: string; files: File[]; choice?: UploadChoice }): Promise<{
+  upload(input: {
+    email: string;
+    files: File[];
+    choice?: UploadChoice;
+    onProgress?: (ratio: number) => void;
+  }): Promise<{
     orderToken: string;
     orderId: string;
   }>;
@@ -114,13 +119,46 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+function postForm<T>(path: string, form: FormData, onProgress?: (ratio: number) => void): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", path);
+    xhr.upload.onprogress = (event) => {
+      if (!onProgress || !event.lengthComputable || event.total <= 0) return;
+      onProgress(event.loaded / event.total);
+    };
+    xhr.onerror = () => reject(new FlowApiError("Request failed", 0));
+    xhr.onload = () => {
+      const text = xhr.responseText;
+      let body: { error?: unknown } = {};
+      if (text) {
+        try {
+          body = JSON.parse(text) as { error?: unknown };
+        } catch {
+          body = {};
+        }
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        const message = typeof body.error === "string" ? body.error : "Request failed";
+        reject(new FlowApiError(message, xhr.status));
+        return;
+      }
+      resolve(body as T);
+    };
+    xhr.send(form);
+  });
+}
+
 const liveClient: FlowClient = {
-  upload({ email, files, choice = { orderType: "translation" } }) {
+  upload({ email, files, choice = { orderType: "translation" }, onProgress }) {
     const form = new FormData();
     form.set("email", email);
     appendOrderChoice(form, choice);
     for (const file of dedupeUploads(files)) form.append("files", file);
-    return request("/api/orders", { method: "POST", body: form });
+    if (typeof XMLHttpRequest === "undefined") {
+      return request("/api/orders", { method: "POST", body: form });
+    }
+    return postForm("/api/orders", form, onProgress);
   },
   getOrder(token) {
     return request(`/api/orders/${encodeURIComponent(token)}`);
@@ -235,8 +273,27 @@ function withEvaluationChoice(
   };
 }
 
+const MOCK_UPLOAD_HOLD_KEY = "credpronto-mock-upload-ms";
+
+async function holdMockUpload(onProgress?: (ratio: number) => void) {
+  if (typeof window === "undefined") return;
+  const ms = Number(sessionStorage.getItem(MOCK_UPLOAD_HOLD_KEY));
+  if (!Number.isFinite(ms) || ms <= 0) return;
+  const started = Date.now();
+  await new Promise<void>((resolve) => {
+    const tick = () => {
+      const elapsed = Date.now() - started;
+      onProgress?.(Math.min(1, elapsed / ms));
+      if (elapsed >= ms) resolve();
+      else window.setTimeout(tick, 40);
+    };
+    tick();
+  });
+}
+
 const mockClient: FlowClient = {
-  async upload({ email, choice = { orderType: "translation" } }) {
+  async upload({ email, choice = { orderType: "translation" }, onProgress }) {
+    await holdMockUpload(onProgress);
     const order =
       choice.orderType === "evaluation"
         ? withEvaluationChoice(sampleCustomerOrder(), choice)

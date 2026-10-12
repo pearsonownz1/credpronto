@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useEffect, useLayoutEffect, useState, type ChangeEvent } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
 import { formatMoney } from "@/lib/flow/pricing";
 import {
@@ -27,6 +27,7 @@ import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FilePreview, inlineSourceUrl, type ViewerPage } from "./file-preview";
 import { FlowHeader } from "./flow-header";
+import { useReadingHandoff } from "./reading-handoff";
 import { ReadingFiles } from "./reading-files";
 import { FlowStatus } from "./status";
 import { useCustomerOrder, useStoredToken } from "./use-order";
@@ -41,6 +42,13 @@ export function QuoteView({
 }) {
   const token = useStoredToken(pathToken);
   const { order, error, loading, reload } = useCustomerOrder(token, "while-working");
+  const { covering, reportOrder, endHandoff } = useReadingHandoff();
+
+  useLayoutEffect(() => {
+    if (!covering) return;
+    if (order?.status === "draft") reportOrder(order);
+    else if (order || (!loading && error)) endHandoff();
+  }, [order, loading, error, covering, reportOrder, endHandoff]);
 
   useEffect(() => {
     if (order) onOrder?.(order);
@@ -51,7 +59,11 @@ export function QuoteView({
       <FlowHeader current="quote" />
       <main>
         {loading && !order ? (
-          <FlowStatus title="Reading your files…" body="The price will show here in a moment." />
+          covering ? (
+            <ReadingFiles status="draft" />
+          ) : (
+            <FlowStatus title="Reading your files…" body="The price will show here in a moment." />
+          )
         ) : error && !order ? (
           <FlowStatus
             title="We couldn't load this quote"
@@ -292,7 +304,7 @@ export function QuoteBody({
                             className="flex shrink-0 items-center gap-1 text-[13px] font-semibold leading-5 text-[var(--cp-ok)]"
                           >
                             <ClockIcon />
-                            Ready in about 10 minutes
+                            Ready in a few minutes
                           </p>
                         </div>
                         <div data-testid="file-billable" className="text-[12.5px] text-ink-muted">
@@ -430,7 +442,7 @@ export function QuoteBody({
             items={
               evaluation
                 ? ["Pay only after you’ve seen it", "Staff sign off before release", "Free corrections"]
-                : ["Pay only after you’ve seen it", "Preview in about 10 minutes", "Free corrections"]
+                : ["Pay only after you’ve seen it", "Ready in a few minutes", "Free corrections"]
             }
           />
         </div>

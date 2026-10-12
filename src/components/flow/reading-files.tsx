@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { readOrderProgress, readingPresentation } from "@/lib/orders/reading-progress";
+import {
+  readOrderProgress,
+  readingPresentation,
+  uploadReadingPresentation,
+} from "@/lib/orders/reading-progress";
 
 function useElapsed(active: boolean) {
   const [elapsed, setElapsed] = useState(0);
@@ -19,13 +23,20 @@ function useElapsed(active: boolean) {
 export function ReadingFiles({
   status,
   progress,
+  uploadRatio,
 }: {
   status: string;
   progress?: unknown;
+  /** Set while the file is still uploading and the order does not exist. `null` eases toward 5%. */
+  uploadRatio?: number | null;
 }) {
-  const live = readOrderProgress(progress) != null;
-  const elapsed = useElapsed(!live && status !== "quoted");
-  const view = readingPresentation({ progress, status, elapsedMs: elapsed });
+  const uploading = uploadRatio !== undefined;
+  const uploadElapsed = useElapsed(uploading);
+  const live = !uploading && readOrderProgress(progress) != null;
+  const elapsed = useElapsed(!uploading && !live && status !== "quoted");
+  const view = uploading
+    ? uploadReadingPresentation({ ratio: uploadRatio, elapsedMs: uploadElapsed })
+    : readingPresentation({ progress, status, elapsedMs: elapsed });
 
   return (
     <div data-testid="reading-files" className="mx-auto w-full max-w-[620px] px-4 py-16 text-center">

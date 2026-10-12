@@ -165,6 +165,23 @@ describe("translation watchdog", () => {
     expect(isPreviewDelayed({ ...waiting, updatedAt: FRESH, progress: { retries: 1 } })).toBe(true);
     expect(isPreviewDelayed({ ...waiting, previewVersion: 1 })).toBe(false);
     expect(isPreviewDelayed({ ...waiting, status: "quoted" })).toBe(false);
+    expect(
+      isPreviewDelayed({
+        ...waiting,
+        status: "needs_review",
+        updatedAt: FRESH,
+        reviewReason: TRANSLATION_TIMEOUT_REASON,
+        progress: { step: "done", pagesRead: 1, pagesTotal: 1 },
+      }),
+    ).toBe(true);
+    expect(
+      isPreviewDelayed({
+        ...waiting,
+        status: "needs_review",
+        reviewReason: "image_quality",
+        progress: { step: "done", pagesRead: 1, pagesTotal: 1 },
+      }),
+    ).toBe(false);
   });
 
   it("requires the cron bearer secret", () => {

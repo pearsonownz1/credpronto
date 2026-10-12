@@ -13,7 +13,7 @@ test("a quote file shows a large page viewer and opens it full size", async ({ p
   await expect(page.getByRole("heading", { name: /exact price/ }).filter({ visible: true })).toBeVisible();
   const list = page.getByTestId("file-list").filter({ visible: true });
   const turnaround = list.getByTestId("file-turnaround").first();
-  await expect(turnaround).toContainText("Ready in about 10 minutes");
+  await expect(turnaround).toContainText("Ready in a few minutes");
   const filename = list.locator("b").first();
   const nameBox = await filename.boundingBox();
   const turnBox = await turnaround.boundingBox();
@@ -67,7 +67,7 @@ test("a missing source file hides the page viewer", async ({ page }) => {
   await expect(page.getByTestId("file-thumb-fallback")).toHaveCount(0);
   await expect(page.getByTestId("file-thumb-skeleton")).toHaveCount(0);
   await expect(page.getByTestId("file-turnaround").filter({ visible: true }).first()).toContainText(
-    "Ready in about 10 minutes",
+    "Ready in a few minutes",
   );
 });
 
@@ -80,6 +80,38 @@ test("a loaded quote replaces the loading announcement", async ({ page }) => {
     return host?.shadowRoot?.querySelector("#__next-route-announcer__")?.textContent ?? "";
   });
   expect(routeAnnouncement).not.toContain("Loading your order");
+});
+
+test("upload shows the reading progress immediately, with no loading screen", async ({ page }) => {
+  await page.goto("/translate");
+  const email = page.getByTestId("email").filter({ visible: true });
+  await expect(email).toHaveValue("maria.ruiz@email.com");
+  await page.evaluate(() => {
+    sessionStorage.setItem("credpronto-mock-upload-ms", "1200");
+    sessionStorage.setItem("credpronto-mock-order-route", "1");
+  });
+  await page.getByTestId("get-quote").filter({ visible: true }).click();
+
+  const label = page.getByTestId("reading-label").filter({ visible: true });
+  await expect(label).toHaveText("Uploading");
+  await expect(
+    page.getByRole("heading", { name: "Reading your files…" }).filter({ visible: true }),
+  ).toBeVisible();
+  await expect(page.getByTestId("reading-step-uploaded").filter({ visible: true })).toHaveAttribute(
+    "data-state",
+    "current",
+  );
+  expect(await page.getByText("Loading your order").count()).toBe(0);
+  expect(await page.getByText("The price will show here in a moment.").count()).toBe(0);
+  await expect(page.getByRole("button", { name: "Uploading…" })).toHaveCount(0);
+
+  await expect(page).toHaveURL(/\/order\/mock-token$/);
+  await expect(
+    page.getByRole("heading", { name: /exact price/ }).filter({ visible: true }),
+  ).toBeVisible();
+  await expect(page.getByTestId("reading-handoff")).toHaveCount(0);
+  expect(await page.getByText("Loading your order").count()).toBe(0);
+  expect(await page.getByText("The price will show here in a moment.").count()).toBe(0);
 });
 
 test("needs_review quote keeps the total when language is unknown", async ({ page }) => {

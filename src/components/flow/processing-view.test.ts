@@ -46,7 +46,9 @@ describe("processing view", () => {
     state.progressStep = "translating";
     const markup = html();
     expect(markup).toContain("Translating your document");
-    expect(markup).toContain("Usually ready in about 10 minutes. We&#x27;ll email you when your preview is ready.");
+    expect(markup).toContain("Usually ready in a few minutes. We&#x27;ll email you when your preview is ready.");
+    expect(markup).not.toContain("reading-fill");
+    expect(markup).not.toContain("reading-shine");
     expect(markup).toContain('data-testid="preview-steps"');
     expect(markup).toContain('data-testid="preview-step-translating"');
     expect(markup).toContain('data-state="current"');
@@ -54,16 +56,33 @@ describe("processing view", () => {
     expect(markup).not.toContain("Your preview is ready");
     expect(markup).not.toContain('data-testid="view-preview"');
     const value = Number(markup.match(/aria-valuenow="(\d+)"/)?.[1]);
-    expect(value).toBe(95);
+    expect(value).toBe(75);
   });
 
-  it("tells the customer when a preview is taking longer than usual", () => {
+  it("shows the delayed line from the order flag", () => {
     state.delayed = true;
     state.status = "processing";
+    state.progressStep = "translating";
     const markup = html();
     expect(markup).toContain("Taking longer than usual, we&#x27;re on it.");
     expect(markup).toContain('data-testid="translation-delayed"');
+    expect(markup).toContain("Translating your document");
     expect(markup).not.toContain('data-testid="view-preview"');
+  });
+
+  it("keeps the delayed line and the bar when review starts before a preview exists", () => {
+    state.delayed = true;
+    state.status = "needs_review";
+    state.progressStep = "done";
+    const markup = html();
+    expect(markup).toContain("Taking longer than usual, we&#x27;re on it.");
+    expect(markup).toContain('data-testid="translation-delayed"');
+    expect(markup).toContain("Translating your document");
+    expect(markup).not.toContain("Your preview is ready");
+    expect(markup).not.toContain('data-testid="view-preview"');
+    expect(markup).toContain('aria-valuenow="75"');
+    state.status = "processing";
+    state.progressStep = "translating";
   });
 
   it("shows the preview button when progress.step is done, before the status field catches up", () => {
@@ -88,7 +107,7 @@ describe("processing view", () => {
     expect(markup).toContain("Your preview is ready");
     expect(markup).toContain('data-testid="view-preview"');
     expect(markup).toContain("View preview");
-    expect(markup).not.toContain("Usually ready in about 10 minutes");
+    expect(markup).not.toContain("Usually ready in a few minutes");
     expect(markup).not.toContain('data-testid="preview-steps"');
     expect(markup).not.toContain('data-testid="progress-bar"');
   });

@@ -82,7 +82,8 @@ describe("quote step actions", () => {
   it("shows the turnaround beside the file name", () => {
     const html = htmlFor(sampleCustomerOrder());
     expect(html).toContain('data-testid="file-turnaround"');
-    expect(html).toContain("Ready in about 10 minutes");
+    expect(html).toContain("Ready in a few minutes");
+    expect(html).not.toContain("10 minutes");
     expect(html).toContain("text-[var(--cp-ok)]");
     expect(html).toContain("md:flex-row");
     expect(html).toContain('data-testid="file-thumb-skeleton"');
