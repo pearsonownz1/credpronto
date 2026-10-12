@@ -15,7 +15,7 @@ vi.mock("@/lib/supabase/client", () => ({
 }));
 
 import { UploadCard } from "./upload-card";
-import { UploadPageFallback } from "./upload-view";
+import { UploadExperience, UploadPageFallback } from "./upload-view";
 
 function html(sessionEmail?: string | null, initialService?: string | null) {
   return renderToStaticMarkup(createElement(UploadCard, { sessionEmail, initialService }));
@@ -44,6 +44,14 @@ describe("quote email field", () => {
     const markup = renderToStaticMarkup(createElement(UploadPageFallback));
     expect(markup).not.toContain('type="email"');
     expect(markup).toContain("Loading the upload form");
+  });
+
+  it("keeps the form out of the first render so a service choice cannot wipe typed fields", () => {
+    const markup = renderToStaticMarkup(createElement(UploadExperience, { seed: null }));
+    expect(markup).toContain("Loading the upload form");
+    expect(markup).not.toContain('type="email"');
+    expect(markup).not.toContain('data-testid="file-input"');
+    expect(markup).not.toContain('data-testid="choice-diploma"');
   });
 });
 
