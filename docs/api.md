@@ -445,7 +445,7 @@ Several uploads, no `documentId`:
 }
 ```
 
-`404` `{ "error": "Unknown document." }` when `documentId` is not on the order. `404` `{ "error": "That file is not ready" }` when the order has no uploads. `400` `{ "error": "file must be translation, certification, or original" }` for any other `file`.
+`404` `{ "error": "Unknown document." }` when `documentId` is not on the order. `404` `{ "error": "That file is not ready" }` when the order has no uploads. `400` `{ "error": "file must be translation, certification, evaluation, or original" }` for any other `file`. `file=evaluation` is the clean evaluation report and uses the same payment and approval gate as `file=translation`.
 
 ## Auth
 
@@ -640,7 +640,7 @@ The watermark is the same diagonal `PREVIEW · CREDPRONTO · NOT FOR OFFICIAL US
 | master, maestría, maîtrise, master's | Master's degree |
 | doctor, doctorado, doctorat, doctoral | Doctoral degree |
 
-Anything else stays `needs_review`. The preview PDF prints a blue equivalency box at the top, then these fields, then the documents reviewed.
+Anything else stays `needs_review`. The diploma PDF matches the sample report: a CredPronto header with the report id and issue date, the title `Educational Credential Evaluation`, a prepared-for line, then a light-blue (`#eaf0ff`) equivalency box whose `U.S. EQUIVALENCY` label is `#1F5EFF`. Applicant, credential, and documents-reviewed sections follow, then a short advisory and the evaluator signature. The watermark is only on the preview.
 
 ### Course-by-course result
 
@@ -699,7 +699,7 @@ A 20-point scale (passing mark 10), used when printed grades are out of 20:
 
 A letter grade already printed as A–F, with an optional `+` or `-`, keeps that letter. Points are A 4.0, A- 3.7, B+ 3.3, B 3.0, B- 2.7, C+ 2.3, C 2.0, C- 1.7, D+ 1.3, D 1.0, D- 0.7, F 0. A grade that matches neither scale sets the order to `needs_review`.
 
-The preview PDF prints total hours and GPA at the top, then a table grouped by year with a totals row (hours and GPA again), then `gradeScale` beneath the table.
+The course-by-course PDF matches the sample report. Under the same header and the title `Course-by-Course Evaluation`, three boxes show the U.S. equivalency (light blue), semester hours, and U.S. GPA. The table is grouped by year. Each course prints the original name with the English name under it, then credits, the local grade, U.S. semester hours, the U.S. grade, and points. A totals row repeats the hours and GPA. `gradeScale` is printed beneath the table. The watermark is only on the preview.
 
 ## Events
 

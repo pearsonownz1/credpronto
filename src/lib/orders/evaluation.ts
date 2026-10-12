@@ -17,7 +17,7 @@ import { AiUnavailableError } from "./errors";
 import { evaluationQuote } from "./evaluation-price";
 import { gradeScaleText, scoreCourses, usEquivalency, type RawCourse } from "./grades";
 import { IMAGE_QUALITY_REASON } from "./image-quality";
-import { renderEvaluationPdfs } from "./pdf/evaluation";
+import { evaluationIssuedLabel, evaluationReportId, renderEvaluationPdfs } from "./pdf/evaluation";
 import { uploadObject } from "./storage";
 import type { EvaluationResult, OrderRecord, StoredPageOrder } from "./types";
 
@@ -278,7 +278,10 @@ export async function completeEvaluation(
       return;
     }
 
-    const files = await renderEvaluationPdfs(result);
+    const files = await renderEvaluationPdfs(result, {
+      reportId: evaluationReportId(order.id),
+      issued: evaluationIssuedLabel(order.createdAt),
+    });
     const stored: EvaluationResult = { ...result, pageCount: files.pageCount };
     const reportPath = `${order.id}/evaluation-v${version}.pdf`;
     await uploadObject(db, FINALS_BUCKET, reportPath, files.clean, "application/pdf");

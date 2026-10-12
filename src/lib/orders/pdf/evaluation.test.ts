@@ -3,7 +3,7 @@ import { extractText, getDocumentProxy } from "unpdf";
 import { describe, expect, it } from "vitest";
 import { PREVIEW_WATERMARK } from "../constants";
 import type { EvaluationResult } from "../types";
-import { renderEvaluationPdfs } from "./evaluation";
+import { evaluationReportId, renderEvaluationPdfs } from "./evaluation";
 
 function pdfOperators(bytes: Uint8Array): string {
   const raw = Buffer.from(bytes);
@@ -77,40 +77,58 @@ const courses: EvaluationResult = {
 };
 
 describe("evaluation PDFs", () => {
-  it("puts the equivalency in a blue box at the top of a diploma report", async () => {
+  it("follows the diploma comp: title, prepared-for line, then a light-blue equivalency box", async () => {
     const files = await renderEvaluationPdfs(diploma);
     const clean = await textOf(files.clean);
+    const title = clean.indexOf("Educational Credential Evaluation");
+    const prepared = clean.indexOf("Prepared for Ada Lovelace");
+    const label = clean.indexOf("U.S. EQUIVALENCY");
     const equivalency = clean.indexOf("Bachelor's degree");
-    expect(equivalency).toBeGreaterThanOrEqual(0);
-    expect(equivalency).toBeLessThan(clean.indexOf("Ada Lovelace"));
-    expect(clean).toContain("Documents reviewed");
+    expect(title).toBeGreaterThanOrEqual(0);
+    expect(title).toBeLessThan(prepared);
+    expect(prepared).toBeLessThan(label);
+    expect(label).toBeLessThan(equivalency);
+    expect(clean).toContain("DOCUMENTS REVIEWED");
     expect(clean).toContain("fr_diplome-licence.pdf");
+    expect(clean).toContain("Credential Evaluator, CredPronto");
     expect(clean).not.toContain(PREVIEW_WATERMARK);
     const painted = pdfOperators(files.clean);
     const equivalencyAt = painted.indexOf("Bachelor");
     const fill = painted.slice(0, equivalencyAt < 0 ? painted.length : equivalencyAt);
+    expect(fill).toMatch(/0\.9176\d* 0\.9411\d* 1 rg/);
     expect(fill).toMatch(/0\.1215\d* 0\.3686\d* 1 rg/);
     const preview = await textOf(files.preview);
     expect(preview).toContain(PREVIEW_WATERMARK);
   });
 
-  it("prints hours and GPA at the top, a year group, a totals row, and the grade scale", async () => {
+  it("follows the course comp: GPA at the top, a year group, a totals row, and the grade scale", async () => {
     const files = await renderEvaluationPdfs(courses);
     const clean = await textOf(files.clean);
-    const top = clean.indexOf("GPA 3.70");
-    const year = clean.indexOf("2018–2019");
+    const title = clean.indexOf("Course-by-Course Evaluation");
+    const gpaLabel = clean.indexOf("U.S. GPA");
+    const gpa = clean.indexOf("3.70");
+    const year = clean.indexOf("2018");
     const course = clean.indexOf("Algèbre");
-    const totals = clean.indexOf("Totals");
+    const english = clean.indexOf("Algebra");
+    const totals = clean.indexOf("Total");
     const scale = clean.indexOf("Grade scale");
-    expect(top).toBeGreaterThanOrEqual(0);
-    expect(top).toBeLessThan(year);
+    expect(title).toBeGreaterThanOrEqual(0);
+    expect(title).toBeLessThan(gpaLabel);
+    expect(gpaLabel).toBeLessThan(gpa);
+    expect(gpa).toBeLessThan(year);
     expect(year).toBeLessThan(course);
-    expect(course).toBeLessThan(totals);
+    expect(course).toBeLessThan(english);
+    expect(english).toBeLessThan(totals);
     expect(clean.indexOf("6", totals)).toBeGreaterThan(totals);
+    expect(clean.slice(totals)).toContain("3.70");
     expect(scale).toBeGreaterThan(totals);
     expect(clean.slice(scale)).toContain("20-point scale");
     const preview = await textOf(files.preview);
     expect(preview).toContain(PREVIEW_WATERMARK);
     expect(await textOf(files.clean)).not.toContain(PREVIEW_WATERMARK);
+  });
+
+  it("builds a stable report id from the order id", () => {
+    expect(evaluationReportId("4b7cd466-eb4f-cdb3-5cbf-c62a9efcfcc8")).toBe("CP-E-4B7CD466");
   });
 });
