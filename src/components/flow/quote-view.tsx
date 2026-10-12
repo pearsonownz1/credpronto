@@ -24,7 +24,7 @@ import {
 import { pageStatusTag, sumQuotedBillable } from "@/lib/orders/skip-pages";
 import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
 import type { CustomerOrder } from "@/lib/orders/view";
-import { FilePreview, inlineSourceUrl } from "./file-preview";
+import { FilePreview, inlineSourceUrl, type ViewerPage } from "./file-preview";
 import { FlowHeader } from "./flow-header";
 import { ReadingFiles } from "./reading-files";
 import { FlowStatus } from "./status";
@@ -268,42 +268,52 @@ export function QuoteBody({
                 data-testid="file-row"
                 className={index > 0 ? "border-t border-line" : undefined}
               >
-                <div className="flex items-start gap-3 px-4 py-3.5 text-sm md:gap-4">
-                  <FilePreview
-                    token={token}
-                    fileId={file.id}
-                    filename={file.filename}
-                    sourceUrl={inlineSourceUrl(live.documents.find((document) => document.id === file.id))}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-col gap-1 md:flex-row md:items-start md:justify-between md:gap-3">
-                      <b className="min-w-0 break-words md:flex-1">{file.filename}</b>
-                      <p
-                        data-testid="file-turnaround"
-                        className="flex shrink-0 items-center gap-1 text-[13px] font-semibold leading-5 text-[var(--cp-ok)]"
-                      >
-                        <ClockIcon />
-                        Ready in about 10 minutes
-                      </p>
+                <FilePreview
+                  token={token}
+                  fileId={file.id}
+                  filename={file.filename}
+                  sourceUrl={inlineSourceUrl(live.documents.find((document) => document.id === file.id))}
+                  pages={file.rows.map(
+                    (row): ViewerPage => ({
+                      skip: rowSkipped(row),
+                      skipReason: row.skipReason,
+                      billableUnits: row.billableUnits,
+                    }),
+                  )}
+                  renderThumb={(thumb) => (
+                    <div className="flex items-start gap-3 px-4 py-3.5 text-sm md:gap-4">
+                      {thumb}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-col gap-1 md:flex-row md:items-start md:justify-between md:gap-3">
+                          <b className="min-w-0 break-words md:flex-1">{file.filename}</b>
+                          <p
+                            data-testid="file-turnaround"
+                            className="flex shrink-0 items-center gap-1 text-[13px] font-semibold leading-5 text-[var(--cp-ok)]"
+                          >
+                            <ClockIcon />
+                            Ready in about 10 minutes
+                          </p>
+                        </div>
+                        <div data-testid="file-billable" className="text-[12.5px] text-ink-muted">
+                          {file.pages == null ? "—" : fileCountLabel(file.billable)}
+                        </div>
+                        {file.rows.length > 0 ? (
+                          <button
+                            type="button"
+                            data-testid="page-details"
+                            aria-expanded={open}
+                            onClick={() =>
+                              setOpenDetails((current) => ({ ...current, [file.id]: !open }))
+                            }
+                            className="mt-2 text-[13px] font-semibold text-primary"
+                          >
+                            Page details
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
-                    <div data-testid="file-billable" className="text-[12.5px] text-ink-muted">
-                      {file.pages == null ? "—" : fileCountLabel(file.billable)}
-                    </div>
-                    {file.rows.length > 0 ? (
-                      <button
-                        type="button"
-                        data-testid="page-details"
-                        aria-expanded={open}
-                        onClick={() =>
-                          setOpenDetails((current) => ({ ...current, [file.id]: !open }))
-                        }
-                        className="mt-2 text-[13px] font-semibold text-primary"
-                      >
-                        Page details
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
+                  )}
+                />
                 {open ? (
                   <div className="space-y-2 px-4 pb-3.5">
                     {file.rows.map((row, pageNumber) => {
