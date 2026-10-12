@@ -32,9 +32,10 @@ import { publishCourseEquivalency, publishDiplomaEquivalency, retryEvaluation } 
 import { staffEdgeView } from "./edge";
 import { EQUIVALENCY_UNMAPPED, approvalBlockReason } from "./equivalency";
 import { etaFromNow } from "./quote";
+import { sourceTextForDisplay } from "./source-text";
 import { signedObjectUrl } from "./storage";
 import { ensureStaffRow, requireStaff } from "./staff";
-import { paragraphsForPage } from "./translation-edit";
+import { EMPTY_TRANSLATION_MESSAGE, emptyTranslationMessage, paragraphsForPage } from "./translation-edit";
 import { ORDER_STATUSES, type OrderStatus } from "./types";
 import { translateOrder } from "./translation";
 
@@ -104,7 +105,7 @@ export async function staffOrder(orderId: string) {
               : null;
             return {
               ...page,
-              sourceText: page.ocrText,
+              sourceText: sourceTextForDisplay(page.ocrText),
               translation: paragraphs
                 ? { version: translation?.version ?? null, model: translation?.model ?? null, paragraphs }
                 : null,
@@ -175,6 +176,22 @@ export async function approveOrder(orderId: string) {
   }
   if (!order.finalTranslationPath || !order.certificationPath) {
     throw new HttpError("Translated files are not ready", 409);
+  }
+  if (!order.service) {
+    const documents = await listDocuments(db, order.id);
+    const pages = await listPages(db, documents.map((document) => document.id));
+    const translations = await listTranslations(db, documents.map((document) => document.id));
+    const paragraphs = pages.map((page) => {
+      const ready = translations
+        .filter((translation) => translation.documentId === page.documentId && translation.status === "ready")
+        .sort((a, b) => b.version - a.version);
+      const translation = ready[0];
+      return translation
+        ? paragraphsForPage(translation.output, { pageNumber: page.pageNumber }) ?? []
+        : [];
+    });
+    const empty = emptyTranslationMessage(paragraphs.map((page) => ({ paragraphs: page })));
+    if (empty) throw new HttpError(EMPTY_TRANSLATION_MESSAGE, 409);
   }
 
   await ensureStaffRow(db, userId);

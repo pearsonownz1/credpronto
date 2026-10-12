@@ -24,6 +24,8 @@ import type { PreviewOrder, PreviewPageSize } from "@/components/preview/preview
 import { humanStatus } from "@/components/admin/orders-board";
 import { QaPanel } from "@/components/admin/qa-panel";
 import { approveButtonLabel, runStudioAction, type StudioTaskResult } from "@/components/admin/studio-action";
+import { sourceTextForDisplay } from "@/lib/orders/source-text";
+import { emptyTranslationMessage } from "@/lib/orders/translation-edit";
 import type { ViewerFocus } from "@/components/preview/side-by-side-viewer";
 
 const SideBySideViewer = dynamic(
@@ -198,7 +200,13 @@ export function OrderStudio({
                 data-testid="approve-order"
                 aria-busy={pending === "approve"}
                 disabled={pending !== null}
-                onClick={() =>
+                onClick={() => {
+                  const empty = detail.service ? null : emptyTranslationMessage(detail.pages);
+                  if (empty) {
+                    setError(empty);
+                    setMessage(null);
+                    return;
+                  }
                   void run("approve", async () => {
                     const result = await approveOrder(detail.id);
                     const data =
@@ -214,8 +222,8 @@ export function OrderStudio({
                           status: nextStatus,
                         }
                       : { ok: false, error: result.error };
-                  })
-                }
+                  });
+                }}
                 className="inline-flex h-9 items-center rounded-[var(--cp-radius)] border border-line bg-white px-3 text-sm font-semibold disabled:opacity-60"
               >
                 {approveButtonLabel(pending)}
@@ -388,7 +396,7 @@ export function OrderStudio({
             <article key={page.id} className="grid gap-3 rounded-[var(--cp-radius)] border border-line bg-white p-4 md:grid-cols-2">
               <div>
                 <p className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink-muted">Page {page.pageNumber} source</p>
-                <p className="mt-2 whitespace-pre-wrap text-sm">{page.sourceText || "No source text"}</p>
+                <p className="mt-2 whitespace-pre-wrap text-sm">{sourceTextForDisplay(page.sourceText) || "No source text"}</p>
               </div>
               <div className="grid gap-2">
                 <p className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink-muted">Translation</p>

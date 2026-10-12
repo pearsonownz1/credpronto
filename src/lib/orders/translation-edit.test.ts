@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeEditedPages, paragraphsForPage } from "./translation-edit";
+import { EMPTY_TRANSLATION_MESSAGE, emptyTranslationMessage, mergeEditedPages, paragraphsForPage } from "./translation-edit";
 
 const current = [
   {
@@ -44,6 +44,12 @@ describe("translation edits", () => {
     expect(merged.edited).toBe(1);
     expect(merged.pages.map((page) => page.paragraphs)).toEqual([["Original page one"], ["Corrected page two"]]);
     expect(merged.pages[1]?.widthPt).toBe(612);
+  });
+
+  it("refuses release when every paragraph is blank", () => {
+    expect(emptyTranslationMessage([])).toBe(EMPTY_TRANSLATION_MESSAGE);
+    expect(emptyTranslationMessage([{ paragraphs: ["  "] }, { paragraphs: [] }])).toBe(EMPTY_TRANSLATION_MESSAGE);
+    expect(emptyTranslationMessage([{ paragraphs: ["  "] }, { paragraphs: ["Certified translation"] }])).toBeNull();
   });
 
   it("rejects an unknown page and an empty edit", () => {

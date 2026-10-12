@@ -6,6 +6,7 @@ import * as staff from "./staff";
 import * as storage from "./storage";
 import * as webhooks from "./webhook-delivery";
 import { approveOrder } from "./admin";
+import { EMPTY_TRANSLATION_MESSAGE } from "./translation-edit";
 import { json, run } from "./http";
 import type { DeliveryRecord, OrderRecord, PaymentRecord } from "./types";
 
@@ -47,7 +48,20 @@ describe("approveOrder cover stamp", () => {
     vi.spyOn(db, "hasEvent").mockResolvedValue(false);
     vi.spyOn(db, "insertEvent").mockResolvedValue(undefined);
     vi.spyOn(db, "listDocuments").mockResolvedValue([
-      { filename: "diploma.pdf" } as Awaited<ReturnType<typeof db.listDocuments>>[number],
+      { id: "doc-1", filename: "diploma.pdf" } as Awaited<ReturnType<typeof db.listDocuments>>[number],
+    ]);
+    vi.spyOn(db, "listPages").mockResolvedValue([
+      { id: "page-1", documentId: "doc-1", pageNumber: 1 } as Awaited<ReturnType<typeof db.listPages>>[number],
+    ]);
+    vi.spyOn(db, "listTranslations").mockResolvedValue([
+      {
+        id: "tr-1",
+        documentId: "doc-1",
+        version: 1,
+        model: "test",
+        status: "ready",
+        output: { pages: [{ pageNumber: 1, paragraphs: ["Certified translation"] }] },
+      },
     ]);
     vi.spyOn(certification, "approverDisplayName").mockResolvedValue("Ada Lovelace");
     vi.spyOn(certification, "stampApprovedCover").mockResolvedValue(undefined);
@@ -55,6 +69,36 @@ describe("approveOrder cover stamp", () => {
     vi.spyOn(storage, "signedObjectUrl").mockResolvedValue("https://files.example/signed");
     vi.spyOn(webhooks, "notifyOrder").mockResolvedValue(undefined);
     vi.spyOn(webhooks, "notifyLifecycle").mockResolvedValue(undefined);
+  });
+
+  it("refuses to release a translation with no text", async () => {
+    vi.spyOn(db, "listTranslations").mockResolvedValue([
+      {
+        id: "tr-1",
+        documentId: "doc-1",
+        version: 1,
+        model: "test",
+        status: "ready",
+        output: { pages: [{ pageNumber: 1, paragraphs: ["  "] }] },
+      },
+    ]);
+
+    const response = await run(async () => json(await approveOrder(orderId)));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: EMPTY_TRANSLATION_MESSAGE });
+    expect(db.updateOrder).not.toHaveBeenCalled();
+    expect(certification.stampApprovedCover).not.toHaveBeenCalled();
+  });
+
+  it("releases an evaluation when there is no translation text", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue({ ...paidOrder, service: "diploma" });
+    vi.spyOn(db, "listTranslations").mockResolvedValue([]);
+
+    const response = await run(async () => json(await approveOrder(orderId)));
+
+    expect(response.status).toBe(200);
+    expect(certification.stampApprovedCover).toHaveBeenCalled();
   });
 
   it("fails the approval and returns the stamp error when the cover restamp throws", async () => {

@@ -1,7 +1,7 @@
 import { after } from "next/server";
 import { addCorrection, getOrder } from "@/lib/orders/customer";
 import { json, run } from "@/lib/orders/http";
-import { processOrder } from "@/lib/orders/pipeline";
+import { processOrderInBackground } from "@/lib/orders/pipeline";
 
 export const maxDuration = 300;
 
@@ -12,13 +12,7 @@ export async function POST(request: Request, context: Context) {
     const { token } = await context.params;
     const correction = await addCorrection(token, await request.json());
     const order = await getOrder(token);
-    after(async () => {
-      try {
-        await processOrder(order.orderId, token);
-      } catch (error) {
-        console.error(error instanceof Error ? error.message : "correction failed");
-      }
-    });
+    after(() => processOrderInBackground(order.orderId, token));
     return json(correction);
   });
 }
