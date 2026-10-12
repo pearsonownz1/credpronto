@@ -142,6 +142,15 @@ describe("customer order presentation", () => {
       delivery: null,
     });
     expect(detail?.pages[0]?.paragraphs).toEqual(["Degree"]);
+    expect(detail?.service).toBeNull();
+    expect(
+      parseStaffDetail({
+        id: "ord-eval",
+        status: "paid",
+        createdAt: "2026-10-12T00:00:00.000Z",
+        service: "diploma",
+      })?.service,
+    ).toBe("diploma");
     expect(detail?.filename).toBe("diploma.pdf");
     expect(detail?.originalUrl).toBeNull();
     expect(detail?.qa).toBeNull();

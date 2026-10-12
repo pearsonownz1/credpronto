@@ -97,6 +97,8 @@ export type StaffDetail = {
   currency: string;
   createdAt: string;
   reviewReason: string | null;
+  /** Set for credential evaluations. Translation orders leave this null. */
+  service: "diploma" | "course_by_course" | null;
   equivalencyCredentials: Array<{
     credential: string;
     country: string;

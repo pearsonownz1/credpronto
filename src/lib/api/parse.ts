@@ -1,3 +1,4 @@
+import { sourceTextForDisplay } from "@/lib/orders/source-text";
 import type {
   AdminList,
   AdminOrder,
@@ -197,7 +198,7 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
         id: text(item.id) ?? `${documentId}-${pageNumber}`,
         documentId,
         pageNumber,
-        sourceText: text(item.sourceText) ?? text(item.ocrText),
+        sourceText: sourceTextForDisplay(item.sourceText ?? item.ocrText),
         paragraphs: paragraphsOf(item.translation),
       });
     }
@@ -235,6 +236,7 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
     currency: text(row.currency) ?? "usd",
     createdAt,
     reviewReason: text(row.reviewReason),
+    service: row.service === "diploma" || row.service === "course_by_course" ? row.service : null,
     equivalencyCredentials: equivalencyCredentials(row.evaluationResult),
     edge: parseEdge(row.edge),
     filename,

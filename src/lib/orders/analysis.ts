@@ -32,6 +32,7 @@ import { buildCombinedOriginal, type SourceFile } from "./pdf/combine";
 import { pdfPageTexts } from "./pdf-text";
 import { completeEvaluation } from "./evaluation";
 import { decideQuote, etaFromNow } from "./quote";
+import { humanReviewReason } from "./review-reason";
 import { notifyOrder } from "./webhook-delivery";
 import { downloadObject, uploadObject } from "./storage";
 import { quotePage, storedDensity } from "./billing";
@@ -542,7 +543,7 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
     console.error(`analysis failed for ${orderId}: ${message}`, error);
     await updateOrder(db, orderId, {
       status: "needs_review",
-      review_reason: message,
+      review_reason: humanReviewReason(message) ?? "We could not read the upload.",
       eta_at: etaFromNow(24),
       page_order_basis: null,
       page_order: null,

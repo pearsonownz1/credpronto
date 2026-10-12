@@ -22,6 +22,15 @@ export type MergedRenderPage = {
   paragraphs: string[];
 };
 
+export const EMPTY_TRANSLATION_MESSAGE =
+  "The translation text is empty. Add the translation before approving and releasing the files.";
+
+/** Refuse release when no page has translation text. */
+export function emptyTranslationMessage(pages: Array<{ paragraphs: string[] }>): string | null {
+  const hasText = pages.some((page) => page.paragraphs.some((paragraph) => paragraph.trim().length > 0));
+  return hasText ? null : EMPTY_TRANSLATION_MESSAGE;
+}
+
 export type MergeResult =
   | { ok: true; pages: MergedRenderPage[]; edited: number }
   | { ok: false; error: string };
