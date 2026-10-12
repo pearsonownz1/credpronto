@@ -33,7 +33,21 @@ export function canRetryFailedTranslation(order: {
   return /translation/i.test(order.reviewReason?.trim() ?? "");
 }
 
+function errorChain(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (!(error instanceof Error)) return "";
+  const cause = error.cause == null ? "" : ` ${errorChain(error.cause)}`;
+  return `${error.name} ${error.message}${cause}`;
+}
+
+/** Gemini sometimes returns a seal-heavy page as text the SDK cannot parse. */
+export function isUnreadableModelOutput(error: unknown): boolean {
+  const text = errorChain(error);
+  return /NoObjectGenerated|no object generated|could not parse the response|json parsing failed/i.test(text);
+}
+
 export function isTemporaryTranslationError(error: unknown): boolean {
+  if (isUnreadableModelOutput(error)) return true;
   if (error instanceof AiUnavailableError) return true;
   if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) return true;
   const message = error instanceof Error ? error.message : "";

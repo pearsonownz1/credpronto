@@ -182,7 +182,7 @@ Idempotent retry of analysis or translation. Safe to call more than once. Return
 
 `paidAt` is when checkout settled, or null before that. `fulfillment` is `released` after the certified PDF is approved or delivered, `awaiting_review` while a paid order is still unapproved, and null before payment.
 
-`progress.step` is `uploaded`, `reading`, `language`, `counting`, `quoting`, `done`, or `translating`. `pagesRead` increases once per page while the text is extracted, and `pagesTotal` is the number of physical pages. A skipped replacement upload resets it to `uploaded` with both counts at 0. A finished quote is `done`. Translation sets `translating` until a preview is saved. `delayed` is true when that preview is still missing more than 15 minutes after the translation started. It stays true when the order moves to `needs_review` with `reviewReason` `translation_timeout`.
+`progress.step` is `uploaded`, `reading`, `language`, `counting`, `quoting`, `done`, or `translating`. `pagesRead` increases once per page while the text is extracted, and `pagesTotal` is the number of physical pages. A skipped replacement upload resets it to `uploaded` with both counts at 0. A finished quote is `done`. Translation sets `translating` until a preview is saved. `delayed` is true when that preview is still missing more than 4 minutes after the translation started. It stays true when the order moves to `needs_review` with `reviewReason` `translation_timeout`.
 
 `email` is the customer address stored for the order. It is `null` only when that customer row is missing. `confirmations` has one row per document for each of `full_name`, `date_of_birth`, `parent_names`, `place_of_birth`, and `date_format`. `originalValue` is what the model read. `confirmedValue` is null until the customer confirms. `payment.status` is `pending`, `paid`, `paid_test`, `failed`, `canceled`, `expired`, or `refunded`. `delivery.status` is `pending`, `approved`, `delivered`, or `failed`.
 
@@ -923,7 +923,7 @@ The create shape, plus `reviewReason` and `qa` (the same object as the admin ord
 
 `progress.step` is `uploaded`, `reading`, `language`, `counting`, `quoting`, `done`, or `translating`. `pagesRead` and `pagesTotal` are the physical pages read during analysis. `pagesDone` and `pagesTranslateTotal` are included while pages are translated: `pagesDone` is how many of those pages are finished, and `pagesTranslateTotal` is how many will be translated. The retry counter stored on the order is omitted.
 
-`delayed` is false until a translation is waiting on a preview. It becomes true when that preview is still missing more than 15 minutes after translation started. It stays true when the order is `needs_review` with `reviewReason` `translation_timeout`. A saved preview sets it back to false.
+`delayed` is false until a translation is waiting on a preview. It becomes true when that preview is still missing more than 4 minutes after translation started. It stays true when the order is `needs_review` with `reviewReason` `translation_timeout`. A saved preview sets it back to false.
 
 ```json
 {

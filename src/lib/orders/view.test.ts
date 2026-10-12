@@ -205,7 +205,7 @@ describe("customer order", () => {
     expect(order.totalCents).toBe(7765);
   });
 
-  it("marks a translation delayed after 15 minutes without a preview", () => {
+  it("marks a translation delayed after 4 minutes without a preview", () => {
     const shared = {
       documents: [],
       confirmations: [],
@@ -232,7 +232,7 @@ describe("customer order", () => {
         order: {
           ...orderRecord(),
           status: "processing",
-          updatedAt: "2026-10-12T00:10:00.000Z",
+          updatedAt: "2026-10-12T00:17:00.000Z",
         },
       }).delayed,
     ).toBe(false);
