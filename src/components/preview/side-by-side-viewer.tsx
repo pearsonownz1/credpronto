@@ -71,7 +71,19 @@ function useIsMobile() {
   return mobile;
 }
 
-export function SideBySideViewer({ order }: { order: PreviewOrder }) {
+export function SideBySideViewer({
+  order,
+  onBuy,
+  onCorrect,
+  notice,
+  noticeTestId,
+}: {
+  order: PreviewOrder;
+  onBuy?: () => void;
+  onCorrect?: (input: { page: number; note: string }) => Promise<void>;
+  notice?: string;
+  noticeTestId?: string;
+}) {
   const original = order.original.url;
   const translation = order.translation.url;
   const wasmUrl = new URL("/pdfium/pdfium.wasm", window.location.origin).href;
@@ -110,7 +122,9 @@ export function SideBySideViewer({ order }: { order: PreviewOrder }) {
     return (
       <PreviewShell
         order={order}
-        rail={<OrderRail order={order} corrections={order.corrections} />}
+        rail={<OrderRail order={order} corrections={order.corrections} onBuy={onBuy} />}
+        notice={notice}
+        noticeTestId={noticeTestId}
         status="The preview engine failed to load. Refresh to try again."
       />
     );
@@ -120,8 +134,10 @@ export function SideBySideViewer({ order }: { order: PreviewOrder }) {
     return (
       <PreviewShell
         order={order}
-        rail={<OrderRail order={order} corrections={order.corrections} />}
-        mobileBar={<MobileBuyBar order={order} onFlag={() => undefined} />}
+        rail={<OrderRail order={order} corrections={order.corrections} onBuy={onBuy} />}
+        mobileBar={<MobileBuyBar order={order} onFlag={() => undefined} onBuy={onBuy} />}
+        notice={notice}
+        noticeTestId={noticeTestId}
         status="Loading preview…"
       />
     );
@@ -133,7 +149,13 @@ export function SideBySideViewer({ order }: { order: PreviewOrder }) {
       engine={engine}
       plugins={plugins}
     >
-      <ViewerWorkspace order={order} />
+      <ViewerWorkspace
+        order={order}
+        onBuy={onBuy}
+        onCorrect={onCorrect}
+        notice={notice}
+        noticeTestId={noticeTestId}
+      />
     </EmbedPDF>
   );
 }
@@ -177,7 +199,19 @@ function usePageCount(documentId: string) {
   };
 }
 
-function ViewerWorkspace({ order }: { order: PreviewOrder }) {
+function ViewerWorkspace({
+  order,
+  onBuy,
+  onCorrect,
+  notice,
+  noticeTestId,
+}: {
+  order: PreviewOrder;
+  onBuy?: () => void;
+  onCorrect?: (input: { page: number; note: string }) => Promise<void>;
+  notice?: string;
+  noticeTestId?: string;
+}) {
   const isMobile = useIsMobile();
   const [role, setRole] = useState<Role>("original");
   const [lead, setLead] = useState<Role>("original");
@@ -188,6 +222,7 @@ function ViewerWorkspace({ order }: { order: PreviewOrder }) {
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [flagPage, setFlagPage] = useState(1);
   const [correctionNote, setCorrectionNote] = useState("");
+  const [correctionError, setCorrectionError] = useState<string | null>(null);
   const { provides: scrollCapability } = useScrollCapability();
   const { provides: zoomCapability } = useZoomCapability();
   const { provides: viewportCapability } = useViewportCapability();
@@ -406,6 +441,7 @@ function ViewerWorkspace({ order }: { order: PreviewOrder }) {
   function openCorrection() {
     setFlagPage(pageNumber || 1);
     setCorrectionNote("");
+    setCorrectionError(null);
     setCorrectionOpen(true);
   }
 
@@ -418,23 +454,36 @@ function ViewerWorkspace({ order }: { order: PreviewOrder }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [correctionOpen]);
 
-  function sendCorrection() {
+  async function sendCorrection() {
     const note = correctionNote.trim();
     if (!note) return;
-    setCorrections((current) => [
-      ...current,
-      {
-        id: `draft-${flagPage}-${current.length + 1}`,
-        page: flagPage,
-        passage: null,
-        note,
-        status: "sent",
-        label: note.length > 42 ? `${note.slice(0, 42)}…` : note,
-        detail: "sent, new preview in ~5 min",
-      },
-    ]);
-    setCorrectionNote("");
-    setCorrectionOpen(false);
+    if (!onCorrect) {
+      setCorrections((current) => [
+        ...current,
+        {
+          id: `draft-${flagPage}-${current.length + 1}`,
+          page: flagPage,
+          passage: null,
+          note,
+          status: "sent",
+          label: note.length > 42 ? `${note.slice(0, 42)}…` : note,
+          detail: "sent, new preview in ~5 min",
+        },
+      ]);
+      setCorrectionNote("");
+      setCorrectionOpen(false);
+      return;
+    }
+    setCorrectionError(null);
+    try {
+      await onCorrect({ page: flagPage, note });
+      setCorrectionNote("");
+      setCorrectionOpen(false);
+    } catch (cause) {
+      setCorrectionError(
+        cause instanceof Error ? cause.message : "Could not send this correction.",
+      );
+    }
   }
 
   const popover = correctionOpen ? (
@@ -442,21 +491,24 @@ function ViewerWorkspace({ order }: { order: PreviewOrder }) {
       page={flagPage}
       note={correctionNote}
       onNote={setCorrectionNote}
-      onSend={sendCorrection}
+      onSend={() => void sendCorrection()}
+      error={correctionError}
     />
   ) : null;
 
   return (
     <PreviewShell
       order={order}
+      notice={notice}
+      noticeTestId={noticeTestId}
       rail={
         isMobile ? undefined : (
-          <OrderRail order={order} corrections={corrections} />
+          <OrderRail order={order} corrections={corrections} onBuy={onBuy} />
         )
       }
       mobileBar={
         isMobile ? (
-          <MobileBuyBar order={order} onFlag={openCorrection} />
+          <MobileBuyBar order={order} onFlag={openCorrection} onBuy={onBuy} />
         ) : undefined
       }
       toolbar={

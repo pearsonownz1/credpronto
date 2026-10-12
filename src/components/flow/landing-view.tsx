@@ -1,9 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { MarketingHeader } from "./flow-header";
 import { UploadCard } from "./upload-card";
-import { useFlowDraft } from "./use-flow-draft";
 
 const STATS = [
   ["$0", "to see your preview"],
@@ -19,9 +17,6 @@ const HOW = [
 ];
 
 export function LandingView() {
-  const router = useRouter();
-  const { draft, quote, save } = useFlowDraft();
-
   return (
     <div>
       <MarketingHeader />
@@ -60,10 +55,6 @@ export function LandingView() {
           </div>
         </div>
         <UploadCard
-          email={draft.email}
-          files={quote.files}
-          onEmail={(email) => save({ email })}
-          onSubmit={() => router.push("/quote")}
           intro={{
             title: "Get your free preview",
             lede: "No account, no card.",

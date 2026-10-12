@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { DownloadView } from "@/components/flow/download-view";
+import { DownloadStates } from "@/components/flow/download-states";
 
 export const metadata: Metadata = {
   title: "Download · CredPronto",
-  description: "Download your certified translation and the original file.",
+  description: "Download your certified translation and certification page.",
 };
 
 export default function DownloadPage() {
-  return <DownloadView />;
+  return <DownloadStates />;
 }

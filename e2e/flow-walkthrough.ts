@@ -1,7 +1,5 @@
 import { expect, type Page } from "@playwright/test";
-
-const PAGE_RULE =
-  "A page is one side of your original, up to 250 words. Longer sides count as another page.";
+import { WORD_PAGE_RULE } from "../src/lib/orders/billing";
 
 async function expectNoHorizontalOverflow(page: Page) {
   const overflows = await page.evaluate(
@@ -47,29 +45,33 @@ export async function walkCustomerFlow(
   await expect(shown(page, "detected-language")).toContainText("Spanish → English");
   await expect(shown(page, "file-list")).toContainText("acta-nacimiento.pdf");
   await expect(shown(page, "file-list")).toContainText("IMG_4021.HEIC");
-  await expect(shown(page, "file-list")).toContainText("182 words");
-  await expect(shown(page, "file-list")).toContainText("96 words");
+  await expect(shown(page, "file-list")).toContainText("1 page");
   await expect(shown(page, "quote-total")).toContainText("$19.90");
   await expect(page.getByText("Free", { exact: true }).filter({ visible: true })).toBeVisible();
-  await expect(shown(page, "page-rule")).toHaveText(PAGE_RULE);
+  await expect(shown(page, "page-rule")).toHaveText(WORD_PAGE_RULE);
   await expect(shown(page, "flow-stepper").locator("[data-state=current]")).toContainText(
     "Quote",
   );
   await check();
 
   await shown(page, "continue").click();
-  await expect(page).toHaveURL(/\/confirm$/);
-  await expect(page.getByLabel("Full name on document")).toHaveValue(
+  await expect(page).toHaveURL(/\/confirm/);
+  await expect(page.getByLabel("Full name on document · acta-nacimiento.pdf")).toHaveValue(
     "María Fernanda Ruiz Delgado",
   );
-  await expect(page.getByLabel("Date of birth")).toHaveValue("14 March 1994");
-  await expect(page.getByLabel("Father")).toHaveValue("Jorge Luis Ruiz Pérez");
-  await expect(page.getByLabel("Mother")).toHaveValue("Ana María Delgado Soto");
-  await expect(page.getByLabel("Place of birth")).toHaveValue(
+  await expect(page.getByLabel("Date of birth · acta-nacimiento.pdf")).toHaveValue(
+    "14 March 1994",
+  );
+  await expect(page.getByLabel("Father · acta-nacimiento.pdf")).toHaveValue(
+    "Jorge Luis Ruiz Pérez",
+  );
+  await expect(page.getByLabel("Mother · acta-nacimiento.pdf")).toHaveValue(
+    "Ana María Delgado Soto",
+  );
+  await expect(page.getByLabel("Place of birth · acta-nacimiento.pdf")).toHaveValue(
     "Guadalajara, Jalisco, Mexico",
   );
-  await expect(page.getByLabel("Date format")).toHaveValue("US · MM/DD/YYYY");
-  await expect(page.getByText("03/14/1994")).toBeVisible();
+  await expect(page.getByLabel("Date format · acta-nacimiento.pdf")).toHaveValue("MM/DD/YYYY");
   await check();
 
   await shown(page, "start-preview").click();
@@ -87,28 +89,23 @@ export async function walkCustomerFlow(
   await shown(page, "preview-ready").click();
   await expect(page).toHaveURL(/\/checkout$/);
   await expect(shown(page, "email")).toHaveValue("maria.ruiz@email.com");
-  await expect(shown(page, "card-number")).toHaveValue("4242 4242 4242 4242");
-  await expect(shown(page, "wallet-apple")).toBeVisible();
-  await expect(shown(page, "wallet-google")).toBeVisible();
-  await expect(shown(page, "wallet-link")).toBeVisible();
   await expect(shown(page, "order-total")).toContainText("$19.90");
+  await expect(shown(page, "pay-button")).toContainText("Pay $19.90");
   await expect(shown(page, "flow-stepper").locator("[data-state=current]")).toContainText(
     "Preview",
   );
-  await shown(page, "wallet-apple").click();
-  await expect(page).toHaveURL(/\/checkout$/);
   await check();
 
   await shown(page, "pay-button").click();
-  await expect(page).toHaveURL(/\/download$/);
+  await expect(page).toHaveURL(/\/order\/mock-token\?checkout=success$/);
   await expect(shown(page, "download-certified")).toBeVisible();
   await expect(shown(page, "download-certified")).toHaveAttribute(
     "download",
     "birth-certificate-EN-certified.pdf",
   );
-  await expect(shown(page, "download-original")).toHaveAttribute(
+  await expect(shown(page, "download-certification")).toHaveAttribute(
     "download",
-    "acta-nacimiento.pdf",
+    "certification.pdf",
   );
   await expect(shown(page, "email-note")).toContainText("maria.ruiz@email.com");
   await expect(shown(page, "email-note")).toContainText("CP-24817");

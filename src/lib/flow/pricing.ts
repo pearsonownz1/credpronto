@@ -3,9 +3,6 @@ import type { FlowDraft, FlowFile, FlowQuote, PricedFile } from "./types";
 export const WORDS_PER_BILLABLE_PAGE = 250;
 export const PRICE_PER_PAGE_CENTS = 995;
 
-export const PAGE_RULE =
-  "A page is one side of your original, up to 250 words. Longer sides count as another page.";
-
 export function formatMoney(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
 }

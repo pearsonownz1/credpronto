@@ -11,9 +11,11 @@ import {
 export function OrderRail({
   order,
   corrections,
+  onBuy,
 }: {
   order: PreviewOrder;
   corrections: PreviewCorrection[];
+  onBuy?: () => void;
 }) {
   const { pricing } = order;
 
@@ -46,6 +48,7 @@ export function OrderRail({
       <button
         type="button"
         data-testid="buy-download"
+        onClick={onBuy}
         className="inline-flex h-[52px] w-full items-center justify-center rounded-[var(--cp-radius)] bg-primary text-base font-semibold text-primary-ink"
       >
         {buyLabel(order)}
@@ -96,9 +99,11 @@ export function OrderRail({
 export function MobileBuyBar({
   order,
   onFlag,
+  onBuy,
 }: {
   order: PreviewOrder;
   onFlag: () => void;
+  onBuy?: () => void;
 }) {
   return (
     <div
@@ -116,6 +121,7 @@ export function MobileBuyBar({
       <button
         type="button"
         data-testid="buy-download"
+        onClick={onBuy}
         className="inline-flex h-[50px] w-full items-center justify-center rounded-[var(--cp-radius)] bg-primary text-[15px] font-semibold text-primary-ink"
       >
         {buyLabel(order)}
@@ -129,11 +135,13 @@ export function CorrectionPopover({
   note,
   onNote,
   onSend,
+  error,
 }: {
   page: number;
   note: string;
   onNote: (value: string) => void;
   onSend: () => void;
+  error?: string | null;
 }) {
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -159,6 +167,11 @@ export function CorrectionPopover({
         placeholder="What should it say?"
         className="h-[52px] w-full resize-none rounded-[var(--cp-radius)] border border-line p-2 text-[12.5px] text-ink outline-none"
       />
+      {error ? (
+        <p data-testid="correction-error" role="alert" className="mt-2 text-xs text-[var(--cp-warn)]">
+          {error}
+        </p>
+      ) : null}
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className="text-xs text-ink-muted">Page {page}</span>
         <button
