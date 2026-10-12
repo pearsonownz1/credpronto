@@ -93,6 +93,10 @@ describe("auth migrations", () => {
     expect(lifecycle).toMatch(/alter column order_id drop not null/);
     expect(lifecycle.toLowerCase()).not.toMatch(/create table/);
     expect(lifecycle.toLowerCase()).not.toMatch(/add column/);
+    const apiOrders = readFileSync(path.join(migrationsDir, "20261012100200_orders_api_key_id.sql"), "utf8");
+    expect(apiOrders).toMatch(/add column api_key_id uuid references public\.api_keys/);
+    expect(apiOrders).toMatch(/on delete set null/);
+    expect(apiOrders.toLowerCase()).not.toMatch(/create table/);
     expect(billing).toMatch(/stripe_customer_id text not null/);
     expect(billing).not.toMatch(/card_number/);
     for (const sql of [apiKeys, endpoints, deliveries, externalRef, billing]) {

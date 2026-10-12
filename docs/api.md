@@ -797,6 +797,33 @@ Deliveries are posted for orders whose `user_id` has an endpoint:
 
 `webhook_deliveries.event` is `order.quoted`, `order.delivered`, `order.failed`, `order.preview_ready`, `order.paid`, `order.completed`, or `webhook.test`. `order_id` is null only for `webhook.test`.
 
+### API orders
+
+`GET /api/me/api-orders` lists orders this signed-in customer placed with an API key (`orders.api_key_id`). Dashboard orders are not included.
+
+```json
+{
+  "orders": [
+    {
+      "id": "…",
+      "externalRef": "crm-1842",
+      "keyName": "Production",
+      "keyPrefix": "cp_live_",
+      "keyLast4": "ab12",
+      "pages": 1,
+      "status": "paid",
+      "amountCents": 995,
+      "currency": "usd",
+      "placedAt": "2026-10-12T00:00:00.000Z",
+      "downloadUrl": null,
+      "viewUrl": null
+    }
+  ]
+}
+```
+
+`pages` is `billable_pages`. `amountCents` is the settled charge (`paid` or `paid_test`), or `null` when nothing has been charged. `downloadUrl` and `viewUrl` are `null` because the raw order token is not stored. The key hash and the raw key are not returned.
+
 ### Public API
 
 `Authorization: Bearer <secret>`. The secret is hashed and matched to an unrevoked `api_keys` row. A match sets `last_used_at`. `401` `{ "error": "Invalid API key", "code": "invalid_api_key" }` otherwise.
@@ -923,6 +950,8 @@ On failure the order is retranslated, up to 2 times (3 QA runs total). Prior iss
 The clean translation in `finals` (`file=translation`) starts with the certification cover page, then the translated pages. The watermarked preview does not include the cover and has no certification footer. The separate certification object (`file=certification`) is still the cover alone. The cover names the order, the issue date, the client, the language pair, and each document with its page count. The certification box prints two paragraphs verbatim: an authorized representative of CredPronto certifies that an experienced translator fluent in the language pair produced a complete and accurate translation, and that the certification covers the correctness of the translation only. The line under the signature reads “[Name], Authorized Representative, CredPronto,” using the approving staff member's name, or `CREDPRONTO_TRANSLATOR_NAME` when nobody has approved yet, plus a signature image when `CREDPRONTO_TRANSLATOR_SIGNATURE` is set for that same person. The cover header places the CredPronto address (2520 Venture Oaks Way, Suite 120, Sacramento, CA 95833) under the logo, and the ATA wordmark above the order details. Every page of the final PDF ends with the order number and page X of Y.
 
 ### Tables
+
+`orders.api_key_id` nullable → `api_keys`. Set by `POST /api/v1/orders`. Null for dashboard orders. Deleting the key sets it null.
 
 `api_keys`: `id`, `user_id` → `auth.users`, `name`, `prefix` (`cp_live_` or `cp_test_`), `key_hash` (unique lowercase hex SHA-256), `last4`, `created_at`, `last_used_at` null until the key authenticates a request, `revoked_at` null until delete. RLS: the owner selects their rows; staff select all. Writes go through the service role.
 

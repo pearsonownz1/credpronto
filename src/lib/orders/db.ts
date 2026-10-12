@@ -254,6 +254,7 @@ export async function insertOrder(
     degreeCount?: number | null;
     evaluationCents?: number | null;
     externalRef?: string | null;
+    apiKeyId?: string | null;
     sourceLanguage?: string | null;
     targetLanguage?: string | null;
     languageConfirmed?: boolean;
@@ -278,6 +279,7 @@ export async function insertOrder(
       ...(input.userId ? { user_id: input.userId } : {}),
       ...(input.serviceType ? { service_type: input.serviceType, order_type: input.orderType ?? input.serviceType } : {}),
       ...(input.externalRef ? { external_ref: input.externalRef } : {}),
+      ...(input.apiKeyId ? { api_key_id: input.apiKeyId } : {}),
       ...(input.sourceLanguage ? { source_language: input.sourceLanguage } : {}),
       ...(input.targetLanguage ? { target_language: input.targetLanguage } : {}),
       ...(input.languageConfirmed ? { language_confirmed: true } : {}),
