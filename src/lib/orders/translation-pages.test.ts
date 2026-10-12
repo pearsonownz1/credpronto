@@ -161,7 +161,7 @@ describe("translation dispatch", () => {
   it("continues a page, retry, or assemble in-process instead of fetching this deployment again", async () => {
     process.env.CRON_SECRET = "secret";
     process.env.VERCEL_URL = "preview.example.vercel.app";
-    const fetchMock = vi.fn(async () => new Response("Infinite loop detected", { status: 508 }));
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 202 }));
     vi.stubGlobal("fetch", fetchMock);
     const inline = vi.fn(async () => {});
     const first = { orderId: "order-1", version: 1, jobId: "job-1" };
@@ -176,6 +176,7 @@ describe("translation dispatch", () => {
     expect(inline).not.toHaveBeenCalled();
 
     fetchMock.mockClear();
+    fetchMock.mockImplementation(async () => new Response("Infinite loop detected", { status: 508 }));
     await withTranslationDispatch(async () => {
       for (const body of continuations) {
         await dispatchTranslation(TRANSLATION_PAGE_PATH, body, inline);
@@ -200,11 +201,18 @@ describe("translation dispatch", () => {
       { id: "next-a", status: "pending" as const },
     ];
     expect(jobsToDispatch(full, dispatchConcurrency(3, true))).toEqual([]);
-    expect(jobsToDispatch(pending, dispatchConcurrency(0, false)).map((job) => job.id)).toEqual([
+    const open = [
+      { id: "next-a", status: "pending" as const },
+      { id: "next-b", status: "pending" as const },
+      { id: "next-c", status: "pending" as const },
+      { id: "next-d", status: "pending" as const },
+    ];
+    expect(jobsToDispatch(open, dispatchConcurrency(0, false)).map((job) => job.id)).toEqual([
       "next-a",
       "next-b",
       "next-c",
     ]);
+    expect(jobsToDispatch(open, dispatchConcurrency(0, true)).map((job) => job.id)).toEqual(["next-a"]);
   });
 
   it("returns the public app origin when VERCEL_ENV is production", () => {
