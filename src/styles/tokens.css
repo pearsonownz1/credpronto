@@ -1,0 +1,16 @@
+/*
+ * CredPronto light theme. Designer will refine these tokens.
+ * Backgrounds stay white / off-white, ink is near-black, and the
+ * primary blue is reserved for actions.
+ */
+:root {
+  --cp-bg: #ffffff;
+  --cp-bg-muted: #f6f5f2;
+  --cp-ink: #121212;
+  --cp-ink-muted: #4a4a4a;
+  --cp-primary: #1d4ed8;
+  --cp-primary-hover: #1e40af;
+  --cp-primary-ink: #ffffff;
+  --cp-line: #e6e4df;
+  --cp-radius: 4px;
+}
