@@ -1,3 +1,4 @@
+import { parseEvaluationResult } from "./evaluation-price";
 import { parseStoredPageOrder, compareCombinedPages } from "./page-order";
 import type { Db } from "./storage";
 
@@ -63,6 +64,13 @@ function mapOrder(row: Row): OrderRecord {
     pageOrderBasis: row.page_order_basis === "logical" || row.page_order_basis === "upload" ? row.page_order_basis : null,
     pageOrder: parseStoredPageOrder(row.page_order),
     externalRef: str(row.external_ref),
+    orderType:
+      row.order_type === "evaluation" || row.order_type === "expert_letter" ? row.order_type : "translation",
+    service: row.service === "diploma" || row.service === "course_by_course" ? row.service : null,
+    degreeCount: num(row.degree_count),
+    evaluationCents: num(row.evaluation_cents),
+    translationCents: num(row.translation_cents),
+    evaluationResult: parseEvaluationResult(row.evaluation_result),
     createdAt: str(row.created_at) ?? new Date().toISOString(),
   };
 }
@@ -203,6 +211,9 @@ export async function insertOrder(
     landingPath: string | null;
     userId?: string | null;
     serviceType?: "translation" | "evaluation" | "expert_letter";
+    orderType?: "translation" | "evaluation" | "expert_letter";
+    service?: "diploma" | "course_by_course" | null;
+    degreeCount?: number | null;
     externalRef?: string | null;
     sourceLanguage?: string | null;
     targetLanguage?: string | null;
@@ -214,7 +225,10 @@ export async function insertOrder(
     .insert({
       public_token_hash: input.tokenHash,
       customer_id: input.customerId,
-      service_type: "translation",
+      service_type: input.serviceType ?? (input.orderType === "evaluation" ? "evaluation" : "translation"),
+      order_type: input.orderType ?? "translation",
+      service: input.service ?? null,
+      degree_count: input.degreeCount ?? null,
       status: "draft",
       utm_source: input.utmSource,
       utm_medium: input.utmMedium,
@@ -222,7 +236,7 @@ export async function insertOrder(
       gclid: input.gclid,
       landing_path: input.landingPath,
       ...(input.userId ? { user_id: input.userId } : {}),
-      ...(input.serviceType ? { service_type: input.serviceType } : {}),
+      ...(input.serviceType ? { service_type: input.serviceType, order_type: input.orderType ?? input.serviceType } : {}),
       ...(input.externalRef ? { external_ref: input.externalRef } : {}),
       ...(input.sourceLanguage ? { source_language: input.sourceLanguage } : {}),
       ...(input.targetLanguage ? { target_language: input.targetLanguage } : {}),
