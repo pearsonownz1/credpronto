@@ -11,6 +11,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://credpronto.com"),
   title: "CredPronto",
   description:
     "Certified translations from $9.95/page. Preview yours before paying.",
