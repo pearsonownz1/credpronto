@@ -1,4 +1,5 @@
 import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET } from "./constants";
+import { notifyOrder } from "./webhook-delivery";
 import { orderDownloadFilename } from "./download-name";
 import {
   customerEmail,
@@ -188,6 +189,7 @@ export async function approveOrder(orderId: string) {
     certification_path: order.certificationPath,
   });
   await updateOrder(db, order.id, { status: "delivered" });
+  await notifyOrder(db, order.id, "order.delivered");
   return {
     status: "delivered" as const,
     email: sent.skipped ? ("skipped" as const) : ("sent" as const),

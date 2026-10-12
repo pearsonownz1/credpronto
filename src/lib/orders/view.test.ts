@@ -8,6 +8,7 @@ function orderRecord(): OrderRecord {
     id: "order-1",
     customerId: "customer-1",
     userId: null,
+    serviceType: "translation",
     status: "quoted",
     sourceLanguage: "es",
     targetLanguage: "en",
@@ -23,6 +24,7 @@ function orderRecord(): OrderRecord {
     certificationPath: null,
     pageOrderBasis: null,
     pageOrder: null,
+    externalRef: null,
     createdAt: "2026-10-12T00:00:00.000Z",
   };
 }

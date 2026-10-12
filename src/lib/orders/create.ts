@@ -62,7 +62,7 @@ export async function createOrder(request: Request): Promise<{
   return { orderToken, orderId: order.id, email };
 }
 
-async function storeFiles(
+export async function storeFiles(
   db: Db,
   orderId: string,
   files: Array<{ filename: string; mime: string; bytes: Uint8Array }>,
