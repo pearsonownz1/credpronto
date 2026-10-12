@@ -54,7 +54,9 @@ export function checkoutPayload(
   address: AddressDraft,
 ): CheckoutBody {
   const selected = new Set(selectedIds);
-  const addons = options.map((option) => option.id).filter((id) => selected.has(id));
+  const addons = options
+    .map((option) => option.id)
+    .filter((id) => id !== "expedited" && selected.has(id));
   if (!addons.includes("mail")) return { addons };
   const line2 = address.line2.trim();
   return {
@@ -87,7 +89,7 @@ export function useAddonPanel(
   order: PreviewOrder,
   onBuy?: (body: CheckoutBody) => void | Promise<void>,
 ): AddonPanelState {
-  const options = withoutExpedited(order.addonOptions ?? [], order.product !== "evaluation");
+  const options = withoutExpedited(order.addonOptions ?? [], true);
   const [selected, setSelected] = useState<string[]>(() =>
     (order.addons ?? []).filter((id) => options.some((option) => option.id === id)),
   );
@@ -137,15 +139,16 @@ export function useAddonPanel(
 }
 
 export function AddonPanel({ panel }: { panel: AddonPanelState }) {
-  if (panel.options.length === 0) return null;
-  const mail = panel.options.find((option) => option.id === "mail");
+  const options = panel.options.filter((option) => option.id !== "expedited");
+  if (options.length === 0) return null;
+  const mail = options.find((option) => option.id === "mail");
   const showAddress = Boolean(mail && panel.selected.includes(mail.id));
 
   return (
     <fieldset data-testid="addon-panel" className="shrink-0 rounded-[var(--cp-radius)] border border-line">
       <legend className="preview-kicker px-2">Add-ons</legend>
       <ul>
-        {panel.options.map((option) => {
+        {options.map((option) => {
           const checked = panel.selected.includes(option.id);
           const price =
             option.totalCents == null ? "Pending" : formatMoney(option.totalCents);

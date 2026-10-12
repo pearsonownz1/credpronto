@@ -131,12 +131,7 @@ describe("customer order", () => {
     });
     expect(order.orderType).toBe("evaluation");
     expect(order.service).toBe("diploma");
-    expect(order.addonOptions.map((item) => item.id)).toEqual(["notarization", "mail", "expedited"]);
-    expect(order.addonOptions.find((item) => item.id === "expedited")).toMatchObject({
-      unitCents: 995,
-      per: "order",
-      totalCents: 995,
-    });
+    expect(order.addonOptions.map((item) => item.id)).toEqual(["notarization", "mail"]);
     expect(order.expeditedUnit).toBe("order");
     expect(order.evaluationCents).toBe(1995);
     expect(order.degreeCount).toBe(1);

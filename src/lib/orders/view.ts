@@ -72,7 +72,7 @@ export type CustomerOrder = {
   unitPriceCents: number;
   addons: AddonId[];
   addonOptions: AddonOption[];
-  /** Unit for Expedited. Evaluations charge this once per order. */
+  /** Unit stored for older Expedited purchases. New orders do not offer it. */
   expeditedUnit: typeof EXPEDITED_UNIT;
   shippingAddress: ShippingAddress | null;
   totalCents: number | null;

@@ -221,7 +221,7 @@ describe("partner orders", () => {
     expect(ready.delayed).toBe(false);
   });
 
-  it("rejects expedited on a translation API order and accepts it for an evaluation", () => {
+  it("rejects expedited on translation and evaluation API orders", () => {
     const translation = new FormData();
     translation.set("addons", JSON.stringify(["expedited"]));
     expect(() => readPartnerAddonBody(translation, "translation")).toThrow(HttpError);
@@ -229,13 +229,11 @@ describe("partner orders", () => {
 
     const diploma = new FormData();
     diploma.set("addons", JSON.stringify(["notarization", "expedited"]));
-    expect(readPartnerAddonBody(diploma, "evaluation")).toMatchObject({
-      addons: ["notarization", "expedited"],
-    });
+    expect(() => readPartnerAddonBody(diploma, "evaluation")).toThrow("Expedited is no longer offered");
 
     const course = new FormData();
     course.append("addons", "expedited");
-    expect(readPartnerAddonBody(course, "evaluation")?.addons).toEqual(["expedited"]);
+    expect(() => readPartnerAddonBody(course, "evaluation")).toThrow("Expedited is no longer offered");
     const quoted = toPartnerOrder({
       order: order({ serviceType: "evaluation", service: "diploma", totalCents: 1995 }),
       paymentStatus: null,

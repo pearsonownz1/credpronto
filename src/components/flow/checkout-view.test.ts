@@ -79,13 +79,9 @@ describe("evaluation checkout", () => {
     expect(html).toContain("Evaluation report");
     expect(html).toContain("CredPronto Certification Team");
     expect(html).toContain("Pay $19.95");
-    expect(html).toContain("Expedited");
-    expect(html).toContain('data-testid="addon-expedited"');
-    expect(state.order.addonOptions.find((option) => option.id === "expedited")).toMatchObject({
-      per: "order",
-      unitCents: 995,
-    });
-    expect(html).toContain("$9.95 per order");
+    expect(html).not.toContain("Expedited");
+    expect(html).not.toContain('data-testid="addon-expedited"');
+    expect(state.order.addonOptions.map((option) => option.id)).toEqual(["notarization", "mail"]);
     expect(html).not.toContain("per page");
     expect(html).not.toContain("$29.90");
     expect(html).not.toContain("Certificate of accuracy");
@@ -103,7 +99,7 @@ describe("evaluation checkout", () => {
     expect(html).not.toContain("1 pages");
   });
 
-  it("never offers Expedited on a translation checkout, even when the payload includes it", () => {
+  it("never offers Expedited on checkout, even when the payload includes it", () => {
     state.order = {
       ...sampleCustomerOrder(),
       status: "preview_ready",
@@ -119,5 +115,18 @@ describe("evaluation checkout", () => {
     expect(html).not.toContain("per page");
     expect(html).toContain("$17.95 per order");
     expect(html).toContain("$12.95 per order");
+
+    state.order = {
+      ...checkoutOrder(false),
+      addonOptions: [
+        ...checkoutOrder(false).addonOptions,
+        { id: "expedited", label: "Expedited", unitCents: 995, per: "order", totalCents: 995 },
+      ],
+      addons: ["expedited"],
+    };
+    const evaluation = renderToStaticMarkup(createElement(CheckoutView, { token: "token-1" }));
+    expect(evaluation).not.toContain("Expedited");
+    expect(evaluation).not.toContain('data-testid="addon-expedited"');
+    expect(evaluation).toContain("1 page");
   });
 });

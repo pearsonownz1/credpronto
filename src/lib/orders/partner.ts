@@ -59,7 +59,7 @@ export type PartnerOrderBody = {
   externalRef: string | null;
   billablePages: number | null;
   unitPriceCents: number;
-  /** Expedited is a flat per-order charge on evaluations. Translations still reject the add-on. */
+  /** Kept for older clients. New orders omit Expedited from `addonOptions`. */
   expeditedUnit: typeof EXPEDITED_UNIT;
   totalCents: number | null;
   currency: string;
@@ -176,7 +176,7 @@ export function assertLiveOrderAllowed(prefix: ApiKeyPrefix): void {
   }
 }
 
-/** Optional checkout add-ons on `POST /api/v1/orders`. Translation orders cannot buy Expedited. */
+/** Optional checkout add-ons on `POST /api/v1/orders`. Expedited is not offered. */
 export function readPartnerAddonBody(form: FormData, service: PartnerService): Record<string, unknown> | null {
   if (!form.has("addons")) return null;
   try {
