@@ -1,3 +1,4 @@
+import { addonOptions, offersExpedited } from "@/lib/orders/addons";
 import {
   evaluationCheckoutTotal,
   evaluationQuote,
@@ -300,6 +301,11 @@ function withEvaluationChoice(
     }),
     totalCents: quote.totalCents,
     lineItems: quote.lineItems,
+    addonOptions: addonOptions(billablePages, {
+      orderType: "evaluation",
+      serviceType: "evaluation",
+      service: choice.service,
+    }),
   };
 }
 
@@ -415,11 +421,12 @@ const mockClient: FlowClient = {
   async checkout(token, body) {
     const current = readMockOrder();
     const requested = body?.addons ?? current.addons;
-    if (requested.includes("expedited")) {
+    if (requested.includes("expedited") && !offersExpedited(current)) {
       throw new FlowApiError("Expedited is no longer offered", 400);
     }
     const addons = requested.filter(
-      (id): id is CustomerOrder["addons"][number] => id === "notarization" || id === "mail",
+      (id): id is CustomerOrder["addons"][number] =>
+        id === "notarization" || id === "mail" || (id === "expedited" && offersExpedited(current)),
     );
     writeMockOrder({
       ...current,

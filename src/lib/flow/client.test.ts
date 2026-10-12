@@ -113,7 +113,7 @@ describe("mock checkout add-ons", () => {
     vi.unstubAllGlobals();
   });
 
-  it("rejects expedited on translation and evaluation orders", async () => {
+  it("rejects expedited on a translation and keeps it on an evaluation", async () => {
     vi.stubEnv("NEXT_PUBLIC_FLOW_MOCK", "1");
     const store = new Map<string, string>();
     vi.stubGlobal("sessionStorage", {
@@ -140,13 +140,16 @@ describe("mock checkout add-ons", () => {
       files: [],
       choice: { orderType: "evaluation", service: "diploma", degreeCount: 1, includeTranslation: false },
     });
-    await expect(client.checkout("tok", { addons: ["notarization", "expedited"] })).rejects.toMatchObject({
-      status: 400,
-      message: "Expedited is no longer offered",
-    });
+    const paid = await client.checkout("tok", { addons: ["notarization", "expedited"] });
+    expect(paid).toMatchObject({ sessionId: "cs_mock" });
     const diploma = await client.getOrder("tok");
-    expect(diploma.addons).not.toContain("expedited");
-    expect(diploma).not.toHaveProperty("expeditedUnit");
+    expect(diploma.addons).toEqual(["notarization", "expedited"]);
+    expect(diploma.expeditedUnit).toBe("order");
+    expect(diploma.addonOptions.find((option) => option.id === "expedited")).toMatchObject({
+      per: "order",
+      unitCents: 995,
+      totalCents: 995,
+    });
     expect(diploma.totalCents).toBe(1995);
   });
 });
