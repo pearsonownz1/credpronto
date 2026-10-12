@@ -1,10 +1,14 @@
-import { extractText, getDocumentProxy } from "unpdf";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { extractText, extractTextItems, getDocumentProxy } from "unpdf";
 import { PDFDocument } from "pdf-lib";
 import { describe, expect, it } from "vitest";
 import { PREVIEW_WATERMARK, PREVIEW_WATERMARK_OPACITY, previewWatermarkRgb } from "../constants";
 import { buildCombinedOriginal } from "./combine";
-import { translationRenderPasses } from "./layout";
+import { faceForCodePoint } from "./font";
+import { translationRenderPasses, wrapLines } from "./layout";
 import { renderOrderPdfs } from "./render";
+import { collapseLetterSpacing, structurePage, structurePositioned, type TextItem } from "./structure";
 
 const PNG = Uint8Array.from(
   Buffer.from(
@@ -13,8 +17,12 @@ const PNG = Uint8Array.from(
   ),
 );
 
+function copyBytes(bytes: Uint8Array): Uint8Array {
+  return new Uint8Array(bytes);
+}
+
 async function pdfText(bytes: Uint8Array): Promise<{ text: string; pageCount: number }> {
-  const proxy = await getDocumentProxy(bytes);
+  const proxy = await getDocumentProxy(copyBytes(bytes));
   const extracted = await extractText(proxy, { mergePages: false });
   return { text: extracted.text.join("\n"), pageCount: extracted.totalPages };
 }
@@ -62,6 +70,170 @@ describe("translated pdf renders", () => {
     expect(clean.text).not.toContain("PREVIEW");
     expect(certification.text).toContain("Translator certification");
     expect(certification.text).toContain("order-1");
+  });
+});
+
+const FIXTURE = path.join(process.cwd(), "src/lib/orders/pdf/fixtures/es-mx-acta-nacimiento.pdf");
+const SIGNATURE =
+  "SAMPLExQ2FyZ29zIGZpY3RpY2lvcyBwYXJhIHBydWViYXMgZGUgQ3JlZFByb250bw0KTm8gZXMgdW4gZG9jdW1lbnRvIHJlYWwgbmkgdmFsaWRvIHBhcmEgdHJhbWl0ZXMgb2ZpY2lhbGVz/AbCdEf0123+SAMPLE==";
+
+async function pdfItems(bytes: Uint8Array) {
+  const doc = await PDFDocument.load(copyBytes(bytes));
+  const extracted = await extractTextItems(copyBytes(bytes));
+  return extracted.items.map((pageItems, index) => {
+    const size = doc.getPage(index).getSize();
+    return {
+      width: size.width,
+      height: size.height,
+      items: pageItems.map((item) => ({
+        str: item.str,
+        x: item.x,
+        y: item.y,
+        width: item.width,
+        rotated: false,
+      })),
+    };
+  });
+}
+
+function assertWithinPage(pages: Awaited<ReturnType<typeof pdfItems>>) {
+  for (const page of pages) {
+    for (const item of page.items) {
+      if (!item.str.trim() || item.rotated) continue;
+      const fragment = item.str.trim();
+      if (fragment.length >= 4 && PREVIEW_WATERMARK.includes(fragment)) continue;
+      expect(item.x, item.str).toBeGreaterThanOrEqual(-0.75);
+      expect(item.x + item.width, item.str).toBeLessThanOrEqual(page.width + 0.75);
+    }
+  }
+}
+
+async function italicAngles(bytes: Uint8Array): Promise<number[]> {
+  const doc = await PDFDocument.load(copyBytes(bytes));
+  const angles: number[] = [];
+  for (const [, object] of doc.context.enumerateIndirectObjects()) {
+    const record = object as { entries?: () => Iterable<[unknown, { asNumber?: () => number }]> };
+    if (typeof record.entries !== "function") continue;
+    for (const [key, value] of record.entries()) {
+      if (String(key) !== "/ItalicAngle" || typeof value.asNumber !== "function") continue;
+      angles.push(value.asNumber());
+    }
+  }
+  return angles;
+}
+
+function assertNoNotdef(text: string) {
+  expect(text).not.toContain("\u0000");
+  expect(text).not.toContain("\uFFFD");
+  for (const char of Array.from(text)) {
+    const codePoint = char.codePointAt(0) ?? 0;
+    if (codePoint < 32 || !char.trim()) continue;
+    const face = faceForCodePoint(codePoint, false) ?? faceForCodePoint(codePoint, true);
+    expect(face, `U+${codePoint.toString(16)} ${char}`).toBeTruthy();
+  }
+}
+
+async function fixtureItems(): Promise<TextItem[]> {
+  const bytes = new Uint8Array(readFileSync(FIXTURE));
+  const extracted = await extractTextItems(bytes);
+  return (extracted.items[0] ?? []).flatMap((item) => {
+    if (!item.str.trim()) return [];
+    return [{ text: item.str, x: item.x, y: item.y, width: item.width, size: item.fontSize }];
+  });
+}
+
+describe("form translation layout", () => {
+  it("breaks long tokens anywhere and collapses letter-spaced seal text", () => {
+    const widthOf = (line: string) => line.length * 10;
+    const wrapped = wrapLines(SIGNATURE, widthOf, 80);
+    expect(wrapped.length).toBeGreaterThan(1);
+    for (const line of wrapped) expect(widthOf(line)).toBeLessThanOrEqual(80);
+
+    expect(collapseLetterSpacing("C I V I L  R E G I S T R Y")).toBe("CIVIL REGISTRY");
+    const runOn = structurePage("FIRST NAME(S) VALERIA XIMENA FIRST SURNAME OLVERA SECOND SURNAME TOSTADO");
+    const rows = runOn.flatMap((block) => (block.type === "fields" ? block.rows : []));
+    expect(rows.map((row) => [row.label, row.value])).toEqual([
+      ["First name(s)", "VALERIA XIMENA"],
+      ["First surname", "OLVERA"],
+      ["Second surname", "TOSTADO"],
+    ]);
+  });
+
+  it("renders the birth-certificate fixture inside the page with no missing glyphs", async () => {
+    const blocks = structurePositioned(await fixtureItems());
+    const rendered = await renderOrderPdfs({
+      orderId: "acta-sample",
+      sourceLanguage: "es",
+      date: "2026-10-12",
+      pages: [{ combinedPageNumber: 1, widthPt: 612, heightPt: 792, paragraphs: [], blocks }],
+    });
+
+    const previewText = await pdfText(rendered.watermarkedPreview);
+    const cleanText = await pdfText(rendered.cleanTranslation);
+    const previewPages = await pdfItems(rendered.watermarkedPreview);
+    const cleanPages = await pdfItems(rendered.cleanTranslation);
+
+    expect(previewText.text).toContain("[Seal: Civil Registry of Jalisco]");
+    expect(previewText.text).toContain("[Electronic signature]");
+    expect(previewText.text).toContain("First name(s)");
+    expect(previewText.text).toContain("VALERIA XIMENA");
+    expect(previewText.text).toContain("ÍÑIGUEZ");
+    expect(previewText.text).toContain("TREVIÑO");
+    expect(previewText.text).toContain("March 14, 2024");
+    expect(previewText.text).not.toContain(SIGNATURE.slice(0, 40));
+    expect(previewText.text).not.toMatch(/C\s+I\s+V\s+I\s+L/);
+    expect(previewText.text).not.toContain("OFICIALÍA 0007");
+    expect(cleanText.text).not.toContain("PREVIEW");
+    expect(previewText.text).toContain(PREVIEW_WATERMARK);
+
+    assertWithinPage(previewPages);
+    assertWithinPage(cleanPages);
+    assertNoNotdef(previewText.text);
+    assertNoNotdef(cleanText.text);
+    expect((await italicAngles(rendered.watermarkedPreview)).some((angle) => angle !== 0)).toBe(true);
+
+    const label = previewPages[0]?.items.find((item) => item.str.includes("First name(s)"));
+    const value = previewPages[0]?.items.find((item) => item.str.includes("VALERIA"));
+    expect(label).toBeTruthy();
+    expect(value).toBeTruthy();
+    expect(value!.x).toBeGreaterThan(label!.x + 20);
+    expect(Math.abs(value!.y - label!.y)).toBeLessThan(2);
+  });
+
+  it("renders a CJK name with a per-glyph fallback and no .notdef glyphs", async () => {
+    const rendered = await renderOrderPdfs({
+      orderId: "diploma-zh",
+      sourceLanguage: "zh",
+      date: "2026-10-12",
+      pages: [
+        {
+          combinedPageNumber: 1,
+          widthPt: 612,
+          heightPt: 792,
+          paragraphs: [],
+          blocks: [
+            { type: "heading", text: "Diploma", level: 1 },
+            {
+              type: "fields",
+              rows: [
+                { label: "Student", value: "张伟 Zhang Wei" },
+                { label: "Also", value: "佐藤 김민준" },
+              ],
+            },
+            { type: "paragraph", text: "Awarded with distinction." },
+          ],
+        },
+      ],
+    });
+
+    const clean = await pdfText(rendered.cleanTranslation);
+    expect(clean.text).toContain("张伟");
+    expect(clean.text).toContain("佐藤");
+    expect(clean.text).toContain("김민준");
+    assertNoNotdef(clean.text);
+    assertWithinPage(await pdfItems(rendered.cleanTranslation));
+    expect(faceForCodePoint("张".codePointAt(0) ?? 0)?.id).toBe("cjk-sc");
+    expect(faceForCodePoint("김".codePointAt(0) ?? 0)?.id).toBe("cjk-kr");
   });
 });
 
