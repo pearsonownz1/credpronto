@@ -757,6 +757,14 @@ One endpoint per profile.
 
 `url` must be `https`. `400` `{ "error": "Webhook URL must be https", "code": "validation_error" }` otherwise. The signing secret is 32 bytes of hex prefixed with `whsec_`. It is stored so deliveries can be signed, and it is returned only from this `PUT`. A later `PUT` rotates it and returns the new secret once.
 
+`GET /api/me/webhook` returns the saved endpoint without the secret:
+
+```json
+{ "url": "https://example.com/hooks/credpronto", "secretLast4": "c0ff", "lastDelivery": { "status": "succeeded", "event": "order.quoted", "at": "2026-10-12T00:00:00.000Z", "responseStatus": 200 } }
+```
+
+`secretLast4` is the last 4 characters of the signing secret. `lastDelivery` is the newest `webhook_deliveries` row for that endpoint, or `null`. When the profile has no endpoint, the body is `{ "url": null, "secretLast4": null, "lastDelivery": null }`.
+
 Deliveries are posted for orders whose `user_id` has an endpoint:
 
 | Event | When |

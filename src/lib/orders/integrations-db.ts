@@ -133,6 +133,32 @@ export async function upsertWebhookEndpoint(
   };
 }
 
+export async function latestWebhookDelivery(
+  db: Db,
+  endpointId: string,
+): Promise<{ status: string; event: string; at: string; responseStatus: number | null } | null> {
+  const { data, error } = await db
+    .from("webhook_deliveries")
+    .select("event, status, response_status, created_at")
+    .eq("endpoint_id", endpointId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  fail(error);
+  if (!data) return null;
+  const row = data as Row;
+  const status = typeof row.status === "string" ? row.status : "";
+  const event = typeof row.event === "string" ? row.event : "";
+  const at = typeof row.created_at === "string" ? row.created_at : "";
+  if (!status || !event || !at) return null;
+  return {
+    status,
+    event,
+    at,
+    responseStatus: typeof row.response_status === "number" ? row.response_status : null,
+  };
+}
+
 export async function webhookEndpointForUser(db: Db, userId: string): Promise<WebhookEndpointRow | null> {
   const { data, error } = await db
     .from("webhook_endpoints")
