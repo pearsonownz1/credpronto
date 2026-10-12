@@ -112,6 +112,20 @@ describe("reading presentation", () => {
     );
   });
 
+  it("keeps a translating step and a positive retry count", () => {
+    expect(asOrderProgress({ step: "translating", pagesRead: 2, pagesTotal: 2, retries: 1 })).toEqual({
+      step: "translating",
+      pagesRead: 2,
+      pagesTotal: 2,
+      retries: 1,
+    });
+    expect(asOrderProgress({ step: "translating", pagesRead: 2, pagesTotal: 2 })).toEqual({
+      step: "translating",
+      pagesRead: 2,
+      pagesTotal: 2,
+    });
+  });
+
   it("requires integer page counts for a stored progress value", () => {
     expect(asOrderProgress({ step: "reading", pagesRead: 6, pagesTotal: 9 })).toEqual({
       step: "reading",

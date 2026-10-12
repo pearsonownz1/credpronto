@@ -93,6 +93,7 @@ function mapOrder(row: Row): OrderRecord {
     edgeCredentialId: str(row.edge_credential_id),
     edgeGradingScaleId: str(row.edge_grading_scale_id),
     createdAt: str(row.created_at) ?? new Date().toISOString(),
+    updatedAt: str(row.updated_at) ?? str(row.created_at) ?? new Date().toISOString(),
     progress: asOrderProgress(row.progress) ?? { step: "uploaded", pagesRead: 0, pagesTotal: 0 },
   };
 }

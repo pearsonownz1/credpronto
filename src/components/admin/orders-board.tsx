@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { adminBucket, formatOrderDate, formatOrderMoney, inBucket, type AdminBucket } from "@/lib/account/present";
 import { languageLabel } from "@/lib/orders/languages";
+import { TRANSLATION_TIMEOUT_REASON } from "@/lib/orders/translation-failure";
 import { ORDER_STATUSES } from "@/lib/orders/types";
 import type { AdminOrder } from "@/lib/api/types";
 
@@ -174,7 +175,11 @@ export function OrdersBoard({
                         <td className="px-4 py-3">{humanStatus(order.status)}</td>
                         <td className="px-4 py-3">{formatOrderDate(order.createdAt)}</td>
                         <td className="px-4 py-3">{formatOrderMoney(order.totalCents)}</td>
-                        <td className="px-4 py-3 text-ink-muted">{order.reviewReason ?? "—"}</td>
+                        <td
+                          className={`px-4 py-3 ${order.reviewReason === TRANSLATION_TIMEOUT_REASON ? "font-semibold text-[#9a6700]" : "text-ink-muted"}`}
+                        >
+                          {order.reviewReason ?? "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

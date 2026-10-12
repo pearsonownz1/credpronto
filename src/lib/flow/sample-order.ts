@@ -68,6 +68,7 @@ export function sampleCustomerOrder(): CustomerOrder {
     lineItems: [],
     evaluation: null,
     progress: { step: "done", pagesRead: 2, pagesTotal: 2 },
+    delayed: false,
   };
 }
 

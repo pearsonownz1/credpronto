@@ -58,13 +58,18 @@ export function ProcessingView({
                   ? "Preparing your evaluation…"
                   : "Translating your documents…"}
             </h1>
-            <p className="mt-2.5 mb-8 text-base text-ink-muted">
+            <p className={`mt-2.5 text-base text-ink-muted ${order.delayed ? "mb-2" : "mb-8"}`}>
               {evaluation
                 ? "We'll email you when the watermarked report is ready to review."
                 : waiting
                   ? "Translation is waiting to run. You can leave this page — we'll email you when the preview is ready."
                   : "Usually about 10 minutes. We'll email you the moment your preview is ready."}
             </p>
+            {order.delayed ? (
+              <p data-testid="translation-delayed" className="mb-8 text-base font-semibold text-ink">
+                {"Taking longer than usual, we're on it."}
+              </p>
+            ) : null}
             {waiting ? (
               <p data-testid="translation-wait" className="mb-6 text-sm text-ink-muted">
                 The translation step can sit here until it is able to run. This page keeps

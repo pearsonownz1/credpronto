@@ -41,6 +41,7 @@ function orderRecord(): OrderRecord {
     edgeCredentialId: null,
     edgeGradingScaleId: null,
     createdAt: "2026-10-12T00:00:00.000Z",
+    updatedAt: "2026-10-12T00:00:00.000Z",
     progress: { step: "done", pagesRead: 2, pagesTotal: 2 },
   };
 }
@@ -156,6 +157,48 @@ describe("customer order", () => {
     expect(order.addons).toEqual(["notarization", "mail"]);
     expect(order.shippingAddress?.state).toBe("CA");
     expect(order.totalCents).toBe(7765);
+  });
+
+  it("marks a translation delayed after 15 minutes without a preview", () => {
+    const shared = {
+      documents: [],
+      confirmations: [],
+      previewVersion: null as number | null,
+      paymentStatus: null,
+      deliveryStatus: null,
+      email: "ada@example.com",
+      now: Date.parse("2026-10-12T00:20:00.000Z"),
+    };
+    expect(
+      toCustomerOrder({
+        ...shared,
+        order: {
+          ...orderRecord(),
+          status: "processing",
+          updatedAt: "2026-10-12T00:00:00.000Z",
+          progress: { step: "translating", pagesRead: 2, pagesTotal: 2 },
+        },
+      }).delayed,
+    ).toBe(true);
+    expect(
+      toCustomerOrder({
+        ...shared,
+        order: {
+          ...orderRecord(),
+          status: "processing",
+          updatedAt: "2026-10-12T00:10:00.000Z",
+        },
+      }).delayed,
+    ).toBe(false);
+    expect(
+      toCustomerOrder({
+        ...shared,
+        previewVersion: 1,
+        order: { ...orderRecord(), status: "processing", updatedAt: "2026-10-12T00:00:00.000Z" },
+      }).delayed,
+    ).toBe(false);
+    expect(toCustomerOrder({ ...shared, order: orderRecord() }).delayed).toBe(false);
+    expect(toCustomerOrder({ ...shared, order: orderRecord() }).progress).not.toHaveProperty("retries");
   });
 
   it("exposes stored read progress on the customer order", () => {
