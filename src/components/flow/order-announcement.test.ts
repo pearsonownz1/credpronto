@@ -76,12 +76,45 @@ describe("order live message", () => {
     ).toBe("Your preview is ready.");
   });
 
-  it("says a delayed translation is taking longer than usual", () => {
+  it("keeps translating when the API marks the order delayed", () => {
     expect(
       orderLiveMessage({
         loading: false,
-        order: { status: "processing", billablePages: 2, totalCents: 1990, delayed: true },
+        order: {
+          status: "processing",
+          billablePages: 2,
+          totalCents: 1990,
+          delayed: true,
+          progress: { step: "translating" },
+        },
+      }),
+    ).toBe("Translating your document.");
+  });
+
+  it("says a translation is taking longer only after the real wait", () => {
+    expect(
+      orderLiveMessage({
+        loading: false,
+        late: true,
+        order: {
+          status: "processing",
+          billablePages: 2,
+          totalCents: 1990,
+          progress: { step: "translating" },
+        },
       }),
     ).toBe("Taking longer than usual, we're on it.");
+    expect(
+      orderLiveMessage({
+        loading: false,
+        late: true,
+        order: {
+          status: "processing",
+          billablePages: 2,
+          totalCents: 1990,
+          progress: { step: "reading" },
+        },
+      }),
+    ).toBe("Translating your document.");
   });
 });

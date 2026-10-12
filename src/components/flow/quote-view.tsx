@@ -292,7 +292,7 @@ export function QuoteBody({
                             className="flex shrink-0 items-center gap-1 text-[13px] font-semibold leading-5 text-[var(--cp-ok)]"
                           >
                             <ClockIcon />
-                            Ready in about 10 minutes
+                            Ready in a few minutes
                           </p>
                         </div>
                         <div data-testid="file-billable" className="text-[12.5px] text-ink-muted">
@@ -430,7 +430,7 @@ export function QuoteBody({
             items={
               evaluation
                 ? ["Pay only after you’ve seen it", "Staff sign off before release", "Free corrections"]
-                : ["Pay only after you’ve seen it", "Preview in about 10 minutes", "Free corrections"]
+                : ["Pay only after you’ve seen it", "Ready in a few minutes", "Free corrections"]
             }
           />
         </div>

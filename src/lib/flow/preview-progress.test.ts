@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  PREVIEW_BAR_MAX,
   PREVIEW_LONG_WAIT_MS,
-  PREVIEW_POLL_FAST_MS,
-  PREVIEW_POLL_SLOW_MS,
+  PREVIEW_POLL_MS,
   previewIsReady,
   previewPollContinues,
   previewPollDelay,
@@ -31,10 +29,12 @@ describe("preview step progress", () => {
       ["translating", "current"],
       ["ready", "pending"],
     ]);
-    expect(translating.percent).toBe(PREVIEW_BAR_MAX);
-    expect(translating.displayPercent).toBe(PREVIEW_BAR_MAX);
-    expect(received.displayPercent).toBeLessThanOrEqual(PREVIEW_BAR_MAX);
-    expect(reading.displayPercent).toBeLessThanOrEqual(PREVIEW_BAR_MAX);
+    expect(received.percent).toBe(25);
+    expect(received.displayPercent).toBe(25);
+    expect(reading.percent).toBe(50);
+    expect(reading.displayPercent).toBe(50);
+    expect(translating.percent).toBe(75);
+    expect(translating.displayPercent).toBe(75);
 
     const quoting = previewWork({ status: "confirmed", progressStep: "quoting" });
     expect(quoting.steps.find((step) => step.id === "read")?.state).toBe("current");
@@ -57,10 +57,9 @@ describe("preview step progress", () => {
     expect(byStatus.phase).toBe("ready");
   });
 
-  it("polls quickly, then every 15 seconds, until a preview or an order error", () => {
-    expect(previewPollDelay(0)).toBe(PREVIEW_POLL_FAST_MS);
-    expect(previewPollDelay(5)).toBe(PREVIEW_POLL_FAST_MS);
-    expect(previewPollDelay(6)).toBe(PREVIEW_POLL_SLOW_MS);
+  it("polls every 3 seconds until a preview or an order error", () => {
+    expect(PREVIEW_POLL_MS).toBe(3_000);
+    expect(previewPollDelay()).toBe(PREVIEW_POLL_MS);
     const waiting = { status: "processing", progress: { step: "translating" } };
     expect(previewPollContinues(waiting, null)).toBe(true);
     expect(previewPollContinues(waiting, 500)).toBe(true);

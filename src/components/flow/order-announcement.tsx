@@ -9,6 +9,8 @@ const LOADING_ORDER = "Loading your order";
 export function orderLiveMessage(input: {
   loading: boolean;
   error?: string | null;
+  /** Set only after 15 real minutes on `progress.step === "translating"`. */
+  late?: boolean;
   order: (Pick<CustomerOrder, "status" | "billablePages" | "totalCents"> & {
     delayed?: boolean;
     progress?: { step?: string | null } | null;
@@ -38,7 +40,9 @@ export function orderLiveMessage(input: {
     order.status === "confirmed" ||
     order.status === "correction_requested"
   ) {
-    if (order.delayed) return "Taking longer than usual, we're on it.";
+    if (input.late && order.progress?.step === "translating") {
+      return "Taking longer than usual, we're on it.";
+    }
     return "Translating your document.";
   }
   return "";

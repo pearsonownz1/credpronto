@@ -13,7 +13,7 @@ test("a quote file shows a large page viewer and opens it full size", async ({ p
   await expect(page.getByRole("heading", { name: /exact price/ }).filter({ visible: true })).toBeVisible();
   const list = page.getByTestId("file-list").filter({ visible: true });
   const turnaround = list.getByTestId("file-turnaround").first();
-  await expect(turnaround).toContainText("Ready in about 10 minutes");
+  await expect(turnaround).toContainText("Ready in a few minutes");
   const filename = list.locator("b").first();
   const nameBox = await filename.boundingBox();
   const turnBox = await turnaround.boundingBox();
@@ -67,7 +67,7 @@ test("a missing source file hides the page viewer", async ({ page }) => {
   await expect(page.getByTestId("file-thumb-fallback")).toHaveCount(0);
   await expect(page.getByTestId("file-thumb-skeleton")).toHaveCount(0);
   await expect(page.getByTestId("file-turnaround").filter({ visible: true }).first()).toContainText(
-    "Ready in about 10 minutes",
+    "Ready in a few minutes",
   );
 });
 
