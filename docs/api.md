@@ -723,8 +723,8 @@ A key is `cp_live_` or `cp_test_` plus 32 bytes of CSPRNG hex (64 hex characters
 
 | Method | Path | Body | Result |
 | --- | --- | --- | --- |
-| `GET` | `/api/me/api-keys` | | `{ "keys": [ { id, name, prefix, last4, createdAt, revokedAt } ] }` |
-| `POST` | `/api/me/api-keys` | `{ "name": "Production", "mode": "live" \| "test" }` | `201` `{ id, name, prefix, last4, secret, createdAt }`. `secret` is the full key. |
+| `GET` | `/api/me/api-keys` | | `{ "keys": [ { id, name, prefix, last4, createdAt, lastUsedAt, revokedAt } ] }`. `lastUsedAt` is an ISO timestamp or `null`. |
+| `POST` | `/api/me/api-keys` | `{ "name": "Production", "mode": "live" \| "test" }` | `201` `{ id, name, prefix, last4, secret, createdAt, lastUsedAt }`. `secret` is the full key. `lastUsedAt` is `null` until the key authenticates a request. |
 | `DELETE` | `/api/me/api-keys/[id]` | | `{ "id", "revokedAt" }`. A revoked key no longer authenticates. `404` when the id is not owned by the session. |
 
 `name` is 1 to 80 characters. `mode` is required. `prefix` is `cp_live_` when `mode` is `live` and `cp_test_` when `mode` is `test`.
@@ -784,7 +784,7 @@ Each delivery is stored in `webhook_deliveries`. A non-2xx response or a network
 
 ### Public API
 
-`Authorization: Bearer <secret>`. The secret is hashed and matched to an unrevoked `api_keys` row. `401` `{ "error": "Invalid API key", "code": "invalid_api_key" }` otherwise.
+`Authorization: Bearer <secret>`. The secret is hashed and matched to an unrevoked `api_keys` row. A match sets `last_used_at`. `401` `{ "error": "Invalid API key", "code": "invalid_api_key" }` otherwise.
 
 While `STRIPE_SECRET_KEY` starts with `sk_test_`, `cp_live_` keys may call `GET` but `POST /api/v1/orders` returns `403` `{ "error": "Live mode is disabled", "code": "live_mode_disabled" }`. `cp_test_` keys may create orders.
 
@@ -909,7 +909,7 @@ The clean translation in `finals` (`file=translation`) starts with the certifica
 
 ### Tables
 
-`api_keys`: `id`, `user_id` → `auth.users`, `name`, `prefix` (`cp_live_` or `cp_test_`), `key_hash` (unique lowercase hex SHA-256), `last4`, `created_at`, `revoked_at` null until delete. RLS: the owner selects their rows; staff select all. Writes go through the service role.
+`api_keys`: `id`, `user_id` → `auth.users`, `name`, `prefix` (`cp_live_` or `cp_test_`), `key_hash` (unique lowercase hex SHA-256), `last4`, `created_at`, `last_used_at` null until the key authenticates a request, `revoked_at` null until delete. RLS: the owner selects their rows; staff select all. Writes go through the service role.
 
 `billing_customers`: `user_id` primary key → `auth.users`, `stripe_customer_id` unique, `payment_method_id` null, `brand` null, `last4` null, `created_at`, `updated_at`. No card number. RLS: the owner selects their row. Writes go through the service role.
 

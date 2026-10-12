@@ -82,6 +82,9 @@ describe("auth migrations", () => {
     expect(edge.toLowerCase()).not.toMatch(/insert into/);
     expect(edge).toMatch(/edge_credential_id uuid/);
     expect(edge).toMatch(/edge_grading_scale_id uuid/);
+    const lastUsed = readFileSync(path.join(migrationsDir, "20261012100000_api_keys_last_used_at.sql"), "utf8");
+    expect(lastUsed).toMatch(/add column last_used_at timestamptz/);
+    expect(lastUsed.toLowerCase()).not.toMatch(/create table/);
     expect(billing).toMatch(/stripe_customer_id text not null/);
     expect(billing).not.toMatch(/card_number/);
     for (const sql of [apiKeys, endpoints, deliveries, externalRef, billing]) {

@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/auth/session";
-import { generateApiKey, parseApiKeyMode, parseApiKeyName } from "@/lib/orders/api-key";
+import { generateApiKey, parseApiKeyMode, parseApiKeyName, publicApiKey } from "@/lib/orders/api-key";
 import { insertApiKey, listApiKeys } from "@/lib/orders/integrations-db";
 import { json, run } from "@/lib/orders/http";
 import { serviceDb } from "@/lib/orders/storage";
@@ -8,16 +8,7 @@ export async function GET() {
   return run(async () => {
     const user = await requireUser();
     const keys = await listApiKeys(serviceDb(), user.id);
-    return json({
-      keys: keys.map((key) => ({
-        id: key.id,
-        name: key.name,
-        prefix: key.prefix,
-        last4: key.last4,
-        createdAt: key.createdAt,
-        revokedAt: key.revokedAt,
-      })),
-    });
+    return json({ keys: keys.map(publicApiKey) });
   });
 }
 
@@ -34,16 +25,6 @@ export async function POST(request: Request) {
       keyHash: generated.hash,
       last4: generated.last4,
     });
-    return json(
-      {
-        id: row.id,
-        name: row.name,
-        prefix: row.prefix,
-        last4: row.last4,
-        secret: generated.secret,
-        createdAt: row.createdAt,
-      },
-      201,
-    );
+    return json({ ...publicApiKey(row), secret: generated.secret }, 201);
   });
 }

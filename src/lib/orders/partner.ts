@@ -27,7 +27,7 @@ import {
 import { orderDownloadFilename } from "./download-name";
 import { HttpError } from "./errors";
 import { assertUploadBudget, dedupeUploads, resolveUploadMime } from "./files";
-import { findActiveApiKey, orderByExternalRef, type ApiKeyRow } from "./integrations-db";
+import { findActiveApiKey, orderByExternalRef, touchApiKeyLastUsed, type ApiKeyRow } from "./integrations-db";
 import { isSupportedSourceLanguage } from "./languages";
 import { chargeOffSession, type OffSessionCharge } from "./off-session";
 import { notifyOrder } from "./webhook-delivery";
@@ -131,6 +131,7 @@ export async function requireApiKey(request: Request): Promise<ApiKeyRow> {
   if (!secret) throw new HttpError("Invalid API key", 401, "invalid_api_key");
   const row = await findActiveApiKey(serviceDb(), hashApiKey(secret));
   if (!row) throw new HttpError("Invalid API key", 401, "invalid_api_key");
+  await touchApiKeyLastUsed(serviceDb(), row.id);
   return row;
 }
 
