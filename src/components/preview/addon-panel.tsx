@@ -139,7 +139,7 @@ export function AddonPanel({ panel }: { panel: AddonPanelState }) {
   const showAddress = Boolean(mail && panel.selected.includes(mail.id));
 
   return (
-    <fieldset data-testid="addon-panel" className="rounded-[var(--cp-radius)] border border-line">
+    <fieldset data-testid="addon-panel" className="shrink-0 rounded-[var(--cp-radius)] border border-line">
       <legend className="preview-kicker px-2">Add-ons</legend>
       <ul>
         {panel.options.map((option) => {

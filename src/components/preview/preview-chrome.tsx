@@ -21,7 +21,7 @@ export function OrderRail({
   const { pricing } = order;
 
   return (
-    <div data-testid="order-rail" className="flex h-full flex-col gap-[18px]">
+    <div data-testid="order-rail" className="flex min-h-full flex-col gap-[18px]">
       <div>
         <p className="preview-kicker mb-2">Your translation is ready</p>
         <h2 className="text-xl tracking-[-0.3px]">Review every page, then buy.</h2>
@@ -50,7 +50,7 @@ export function OrderRail({
         data-testid="buy-download"
         disabled={panel.pending}
         onClick={panel.purchase}
-        className="inline-flex h-[52px] w-full items-center justify-center rounded-[var(--cp-radius)] bg-primary text-base font-semibold text-primary-ink disabled:opacity-60"
+        className="inline-flex h-[52px] w-full shrink-0 items-center justify-center rounded-[var(--cp-radius)] bg-primary text-base font-semibold text-primary-ink disabled:opacity-60"
       >
         {panel.pending ? "Opening checkout…" : buyLabel(order, panel.selected)}
       </button>
@@ -113,7 +113,7 @@ export function MobileBuyBar({
     >
       <AddonPanel panel={panel} />
       <AddonError panel={panel} />
-      <div className="flex items-center justify-between text-[13px] text-ink-muted">
+      <div className="flex shrink-0 items-center justify-between text-[13px] text-ink-muted">
         <button type="button" data-testid="flag-correction" onClick={onFlag}>
           ⚑ Flag a correction
         </button>
@@ -126,7 +126,7 @@ export function MobileBuyBar({
         data-testid="buy-download"
         disabled={panel.pending}
         onClick={panel.purchase}
-        className="inline-flex h-[50px] w-full items-center justify-center rounded-[var(--cp-radius)] bg-primary text-[15px] font-semibold text-primary-ink disabled:opacity-60"
+        className="inline-flex h-[50px] w-full shrink-0 items-center justify-center rounded-[var(--cp-radius)] bg-primary text-[15px] font-semibold text-primary-ink disabled:opacity-60"
       >
         {panel.pending ? "Opening checkout…" : buyLabel(order, panel.selected)}
       </button>
