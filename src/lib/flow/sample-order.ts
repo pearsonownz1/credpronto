@@ -67,6 +67,7 @@ export function sampleCustomerOrder(): CustomerOrder {
     translationCents: null,
     lineItems: [],
     evaluation: null,
+    progress: { step: "done", pagesRead: 2, pagesTotal: 2 },
   };
 }
 

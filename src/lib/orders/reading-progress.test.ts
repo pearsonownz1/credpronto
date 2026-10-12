@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  asOrderProgress,
   fallbackReadingPercent,
   liveReadingPercent,
   readingPresentation,
@@ -109,6 +110,16 @@ describe("reading presentation", () => {
     expect(readingPresentation({ progress: undefined, status: "draft", elapsedMs: 40_000 }).label).toBe(
       "Counting translatable text",
     );
+  });
+
+  it("requires integer page counts for a stored progress value", () => {
+    expect(asOrderProgress({ step: "reading", pagesRead: 6, pagesTotal: 9 })).toEqual({
+      step: "reading",
+      pagesRead: 6,
+      pagesTotal: 9,
+    });
+    expect(asOrderProgress({ step: "reading" })).toBeNull();
+    expect(asOrderProgress({ step: "reading", pagesRead: 1.5, pagesTotal: 2 })).toBeNull();
   });
 
   it("ignores a progress payload the API has not shipped", () => {

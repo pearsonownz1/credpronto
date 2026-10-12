@@ -113,6 +113,7 @@ export async function replaceOrderDocument(
     review_reason: null,
     page_order_basis: null,
     page_order: null,
+    progress: { step: "uploaded", pagesRead: 0, pagesTotal: 0 },
   });
 
   const updated = await getOrderById(db, order.id);

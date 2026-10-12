@@ -9,6 +9,7 @@ import {
 } from "./edge";
 import { parseEvaluationResult } from "./evaluation-price";
 import { parseStoredPageOrder, compareCombinedPages } from "./page-order";
+import { asOrderProgress, type OrderProgress } from "./reading-progress";
 import type { Db } from "./storage";
 
 export type { Db };
@@ -92,6 +93,7 @@ function mapOrder(row: Row): OrderRecord {
     edgeCredentialId: str(row.edge_credential_id),
     edgeGradingScaleId: str(row.edge_grading_scale_id),
     createdAt: str(row.created_at) ?? new Date().toISOString(),
+    progress: asOrderProgress(row.progress) ?? { step: "uploaded", pagesRead: 0, pagesTotal: 0 },
   };
 }
 
@@ -320,6 +322,12 @@ export async function updateOrder(
   patch: Record<string, unknown>,
 ): Promise<void> {
   const { error } = await db.from("orders").update(patch).eq("id", orderId);
+  fail(error);
+}
+
+/** One column. The quote pipeline calls this once per extracted page and once per later step. */
+export async function setOrderProgress(db: Db, orderId: string, progress: OrderProgress): Promise<void> {
+  const { error } = await db.from("orders").update({ progress }).eq("id", orderId);
   fail(error);
 }
 

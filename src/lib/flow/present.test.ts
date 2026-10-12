@@ -82,6 +82,7 @@ function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
     translationCents: null,
     lineItems: [],
     evaluation: null,
+    progress: { step: "done", pagesRead: 3, pagesTotal: 3 },
     addons: [],
     addonOptions: addonOptions(3),
     shippingAddress: null,
