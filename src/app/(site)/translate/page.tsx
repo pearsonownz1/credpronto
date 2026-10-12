@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { UploadView } from "@/components/flow/upload-view";
 
 export const metadata: Metadata = {
@@ -6,7 +7,19 @@ export const metadata: Metadata = {
   description: "Upload a PDF or phone photos and get an exact price.",
 };
 
-export default async function TranslatePage({
+export default function TranslatePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ service?: string | string[] }>;
+}) {
+  return (
+    <Suspense fallback={<UploadView />}>
+      <TranslateUpload searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+async function TranslateUpload({
   searchParams,
 }: {
   searchParams: Promise<{ service?: string | string[] }>;
