@@ -31,6 +31,7 @@ import {
   formatLastUsed,
   formatPlaced,
   maskWebhookSecret,
+  QUICK_START_CODE_CLASS,
   quickStartCurl,
   safeOrderLink,
 } from "@/lib/integrations/present";
@@ -401,16 +402,13 @@ export function IntegrationsPanel() {
             </div>
           </Panel>
           <Panel title="Quick start" subtitle="Place an order with one call.">
-            <div className="px-[18px] py-4">
+            <div className="min-w-0 px-[18px] py-4">
               <div className="mb-2 flex justify-end">
                 <button type="button" data-testid="copy-quick-start" className="text-[13px] font-semibold text-primary" onClick={() => void copy("curl", curl)}>
                   {copied === "curl" ? "Copied" : "Copy"}
                 </button>
               </div>
-              <pre
-                data-testid="quick-start"
-                className="overflow-x-auto rounded-[var(--cp-radius)] bg-[#0b1220] p-4 font-mono text-[11.5px] leading-[1.6] whitespace-pre text-[#d6e0ff]"
-              >
+              <pre data-testid="quick-start" className={QUICK_START_CODE_CLASS}>
                 {curl}
               </pre>
             </div>
