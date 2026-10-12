@@ -1,6 +1,6 @@
 import { ADDON_CATALOG, addonOptions, type AddonOption } from "./addons";
+import { lineItemForStoredPage, pageRuleForLanguages, type PageLineItem } from "./billing";
 import { readOrderProgress, type OrderReadProgress } from "./reading-progress";
-import { pageRuleForLanguages } from "./billing";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
 import { lineItemsForOrder } from "./evaluation-price";
 import { compareCombinedPages } from "./page-order";
@@ -52,6 +52,7 @@ export type CustomerOrder = {
     id?: string;
     documentId: string;
     pageNumber: number;
+    pageIndex?: number;
     uploadPage: number | null;
     logicalPage: number | null;
     orderHint: string | null;
@@ -62,6 +63,8 @@ export type CustomerOrder = {
     skip?: boolean;
     skipReason?: string | null;
   }>;
+  /** Per-page quote lines. The order total is their billable units at $9.95. */
+  pageLineItems: PageLineItem[];
   billablePages: number | null;
   unitPriceCents: number;
   addons: AddonId[];
@@ -112,6 +115,16 @@ export function toCustomerOrder(input: {
   );
   const filenames = new Map(documents.map((document) => [document.id, document.filename]));
   const pages = [...(input.pages ?? [])].sort((a, b) => compareCombinedPages(documents, a, b));
+  const pageLineItems = pages.map((page, pageIndex) =>
+    lineItemForStoredPage({
+      pageIndex,
+      text: page.ocrText,
+      targetLanguage: input.order.targetLanguage,
+      billableUnits: page.billableUnits,
+      skip: page.skip,
+      skipReason: page.skipReason,
+    }),
+  );
   const stored = input.order.pageOrder;
   const progress = readOrderProgress(input.progress);
 
@@ -141,10 +154,11 @@ export function toCustomerOrder(input: {
           })),
         }
       : null,
-    pages: pages.map((page) => ({
+    pages: pages.map((page, pageIndex) => ({
       id: page.id,
       documentId: page.documentId,
       pageNumber: page.pageNumber,
+      pageIndex,
       uploadPage: page.uploadPage,
       logicalPage: page.logicalPage,
       orderHint: page.orderHint,
@@ -155,6 +169,7 @@ export function toCustomerOrder(input: {
       ...(typeof page.skip === "boolean" ? { skip: page.skip } : {}),
       ...(page.skipReason ? { skipReason: page.skipReason } : {}),
     })),
+    pageLineItems,
     billablePages: input.order.billablePages,
     unitPriceCents: input.order.unitPriceCents,
     addons: [...(input.addons ?? [])]

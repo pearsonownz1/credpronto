@@ -63,6 +63,7 @@ function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
     ],
     pageOrder: null,
     pages: [],
+    pageLineItems: [],
     billablePages: 3,
     unitPriceCents: 995,
     totalCents: 2985,
@@ -230,7 +231,8 @@ describe("page rule", () => {
     });
     expect(displayedPageRule(cjk)).toBe(QUOTE_BILLING_NOTE);
     expect(displayedPageRule(cjk)).not.toContain("400 units");
-    expect(cjk.pageRule).toContain("400 units");
+    expect(cjk.pageRule).not.toContain("400 units");
+    expect(cjk.pageRule).toContain("1000");
   });
 });
 

@@ -64,7 +64,7 @@ Not for USCIS. Some courts, DMVs and foreign agencies ask for one, and you can a
 The rule doesn't forbid it, but most immigration attorneys advise against translating your own or a family member's documents, because an officer may question whether the translation is neutral.
 
 **What counts as a page?**
-Each 250 words of the original counts as one billable page, and every side of an original page counts as at least one. You'll see the page count and the exact total before anything is processed.
+Each 250 words of Latin text counts as one billable page, and each 1,000 Chinese, Japanese, or Korean characters counts as one. A page with text counts as at least one. Blank pages, shipping labels, and pages that are already English are not billed when the translation is into English. You'll see the page count and the exact total before anything is processed.
 
 **How fast will I get it?**
 Most previews are ready in about 10 minutes. Once you pay, the certified PDF unlocks right away. Hard-to-read scans and unusual languages go to a person for review, and we'll tell you the timing before you pay.

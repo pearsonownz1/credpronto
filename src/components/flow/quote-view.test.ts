@@ -2,6 +2,8 @@ import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { sampleCustomerOrder } from "@/lib/flow/sample-order";
+import { CJK_PAGE_RULE } from "@/lib/orders/billing";
+import { QUOTE_BILLING_NOTE } from "@/lib/flow/present";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { QuoteBody } from "./quote-view";
 
@@ -63,6 +65,18 @@ describe("quote step actions", () => {
     expect(html).not.toContain('data-testid="continue"');
     expect(html).toContain("Update language");
     expect(html).toContain("$29.85");
+  });
+
+  it("shows the CJK page rule without a 400-unit density", () => {
+    const html = htmlFor({
+      ...sampleCustomerOrder(),
+      sourceLanguage: "zh",
+      pageRule: CJK_PAGE_RULE,
+    });
+    expect(html).toContain(QUOTE_BILLING_NOTE);
+    expect(html).toContain("1,000 characters");
+    expect(html).not.toContain("400 units");
+    expect(CJK_PAGE_RULE).not.toContain("400 units");
   });
 
   it("shows Continue for a quoted order with a page line and a total", () => {

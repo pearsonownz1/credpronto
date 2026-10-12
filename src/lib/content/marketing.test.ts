@@ -33,6 +33,12 @@ describe("approved marketing pages", () => {
   });
 
   it("builds FAQPage JSON-LD without review markup", () => {
+    expect(homeFaq().find((item) => item.question === "What counts as a page?")?.answer).toContain(
+      "1,000 Chinese, Japanese, or Korean characters",
+    );
+    expect(homeFaq().find((item) => item.question === "What counts as a page?")?.answer).not.toContain(
+      "400 units",
+    );
     expect(homeFaq().map((item) => item.question)).toEqual([
       "Does USCIS accept CredPronto translations?",
       "Do I need a notarized translation?",

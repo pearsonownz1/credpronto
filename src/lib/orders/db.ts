@@ -471,6 +471,8 @@ export async function replacePages(
     qualityScore: number | null;
     qualityFlags: string[];
     qualityMessage: string | null;
+    skipped?: boolean;
+    skipReason?: string | null;
   }>,
 ): Promise<void> {
   const deleted = await db.from("document_pages").delete().eq("document_id", documentId);
@@ -493,6 +495,8 @@ export async function replacePages(
       quality_score: page.qualityScore,
       quality_flags: page.qualityFlags,
       quality_message: page.qualityMessage,
+      skipped: page.skipped ?? false,
+      skip_reason: page.skipReason ?? null,
     })),
   );
   fail(error);

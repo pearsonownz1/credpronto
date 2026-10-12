@@ -33,8 +33,8 @@ import { completeEvaluation } from "./evaluation";
 import { decideQuote, etaFromNow } from "./quote";
 import { notifyOrder } from "./webhook-delivery";
 import { downloadObject, uploadObject } from "./storage";
-import { billableCjkUnits, billableUnits, isCjkBillingLanguage, countCjkUnits } from "./billing";
-import { countWords, isCjkDominant } from "./words";
+import { quotePage, storedDensity } from "./billing";
+import { countWords } from "./words";
 import type { DocumentRecord } from "./types";
 
 const cueShape = {
@@ -361,6 +361,7 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
     let missedDetection = false;
     const pageBillable: number[] = [];
     const pageNeedsReview: boolean[] = [];
+    let pageIndex = 0;
     const transcripts: string[] = [];
     let imageQuality = false;
 
@@ -396,7 +397,6 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
         });
       }
 
-      const cjk = language ? isCjkBillingLanguage(language) : isCjkDominant(joined);
       await replacePages(
         db,
         slot.documentId,
@@ -410,17 +410,22 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
             flags: read.flags,
           });
           if (quality.failed) imageQuality = true;
-          const words = countWords(read.text);
-          const counted = cjk ? countCjkUnits(read.text) : words;
-          const billed = cjk ? billableCjkUnits(counted) : billableUnits(words);
-          pageBillable.push(billed);
+          const quoted = quotePage({
+            text: read.text,
+            targetLanguage: order.targetLanguage,
+            pageIndex,
+          });
+          pageIndex += 1;
+          pageBillable.push(quoted.billableUnits);
           const needsReview = read.needsReview || quality.failed;
           pageNeedsReview.push(needsReview);
           return {
             pageNumber: page.appliedPage,
-            wordCount: counted,
-            billableUnits: billed,
-            billingBasis: cjk ? ("cjk" as const) : ("words" as const),
+            wordCount: quoted.counted,
+            billableUnits: storedDensity(quoted),
+            billingBasis: quoted.billingBasis,
+            skipped: quoted.skip,
+            skipReason: quoted.skipReason,
             ocrText: read.text,
             needsReview,
             widthPt: meta.widthPt,
