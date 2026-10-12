@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { EXPEDITED_UNIT, parseCheckoutBody, selectedAddonIds } from "./addons";
+import { parseCheckoutBody, selectedAddonIds } from "./addons";
 import { analyzeOrder } from "./analysis";
 import {
   bearerApiKey,
@@ -59,8 +59,6 @@ export type PartnerOrderBody = {
   externalRef: string | null;
   billablePages: number | null;
   unitPriceCents: number;
-  /** Expedited is a flat per-order charge on evaluations. Translations still reject the add-on. */
-  expeditedUnit: typeof EXPEDITED_UNIT;
   totalCents: number | null;
   currency: string;
   payment: { status: string } | null;
@@ -135,7 +133,6 @@ export function toPartnerOrder(input: {
     externalRef: input.order.externalRef,
     billablePages: input.order.billablePages,
     unitPriceCents: input.order.unitPriceCents,
-    expeditedUnit: EXPEDITED_UNIT,
     totalCents: input.order.totalCents,
     currency: input.order.currency,
     payment: input.paymentStatus ? { status: input.paymentStatus } : null,
@@ -176,7 +173,7 @@ export function assertLiveOrderAllowed(prefix: ApiKeyPrefix): void {
   }
 }
 
-/** Optional checkout add-ons on `POST /api/v1/orders`. Translation orders cannot buy Expedited. */
+/** Optional checkout add-ons on `POST /api/v1/orders`. Expedited is rejected on every service. */
 export function readPartnerAddonBody(form: FormData, service: PartnerService): Record<string, unknown> | null {
   if (!form.has("addons")) return null;
   try {

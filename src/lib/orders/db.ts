@@ -333,9 +333,14 @@ export async function updateOrder(
   db: Db,
   orderId: string,
   patch: Record<string, unknown>,
-): Promise<void> {
-  const { error } = await db.from("orders").update(patch).eq("id", orderId);
+  options?: { statuses?: readonly string[] },
+): Promise<boolean> {
+  let query = db.from("orders").update(patch).eq("id", orderId);
+  if (options?.statuses && options.statuses.length > 0) query = query.in("status", [...options.statuses]);
+  const { data, error } = await query.select("id");
   fail(error);
+  if (!options?.statuses) return true;
+  return ((data ?? []) as { id?: string }[]).length > 0;
 }
 
 /** Sets paid_at once. A later call leaves the original timestamp. */

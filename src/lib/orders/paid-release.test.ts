@@ -98,7 +98,7 @@ describe("settlePaidOrder", () => {
     vi.spyOn(db, "claimOrderColumn").mockResolvedValue(true);
     vi.spyOn(db, "clearOrderColumn").mockResolvedValue(undefined);
     vi.spyOn(db, "updateDelivery").mockResolvedValue(undefined);
-    vi.spyOn(db, "updateOrder").mockResolvedValue(undefined);
+    vi.spyOn(db, "updateOrder").mockResolvedValue(true);
     vi.spyOn(db, "hasEvent").mockResolvedValue(false);
     vi.spyOn(db, "insertEvent").mockResolvedValue(undefined);
     vi.spyOn(db, "customerEmail").mockResolvedValue("ada@example.com");

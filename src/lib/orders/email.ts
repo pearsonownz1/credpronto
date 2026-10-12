@@ -6,10 +6,12 @@ import {
   renderPaymentReceiptEmail,
   renderPreviewReadyEmail,
   renderStaffAlertEmail,
+  renderTranslationFailureAlertEmail,
   type OrderReceivedEmail,
   type PaymentReceiptEmail,
   type PreviewReadyEmail,
   type StaffAlertEmail,
+  type TranslationFailureAlertEmail,
 } from "./email-templates";
 
 export function appOrigin(): string {
@@ -132,6 +134,14 @@ export function sendStaffOrderAlert(
   input: StaffAlertEmail,
 ): Promise<SendResult> {
   const rendered = renderStaffAlertEmail(input);
+  return send(to, rendered.subject, rendered.text, rendered.html);
+}
+
+export function sendTranslationFailureAlert(
+  to: readonly string[],
+  input: TranslationFailureAlertEmail,
+): Promise<SendResult> {
+  const rendered = renderTranslationFailureAlertEmail(input);
   return send(to, rendered.subject, rendered.text, rendered.html);
 }
 

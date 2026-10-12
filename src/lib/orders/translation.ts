@@ -25,7 +25,7 @@ import {
   withCombinedNumbers,
   type Db,
 } from "./db";
-import { adminStudioLink, sendPreviewReady, sendStaffOrderAlert } from "./email";
+import { adminStudioLink, sendPreviewReady, sendTranslationFailureAlert } from "./email";
 import { humanReviewReason } from "./review-reason";
 import { AiUnavailableError, HttpError } from "./errors";
 import { QA_REVIEW_REASON, assessTranslation, qaAttemptForRound, qaStatusForRun, qaWillRetry, type QaIssue } from "./qa";
@@ -38,7 +38,7 @@ import {
   isTemporaryTranslationError,
   raceWorkAgainstDeadline,
 } from "./translation-failure";
-import { checkedProgress } from "./translation-watch";
+import { OPEN_TRANSLATION_STATUSES, checkedProgress } from "./translation-watch";
 import {
   beginTranslation,
   claimAssemble,
@@ -287,12 +287,17 @@ export async function recordTranslationFailure(db: Db, orderId: string, error: u
     readyPreview: (await latestReadyPreview(db, orderId)) != null,
     openCorrections: open.length > 0,
   });
-  await updateOrder(db, orderId, {
-    status: decision.status,
-    review_reason: decision.reviewReason,
-    progress: checkedProgress(order.progress, { step: "done" }),
-  });
-  if (!decision.notifyFailed) return;
+  const wrote = await updateOrder(
+    db,
+    orderId,
+    {
+      status: decision.status,
+      review_reason: decision.reviewReason,
+      progress: checkedProgress(order.progress, { step: "done" }),
+    },
+    { statuses: OPEN_TRANSLATION_STATUSES },
+  );
+  if (wrote === false || !decision.notifyFailed) return;
   const { notifyOrder } = await import("./webhook-delivery");
   await notifyOrder(db, orderId, "order.failed");
 }
@@ -373,29 +378,32 @@ export async function runTranslationPage(
 async function ensurePageFailureReviewed(db: Db, orderId: string, error: unknown): Promise<void> {
   const order = await getOrderById(db, orderId);
   if (!order) return;
-  if (
-    order.status === "preview_ready" ||
-    order.status === "approved" ||
-    order.status === "delivered" ||
-    order.status === "cancelled"
-  ) {
-    return;
-  }
+  // failTranslationOrder may have just written failed. That row still moves to needs_review.
+  // Cancelled, delivered, paid, approved, and preview_ready stay where they are.
+  const open = (OPEN_TRANSLATION_STATUSES as readonly string[]).includes(order.status);
+  if (!open && order.status !== "needs_review" && order.status !== "failed") return;
   const raw = error instanceof Error ? error.message : "Translation failed.";
   const reviewReason = isTemporaryTranslationError(error)
     ? TRANSLATION_TIMEOUT_REASON
     : (humanReviewReason(raw) ?? "Translation failed.");
   if (order.status !== "needs_review" || order.reviewReason !== reviewReason) {
-    await updateOrder(db, orderId, {
-      status: "needs_review",
-      review_reason: reviewReason,
-      progress: checkedProgress(order.progress, { step: "done" }),
-    });
+    const statuses = order.status === "failed" ? [...OPEN_TRANSLATION_STATUSES, "failed"] : OPEN_TRANSLATION_STATUSES;
+    const wrote = await updateOrder(
+      db,
+      orderId,
+      {
+        status: "needs_review",
+        review_reason: reviewReason,
+        progress: checkedProgress(order.progress, { step: "done" }),
+      },
+      { statuses },
+    );
+    if (wrote === false) return;
   }
-  await alertStaffForHeldTranslation(db, orderId);
+  await alertStaffForHeldTranslation(db, orderId, reviewReason);
 }
 
-async function alertStaffForHeldTranslation(db: Db, orderId: string): Promise<void> {
+async function alertStaffForHeldTranslation(db: Db, orderId: string, reviewReason: string): Promise<void> {
   const order = await getOrderById(db, orderId);
   if (!order || order.staffAlertSentAt) return;
   const at = new Date().toISOString();
@@ -407,14 +415,9 @@ async function alertStaffForHeldTranslation(db: Db, orderId: string): Promise<vo
       await clearOrderColumn(db, order.id, "staff_alert_sent_at", at);
       return;
     }
-    const result = await sendStaffOrderAlert(recipients, {
-      urgent: false,
+    const result = await sendTranslationFailureAlert(recipients, {
       orderId: order.id,
-      sourceLanguage: order.sourceLanguage,
-      targetLanguage: order.targetLanguage,
-      serviceType: order.serviceType,
-      billablePages: order.billablePages,
-      totalCents: order.totalCents,
+      reason: humanReviewReason(reviewReason) ?? "Translation failed.",
       studioUrl: adminStudioLink(order.id),
     });
     if (!result.sent) await clearOrderColumn(db, order.id, "staff_alert_sent_at", at);
@@ -548,11 +551,17 @@ export async function runTranslationAssemble(
             return;
           }
           if (deadline.aborted) throw new AiUnavailableError("translation_timeout");
-          await updateOrder(db, input.orderId, {
-            status: "needs_review",
-            review_reason: QA_REVIEW_REASON,
-            progress: checkedProgress(order.progress, { step: "done" }),
-          });
+          const wrote = await updateOrder(
+            db,
+            input.orderId,
+            {
+              status: "needs_review",
+              review_reason: QA_REVIEW_REASON,
+              progress: checkedProgress(order.progress, { step: "done" }),
+            },
+            { statuses: OPEN_TRANSLATION_STATUSES },
+          );
+          if (wrote === false && !keepPaid) return;
           if (keepPaid || current?.paidAt) {
             const { settlePaidOrder } = await import("./paid-release");
             await settlePaidOrder(db, input.orderId);

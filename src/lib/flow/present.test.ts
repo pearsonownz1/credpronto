@@ -105,7 +105,6 @@ function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
     }),
     shippingAddress: null,
     ...patch,
-    expeditedUnit: "order",
     paidAt: patch.paidAt ?? null,
     fulfillment: patch.fulfillment ?? null,
   };
@@ -661,12 +660,8 @@ describe("evaluation prices", () => {
         },
       ],
     });
-    expect(diploma.addonOptions.map((option) => option.id)).toEqual(["notarization", "mail", "expedited"]);
-    expect(diploma.addonOptions.find((option) => option.id === "expedited")).toMatchObject({
-      per: "order",
-      totalCents: 995,
-    });
-    expect(diploma.expeditedUnit).toBe("order");
+    expect(diploma.addonOptions.map((option) => option.id)).toEqual(["notarization", "mail"]);
+    expect(diploma).not.toHaveProperty("expeditedUnit");
     expect(servicePriceLines(diploma)).toEqual([
       { label: "Diploma evaluation", amountCents: 1995 },
       { label: "Certified translation, 2 billable pages", amountCents: 1990 },
@@ -689,7 +684,8 @@ describe("evaluation prices", () => {
         },
       ],
     });
-    expect(course.addonOptions.map((option) => option.id)).toContain("expedited");
+    expect(course.addonOptions.map((option) => option.id)).toEqual(["notarization", "mail"]);
+    expect(course).not.toHaveProperty("expeditedUnit");
     expect(servicePriceLines(course)).toEqual([
       { label: "Course-by-course evaluation", amountCents: 7990 },
     ]);

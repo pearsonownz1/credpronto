@@ -21,7 +21,7 @@ describe("recordTranslationFailure", () => {
     vi.restoreAllMocks();
     vi.spyOn(db, "listCorrections").mockResolvedValue([]);
     vi.spyOn(db, "latestReadyPreview").mockResolvedValue(null);
-    vi.spyOn(db, "updateOrder").mockResolvedValue(undefined);
+    vi.spyOn(db, "updateOrder").mockResolvedValue(true);
     vi.spyOn(webhooks, "notifyOrder").mockResolvedValue(undefined);
   });
 
@@ -38,6 +38,7 @@ describe("recordTranslationFailure", () => {
         review_reason: "translation_timeout",
         progress: expect.objectContaining({ step: "done" }),
       }),
+      { statuses: ["confirmed", "processing", "correction_requested"] },
     );
     expect(webhooks.notifyOrder).not.toHaveBeenCalled();
   });
@@ -58,6 +59,7 @@ describe("recordTranslationFailure", () => {
         status: "failed",
         review_reason: "Quality check was already recorded for this attempt.",
       }),
+      { statuses: ["confirmed", "processing", "correction_requested"] },
     );
     expect(webhooks.notifyOrder).toHaveBeenCalledWith(expect.anything(), orderId, "order.failed");
   });
@@ -74,6 +76,7 @@ describe("recordTranslationFailure", () => {
         status: "failed",
         review_reason: "The original pages are not ready to translate.",
       }),
+      { statuses: ["confirmed", "processing", "correction_requested"] },
     );
   });
 

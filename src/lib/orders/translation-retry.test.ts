@@ -5,6 +5,7 @@ import type { Db } from "./storage";
 import { claimPageJob, completePageJob, failPageJob, listPageJobs } from "./translation-jobs";
 import { TRANSLATION_ASSEMBLE_PATH, TRANSLATION_PAGE_PATH } from "./translation-dispatch";
 import * as dispatch from "./translation-dispatch";
+import { QA_REVIEW_REASON } from "./qa";
 import * as email from "./email";
 import { runTranslationAssemble, translateOrder } from "./translation";
 
@@ -21,6 +22,8 @@ const UNIQUE: Record<string, string[][]> = {
 
 class MemoryDb {
   tables: Record<string, Row[]> = {};
+  /** The next orders update first moves this id to cancelled, then applies its filters. */
+  cancelBeforeOrderUpdate: string | null = null;
 
   from(table: string) {
     if (!this.tables[table]) this.tables[table] = [];
@@ -92,6 +95,13 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string; co
   update(patch: Row) {
     this.op = "update";
     this.patch = patch;
+    if (this.table === "orders" && this.db.cancelBeforeOrderUpdate) {
+      const id = this.db.cancelBeforeOrderUpdate;
+      this.db.cancelBeforeOrderUpdate = null;
+      for (const row of this.db.tables.orders ?? []) {
+        if (row.id === id) row.status = "cancelled";
+      }
+    }
     return this;
   }
 
@@ -503,6 +513,32 @@ describe("retry a translation that failed to dispatch", () => {
     expect(db.tables.translation_runs[0]?.status).toBe("running");
   });
 
+  it("flags a processing order when QA retranslation is exhausted", async () => {
+    exhaustQa(db, "processing");
+    await runTranslationAssemble(db as unknown as Db, { orderId, version: 1 });
+    expect(orderStatus(db)).toMatchObject({
+      status: "needs_review",
+      reviewReason: QA_REVIEW_REASON,
+    });
+  });
+
+  it("does not overwrite a cancelled order when QA retranslation is exhausted", async () => {
+    for (const status of ["cancelled", "delivered", "paid", "approved", "preview_ready"]) {
+      db = new MemoryDb();
+      exhaustQa(db, status);
+      await runTranslationAssemble(db as unknown as Db, { orderId, version: 1 });
+      expect(orderStatus(db).status).toBe(status);
+      expect(orderStatus(db).reviewReason).toBeNull();
+    }
+
+    db = new MemoryDb();
+    exhaustQa(db, "processing");
+    db.cancelBeforeOrderUpdate = orderId;
+    await runTranslationAssemble(db as unknown as Db, { orderId, version: 1 });
+    expect(orderStatus(db).status).toBe("cancelled");
+    expect(orderStatus(db).reviewReason).toBeNull();
+  });
+
   it("keeps pagesDone when the same page is stored twice and a late failure arrives", async () => {
     seedOnePage(db, { pagesDone: 0, jobStatus: "running" });
     const handle = db as unknown as Db;
@@ -570,6 +606,7 @@ describe("retry a translation that failed to dispatch", () => {
     process.env.STAFF_ALERT_EMAILS = "staff@example.com";
     vi.mocked(pdf.renderOrderPdfs).mockRejectedValue(new Error("preview render failed"));
     vi.spyOn(email, "sendStaffOrderAlert").mockResolvedValue({ sent: true, skipped: false });
+    vi.spyOn(email, "sendTranslationFailureAlert").mockResolvedValue({ sent: true, skipped: false });
     const handle = db as unknown as Db;
 
     try {
@@ -584,7 +621,8 @@ describe("retry a translation that failed to dispatch", () => {
       reviewReason: "preview render failed",
     });
     expect(orderStatus(db).progress.pagesDone).toBe(1);
-    expect(email.sendStaffOrderAlert).toHaveBeenCalledTimes(1);
+    expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
+    expect(email.sendTranslationFailureAlert).toHaveBeenCalledTimes(1);
     expect(typeof db.tables.orders[0]?.staff_alert_sent_at).toBe("string");
   });
 
@@ -602,3 +640,18 @@ describe("retry a translation that failed to dispatch", () => {
     expect(pageDispatches().length).toBeGreaterThan(0);
   });
 });
+
+function exhaustQa(database: MemoryDb, status: string): void {
+  seedTranslation(database, status, null);
+  const run = database.tables.translation_runs[0];
+  // Assemble claims a running row. A fresh assembling row belongs to another worker.
+  run.status = "running";
+  run.round = 2;
+  for (const job of database.tables.translation_page_jobs) {
+    job.status = "ready";
+    job.output = pageOutput;
+  }
+  for (const page of database.tables.document_pages) {
+    page.ocr_text = "Acta 1990";
+  }
+}

@@ -1,6 +1,7 @@
 import type { Db } from "./storage";
 import { TRANSLATION_TIMEOUT_REASON } from "./translation-failure";
 import {
+  OPEN_TRANSLATION_STATUSES,
   TRANSLATION_STALE_MS,
   applyTranslationWatch,
   type WatchOrder,
@@ -50,6 +51,7 @@ export async function listTranslationWatchOrders(db: Db, now: number): Promise<W
         .select(COLUMNS)
         .lt("updated_at", cutoff)
         .contains("progress", { step: "translating" })
+        .in("status", [...OPEN_TRANSLATION_STATUSES])
         .limit(50),
     ),
   ]);
@@ -72,6 +74,7 @@ async function claimWatchUpdate(db: Db, orderId: string, cutoff: string, patch: 
     .update(update)
     .eq("id", orderId)
     .lt("updated_at", cutoff)
+    .in("status", [...OPEN_TRANSLATION_STATUSES])
     .select("id");
   if (error) throw new Error(error.message);
   return (data ?? []).length > 0;

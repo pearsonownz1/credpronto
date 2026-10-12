@@ -43,7 +43,7 @@ describe("approveOrder cover stamp", () => {
     vi.spyOn(db, "settledPayment").mockResolvedValue({ id: "pay-1", status: "paid" } as PaymentRecord);
     vi.spyOn(db, "getDelivery").mockResolvedValue(pendingDelivery);
     vi.spyOn(db, "updateDelivery").mockResolvedValue(undefined);
-    vi.spyOn(db, "updateOrder").mockResolvedValue(undefined);
+    vi.spyOn(db, "updateOrder").mockResolvedValue(true);
     vi.spyOn(db, "customerEmail").mockResolvedValue("ada@example.com");
     vi.spyOn(db, "hasEvent").mockResolvedValue(false);
     vi.spyOn(db, "insertEvent").mockResolvedValue(undefined);
@@ -127,6 +127,7 @@ describe("approveOrder cover stamp", () => {
     });
     vi.spyOn(db, "updateOrder").mockImplementation(async () => {
       steps.push("status");
+      return true;
     });
     vi.spyOn(email, "sendDeliveryReady").mockImplementation(async () => {
       steps.push("email");

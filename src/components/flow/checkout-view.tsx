@@ -10,7 +10,7 @@ import {
   servicePriceLines,
   totalLabel,
 } from "@/lib/flow/present";
-import { US_STATE_CODES, chargeCents, serviceCents, withoutExpedited } from "@/lib/orders/addons";
+import { US_STATE_CODES, chargeCents, serviceCents } from "@/lib/orders/addons";
 import type { AddonId, ShippingAddress } from "@/lib/orders/types";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
@@ -53,12 +53,8 @@ function CheckoutForm({
   const router = useRouter();
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const evaluationOrder = order.orderType === "evaluation" || order.service != null;
   const [selected, setSelected] = useState<AddonId[]>(() =>
-    withoutExpedited(
-      order.addons.map((id) => ({ id })),
-      !evaluationOrder,
-    ).map((item) => item.id),
+    order.addons.filter((id) => id === "notarization" || id === "mail"),
   );
   const [address, setAddress] = useState({
     name: order.shippingAddress?.name ?? "",
@@ -71,7 +67,7 @@ function CheckoutForm({
 
   const notReady = order.status !== "preview_ready";
   const evaluation = order.orderType === "evaluation" || order.service != null;
-  const options = withoutExpedited(order.addonOptions, !evaluation);
+  const options = order.addonOptions.filter((option) => option.id === "notarization" || option.id === "mail");
   const service = serviceCents(order);
   const due = chargeCents(service, options, selected);
   const mail = selected.includes("mail");
@@ -102,7 +98,7 @@ function CheckoutForm({
     setNotice(null);
     try {
       const result = await getFlowClient().checkout(token, {
-        addons: evaluation ? selected : selected.filter((id) => id !== "expedited"),
+        addons: selected,
         ...(mail ? { shippingAddress: shippingAddress() } : {}),
       });
       if ("url" in result && result.url) {

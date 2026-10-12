@@ -32,7 +32,7 @@ import {
   pageAttemptResult,
   pagesToTranslate,
 } from "./translation-pages";
-import { checkedProgress } from "./translation-watch";
+import { OPEN_TRANSLATION_STATUSES, checkedProgress } from "./translation-watch";
 
 type Row = Record<string, unknown>;
 
@@ -373,12 +373,17 @@ export async function failTranslationOrder(
     .eq("version", input.version)
     .in("status", ["running", "assembling"]);
   await markPreview(db, input.orderId, input.version, "failed");
-  await updateOrder(db, input.orderId, {
-    status: decision.status,
-    review_reason: decision.reviewReason,
-    progress: checkedProgress(order.progress, { step: "done" }),
-  });
-  if (!decision.notifyFailed) return;
+  const wrote = await updateOrder(
+    db,
+    input.orderId,
+    {
+      status: decision.status,
+      review_reason: decision.reviewReason,
+      progress: checkedProgress(order.progress, { step: "done" }),
+    },
+    { statuses: OPEN_TRANSLATION_STATUSES },
+  );
+  if (wrote === false || !decision.notifyFailed) return;
   const { notifyOrder } = await import("./webhook-delivery");
   await notifyOrder(db, input.orderId, "order.failed");
 }

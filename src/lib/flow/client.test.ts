@@ -113,15 +113,7 @@ describe("mock checkout add-ons", () => {
     vi.unstubAllGlobals();
   });
 
-  it("rejects expedited on a translation order", async () => {
-    vi.stubEnv("NEXT_PUBLIC_FLOW_MOCK", "1");
-    await expect(getFlowClient().checkout("tok", { addons: ["expedited"] })).rejects.toMatchObject({
-      status: 400,
-      message: "Expedited is no longer offered",
-    });
-  });
-
-  it("keeps expedited on a diploma or course-by-course evaluation", async () => {
+  it("rejects expedited on translation and evaluation orders", async () => {
     vi.stubEnv("NEXT_PUBLIC_FLOW_MOCK", "1");
     const store = new Map<string, string>();
     vi.stubGlobal("sessionStorage", {
@@ -137,24 +129,25 @@ describe("mock checkout add-ons", () => {
       length: 0,
     });
     vi.stubGlobal("window", { dispatchEvent: () => true });
+    await expect(getFlowClient().checkout("tok", { addons: ["expedited"] })).rejects.toMatchObject({
+      status: 400,
+      message: "Expedited is no longer offered",
+    });
+
     const client = getFlowClient();
     await client.upload({
       email: "ada@example.com",
       files: [],
-      choice: { orderType: "evaluation", service: "course_by_course", degreeCount: 1, includeTranslation: false },
+      choice: { orderType: "evaluation", service: "diploma", degreeCount: 1, includeTranslation: false },
     });
-    await client.checkout("tok", { addons: ["expedited"] });
-    await expect(client.getOrder("tok")).resolves.toMatchObject({ addons: ["expedited"] });
-
-    store.clear();
-    await client.upload({
-      email: "ada@example.com",
-      files: [],
-      choice: { orderType: "evaluation", service: "diploma", degreeCount: 2, includeTranslation: false },
+    await expect(client.checkout("tok", { addons: ["notarization", "expedited"] })).rejects.toMatchObject({
+      status: 400,
+      message: "Expedited is no longer offered",
     });
-    await client.checkout("tok", { addons: ["notarization", "expedited"] });
     const diploma = await client.getOrder("tok");
-    expect(diploma.addons).toEqual(["notarization", "expedited"]);
+    expect(diploma.addons).not.toContain("expedited");
+    expect(diploma).not.toHaveProperty("expeditedUnit");
+    expect(diploma.totalCents).toBe(1995);
   });
 });
 

@@ -122,14 +122,16 @@ describe("translation watchdog", () => {
     );
   });
 
-  it("retries pre-preview orders and a paid order whose step is still translating", () => {
+  it("retries open orders and leaves a paid order alone", () => {
     expect(
       translationWatchAction(
         order({ status: "confirmed", progress: { step: "done", pagesRead: 2, pagesTotal: 2 } }),
         NOW,
       ),
     ).toBe("retry");
-    expect(translationWatchAction(order({ status: "paid" }), NOW)).toBe("retry");
+    expect(translationWatchAction(order({ status: "paid" }), NOW)).toBe("ignore");
+    expect(translationWatchAction(order({ status: "cancelled" }), NOW)).toBe("ignore");
+    expect(translationWatchAction(order({ status: "delivered" }), NOW)).toBe("ignore");
     expect(translationWatchAction(order({ status: "correction_requested" }), NOW)).toBe("retry");
     expect(translationWatchAction(order({ progress: { step: "translating", pagesRead: 2, pagesTotal: 2, retries: 1 } }), NOW)).toBe(
       "flag",

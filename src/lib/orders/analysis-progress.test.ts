@@ -49,7 +49,7 @@ describe("quote progress", () => {
     vi.spyOn(db, "replacePages").mockResolvedValue(undefined);
     vi.spyOn(db, "updateDocument").mockResolvedValue(undefined);
     vi.spyOn(db, "replaceExtractedConfirmations").mockResolvedValue(undefined);
-    vi.spyOn(db, "updateOrder").mockResolvedValue(undefined);
+    vi.spyOn(db, "updateOrder").mockResolvedValue(true);
     vi.spyOn(db, "hasEvent").mockResolvedValue(true);
     vi.spyOn(db, "insertEvent").mockResolvedValue(undefined);
     vi.spyOn(db, "markDocuments").mockResolvedValue(undefined);

@@ -101,11 +101,12 @@ describe("runTranslationPage JSON parse", () => {
     vi.spyOn(jobs, "loadPageWork").mockResolvedValue(work());
     vi.spyOn(jobs, "completePageJob").mockResolvedValue(undefined);
     vi.spyOn(jobs, "failPageJob").mockResolvedValue(undefined);
-    vi.spyOn(db, "updateOrder").mockResolvedValue(undefined);
+    vi.spyOn(db, "updateOrder").mockResolvedValue(true);
     vi.spyOn(db, "getOrderById").mockResolvedValue(processingOrder());
     vi.spyOn(db, "claimOrderColumn").mockResolvedValue(true);
     vi.spyOn(db, "clearOrderColumn").mockResolvedValue(undefined);
     vi.spyOn(email, "sendStaffOrderAlert").mockResolvedValue({ sent: true, skipped: false });
+    vi.spyOn(email, "sendTranslationFailureAlert").mockResolvedValue({ sent: true, skipped: false });
   });
 
   it("stores a page that returns once", async () => {
@@ -122,6 +123,7 @@ describe("runTranslationPage JSON parse", () => {
     expect(jobs.failPageJob).not.toHaveBeenCalled();
     expect(db.updateOrder).not.toHaveBeenCalled();
     expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
+    expect(email.sendTranslationFailureAlert).not.toHaveBeenCalled();
   });
 
   it("flags needs_review and alerts staff on the first unreadable JSON response", async () => {
@@ -141,15 +143,16 @@ describe("runTranslationPage JSON parse", () => {
         review_reason: "translation_timeout",
         progress: expect.objectContaining({ step: "done" }),
       }),
+      { statuses: ["confirmed", "processing", "correction_requested"] },
     );
-    expect(email.sendStaffOrderAlert).toHaveBeenCalledWith(
+    expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
+    expect(email.sendTranslationFailureAlert).toHaveBeenCalledWith(
       expect.arrayContaining([expect.stringContaining("@")]),
-      expect.objectContaining({
-        urgent: false,
+      {
         orderId,
-        sourceLanguage: "es-mx",
+        reason: "Translation timed out before it could finish.",
         studioUrl: expect.stringContaining(orderId),
-      }),
+      },
     );
   });
 
@@ -167,7 +170,16 @@ describe("runTranslationPage JSON parse", () => {
         status: "needs_review",
         review_reason: "schema mismatch",
       }),
+      { statuses: ["confirmed", "processing", "correction_requested"] },
     );
-    expect(email.sendStaffOrderAlert).toHaveBeenCalledTimes(1);
+    expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
+    expect(email.sendTranslationFailureAlert).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.stringContaining("@")]),
+      {
+        orderId,
+        reason: "schema mismatch",
+        studioUrl: expect.stringContaining(orderId),
+      },
+    );
   });
 });

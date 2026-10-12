@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { BRAND_ADDRESS, BRAND_FOOTER, BRAND_NAME } from "./brand";
-import { BANNED_EMAIL_TEXT, renderStaffAlertEmail } from "./email-templates";
+import {
+  BANNED_EMAIL_TEXT,
+  renderStaffAlertEmail,
+  renderTranslationFailureAlertEmail,
+  staffOrderShortId,
+} from "./email-templates";
 import {
   DEFAULT_STAFF_ALERT_EMAILS,
   HIGH_QA_SCORE,
@@ -130,6 +135,27 @@ describe("staff alert email", () => {
     for (const value of [rendered.subject, rendered.text, rendered.html, urgent.subject, urgent.text, urgent.html]) {
       expect(value).not.toMatch(BANNED_EMAIL_TEXT);
       expect(value).toContain(BRAND_NAME);
+    }
+    expect(rendered.text).toContain("Payment cleared");
+  });
+
+  it("uses a failure template with the order, the reason, and the studio link", () => {
+    const orderId = "5729fbaa-1111-4111-8111-111111111111";
+    const studio = `https://credpronto.com/admin/orders/${orderId}`;
+    const reason = "Translation timed out before it could finish.";
+    const rendered = renderTranslationFailureAlertEmail({ orderId, reason, studioUrl: studio });
+
+    expect(staffOrderShortId(orderId)).toBe("5729fbaa");
+    expect(rendered.subject).toBe("Translation failed, needs review — order 5729fbaa");
+    expect(rendered.text).toContain(orderId);
+    expect(rendered.text).toContain(reason);
+    expect(rendered.text).toContain(studio);
+    expect(rendered.html).toContain(`href="${studio}"`);
+    expect(rendered.html).toContain(orderId);
+    expect(rendered.html).toContain(reason);
+    for (const value of [rendered.subject, rendered.text, rendered.html]) {
+      expect(value).not.toMatch(BANNED_EMAIL_TEXT);
+      expect(value).not.toMatch(/CredPronto order paid|Payment cleared|\bpaid\b/i);
     }
   });
 });
