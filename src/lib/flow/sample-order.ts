@@ -55,6 +55,13 @@ export function sampleCustomerOrder(): CustomerOrder {
     previewVersion: null,
     payment: null,
     delivery: null,
+    orderType: "translation",
+    service: null,
+    degreeCount: null,
+    evaluationCents: null,
+    translationCents: null,
+    lineItems: [],
+    evaluation: null,
   };
 }
 

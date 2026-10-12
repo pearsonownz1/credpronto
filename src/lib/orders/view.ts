@@ -1,10 +1,15 @@
 import { pageRuleForLanguages } from "./billing";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
+import { lineItemsForOrder } from "./evaluation-price";
 import { compareCombinedPages } from "./page-order";
 import type {
   ConfirmationRecord,
   DocumentRecord,
+  EvaluationLine,
+  EvaluationResult,
+  EvaluationService,
   OrderRecord,
+  OrderType,
   PageOrderBasis,
   PageRecord,
   StoredPage,
@@ -57,6 +62,13 @@ export type CustomerOrder = {
   previewVersion: number | null;
   payment: { status: string } | null;
   delivery: { status: string } | null;
+  orderType: OrderType;
+  service: EvaluationService | null;
+  degreeCount: number | null;
+  evaluationCents: number | null;
+  translationCents: number | null;
+  lineItems: EvaluationLine[];
+  evaluation: EvaluationResult | null;
 };
 
 export function toCustomerOrder(input: {
@@ -134,6 +146,13 @@ export function toCustomerOrder(input: {
     previewVersion: input.previewVersion,
     payment: input.paymentStatus ? { status: input.paymentStatus } : null,
     delivery: input.deliveryStatus ? { status: input.deliveryStatus } : null,
+    orderType: input.order.orderType,
+    service: input.order.service,
+    degreeCount: input.order.degreeCount,
+    evaluationCents: input.order.evaluationCents,
+    translationCents: input.order.translationCents,
+    lineItems: lineItemsForOrder(input.order),
+    evaluation: input.order.evaluationResult,
   };
 }
 

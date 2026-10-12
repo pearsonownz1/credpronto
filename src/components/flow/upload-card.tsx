@@ -5,9 +5,22 @@ import { useRef, useState, type FormEvent } from "react";
 import { knownPageCount } from "@/lib/analytics/google-ads";
 import { trackOrderUpload } from "@/lib/analytics/gtag-events";
 import { FlowApiError, flowUsesMock, getFlowClient } from "@/lib/flow/client";
+import {
+  evaluationsLive,
+  parseEvaluationService,
+  uploadChoiceFromSelection,
+  type UploadChoice,
+} from "@/lib/flow/order-choice";
 import { pageLabel } from "@/lib/flow/pricing";
 import { sampleCustomerOrder } from "@/lib/flow/sample-order";
 import { writeEmail, writeToken } from "@/lib/flow/session";
+import {
+  COURSE_BY_COURSE_PRICE_LABEL,
+  DIPLOMA_PRICE_LABEL,
+  TRANSLATION_ADDON,
+  TRANSLATION_PAGE_LABEL,
+} from "@/lib/evaluations/catalog";
+import type { EvaluationService } from "@/lib/orders/types";
 import { buttonClasses, fieldClass } from "./ui";
 
 type ListedFile = {
@@ -24,16 +37,33 @@ const SAMPLE_FILES: ListedFile[] = sampleCustomerOrder().documents.map((document
   kind: document.filename.toLowerCase().endsWith(".pdf") ? "pdf" : "image",
 }));
 
+const PRODUCTS: Array<{
+  id: "translation" | EvaluationService;
+  label: string;
+  price: string;
+}> = [
+  { id: "translation", label: "Translation", price: TRANSLATION_PAGE_LABEL },
+  { id: "diploma", label: "Diploma evaluation", price: DIPLOMA_PRICE_LABEL },
+  { id: "course_by_course", label: "Course-by-course", price: COURSE_BY_COURSE_PRICE_LABEL },
+];
+
 export function UploadCard({
   intro,
+  initialService,
 }: {
   intro?: { title: string; lede: string };
+  initialService?: string | null;
 }) {
   const router = useRouter();
   const mock = flowUsesMock();
+  const live = evaluationsLive();
   const inputRef = useRef<HTMLInputElement>(null);
   const [email, setEmail] = useState(mock ? "maria.ruiz@email.com" : "");
   const [picked, setPicked] = useState<File[]>([]);
+  const [product, setProduct] = useState<"translation" | EvaluationService>(
+    live ? (parseEvaluationService(initialService) ?? "translation") : "translation",
+  );
+  const [degrees, setDegrees] = useState("1");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -55,14 +85,26 @@ export function UploadCard({
     setPicked(Array.from(list));
   }
 
+  function choice(): UploadChoice | null {
+    if (!live || product === "translation") return { orderType: "translation" };
+    const degreeCount = Number(degrees);
+    if (!Number.isInteger(degreeCount) || degreeCount < 1) return null;
+    return uploadChoiceFromSelection(product, degreeCount);
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    const selected = choice();
+    if (!selected) {
+      setError("Enter at least 1 degree.");
+      return;
+    }
     setPending(true);
     try {
       const client = getFlowClient();
       if (mock) {
-        const result = await client.upload({ email, files: [] });
+        const result = await client.upload({ email, files: [], choice: selected });
         trackOrderUpload(result.orderId, pageCount);
         writeToken(result.orderToken);
         writeEmail(email);
@@ -73,7 +115,7 @@ export function UploadCard({
         setError("Add at least one PDF or photo.");
         return;
       }
-      const result = await client.upload({ email, files: picked });
+      const result = await client.upload({ email, files: picked, choice: selected });
       trackOrderUpload(result.orderId, pageCount);
       writeToken(result.orderToken);
       writeEmail(email);
@@ -98,6 +140,58 @@ export function UploadCard({
         </>
       ) : null}
       <form onSubmit={onSubmit}>
+        {live ? (
+        <>
+        <fieldset data-testid="order-choice" className="mb-4">
+          <legend className="mb-1.5 text-[13px] font-semibold">What do you need?</legend>
+          <div className="grid gap-2">
+            {PRODUCTS.map((item) => {
+              const selected = product === item.id;
+              return (
+                <label
+                  key={item.id}
+                  className={`flex cursor-pointer items-center gap-3 rounded-[var(--cp-radius)] border px-3 py-2.5 ${
+                    selected ? "border-primary bg-[var(--cp-blue-l)]" : "border-line bg-bg"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="product"
+                    value={item.id}
+                    checked={selected}
+                    data-testid={`choice-${item.id}`}
+                    onChange={() => setProduct(item.id)}
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-[14px] font-semibold">{item.label}</span>
+                    <span className="block text-[12.5px] text-ink-muted">{item.price}</span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+        {product === "translation" ? null : (
+          <label className="mb-4 block">
+            <span className="mb-1.5 block text-[13px] font-semibold">Degrees</span>
+            <input
+              data-testid="degree-count"
+              type="number"
+              min={1}
+              step={1}
+              inputMode="numeric"
+              required
+              value={degrees}
+              onChange={(event) => setDegrees(event.target.value)}
+              className={fieldClass}
+            />
+            <span className="mt-1.5 block text-xs text-ink-muted">
+              {TRANSLATION_ADDON} Staff sign off before the report is released.
+            </span>
+          </label>
+        )}
+        </>
+        ) : null}
         <div
           data-testid="upload-drop"
           className="rounded-[var(--cp-radius)] border-[1.5px] border-dashed border-[#b9c3d6] bg-[var(--cp-blue-l)] px-4 py-6 text-center"
