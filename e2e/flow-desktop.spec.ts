@@ -21,7 +21,7 @@ test("a quote file shows a first-page thumbnail and opens a preview", async ({ p
   expect(turnBox).toBeTruthy();
   expect(turnBox!.x).toBeGreaterThan(nameBox!.x + nameBox!.width - 4);
 
-  const thumb = list.getByTestId("file-thumb-button").first();
+  const thumb = list.getByTestId("file-row").filter({ hasText: "acta-nacimiento.pdf" }).getByTestId("file-thumb-button");
   await expect(thumb).toBeVisible();
   const box = await thumb.boundingBox();
   expect(box).toBeTruthy();
