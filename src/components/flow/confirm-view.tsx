@@ -5,6 +5,7 @@ import { useState, type FormEvent } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
 import { pageLabel } from "@/lib/flow/pricing";
 import {
+  canOpenConfirm,
   joinParents,
   languageLine,
   splitParents,
@@ -46,7 +47,7 @@ export function ConfirmView({ token: pathToken }: { token?: string }) {
           <FlowStatus title="Loading the details…" body="" />
         ) : error && !order ? (
           <FlowStatus title="We couldn't load this order" body={error} />
-        ) : !order || order.status !== "quoted" ? (
+        ) : !order || !canOpenConfirm(order) ? (
           <FlowStatus
             title="These details aren't ready to confirm"
             body={
@@ -76,6 +77,7 @@ function ConfirmForm({ token, order }: { token: string; order: CustomerOrder }) 
   const email = useStoredEmail();
   const multiple = order.documents.length > 1;
   const language = params.get("lang") || order.sourceLanguage || "es";
+  const target = params.get("target") || order.targetLanguage;
   const [docs, setDocs] = useState<Record<string, DocFields>>(() => {
     const initial: Record<string, DocFields> = {};
     for (const document of order.documents) {
@@ -224,7 +226,7 @@ function ConfirmForm({ token, order }: { token: string; order: CustomerOrder }) 
       <div>
         <Summary>
           <SummaryRow
-            label={languageLine({ ...order, sourceLanguage: language })}
+            label={languageLine({ sourceLanguage: language, targetLanguage: target })}
             value={pageLabel(order.billablePages ?? 0)}
           />
           <SummaryRow

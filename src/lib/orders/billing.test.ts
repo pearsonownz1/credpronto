@@ -33,6 +33,13 @@ describe("billable page math", () => {
     expect(billableCjkUnits(801)).toBe(3);
   });
 
+  it("bills three dense sides as six pages", () => {
+    const pages = sumBillableUnits([300, 300, 300]);
+    expect(pages).toBe(6);
+    expect(totalCents(pages)).toBe(5970);
+    expect(totalCents(3)).toBe(2985);
+  });
+
   it("prices the two-sided diploma example at 3 pages and $29.85", () => {
     const pages = sumBillableUnits([180, 400]);
     expect(pages).toBe(3);

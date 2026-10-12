@@ -11,6 +11,7 @@ import {
   type UploadChoice,
 } from "@/lib/flow/order-choice";
 import { pageLabel } from "@/lib/flow/pricing";
+import { dedupeUploads } from "@/lib/flow/uploads";
 import { sampleCustomerOrder } from "@/lib/flow/sample-order";
 import { writeEmail, writeToken } from "@/lib/flow/session";
 import {
@@ -80,7 +81,7 @@ export function UploadCard({
 
   function takeFiles(list: FileList | null) {
     if (!list || mock) return;
-    setPicked(Array.from(list));
+    setPicked(dedupeUploads(Array.from(list)));
   }
 
   function choice(): UploadChoice | null {
