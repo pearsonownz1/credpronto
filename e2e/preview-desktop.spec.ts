@@ -61,7 +61,8 @@ test("side-by-side preview syncs page and zoom", async ({ page }) => {
   await expect(original).toHaveAttribute("data-page", "3");
   await expect(translation).toHaveAttribute("data-page", "3");
 
-  expect(pdfiumUrls.some((url) => url.includes("/pdfium/pdfium.wasm"))).toBe(true);
+  const wasmRequests = pdfiumUrls.filter((url) => url.includes("/pdfium/pdfium.wasm"));
+  expect(wasmRequests).toHaveLength(1);
   expect(pdfiumUrls.some((url) => url.includes("jsdelivr"))).toBe(false);
   expect(consoleText.join("\n")).not.toContain('unique "key" prop');
 });
