@@ -1,4 +1,5 @@
 import { languageLabel } from "@/lib/orders/languages";
+import { isOrderId } from "@/lib/orders/token";
 import type { CustomerOrder } from "@/lib/api/types";
 
 export const GOOGLE_UNAVAILABLE = "Google sign-in isn't available yet, use email";
@@ -26,7 +27,7 @@ export type OrderPresentation = {
   tab: DashboardTab | "refunded" | "cancelled";
   chip: { label: string; tone: ChipTone };
   action: NextAction;
-  /** Page for this order's current step. Null until the order has a token. */
+  /** Page for this order's current step. Null when there is no token and no order id. */
   rowHref: string | null;
   pages: number | null;
   documents: string;
@@ -88,11 +89,17 @@ function languagePair(order: CustomerOrder): string {
   return `${languageLabel(order.sourceLanguage)} → ${languageLabel(target)}`;
 }
 
-/** Where a dashboard row opens for this order. The token stays in the URL so a new tab can load it. */
-export function orderStepHref(order: { status: string; orderToken?: string | null }): string | null {
-  const token = order.orderToken;
-  if (!token) return null;
-  const id = encodeURIComponent(token);
+/** Where a dashboard row opens. Prefer the email token; otherwise the order id the list already returns. */
+export function orderStepHref(order: {
+  status: string;
+  id?: string | null;
+  orderToken?: string | null;
+}): string | null {
+  const token = order.orderToken?.trim() || null;
+  const orderId = order.id?.trim() || null;
+  const key = token || (orderId && isOrderId(orderId) ? orderId : null);
+  if (!key) return null;
+  const id = encodeURIComponent(key);
   if (order.status === "preview_ready") return `/preview/${id}`;
   if (order.status === "quoted") return `/confirm?token=${id}`;
   return `/order/${id}`;
