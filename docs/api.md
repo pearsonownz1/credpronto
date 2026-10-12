@@ -73,7 +73,7 @@ Signed URLs expire in 10 minutes. `translation.url` is a watermarked preview onl
 
 | Field | Required | Notes |
 | --- | --- | --- |
-| `email` | yes | Upserts `customers` by email |
+| `email` | when signed out | Upserts `customers` by email. A valid Supabase session uses that user's email, sets `orders.user_id`, and ignores this field. |
 | `files` | yes | Repeat the field. `file` is also accepted. 1–15 files, 25MB each, 100MB total |
 | `utm_source`, `utm_medium`, `utm_campaign`, `gclid`, `landing_path` | no | Stored on the order |
 
