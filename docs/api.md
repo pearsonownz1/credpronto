@@ -143,6 +143,13 @@ Idempotent retry of analysis or translation. Safe to call more than once. Return
   ],
   "billablePages": 3,
   "unitPriceCents": 995,
+  "addons": [],
+  "addonOptions": [
+    { "id": "notarization", "label": "Notarization", "unitCents": 1795, "per": "order", "totalCents": 1795 },
+    { "id": "mail", "label": "USPS Priority hard copy", "unitCents": 1295, "per": "order", "totalCents": 1295 },
+    { "id": "expedited", "label": "Expedited", "unitCents": 995, "per": "page", "totalCents": 2985 }
+  ],
+  "shippingAddress": null,
   "totalCents": 2985,
   "currency": "usd",
   "pageRule": "250 words per billable page. Each original page side counts as at least 1.",
@@ -229,7 +236,7 @@ The order moves to `correction_requested`. Translation and a new watermarked pre
 
 ## `POST /api/orders/[token]/checkout`
 
-Allowed from `preview_ready` for the order's exact `totalCents`.
+Allowed from `preview_ready`. The body may be empty. A JSON body selects add-ons (see Checkout add-ons). The Stripe session total is the service price plus those add-ons, and that sum is stored as `totalCents` before the session is created. Paying again after an expired session replaces the stored selection instead of stacking it.
 
 Stripe session:
 
@@ -256,6 +263,100 @@ If `STRIPE_SECRET_KEY` is unset and the placeholder is not `1`:
 HTTP 503.
 
 `409` if the preview is not ready or the order is already paid.
+
+## Checkout add-ons
+
+Optional services selected at checkout. The prices live on the order and quote responses. The UI reads `addonOptions` and does not hard-code them.
+
+| `id` | `label` | `unitCents` | `per` |
+| --- | --- | --- | --- |
+| `notarization` | Notarization | `1795` ($17.95) | `order` |
+| `mail` | USPS Priority hard copy | `1295` ($12.95) | `order` |
+| `expedited` | Expedited | `995` ($9.95) | `page` |
+
+`per: "order"` charges `unitCents` once. `per: "page"` charges `unitCents` times `billablePages`. `addonOptions[].totalCents` is that charge for this order. Before a page count exists, the expedited `totalCents` is `null` and the flat add-ons still show their unit price.
+
+`GET /api/orders/[token]` is the order and the quote. It always includes `addonOptions` (all three, in the table order), `addons` (the selected ids, or `[]`), `shippingAddress` (`null` until mail is selected), and `totalCents`. `totalCents` is the service price plus the selected add-on totals. With nothing selected it stays the translation price (`billablePages * unitPriceCents`) or the evaluation price (`evaluationCents + translationCents`).
+
+```json
+{
+  "addons": ["notarization", "expedited"],
+  "addonOptions": [
+    { "id": "notarization", "label": "Notarization", "unitCents": 1795, "per": "order", "totalCents": 1795 },
+    { "id": "mail", "label": "USPS Priority hard copy", "unitCents": 1295, "per": "order", "totalCents": 1295 },
+    { "id": "expedited", "label": "Expedited", "unitCents": 995, "per": "page", "totalCents": 2985 }
+  ],
+  "shippingAddress": null,
+  "totalCents": 7765
+}
+```
+
+That example is a 3-page translation (`2985`) plus notarization (`1795`) and expedited (`2985`).
+
+Checkout body:
+
+```json
+{
+  "addons": ["notarization", "mail", "expedited"],
+  "shippingAddress": {
+    "name": "Ada Lovelace",
+    "line1": "2520 Venture Oaks Way",
+    "line2": "Suite 120",
+    "city": "Sacramento",
+    "state": "CA",
+    "postalCode": "95833",
+    "country": "US"
+  }
+}
+```
+
+`addons` may be omitted or `[]`. Each id appears at most once. An unknown id, a repeated id, or a non-array is `400` `{ "error": "Unknown add-on" }`. `expedited` when `billablePages` is missing is `400` `{ "error": "Expedited needs a page count" }`.
+
+`mail` requires `shippingAddress`. Missing, incomplete, or non-US is `400` `{ "error": "Mail requires a US shipping address" }`. Required fields are `name`, `line1`, `city`, `state`, `postalCode`, and `country`. `line2` may be omitted or `null`. `country` must be `US`. `state` is a two-letter US state. An address sent without `mail` is ignored and `shippingAddress` stays `null`.
+
+Each selected add-on is its own Stripe Checkout line item, in addition to the existing service line (whose amount stays the service price, not the add-on total):
+
+| Add-on | Stripe line | Quantity | Unit amount |
+| --- | --- | --- | --- |
+| `notarization` | Notarization | `1` | `1795` |
+| `mail` | USPS Priority hard copy | `1` | `1295` |
+| `expedited` | Expedited | `billablePages` | `995` |
+
+The rows are stored on the order (`order_addons`: `addon_id`, `unit_cents`, `quantity`, `total_cents`). Mail also stores the address. `orders.total_cents` becomes the inclusive total, and the payment row uses that amount. The webhook still requires `amount_total` to equal `orders.total_cents`. `CHECKOUT_PLACEHOLDER=1` stores the same selection and charges nothing.
+
+`expedited` moves the order to the front of the staff review queue. `GET /api/admin/orders` returns `expedited: true` or `false` on each row and sorts expedited orders first, then `created_at` descending. `/admin` uses that order for the paid orders waiting on staff.
+
+`/admin` order detail shows fulfillment tasks for what was purchased:
+
+- Mailing shows the address and a mark-shipped action that requires a tracking number.
+- Notarization has a mark-done action.
+
+`GET /api/admin/orders/[id]` includes `fulfillment`. A task is `null` when that add-on was not purchased.
+
+```json
+{
+  "fulfillment": {
+    "mail": {
+      "status": "pending",
+      "trackingNumber": null,
+      "address": {
+        "name": "Ada Lovelace",
+        "line1": "2520 Venture Oaks Way",
+        "line2": "Suite 120",
+        "city": "Sacramento",
+        "state": "CA",
+        "postalCode": "95833",
+        "country": "US"
+      }
+    },
+    "notarization": { "status": "pending" }
+  }
+}
+```
+
+`POST /api/admin/orders/[id]/ship` with `{ "trackingNumber": "9400111899223856927645" }` sets mail to `shipped` and returns `{ "task": "mail", "status": "shipped", "trackingNumber": "9400111899223856927645" }`. `400` `{ "error": "Tracking number is required" }` when the number is missing. `409` `{ "error": "This order has no mail add-on" }` when mail was not purchased. A second call updates the tracking number.
+
+`POST /api/admin/orders/[id]/notarize` with an empty body sets notarization to `done` and returns `{ "task": "notarization", "status": "done" }`. `409` `{ "error": "This order has no notarization add-on" }` when it was not purchased. A second call returns the same body with `"duplicate": true`.
 
 ## `POST /api/stripe/webhook`
 
@@ -393,13 +494,15 @@ These routes require a signed-in Supabase user who has a `staff` row or `profile
 
 | Method | Path | Body | Result |
 | --- | --- | --- | --- |
-| `GET` | `/api/admin/orders?status=&limit=&offset=` | | `{ "orders": [ { id, status, serviceType, sourceLanguage, billablePages, totalCents, currency, createdAt, reviewReason, email } ], "page": { "limit", "offset", "total" } }`. `limit` defaults to 50 and cannot exceed 100. `offset` defaults to 0. |
-| `GET` | `/api/admin/orders/[id]` | | Order, documents, pages (source text and the latest ready AI translation paragraphs per page), confirmations, corrections, payment, delivery. Includes storage keys for staff. |
+| `GET` | `/api/admin/orders?status=&limit=&offset=` | | `{ "orders": [ { id, status, serviceType, sourceLanguage, billablePages, totalCents, currency, createdAt, reviewReason, email, expedited } ], "page": { "limit", "offset", "total" } }`. `limit` defaults to 50 and cannot exceed 100. `offset` defaults to 0. `expedited` is true when that add-on was purchased. Expedited rows come first, then `created_at` descending. |
+| `GET` | `/api/admin/orders/[id]` | | Order, documents, pages (source text and the latest ready AI translation paragraphs per page), confirmations, corrections, payment, delivery, and `fulfillment` (see Checkout add-ons). Includes storage keys for staff. |
 | `PATCH` | `/api/admin/orders/[id]` | `{ "pages": [ { "documentId", "pageNumber", "paragraphs": ["…"] } ] }` | Replaces those pages' translation text, writes a new translation version (`model` `staff-edit`), and regenerates the watermarked preview, clean translation, and certification page the same way the pipeline renders them. Other pages keep their current text. Allowed from `preview_ready`, `correction_requested`, `paid`, `approved`, and `delivered`. The order status does not move backward. An approved or delivered row's file keys are updated. Records `translation_edited`. |
 | `POST` | `/api/admin/orders/[id]/resolve-review` | `{ "sourceLanguage": "es" }` | `needs_review` → `quoted`. `sourceLanguage` optional when the order already has one. |
 | `POST` | `/api/admin/orders/[id]/resolve-corrections` | `{ "action": "dismiss", "correctionIds": [] }` or `{ "action": "regenerate" }` | Dismiss open corrections, or regenerate the translation and preview. |
 | `POST` | `/api/admin/orders/[id]/approve` | | Sets `deliveries.approved_by` and `approved_at`, records `approved`, and returns 5-minute signed URLs for the clean translation and the certification page. A paid order is then emailed and set to `delivered`. |
 | `POST` | `/api/admin/orders/[id]/refund` | | Stripe refund when the payment is `paid`, the secret key is `sk_test_…`, and a payment intent is stored. `paid_test` does not call Stripe: the row is marked `refunded` and a `refunded` event is recorded with `mode: "paid_test"`. A second call returns `{ "paymentStatus": "refunded", "duplicate": true }`. Downloads lock again. |
+| `POST` | `/api/admin/orders/[id]/ship` | `{ "trackingNumber": "…" }` | Marks the mail add-on shipped. See Checkout add-ons. |
+| `POST` | `/api/admin/orders/[id]/notarize` | | Marks the notarization add-on done. See Checkout add-ons. |
 | `GET` | `/api/admin/orders/[id]/notes` | | `{ "notes": [ { id, authorId, body, createdAt } ] }` |
 | `POST` | `/api/admin/orders/[id]/notes` | `{ "body": "…" }` | `201` and the note. Records `note_added`. Body is 1 to 4000 characters. |
 
