@@ -1,6 +1,6 @@
 import { ADDON_CATALOG, addonOptions, type AddonOption } from "./addons";
 import { pageRuleForLanguages } from "./billing";
-import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
+import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT, UNIT_PRICE_CENTS } from "./constants";
 import { lineItemsForOrder } from "./evaluation-price";
 import { compareCombinedPages } from "./page-order";
 import type {
@@ -167,9 +167,29 @@ export function toCustomerOrder(input: {
     degreeCount: input.order.degreeCount,
     evaluationCents: input.order.evaluationCents,
     translationCents: input.order.translationCents,
-    lineItems: lineItemsForOrder(input.order),
+    lineItems: input.order.service ? lineItemsForOrder(input.order) : pageLineItems(documents, pages),
     evaluation: publicEvaluation(input.order.evaluationResult),
   };
+}
+
+function pageLineItems(documents: DocumentRecord[], pages: PageRecord[]): EvaluationLine[] {
+  const ordered = [...pages].sort((a, b) => compareCombinedPages(documents, a, b));
+  return ordered.map((page, index) => {
+    const pageIndex = index + 1;
+    const skip = page.skip === true;
+    const billed = skip ? 0 : Math.max(0, page.billableUnits ?? 0);
+    return {
+      kind: "page",
+      description: `Page ${pageIndex}`,
+      quantity: billed,
+      unitAmountCents: UNIT_PRICE_CENTS,
+      amountCents: billed * UNIT_PRICE_CENTS,
+      pageIndex,
+      billableUnits: billed,
+      skip,
+      skipReason: skip ? page.skipReason ?? null : null,
+    };
+  });
 }
 
 function publicEvaluation(result: EvaluationResult | null): EvaluationResult | null {

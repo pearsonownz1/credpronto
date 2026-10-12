@@ -119,3 +119,15 @@ export async function buildCombinedOriginal(files: SourceFile[]): Promise<{
 
   return { pdf: await dest.save(), pages };
 }
+
+/** Keeps the given 1-based pages, in that order, so a preview can omit skipped sides. */
+export async function subsetPdf(bytes: Uint8Array, oneBasedPages: number[]): Promise<Uint8Array> {
+  const src = await PDFDocument.load(bytes.slice());
+  const dest = await PDFDocument.create();
+  const last = src.getPageCount();
+  const indexes = oneBasedPages.map((page) => page - 1).filter((index) => index >= 0 && index < last);
+  if (indexes.length === 0) return dest.save();
+  const copied = await dest.copyPages(src, indexes);
+  for (const page of copied) dest.addPage(page);
+  return dest.save();
+}

@@ -75,7 +75,7 @@ export type FlowClient = {
     file: "translation" | "certification",
   ): Promise<{ url: string; expiresInSeconds: number }>;
   replaceDocument(token: string, documentId: string, file: File): Promise<CustomerOrder>;
-  updateTarget(token: string, targetLanguage: string): Promise<CustomerOrder>;
+  updateTarget(token: string, targetLanguage: string, skipPages?: number[]): Promise<CustomerOrder>;
   /** Mock walk-through moves a quoted order to preview_ready before checkout. */
   markPreviewReady(token: string): Promise<void>;
 };
@@ -158,11 +158,14 @@ const liveClient: FlowClient = {
       { method: "POST", body: form },
     );
   },
-  updateTarget(token, targetLanguage) {
+  updateTarget(token, targetLanguage, skipPages) {
     return request(`/api/orders/${encodeURIComponent(token)}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ targetLanguage }),
+      body: JSON.stringify({
+        targetLanguage,
+        ...(skipPages !== undefined ? { skipPages } : {}),
+      }),
     });
   },
 };

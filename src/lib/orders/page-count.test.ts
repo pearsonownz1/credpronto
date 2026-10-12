@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getDocumentProxy } from "unpdf";
 import { describe, expect, it } from "vitest";
-import { billableCjkUnits, billableUnits, countCjkUnits } from "./billing";
+import { billableUnits, countCjkUnits } from "./billing";
 import { joinTextItems, type TextItemLike } from "./text-layer";
 import { countWords, isCjkDominant } from "./words";
 
@@ -17,21 +17,16 @@ async function pageTexts(name: string): Promise<string[]> {
   return texts;
 }
 
-/** Mirrors analysis.ts when AI detection is unavailable. */
+/** Mirrors analysis.ts: every physical page uses the 1,000-unit rule. */
 function billWithoutAi(texts: string[]): number {
-  const cjk = isCjkDominant(texts.join("\n"));
-  return texts.reduce(
-    (sum, text) =>
-      sum + (cjk ? billableCjkUnits(countCjkUnits(text)) : billableUnits(countWords(text))),
-    0,
-  );
+  return texts.reduce((sum, text) => sum + billableUnits(countCjkUnits(text)), 0);
 }
 
 describe("QA sample page counts", () => {
-  it("counts the pt-BR certidão as 251 words, 2 pages", async () => {
+  it("counts the pt-BR certidão as 251 words and 1 physical page", async () => {
     const texts = await pageTexts("pt-br_certidao-nascimento.pdf");
     expect(countWords(texts[0] ?? "")).toBe(251);
-    expect(billWithoutAi(texts)).toBe(2);
+    expect(billWithoutAi(texts)).toBe(1);
   });
 
   it("keeps the French relevé page at exactly 250 words, 1 page", async () => {
@@ -46,9 +41,10 @@ describe("QA sample page counts", () => {
     expect(billWithoutAi(texts)).toBe(1);
   });
 
-  it("bills the Chinese transcript by the CJK rule without AI: 4 pages", async () => {
+  it("bills the two-page Chinese transcript as two physical pages", async () => {
     const texts = await pageTexts("zh_chengjidan_2p.pdf");
-    expect(billWithoutAi(texts)).toBe(4);
+    expect(texts).toHaveLength(2);
+    expect(billWithoutAi(texts)).toBe(2);
   });
 });
 

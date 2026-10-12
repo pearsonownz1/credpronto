@@ -142,8 +142,17 @@ function mapPage(row: Row): PageRecord {
     pageNumber: num(row.page_number) ?? 1,
     wordCount: num(row.word_count),
     billableUnits: num(row.billable_units),
-    billingBasis: row.billing_basis === "cjk" ? "cjk" : row.billing_basis === "words" ? "words" : null,
+    billingBasis:
+      row.billing_basis === "cjk"
+        ? "cjk"
+        : row.billing_basis === "words"
+          ? "words"
+          : row.billing_basis === "units"
+            ? "units"
+            : null,
     ocrText: str(row.ocr_text),
+    skip: row.skip === true,
+    skipReason: str(row.skip_reason),
     needsReview: Boolean(row.needs_review),
     widthPt: num(row.width_pt),
     heightPt: num(row.height_pt),
@@ -456,8 +465,10 @@ export async function replacePages(
     pageNumber: number;
     wordCount: number;
     billableUnits: number;
-    billingBasis: "words" | "cjk";
+    billingBasis: "words" | "cjk" | "units";
     ocrText: string;
+    skip?: boolean;
+    skipReason?: string | null;
     needsReview: boolean;
     widthPt: number;
     heightPt: number;
@@ -480,6 +491,8 @@ export async function replacePages(
       billable_units: page.billableUnits,
       billing_basis: page.billingBasis,
       ocr_text: page.ocrText,
+      skip: page.skip === true,
+      skip_reason: page.skip ? page.skipReason ?? null : null,
       needs_review: page.needsReview,
       width_pt: page.widthPt,
       height_pt: page.heightPt,
@@ -491,6 +504,30 @@ export async function replacePages(
       quality_message: page.qualityMessage,
     })),
   );
+  fail(error);
+}
+
+export async function updatePageQuote(
+  db: Db,
+  pageId: string,
+  patch: {
+    wordCount: number;
+    billableUnits: number;
+    billingBasis: "units";
+    skip: boolean;
+    skipReason: string | null;
+  },
+): Promise<void> {
+  const { error } = await db
+    .from("document_pages")
+    .update({
+      word_count: patch.wordCount,
+      billable_units: patch.billableUnits,
+      billing_basis: patch.billingBasis,
+      skip: patch.skip,
+      skip_reason: patch.skip ? patch.skipReason : null,
+    })
+    .eq("id", pageId);
   fail(error);
 }
 

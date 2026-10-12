@@ -52,6 +52,8 @@ function page(patch: Partial<PageRecord> & { documentId: string; number: number 
     billableUnits: 1,
     billingBasis: "words",
     ocrText: null,
+    skip: false,
+    skipReason: null,
     needsReview: false,
     widthPt: 612,
     heightPt: 792,

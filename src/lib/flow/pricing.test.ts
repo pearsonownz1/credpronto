@@ -8,15 +8,15 @@ import {
 } from "./pricing";
 
 describe("billable pages", () => {
-  it("counts one side of up to 250 words as one page", () => {
+  it("counts one side of up to 1,000 units as one page", () => {
     expect(billablePages(182, 1)).toBe(1);
     expect(billablePages(96, 1)).toBe(1);
-    expect(billablePages(250, 1)).toBe(1);
+    expect(billablePages(1000, 1)).toBe(1);
   });
 
-  it("counts another page when a side passes 250 words", () => {
-    expect(billablePages(251, 1)).toBe(2);
-    expect(billablePages(500, 1)).toBe(2);
+  it("counts another page when a side exceeds 1,000 units", () => {
+    expect(billablePages(1001, 1)).toBe(2);
+    expect(billablePages(2000, 1)).toBe(2);
   });
 
   it("counts each side when the word count is short", () => {

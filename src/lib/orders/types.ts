@@ -66,11 +66,17 @@ export type OrderType = "translation" | "evaluation" | "expert_letter";
 export type EvaluationService = "diploma" | "course_by_course";
 
 export type EvaluationLine = {
-  kind: "evaluation" | "translation";
+  kind: "evaluation" | "translation" | "page";
   description: string;
   quantity: number;
   unitAmountCents: number;
   amountCents: number;
+  /** 1-based physical page in combined reading order. Present on page lines. */
+  pageIndex?: number;
+  /** Billable pages for that side. Zero when the side is skipped. */
+  billableUnits?: number;
+  skip?: boolean;
+  skipReason?: string | null;
 };
 
 export type DiplomaCredential = {
@@ -181,8 +187,10 @@ export type PageRecord = {
   pageNumber: number;
   wordCount: number | null;
   billableUnits: number | null;
-  billingBasis: "words" | "cjk" | null;
+  billingBasis: "words" | "cjk" | "units" | null;
   ocrText: string | null;
+  skip: boolean;
+  skipReason: string | null;
   needsReview: boolean;
   widthPt: number | null;
   heightPt: number | null;

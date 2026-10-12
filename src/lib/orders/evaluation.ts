@@ -34,7 +34,7 @@ import { EDGE_GRADE_SCALE_TEXT, gradeScaleText, scoreCourses, usEquivalency, typ
 import { IMAGE_QUALITY_REASON } from "./image-quality";
 import { evaluationIssuedLabel, evaluationReportId, renderEvaluationPdfs } from "./pdf/evaluation";
 import { uploadObject } from "./storage";
-import { watermarkedTranslationPreview } from "./translation";
+import { syncPreviewOriginal, watermarkedTranslationPreview } from "./translation";
 import type { EvaluationResult, OrderRecord, StoredPageOrder } from "./types";
 
 export const UNMAPPED_REASON = "The credential or a grade could not be mapped to a U.S. equivalent.";
@@ -405,6 +405,7 @@ async function storeTranslationPreview(
       }),
     });
     await uploadObject(db, PREVIEWS_BUCKET, record.previewPath, bytes, "application/pdf");
+    await syncPreviewOriginal(db, order.id, record.version, order.combinedOriginalPath);
     await markPreview(db, order.id, record.version, "ready");
   } catch (error) {
     if (insertedTranslation && rowVersion != null) {

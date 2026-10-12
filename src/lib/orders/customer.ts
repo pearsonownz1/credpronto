@@ -6,7 +6,7 @@ import { downloadGate } from "./access";
 import { checkoutPreviewImageUrl } from "./checkout-image";
 import { checkoutLineProduct, checkoutProductDescription } from "./checkout-preview";
 import { checkoutPriceLines, evaluationQuote } from "./evaluation-price";
-import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET, ORIGINALS_BUCKET, PREVIEW_URL_SECONDS } from "./constants";
+import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET, ORIGINALS_BUCKET, PREVIEWS_BUCKET, PREVIEW_URL_SECONDS } from "./constants";
 import {
   confirmFields,
   customerEmail,
@@ -24,6 +24,7 @@ import {
   listDocuments,
   listOrderAddons,
   listPages,
+  updatePageQuote,
   markDocuments,
   markPaymentExpired,
   markPaymentFailed,
@@ -49,12 +50,13 @@ import { applySucceededSetupIntent } from "./saved-card";
 import { retryEvaluation } from "./evaluation";
 import { isSupportedTargetLanguage, languagesEqual, normalizeLanguage } from "./languages";
 import { decideQuote, englishSourceWithoutTarget, etaFromNow, SAME_LANGUAGE_REASON } from "./quote";
+import { previewOriginalPath, pricePage } from "./page-skip";
 import { translateOrder } from "./translation";
 import { loadCustomerOrder } from "./pipeline";
 import { orderDownloadFilename } from "./download-name";
 import { originalDownloadResponse, originalTargets } from "./originals";
 import { evaluationPreviewSources } from "./preview-documents";
-import { previewSignedTargets } from "./preview-targets";
+import { previewSignedTargets, type StorageTarget } from "./preview-targets";
 import { serviceDb, signedObjectUrl, uploadObject, type Db } from "./storage";
 import { assertOrderTokenShape, hashOrderToken } from "./token";
 import { parseCorrectionBody } from "./corrections";
@@ -88,9 +90,41 @@ export function readTargetLanguage(body: unknown): string {
   return code;
 }
 
+export function readOrderPatch(body: unknown): { targetLanguage: string | null; skipPages: number[] | null } {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new HttpError("Expected a JSON body", 400);
+  }
+  const record = body as { targetLanguage?: unknown; skipPages?: unknown };
+  const hasTarget = typeof record.targetLanguage === "string" && record.targetLanguage.trim().length > 0;
+  const hasSkip = record.skipPages !== undefined;
+  if (!hasTarget && !hasSkip) {
+    throw new HttpError("targetLanguage or skipPages is required", 400);
+  }
+  return {
+    targetLanguage: hasTarget ? readTargetLanguage({ targetLanguage: record.targetLanguage }) : null,
+    skipPages: hasSkip ? readSkipPages(record.skipPages) : null,
+  };
+}
+
+function readSkipPages(value: unknown): number[] {
+  if (!Array.isArray(value)) throw new HttpError("skipPages must be a list of page numbers.", 400);
+  const pages: number[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "number" || !Number.isInteger(entry) || entry < 1) {
+      throw new HttpError("skipPages must be a list of page numbers.", 400);
+    }
+    pages.push(entry);
+  }
+  if (new Set(pages).size !== pages.length) {
+    throw new HttpError("skipPages must be a list of page numbers.", 400);
+  }
+  return pages;
+}
+
 /**
- * Saves a target language before payment, re-quotes, and rebuilds a preview
- * when the order already has a source language. Clears an en → en hold.
+ * Saves a target language and the full skip list before payment, re-quotes,
+ * and rebuilds a preview when the order already has a confirmed source.
+ * Clears an en → en hold.
  */
 export async function updateOrderTarget(token: string, body: unknown): Promise<CustomerOrder> {
   const { db, order, token: rawToken } = await orderForToken(token);
@@ -98,15 +132,16 @@ export async function updateOrderTarget(token: string, body: unknown): Promise<C
   if (PAID_STATUSES.has(order.status) || (await settledPayment(db, order.id))) {
     throw new HttpError("This order is already paid", 409);
   }
-  const targetLanguage = readTargetLanguage(body);
-  if (order.sourceLanguage && languagesEqual(order.sourceLanguage, targetLanguage)) {
+  const patch = readOrderPatch(body);
+  const targetLanguage = patch.targetLanguage ?? order.targetLanguage;
+  if (patch.targetLanguage && order.sourceLanguage && languagesEqual(order.sourceLanguage, patch.targetLanguage)) {
     throw new HttpError("Choose a target language that is different from the source.", 400);
   }
 
   if (order.service && order.degreeCount != null) {
-    return updateEvaluationTarget(db, order, targetLanguage);
+    return updateEvaluationTarget(db, order, targetLanguage, patch.skipPages);
   }
-  return updateTranslationTarget(db, order, rawToken, targetLanguage);
+  return updateTranslationTarget(db, order, rawToken, targetLanguage, patch.skipPages);
 }
 
 async function updateTranslationTarget(
@@ -114,24 +149,24 @@ async function updateTranslationTarget(
   order: Awaited<ReturnType<typeof orderForToken>>["order"],
   token: string,
   targetLanguage: string,
+  skipPages: number[] | null,
 ): Promise<CustomerOrder> {
   const documents = await listDocuments(db, order.id);
-  const pages = await listPages(
-    db,
-    documents.map((document) => document.id),
-  );
+  const repriced = await applyPageQuote(db, order, targetLanguage, skipPages);
   const detected = [
     ...new Set(documents.map((document) => document.detectedLanguage).filter((language): language is string => Boolean(language))),
   ];
   const confidences = documents
     .map((document) => document.confidence)
     .filter((confidence): confidence is number => confidence != null);
-  const storedUnits = pages
-    .map((page) => page.billableUnits)
-    .filter((units): units is number => units != null);
   const decision = decideQuote({
-    billableUnits: storedUnits.length > 0 ? storedUnits : order.billablePages != null ? [order.billablePages] : [],
-    pageNeedsReview: pages.map((page) => page.needsReview),
+    billableUnits:
+      repriced.priced.length > 0
+        ? repriced.priced.map((page) => page.billableUnits)
+        : order.billablePages != null
+          ? [order.billablePages]
+          : [],
+    pageNeedsReview: repriced.pageNeedsReview,
     language: order.sourceLanguage,
     confidence: confidences.length > 0 ? Math.min(...confidences) : order.sourceLanguage ? 1 : null,
     detectionAvailable: order.sourceLanguage != null,
@@ -140,12 +175,12 @@ async function updateTranslationTarget(
     unitPriceCents: order.unitPriceCents,
     targetLanguage,
   });
-  const startPreview = decision.status === "quoted" && order.languageConfirmed;
+  const startPreview = decision.status === "quoted" && order.languageConfirmed && decision.billablePages > 0;
   await updateOrder(db, order.id, {
     target_language: targetLanguage,
     status: startPreview ? "confirmed" : decision.status,
     review_reason: decision.reviewReason,
-    billable_pages: pages.length > 0 ? decision.billablePages : order.billablePages,
+    billable_pages: repriced.priced.length > 0 ? decision.billablePages : order.billablePages,
     total_cents: decision.totalCents + order.addonCents,
     eta_at: etaFromNow(decision.etaHours),
   });
@@ -155,18 +190,73 @@ async function updateTranslationTarget(
   return loadCustomerOrder(db, updated);
 }
 
+async function applyPageQuote(
+  db: Db,
+  order: Awaited<ReturnType<typeof orderForToken>>["order"],
+  targetLanguage: string,
+  skipPages: number[] | null,
+): Promise<{
+  billablePages: number;
+  pageNeedsReview: boolean[];
+  priced: Array<{ billableUnits: number }>;
+}> {
+  const documents = await listDocuments(db, order.id);
+  const pages = withCombinedNumbers(
+    documents,
+    await listPages(
+      db,
+      documents.map((document) => document.id),
+    ),
+  );
+  if (pages.length === 0) {
+    return { billablePages: order.billablePages ?? 0, pageNeedsReview: [], priced: [] };
+  }
+  const known = new Set(pages.map((page) => page.number));
+  if (skipPages) {
+    for (const index of skipPages) {
+      if (!known.has(index)) throw new HttpError("Unknown page.", 400);
+    }
+  }
+  const pageNeedsReview: boolean[] = [];
+  const priced: Array<{ billableUnits: number }> = [];
+  for (const page of pages) {
+    const quote = pricePage({
+      text: page.ocrText ?? "",
+      targetLanguage,
+      pageIndex: page.number,
+      skipPages,
+    });
+    pageNeedsReview.push(quote.skip ? false : page.needsReview);
+    priced.push({ billableUnits: quote.billableUnits });
+    await updatePageQuote(db, page.id, {
+      wordCount: quote.units,
+      billableUnits: quote.billableUnits,
+      billingBasis: "units",
+      skip: quote.skip,
+      skipReason: quote.skipReason,
+    });
+  }
+  return {
+    billablePages: priced.reduce((sum, page) => sum + page.billableUnits, 0),
+    pageNeedsReview,
+    priced,
+  };
+}
+
 async function updateEvaluationTarget(
   db: Db,
   order: Awaited<ReturnType<typeof orderForToken>>["order"],
   targetLanguage: string,
+  skipPages: number[] | null,
 ): Promise<CustomerOrder> {
   if (!order.service || order.degreeCount == null) throw new HttpError("This order is not an evaluation", 409);
+  const repriced = await applyPageQuote(db, order, targetLanguage, skipPages);
   const quote = evaluationQuote({
     service: order.service,
     degreeCount: order.degreeCount,
     sourceLanguage: order.sourceLanguage,
     targetLanguage,
-    billablePages: order.billablePages ?? 0,
+    billablePages: repriced.billablePages,
   });
   const clearing =
     order.reviewReason === SAME_LANGUAGE_REASON ||
@@ -175,6 +265,7 @@ async function updateEvaluationTarget(
   const keepHold = order.reviewReason === "image_quality";
   await updateOrder(db, order.id, {
     target_language: targetLanguage,
+    billable_pages: repriced.priced.length > 0 ? repriced.billablePages : order.billablePages,
     evaluation_cents: quote.evaluationCents,
     translation_cents: quote.translationCents,
     total_cents: quote.totalCents + order.addonCents,
@@ -297,7 +388,8 @@ export async function addCorrection(token: string, body: unknown) {
   const document = documents.find((item) => item.id === payload.documentId);
   if (!document) throw new HttpError("Unknown document.", 400);
   const pages = withCombinedNumbers(documents, await listPages(db, documents.map((item) => item.id)));
-  const page = pages.find((item) => item.number === payload.page);
+  const included = pages.filter((item) => item.skip !== true);
+  const page = included[payload.page - 1];
   if (!page || page.documentId !== document.id) {
     throw new HttpError("That page is not part of the document.", 400);
   }
@@ -350,19 +442,25 @@ export async function getPreview(token: string): Promise<PreviewResponse> {
   }
 
   const documents = await listDocuments(db, order.id);
+  const numbered = withCombinedNumbers(documents, await listPages(db, documents.map((document) => document.id)));
+  const included = numbered.filter((page) => page.skip !== true);
   const pages = previewPages(
     documents,
-    withCombinedNumbers(documents, await listPages(db, documents.map((document) => document.id))),
+    included.map((page, index) => ({ ...page, number: index + 1 })),
   );
+  const skipped = included.length !== numbered.length;
   const sources = evaluationPreviewSources({
     service: order.service,
     previewPath: preview.previewPath,
     previewPaths: await listReadyPreviewPaths(db, order.id),
   });
-  const originalTarget = previewSignedTargets({
+  const signedTargets = previewSignedTargets({
     combinedOriginalPath: order.combinedOriginalPath,
     previewPath: sources.viewerPath,
-  }).original;
+  });
+  const originalTarget: StorageTarget = skipped
+    ? { bucket: PREVIEWS_BUCKET, path: previewOriginalPath(order.id, preview.version) }
+    : signedTargets.original;
   const previewPaths = [
     ...new Set(
       [sources.viewerPath, sources.reportPath, sources.translationPath].filter(

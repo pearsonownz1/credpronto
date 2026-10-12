@@ -120,6 +120,12 @@ export function servicePriceLines(order: {
 
 function priceLineLabel(item: EvaluationLine): string {
   const unit = formatMoney(item.unitAmountCents);
+  if (item.kind === "page") {
+    if (item.skip) return `Page ${item.pageIndex} · not billed`;
+    const pages = item.billableUnits ?? item.quantity;
+    const noun = pages === 1 ? "page" : "pages";
+    return `Page ${item.pageIndex} · ${pages} ${noun} × ${unit}`;
+  }
   if (item.kind === "evaluation") {
     const noun = item.quantity === 1 ? "degree" : "degrees";
     return `${item.description} · ${item.quantity} ${noun} × ${unit}`;

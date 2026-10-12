@@ -33,8 +33,8 @@ import { completeEvaluation } from "./evaluation";
 import { decideQuote, etaFromNow } from "./quote";
 import { notifyOrder } from "./webhook-delivery";
 import { downloadObject, uploadObject } from "./storage";
-import { billableCjkUnits, billableUnits, isCjkBillingLanguage, countCjkUnits } from "./billing";
-import { countWords, isCjkDominant } from "./words";
+import { pricePage } from "./page-skip";
+import { countWords } from "./words";
 import type { DocumentRecord } from "./types";
 
 const cueShape = {
@@ -391,7 +391,6 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
         });
       }
 
-      const cjk = language ? isCjkBillingLanguage(language) : isCjkDominant(joined);
       await replacePages(
         db,
         slot.documentId,
@@ -404,19 +403,24 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
             visual: read.visual,
             flags: read.flags,
           });
-          if (quality.failed) imageQuality = true;
-          const words = countWords(read.text);
-          const counted = cjk ? countCjkUnits(read.text) : words;
-          const billed = cjk ? billableCjkUnits(counted) : billableUnits(words);
-          pageBillable.push(billed);
-          const needsReview = read.needsReview || quality.failed;
+          const quoted = pricePage({
+            text: read.text,
+            targetLanguage: order.targetLanguage,
+            pageIndex: pageBillable.length + 1,
+            skipPages: null,
+          });
+          if (quality.failed && !quoted.skip) imageQuality = true;
+          pageBillable.push(quoted.billableUnits);
+          const needsReview = quoted.skip ? false : read.needsReview || quality.failed;
           pageNeedsReview.push(needsReview);
           return {
             pageNumber: page.appliedPage,
-            wordCount: counted,
-            billableUnits: billed,
-            billingBasis: cjk ? ("cjk" as const) : ("words" as const),
+            wordCount: quoted.units,
+            billableUnits: quoted.billableUnits,
+            billingBasis: "units" as const,
             ocrText: read.text,
+            skip: quoted.skip,
+            skipReason: quoted.skipReason,
             needsReview,
             widthPt: meta.widthPt,
             heightPt: meta.heightPt,

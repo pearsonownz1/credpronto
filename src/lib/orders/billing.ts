@@ -1,8 +1,4 @@
-import {
-  CJK_UNITS_PER_BILLABLE_PAGE,
-  UNIT_PRICE_CENTS,
-  WORDS_PER_BILLABLE_PAGE,
-} from "./constants";
+import { UNIT_PRICE_CENTS, UNITS_PER_BILLABLE_PAGE } from "./constants";
 
 const CJK_CHAR =
   /^(?:\p{Script=Han}|\p{Script=Hiragana}|\p{Script=Katakana}|\p{Script=Hangul})$/u;
@@ -61,45 +57,30 @@ function assertCount(name: string, count: number): void {
   }
 }
 
-/** One original side is at least one billable page. Every further 250 words is another. */
-export function billableUnits(wordCount: number): number {
-  assertCount("wordCount", wordCount);
-  return Math.max(1, Math.ceil(wordCount / WORDS_PER_BILLABLE_PAGE));
-}
-
-/** One original side is at least one billable page. Every further 400 CJK units is another. */
-export function billableCjkUnits(unitCount: number): number {
+/**
+ * One physical page is one billable page until it exceeds 1,000 units.
+ * A skipped page is billed separately as zero.
+ */
+export function billableUnits(unitCount: number): number {
   assertCount("unitCount", unitCount);
-  return Math.max(1, Math.ceil(unitCount / CJK_UNITS_PER_BILLABLE_PAGE));
+  return Math.max(1, Math.ceil(unitCount / UNITS_PER_BILLABLE_PAGE));
 }
 
-export function isCjkBillingLanguage(language: string | null | undefined): boolean {
-  if (!language) return false;
-  const base = language.trim().toLowerCase().split("-")[0] ?? "";
-  return base === "zh" || base === "ja" || base === "ko";
+/** Same 1,000-unit rule as billableUnits. Kept so older call sites keep working. */
+export function billableCjkUnits(unitCount: number): number {
+  return billableUnits(unitCount);
 }
 
-export const WORD_PAGE_RULE =
-  "250 words per billable page. Each original page side counts as at least 1.";
+export const PAGE_RULE =
+  "$9.95 per physical page. A page counts as more than one billable page only when it exceeds 1,000 units. Each Chinese, Japanese, or Korean character counts as 1 unit, and each number or Latin-letter group (such as 2019, GPA, or 3.85) counts as 1. Spaces and punctuation count as 0.";
 
-export const CJK_PAGE_RULE =
-  "400 units per billable page. Each Chinese, Japanese, or Korean character counts as 1 unit, and each number or Latin-letter group (such as 2019, GPA, or 3.85) counts as 1. Spaces and punctuation count as 0. Each original page side counts as at least 1.";
+export const WORD_PAGE_RULE = PAGE_RULE;
+export const CJK_PAGE_RULE = PAGE_RULE;
 
-/** Quote-screen copy for the rule that priced this order. */
+/** Quote-screen copy. The physical-page rule is the same for every detected language. */
 export function pageRuleForLanguages(languages: Array<string | null | undefined>): string {
-  const known = [
-    ...new Set(
-      languages
-        .map((language) => language?.trim().toLowerCase().split("-")[0] ?? "")
-        .filter((language) => language.length > 0),
-    ),
-  ];
-  if (known.length === 0) return WORD_PAGE_RULE;
-  const cjk = known.some((language) => isCjkBillingLanguage(language));
-  const other = known.some((language) => !isCjkBillingLanguage(language));
-  if (cjk && other) return `${CJK_PAGE_RULE} ${WORD_PAGE_RULE}`;
-  if (cjk) return CJK_PAGE_RULE;
-  return WORD_PAGE_RULE;
+  void languages;
+  return PAGE_RULE;
 }
 
 export function sumBillableUnits(wordCounts: number[]): number {

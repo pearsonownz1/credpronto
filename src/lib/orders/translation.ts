@@ -34,7 +34,10 @@ import {
   isTemporaryTranslationError,
 } from "./translation-failure";
 import { languageLabel } from "./languages";
-import { uploadObject } from "./storage";
+import { pagesForTranslation, previewOriginalPath } from "./page-skip";
+import { subsetPdf } from "./pdf/combine";
+import { ORIGINALS_BUCKET, PREVIEWS_BUCKET } from "./constants";
+import { downloadObject, uploadObject } from "./storage";
 import type { ConfirmationRecord, CorrectionRecord, PageRecord } from "./types";
 
 const translationSchema = z.object({
@@ -221,8 +224,16 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
         documents.map((document) => document.id),
       ),
     );
+    const included = pagesForTranslation(pages);
     if (pages.length === 0 || !order.combinedOriginalPath) {
       throw new HttpError("The original pages are not ready to translate.", 409);
+    }
+    if (included.length === 0) {
+      await updateOrder(db, orderId, {
+        status: "needs_review",
+        review_reason: "No pages left to translate.",
+      });
+      return;
     }
 
     const confirmations = await listConfirmations(db, orderId);
@@ -237,7 +248,8 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
       const translatedCounts = new Map<string, number>();
       const model = translationModelId();
       for (const document of documents) {
-        const documentPages = pages.filter((page) => page.documentId === document.id);
+        const documentPages = included.filter((page) => page.documentId === document.id);
+        if (documentPages.length === 0) continue;
         const fields = confirmations.filter((field) => field.documentId === document.id);
         const translated = await translateDocument({
           filename: document.filename,
@@ -284,7 +296,7 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
         date: today,
         pages: renderedPages,
         clientName: coverClientName(confirmations, clientEmail),
-        documents: coverDocuments(documents, pages, translatedCounts),
+        documents: coverDocuments(documents, included, translatedCounts),
         translatorName: coverTranslatorName(null),
         signature: coverSignature(null, configuredSignature),
       });
@@ -293,9 +305,10 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
       await uploadObject(db, "finals", translationPath, files.cleanTranslation, "application/pdf");
       await uploadObject(db, "finals", certificationPath, files.certification, "application/pdf");
       await uploadObject(db, "previews", previewPath, files.watermarkedPreview, "application/pdf");
+      await syncPreviewOriginal(db, orderId, version, order.combinedOriginalPath);
 
       const assessment = assessTranslation({
-        originalPages: pages.map((page) => ({ number: page.number, text: page.ocrText ?? "" })),
+        originalPages: included.map((page) => ({ number: page.number, text: page.ocrText ?? "" })),
         translatedPages: renderedPages.map((page) => ({
           number: page.combinedPageNumber,
           text: page.paragraphs.join("\n"),
@@ -385,11 +398,13 @@ export async function watermarkedTranslationPreview(
   },
 ): Promise<Uint8Array> {
   const documents = inReadingOrder(await listDocuments(db, input.orderId));
-  const pages = withCombinedNumbers(
-    documents,
-    await listPages(
-      db,
-      documents.map((document) => document.id),
+  const pages = pagesForTranslation(
+    withCombinedNumbers(
+      documents,
+      await listPages(
+        db,
+        documents.map((document) => document.id),
+      ),
     ),
   );
   if (pages.length === 0) throw new Error("The original pages are not ready to translate.");
@@ -437,4 +452,27 @@ export async function watermarkedTranslationPreview(
     signature: coverSignature(null, configuredSignature),
   });
   return files.watermarkedPreview;
+}
+
+/** Copies the pages that are still billed into the preview original, so it lines up with the translation. */
+export async function syncPreviewOriginal(
+  db: Db,
+  orderId: string,
+  version: number,
+  combinedOriginalPath: string | null,
+): Promise<void> {
+  if (!combinedOriginalPath) return;
+  const documents = inReadingOrder(await listDocuments(db, orderId));
+  const pages = withCombinedNumbers(
+    documents,
+    await listPages(
+      db,
+      documents.map((document) => document.id),
+    ),
+  );
+  const included = pagesForTranslation(pages);
+  if (included.length === 0 || included.length === pages.length) return;
+  const bytes = await downloadObject(db, ORIGINALS_BUCKET, combinedOriginalPath);
+  const subset = await subsetPdf(bytes, included.map((page) => page.number));
+  await uploadObject(db, PREVIEWS_BUCKET, previewOriginalPath(orderId, version), subset, "application/pdf");
 }
