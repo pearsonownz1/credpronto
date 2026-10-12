@@ -135,6 +135,36 @@ export const MOCK_ADMIN_ORDERS: AdminOrder[] = [
     fulfillment: "awaiting_review",
   },
   {
+    id: "CP-24902",
+    status: "paid",
+    serviceType: "translation",
+    sourceLanguage: "es",
+    billablePages: 2,
+    totalCents: 1990,
+    currency: "usd",
+    createdAt: "2026-10-12T18:00:00.000Z",
+    reviewReason: null,
+    email: "lina@example.com",
+    expedited: false,
+    paidAt: null,
+    fulfillment: "awaiting_review",
+  },
+  {
+    id: "CP-24901",
+    status: "paid",
+    serviceType: "translation",
+    sourceLanguage: "pt",
+    billablePages: 1,
+    totalCents: 995,
+    currency: "usd",
+    createdAt: "2026-10-12T19:00:00.000Z",
+    reviewReason: null,
+    email: "omar@example.com",
+    expedited: false,
+    paidAt: null,
+    fulfillment: "awaiting_review",
+  },
+  {
     id: "CP-24740",
     status: "correction_requested",
     serviceType: "translation",
@@ -166,6 +196,18 @@ export const MOCK_ADMIN_ORDERS: AdminOrder[] = [
   },
 ];
 
+/** Recent mock waits so the certification badges stay one fresh and one past 15 minutes. */
+const FRESH_PAID_WAIT_MS: Record<string, number> = {
+  "CP-24902": 22 * 60_000,
+  "CP-24901": 4 * 60_000,
+};
+
+function withFreshPaidAt(order: AdminOrder, now: number): AdminOrder {
+  const wait = FRESH_PAID_WAIT_MS[order.id];
+  if (wait == null) return order;
+  return { ...order, paidAt: new Date(now - wait).toISOString() };
+}
+
 export function mockAdminList(query: {
   status?: string | null;
   reviewReason?: string | null;
@@ -181,7 +223,8 @@ export function mockAdminList(query: {
   });
   const offset = query.offset ?? 0;
   const limit = query.limit ?? 50;
-  const ordered = expeditedFirst(filtered);
+  const now = Date.now();
+  const ordered = expeditedFirst(filtered.map((order) => withFreshPaidAt(order, now)));
   return {
     orders: ordered.slice(offset, offset + limit),
     page: { limit, offset, total: ordered.length },

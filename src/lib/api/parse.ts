@@ -86,11 +86,11 @@ export function parseAdminOrder(value: unknown): AdminOrder | null {
     reviewReason: text(row.reviewReason),
     email: text(row.email),
     expedited: row.expedited === true,
-    paidAt: text(row.paidAt),
+    paidAt: text(row.paidAt) ?? text(row.paid_at),
     fulfillment:
       row.fulfillment === "released" || row.fulfillment === "awaiting_review"
         ? row.fulfillment
-        : fulfillmentState({ status, paidAt: text(row.paidAt) }),
+        : fulfillmentState({ status, paidAt: text(row.paidAt) ?? text(row.paid_at) }),
   };
 }
 
