@@ -1,5 +1,6 @@
 import { serviceCents } from "@/lib/orders/addons";
 import { languageLabel, sourceLanguageChoices } from "@/lib/orders/languages";
+import type { EvaluationLine } from "@/lib/orders/types";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import {
   formatMoney,
@@ -12,6 +13,12 @@ const PREVIEW_INCLUDED = [
   "Clean PDF, no watermark",
   "Signed certificate of accuracy",
   "Meets USCIS certification rules",
+  "Emailed and downloadable",
+];
+
+const EVALUATION_INCLUDED = [
+  "Watermark removed after payment",
+  "Signed by a credential evaluator",
   "Emailed and downloadable",
 ];
 
@@ -42,6 +49,43 @@ export function languageLine(order: {
 export function totalLabel(cents: number | null): string {
   if (cents == null) return "Pending";
   return formatMoney(cents);
+}
+
+export type ServicePriceLine = {
+  label: string;
+  amountCents: number;
+};
+
+/** Evaluation orders use API line items. Translations stay pages × the page price. */
+export function servicePriceLines(order: {
+  lineItems: EvaluationLine[];
+  billablePages: number | null;
+  unitPriceCents: number;
+}): ServicePriceLine[] {
+  if (order.lineItems.length > 0) {
+    return order.lineItems.map((item) => ({
+      label: priceLineLabel(item),
+      amountCents: item.amountCents,
+    }));
+  }
+  const pages = order.billablePages ?? 0;
+  if (pages <= 0) return [];
+  return [
+    {
+      label: `${pages} pages × ${formatMoney(order.unitPriceCents)}`,
+      amountCents: pages * order.unitPriceCents,
+    },
+  ];
+}
+
+function priceLineLabel(item: EvaluationLine): string {
+  const unit = formatMoney(item.unitAmountCents);
+  if (item.kind === "evaluation") {
+    const noun = item.quantity === 1 ? "degree" : "degrees";
+    return `${item.description} · ${item.quantity} ${noun} × ${unit}`;
+  }
+  const noun = item.quantity === 1 ? "page" : "pages";
+  return `${item.description} · ${item.quantity} ${noun} × ${unit}`;
 }
 
 export type DownloadPhase = "confirming" | "certifying" | "ready";
@@ -164,6 +208,7 @@ export function toPreviewOrder(
       subtitle: "English · watermarked preview",
       pages: mapPages(preview.translation.pages),
     },
+    product: order.orderType === "evaluation" ? "evaluation" : "translation",
     pricing: {
       perPageCents: preview.unitPriceCents,
       pages,
@@ -178,11 +223,12 @@ export function toPreviewOrder(
         }) ??
         preview.totalCents ??
         0,
+      lines: servicePriceLines(order),
     },
     addonOptions: order.addonOptions,
     addons: order.addons,
     shippingAddress: order.shippingAddress,
-    included: PREVIEW_INCLUDED,
+    included: order.orderType === "evaluation" ? EVALUATION_INCLUDED : PREVIEW_INCLUDED,
     corrections: preview.corrections
       .filter((correction) => correction.page != null)
       .map((correction) => ({

@@ -25,6 +25,7 @@ export function ProcessingView({
     if (order) onOrder?.(order);
   }, [order, onOrder]);
   const mock = flowUsesMock();
+  const evaluation = order?.orderType === "evaluation";
   const ready = order?.status === "preview_ready";
   const waiting =
     order?.status === "processing" ||
@@ -33,7 +34,8 @@ export function ProcessingView({
 
   async function openPreview() {
     await getFlowClient().markPreviewReady(token);
-    router.push(mock ? "/checkout" : `/preview/${encodeURIComponent(token)}`);
+    const showReport = !mock || order?.orderType === "evaluation";
+    router.push(showReport ? `/preview/${encodeURIComponent(token)}` : "/checkout");
   }
 
   return (
@@ -50,12 +52,18 @@ export function ProcessingView({
           <>
             <p className="preview-kicker blue">Order {order.orderId}</p>
             <h1 className="mt-3 text-[32px] font-bold tracking-[-0.6px] md:text-4xl">
-              {ready ? "Your preview is ready." : "Translating your documents…"}
+              {ready
+                ? "Your preview is ready."
+                : evaluation
+                  ? "Preparing your evaluation…"
+                  : "Translating your documents…"}
             </h1>
             <p className="mt-2.5 mb-8 text-base text-ink-muted">
-              {waiting
-                ? "Translation is waiting to run. You can leave this page — we'll email you when the preview is ready."
-                : "Usually about 10 minutes. We'll email you the moment your preview is ready."}
+              {evaluation
+                ? "We'll email you when the watermarked report is ready to review."
+                : waiting
+                  ? "Translation is waiting to run. You can leave this page — we'll email you when the preview is ready."
+                  : "Usually about 10 minutes. We'll email you the moment your preview is ready."}
             </p>
             {waiting ? (
               <p data-testid="translation-wait" className="mb-6 text-sm text-ink-muted">
@@ -91,9 +99,11 @@ export function ProcessingView({
                 </span>
               </div>
               <div className="flex items-center justify-between gap-4 border-t border-line px-[18px] py-3.5 font-semibold">
-                <span className="text-primary">● Translating and laying out</span>
+                <span className="text-primary">
+                  {evaluation ? "● Building the report" : "● Translating and laying out"}
+                </span>
                 <span className="font-normal text-ink-muted">
-                  {mock ? "~4 min left" : waiting ? "Waiting" : "In progress"}
+                  {evaluation ? "In progress" : mock ? "~4 min left" : waiting ? "Waiting" : "In progress"}
                 </span>
               </div>
               {ready || mock ? (
@@ -112,7 +122,7 @@ export function ProcessingView({
               )}
             </div>
             <p className="mt-6 text-[13.5px] text-ink-muted">
-              Need more pages translated?{" "}
+              {evaluation ? "Need another file on this order? " : "Need more pages translated? "}
               <Link
                 href="/translate"
                 data-testid="add-documents"

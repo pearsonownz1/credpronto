@@ -9,6 +9,7 @@ import {
   displayedPageRule,
   languageChoices,
   languageLine,
+  servicePriceLines,
   totalLabel,
 } from "@/lib/flow/present";
 import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
@@ -88,8 +89,10 @@ function QuoteBody({
     : languageLine(order);
   const pages = order.billablePages ?? 0;
   const qualityHold = order.reviewReason === IMAGE_QUALITY_REASON;
-  const orderedPages = order.pageOrder && order.pageOrder.pages.length > 1 ? order.pageOrder : null;
+  const evaluation = order.orderType === "evaluation";
   const showPrice = !qualityHold;
+  const priceLines = showPrice ? servicePriceLines(order) : [];
+  const orderedPages = order.pageOrder && order.pageOrder.pages.length > 1 ? order.pageOrder : null;
 
   return (
     <FlowColumns>
@@ -187,20 +190,20 @@ function QuoteBody({
       </div>
       <div>
         <Summary>
-          <SummaryRow
-            label={
-              showPrice && pages > 0
-                ? `${pages} pages × ${formatMoney(order.unitPriceCents)}`
-                : "Pages"
-            }
-            value={
-              showPrice && pages > 0
-                ? formatMoney(pages * order.unitPriceCents)
-                : pages > 0
-                  ? pageLabel(pages)
-                  : "Pending"
-            }
-          />
+          {priceLines.length > 0 ? (
+            priceLines.map((line, index) => (
+              <SummaryRow
+                key={`${line.label}-${index}`}
+                label={line.label}
+                value={formatMoney(line.amountCents)}
+              />
+            ))
+          ) : (
+            <SummaryRow
+              label="Pages"
+              value={pages > 0 ? pageLabel(pages) : "Pending"}
+            />
+          )}
           <SummaryRow label="Certification" value="Included" />
           <SummaryRow
             label="Preview"
@@ -232,11 +235,11 @@ function QuoteBody({
         )}
         <div className="mt-[18px]">
           <Checks
-            items={[
-              "Pay only after you’ve seen it",
-              "Preview in about 10 minutes",
-              "Free corrections",
-            ]}
+            items={
+              evaluation
+                ? ["Pay only after you’ve seen it", "Staff sign off before release", "Free corrections"]
+                : ["Pay only after you’ve seen it", "Preview in about 10 minutes", "Free corrections"]
+            }
           />
         </div>
       </div>

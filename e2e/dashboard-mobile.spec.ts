@@ -8,7 +8,8 @@ test("phone dashboard keeps one next step and opens the menu", async ({ page }) 
   await expect(page.locator("[data-emphasis='primary']:visible")).toHaveCount(1);
   await page.screenshot({ path: "artifacts/dashboard-phone.png", fullPage: true });
   await page.getByTestId("open-menu").click();
-  await expect(page.getByTestId("nav-evaluation")).toContainText("Soon");
+  await expect(page.getByTestId("nav-evaluation")).toHaveAttribute("href", "/evaluations");
+  await expect(page.getByTestId("nav-evaluation")).toContainText("Credential evaluation");
   await expect(page.getByTestId("nav-integrations")).toHaveAttribute("href", "/dashboard/integrations");
   await expect(page.getByText("Expert letter")).toHaveCount(0);
   await expect(page.getByTestId("sidebar-account")).toContainText("María Ruiz");

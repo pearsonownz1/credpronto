@@ -119,16 +119,20 @@ export function DashboardView() {
             <span className="mt-0.5 block text-[13px] text-ink-muted">Free preview, from $9.95/page</span>
           </span>
         </Link>
-        <div className="flex items-center gap-3.5 rounded-[var(--cp-radius)] border border-line bg-white p-[18px]">
+        <Link
+          href="/evaluations"
+          data-testid="dashboard-evaluation"
+          className="flex items-center gap-3.5 rounded-[var(--cp-radius)] border border-line bg-white p-[18px]"
+        >
           <IconBox>
             <CapGlyph />
           </IconBox>
           <span>
             <span className="block text-[15px] font-semibold">Credential evaluation</span>
-            <span className="mt-0.5 block text-[13px] text-ink-muted">Reuse your uploaded diplomas</span>
+            <span className="mt-0.5 block text-[13px] text-ink-muted">Diploma or course-by-course</span>
           </span>
-          <span className="ml-auto rounded-[3px] border border-line px-[5px] text-[10.5px] text-ink-muted">Soon</span>
-        </div>
+          <span className="ml-auto text-[13px] font-semibold text-primary">Start →</span>
+        </Link>
       </div>
       {ordersError ? (
         <p role="alert" className="mb-3 text-sm text-[#b45309]">

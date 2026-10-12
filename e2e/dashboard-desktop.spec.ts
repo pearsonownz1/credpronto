@@ -22,7 +22,10 @@ test("maria sees the order dashboard", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Review & buy" })).toHaveAttribute("href", "/preview/tok-preview-24817");
   await expect(page.locator("[data-emphasis='primary']:visible")).toHaveCount(1);
   await expect(page.getByText("1 preview waiting")).toBeVisible();
-  await expect(page.getByTestId("nav-evaluation")).toContainText("Soon");
+  await expect(page.getByTestId("nav-evaluation")).toHaveAttribute("href", "/evaluations");
+  await expect(page.getByTestId("nav-evaluation")).toContainText("Credential evaluation");
+  await expect(page.getByTestId("dashboard-evaluation")).toHaveAttribute("href", "/evaluations");
+  await expect(page.getByTestId("dashboard-evaluation")).toContainText("Credential evaluation");
   await expect(page.getByTestId("nav-integrations")).toHaveAttribute("href", "/dashboard/integrations");
   await expect(page.getByText("Expert letter")).toHaveCount(0);
   await expect(page.getByRole("tab", { name: /Ready to download/ })).toBeVisible();

@@ -1,12 +1,11 @@
 "use client";
 
-import { evaluationsLive, parseEvaluationService } from "@/lib/flow/order-choice";
+import { parseEvaluationService } from "@/lib/flow/order-choice";
 import { FlowHeader } from "./flow-header";
 import { UploadCard } from "./upload-card";
 
 export function UploadView({ initialService }: { initialService?: string | null }) {
-  const live = evaluationsLive();
-  const evaluation = live ? parseEvaluationService(initialService) : null;
+  const evaluation = parseEvaluationService(initialService);
   return (
     <div>
       <FlowHeader current="upload" />
@@ -17,9 +16,7 @@ export function UploadView({ initialService }: { initialService?: string | null 
         <p className="mt-2 mb-6 text-[15px] text-ink-muted">
           {evaluation
             ? "PDF or phone photos. You’ll preview a watermarked report, then pay. Staff sign off before it is released."
-            : live
-              ? "PDF or phone photos. Choose a translation or an evaluation. We’ll price it before you pay."
-              : "PDF or phone photos. We’ll price every page before you pay."}
+            : "PDF or phone photos. Choose a translation or an evaluation. We’ll price it before you pay."}
         </p>
         <UploadCard initialService={initialService} />
       </main>
