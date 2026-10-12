@@ -88,3 +88,10 @@ export function languageLabel(code: string): string {
   if (!entry) return code;
   return entry[0].slice(0, 1).toUpperCase() + entry[0].slice(1);
 }
+
+/** Languages the customer can send on confirm. `needs_review` is staff-only. */
+export function sourceLanguageChoices(): Array<{ code: string; label: string }> {
+  return [...SUPPORTED]
+    .map((code) => ({ code, label: languageLabel(code) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}

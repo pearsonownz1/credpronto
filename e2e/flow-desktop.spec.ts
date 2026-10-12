@@ -1,0 +1,103 @@
+import { expect, test } from "@playwright/test";
+import { CJK_PAGE_RULE } from "../src/lib/orders/billing";
+import { walkCustomerFlow } from "./flow-walkthrough";
+
+test("customer walks from landing through download", async ({ page }) => {
+  await walkCustomerFlow(page);
+});
+
+test("needs_review quote keeps the total when language is unknown", async ({ page }) => {
+  await page.addInitScript((pageRule) => {
+    sessionStorage.setItem(
+      "credpronto-mock-order",
+      JSON.stringify({
+        status: "needs_review",
+        sourceLanguage: null,
+        totalCents: 1990,
+        pageRule,
+        reviewReason: "Language detection was unavailable.",
+      }),
+    );
+  }, CJK_PAGE_RULE);
+
+  await page.goto("/quote");
+  const language = page.getByTestId("detected-language").filter({ visible: true });
+  await expect(language).toContainText("We'll confirm the language");
+  await expect(page.getByTestId("quote-total").filter({ visible: true })).toContainText("$19.90");
+  await expect(page.getByTestId("page-rule").filter({ visible: true })).toHaveText(CJK_PAGE_RULE);
+  await expect(page.getByTestId("language-picker")).toHaveCount(0);
+});
+
+test("page order and a blurry photo are shown before a quote", async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem(
+      "credpronto-mock-order",
+      JSON.stringify({
+        status: "needs_review",
+        sourceLanguage: "fr",
+        reviewReason: "image_quality",
+        totalCents: 1990,
+        billablePages: 2,
+        pageOrder: {
+          basis: "logical",
+          pages: [
+            {
+              documentId: "page1",
+              filename: "scan-page-1.jpg",
+              uploadPosition: 2,
+              appliedPosition: 1,
+              uploadPage: 1,
+              appliedPage: 1,
+              logicalPage: 1,
+              hint: "page 1/2",
+              confidence: 0.93,
+            },
+            {
+              documentId: "page2",
+              filename: "scan-page-2.jpg",
+              uploadPosition: 1,
+              appliedPosition: 2,
+              uploadPage: 1,
+              appliedPage: 1,
+              logicalPage: 2,
+              hint: "page 2/2",
+              confidence: 0.91,
+            },
+          ],
+        },
+        pages: [
+          {
+            documentId: "page2",
+            pageNumber: 1,
+            uploadPage: 1,
+            logicalPage: 2,
+            orderHint: "page 2/2",
+            qualityScore: 0.31,
+            qualityFlags: ["blurry"],
+            qualityMessage:
+              "It looks blurry. Retake it in even light, with the whole page in the frame and the text sharp, then upload a replacement.",
+          },
+        ],
+      }),
+    );
+  });
+
+  await page.goto("/quote");
+  const order = page.getByTestId("page-order").filter({ visible: true });
+  await expect(order).toContainText("printed page numbers");
+  await expect(order).toContainText("scan-page-1.jpg");
+  await expect(order).toContainText("printed page 1");
+  const quality = page.getByTestId("image-quality").filter({ visible: true });
+  await expect(quality).toContainText("blurry");
+  await expect(quality).toContainText("Upload a replacement");
+  await expect(page.getByTestId("continue")).toHaveCount(0);
+  await expect(page.getByTestId("quote-total").filter({ visible: true })).toContainText("Not quoted yet");
+  await expect(page.getByRole("heading", { name: "We need a clearer photo." }).filter({ visible: true })).toBeVisible();
+
+  await page.getByTestId("replace-page2").setInputFiles({
+    name: "retake.jpg",
+    mimeType: "image/jpeg",
+    buffer: Buffer.from("replacement-photo"),
+  });
+  await expect(page.getByRole("heading", { name: "Reading your files…" }).filter({ visible: true })).toBeVisible();
+});

@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { downloadGate } from "./access";
-import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET, PREVIEW_URL_SECONDS } from "./constants";
+import { checkoutPreviewImageUrl } from "./checkout-image";
+import { checkoutLineProduct, checkoutProductDescription } from "./checkout-preview";
+import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET, ORIGINALS_BUCKET, PREVIEW_URL_SECONDS } from "./constants";
 import {
   confirmFields,
   customerEmail,
@@ -12,30 +14,40 @@ import {
   insertCorrection,
   insertEvent,
   insertPayment,
+  latestPayment,
   latestReadyPreview,
   listCorrections,
   listDocuments,
   listPages,
+  markDocuments,
+  markPaymentExpired,
   markPaymentFailed,
   markPaymentPaid,
   markPaymentRefunded,
   paymentByIntent,
   paymentBySession,
+  restorePreviewReadyOrder,
   requireOrderByHash,
   settledPayment,
+  updateDocument,
   updateOrder,
   withCombinedNumbers,
 } from "./db";
 import { HttpError } from "./errors";
+import { assertUploadBudget, resolveUploadMime, safeFilename } from "./files";
+import { replacementAllowed } from "./image-quality";
 import { CONFIRMATION_FIELD_KEYS, normalizeDateFormat, type ConfirmationFieldKey } from "./fields";
 import { appOrigin } from "./email";
+import { applySucceededSetupIntent } from "./saved-card";
 import { normalizeLanguage } from "./languages";
 import { loadCustomerOrder } from "./pipeline";
+import { orderDownloadFilename } from "./download-name";
+import { originalDownloadResponse, originalTargets } from "./originals";
 import { previewSignedTargets } from "./preview-targets";
-import { serviceDb, signedObjectUrl, type Db } from "./storage";
+import { serviceDb, signedObjectUrl, uploadObject, type Db } from "./storage";
 import { assertOrderTokenShape, hashOrderToken } from "./token";
 import { parseCorrectionBody } from "./corrections";
-import { decideChargeRefunded, decideCheckoutCompleted } from "./webhook";
+import { decideChargeRefunded, decideCheckoutCompleted, decideCheckoutExpired } from "./webhook";
 import { previewPages, type CustomerOrder, type PreviewResponse } from "./view";
 
 async function orderForToken(token: string) {
@@ -48,6 +60,53 @@ async function orderForToken(token: string) {
 export async function getOrder(token: string): Promise<CustomerOrder> {
   const { db, order } = await orderForToken(token);
   return loadCustomerOrder(db, order);
+}
+
+export async function replaceOrderDocument(
+  token: string,
+  documentId: string,
+  request: Request,
+): Promise<CustomerOrder> {
+  const { db, order } = await orderForToken(token);
+  if (!replacementAllowed(order)) {
+    throw new HttpError("Upload a replacement only while a photo needs to be retaken.", 409);
+  }
+  const documents = await listDocuments(db, order.id);
+  const document = documents.find((item) => item.id === documentId);
+  if (!document) throw new HttpError("Unknown document.", 400);
+
+  const form = await request.formData();
+  const entry = form.get("file") ?? form.get("files");
+  if (!(entry instanceof File)) throw new HttpError("Upload a replacement file.", 400);
+  const mime = resolveUploadMime(entry.name, entry.type || "");
+  if (!mime) throw new HttpError(`Unsupported file type: ${entry.name}`, 415);
+  const bytes = new Uint8Array(await entry.arrayBuffer());
+  assertUploadBudget([{ size: bytes.byteLength }]);
+
+  const path = `${order.id}/${document.id}/${randomUUID()}/${safeFilename(entry.name || "upload")}`;
+  await uploadObject(db, ORIGINALS_BUCKET, path, bytes, mime);
+  await updateDocument(db, document.id, {
+    original_path: path,
+    filename: entry.name || "upload",
+    mime,
+    size: bytes.byteLength,
+    status: "uploaded",
+    page_count: null,
+    detected_language: null,
+    confidence: null,
+    applied_position: null,
+  });
+  await markDocuments(db, order.id, "uploaded");
+  await updateOrder(db, order.id, {
+    status: "draft",
+    review_reason: null,
+    page_order_basis: null,
+    page_order: null,
+  });
+
+  const updated = await getOrderById(db, order.id);
+  if (!updated) throw new HttpError("Order not found", 404);
+  return loadCustomerOrder(db, updated);
 }
 
 export async function confirmOrder(token: string, body: unknown): Promise<CustomerOrder> {
@@ -139,6 +198,7 @@ export async function getPreview(token: string): Promise<PreviewResponse> {
 
   const documents = await listDocuments(db, order.id);
   const pages = previewPages(
+    documents,
     withCombinedNumbers(documents, await listPages(db, documents.map((document) => document.id))),
   );
   const targets = previewSignedTargets({
@@ -176,9 +236,14 @@ export async function getPreview(token: string): Promise<PreviewResponse> {
   };
 }
 
-export async function downloadOrderFile(token: string, file: string | null) {
+export async function downloadOrderFile(
+  token: string,
+  file: string | null,
+  documentId: string | null = null,
+) {
+  if (file === "original") return downloadOriginals(token, documentId);
   if (file !== "translation" && file !== "certification") {
-    throw new HttpError("file must be translation or certification", 400);
+    throw new HttpError("file must be translation, certification, or original", 400);
   }
   const { db, order } = await orderForToken(token);
   const payment = await settledPayment(db, order.id);
@@ -191,9 +256,37 @@ export async function downloadOrderFile(token: string, file: string | null) {
 
   const path = file === "translation" ? delivery?.finalPath : delivery?.certificationPath;
   if (!path) throw new HttpError("That file is not ready", 404);
-  const url = await signedObjectUrl(db, FINALS_BUCKET, path, DOWNLOAD_URL_SECONDS);
+  const documents = await listDocuments(db, order.id);
+  const filename = orderDownloadFilename(
+    file,
+    documents.map((document) => document.filename),
+    order.targetLanguage,
+  );
+  const url = await signedObjectUrl(db, FINALS_BUCKET, path, DOWNLOAD_URL_SECONDS, { download: filename });
   await insertEvent(db, order.id, "downloaded", { file });
-  return { url, expiresInSeconds: DOWNLOAD_URL_SECONDS };
+  return { url, filename, expiresInSeconds: DOWNLOAD_URL_SECONDS };
+}
+
+/** The customer's own uploads. The token is enough at any status; payment is not required. */
+async function downloadOriginals(token: string, documentId: string | null) {
+  const { db, order } = await orderForToken(token);
+  const targets = originalTargets(await listDocuments(db, order.id), documentId);
+  const signed = await Promise.all(
+    targets.map(async (target) => ({
+      documentId: target.documentId,
+      documentIndex: target.documentIndex,
+      documentName: target.documentName,
+      filename: target.filename,
+      url: await signedObjectUrl(db, target.bucket, target.path, DOWNLOAD_URL_SECONDS, {
+        download: target.filename,
+      }),
+    })),
+  );
+  await insertEvent(db, order.id, "downloaded", {
+    file: "original",
+    documentIds: signed.map((item) => item.documentId),
+  });
+  return originalDownloadResponse(signed, DOWNLOAD_URL_SECONDS, documentId);
 }
 
 export async function startCheckout(token: string) {
@@ -226,6 +319,15 @@ export async function startCheckout(token: string) {
   await insertEvent(db, order.id, "checkout_started", { mode: "stripe" });
   const stripe = new Stripe(secret);
   const email = await customerEmail(db, order.customerId);
+  const documents = await listDocuments(db, order.id);
+  const description = checkoutProductDescription({
+    sourceLanguage: order.sourceLanguage,
+    targetLanguage: order.targetLanguage,
+    documentNames: documents.map((document) => document.filename),
+    pages: order.billablePages,
+  });
+  const preview = await latestReadyPreview(db, order.id);
+  const imageUrl = preview ? await checkoutPreviewImageUrl(db, order.id, preview.previewPath) : null;
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
     customer_email: email ?? undefined,
@@ -237,9 +339,11 @@ export async function startCheckout(token: string) {
         price_data: {
           currency: order.currency,
           unit_amount: order.totalCents,
-          product_data: {
-            name: `CredPronto certified translation (${order.billablePages} pages)`,
-          },
+          product_data: checkoutLineProduct({
+            billablePages: order.billablePages,
+            description,
+            imageUrl,
+          }),
         },
       },
     ],
@@ -276,6 +380,12 @@ export async function handleStripeWebhook(request: Request) {
   const db = serviceDb();
   if (event.type === "charge.refunded") {
     return refundCharge(db, event.data.object as Stripe.Charge);
+  }
+  if (event.type === "checkout.session.expired") {
+    return expireCheckoutSession(db, event.data.object as Stripe.Checkout.Session);
+  }
+  if (event.type === "setup_intent.succeeded") {
+    return applySucceededSetupIntent(db, stripe, event.data.object as Stripe.SetupIntent);
   }
   if (event.type !== "checkout.session.completed") return { received: true };
 
@@ -328,6 +438,34 @@ type ConfirmDocument = {
   documentId: string;
   fields: Record<ConfirmationFieldKey, string>;
 };
+
+async function expireCheckoutSession(db: Db, session: Stripe.Checkout.Session) {
+  const payment = await paymentBySession(db, session.id);
+  const order = payment ? await getOrderById(db, payment.orderId) : null;
+  const settled = payment ? await settledPayment(db, payment.orderId) : null;
+  const latest = payment ? await latestPayment(db, payment.orderId) : null;
+  const decision = decideCheckoutExpired(
+    payment
+      ? { status: payment.status, amountCents: payment.amountCents, orderId: payment.orderId }
+      : null,
+    order
+      ? {
+          status: order.status,
+          settled: Boolean(settled),
+          isLatestPayment: latest?.id === payment?.id,
+        }
+      : null,
+  );
+
+  if (decision.action === "duplicate" || decision.action === "ignore") {
+    return { received: true, duplicate: decision.action === "duplicate" };
+  }
+  if (decision.action !== "expire" || !payment) return { received: true };
+
+  await markPaymentExpired(db, payment.id);
+  if (decision.reopenOrder) await restorePreviewReadyOrder(db, payment.orderId);
+  return { received: true };
+}
 
 async function refundCharge(db: Db, charge: Stripe.Charge) {
   const paymentIntent =

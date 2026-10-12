@@ -73,10 +73,16 @@ function useIsMobile() {
 
 export function SideBySideViewer({
   order,
-  chrome = "customer",
+  onBuy,
+  onCorrect,
+  notice,
+  noticeTestId,
 }: {
   order: PreviewOrder;
-  chrome?: "customer" | "staff";
+  onBuy?: () => void;
+  onCorrect?: (input: { page: number; note: string }) => Promise<void>;
+  notice?: string;
+  noticeTestId?: string;
 }) {
   const original = order.original.url;
   const translation = order.translation.url;
@@ -116,8 +122,9 @@ export function SideBySideViewer({
     return (
       <PreviewShell
         order={order}
-        variant={chrome}
-        rail={chrome === "customer" ? <OrderRail order={order} corrections={order.corrections} /> : undefined}
+        rail={<OrderRail order={order} corrections={order.corrections} onBuy={onBuy} />}
+        notice={notice}
+        noticeTestId={noticeTestId}
         status="The preview engine failed to load. Refresh to try again."
       />
     );
@@ -127,9 +134,10 @@ export function SideBySideViewer({
     return (
       <PreviewShell
         order={order}
-        variant={chrome}
-        rail={chrome === "customer" ? <OrderRail order={order} corrections={order.corrections} /> : undefined}
-        mobileBar={chrome === "customer" ? <MobileBuyBar order={order} onFlag={() => undefined} /> : undefined}
+        rail={<OrderRail order={order} corrections={order.corrections} onBuy={onBuy} />}
+        mobileBar={<MobileBuyBar order={order} onFlag={() => undefined} onBuy={onBuy} />}
+        notice={notice}
+        noticeTestId={noticeTestId}
         status="Loading preview…"
       />
     );
@@ -141,7 +149,13 @@ export function SideBySideViewer({
       engine={engine}
       plugins={plugins}
     >
-      <ViewerWorkspace order={order} chrome={chrome} />
+      <ViewerWorkspace
+        order={order}
+        onBuy={onBuy}
+        onCorrect={onCorrect}
+        notice={notice}
+        noticeTestId={noticeTestId}
+      />
     </EmbedPDF>
   );
 }
@@ -187,10 +201,16 @@ function usePageCount(documentId: string) {
 
 function ViewerWorkspace({
   order,
-  chrome,
+  onBuy,
+  onCorrect,
+  notice,
+  noticeTestId,
 }: {
   order: PreviewOrder;
-  chrome: "customer" | "staff";
+  onBuy?: () => void;
+  onCorrect?: (input: { page: number; note: string }) => Promise<void>;
+  notice?: string;
+  noticeTestId?: string;
 }) {
   const isMobile = useIsMobile();
   const [role, setRole] = useState<Role>("original");
@@ -202,6 +222,7 @@ function ViewerWorkspace({
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [flagPage, setFlagPage] = useState(1);
   const [correctionNote, setCorrectionNote] = useState("");
+  const [correctionError, setCorrectionError] = useState<string | null>(null);
   const { provides: scrollCapability } = useScrollCapability();
   const { provides: zoomCapability } = useZoomCapability();
   const { provides: viewportCapability } = useViewportCapability();
@@ -420,6 +441,7 @@ function ViewerWorkspace({
   function openCorrection() {
     setFlagPage(pageNumber || 1);
     setCorrectionNote("");
+    setCorrectionError(null);
     setCorrectionOpen(true);
   }
 
@@ -432,23 +454,36 @@ function ViewerWorkspace({
     return () => window.removeEventListener("keydown", onKey);
   }, [correctionOpen]);
 
-  function sendCorrection() {
+  async function sendCorrection() {
     const note = correctionNote.trim();
     if (!note) return;
-    setCorrections((current) => [
-      ...current,
-      {
-        id: `draft-${flagPage}-${current.length + 1}`,
-        page: flagPage,
-        passage: null,
-        note,
-        status: "sent",
-        label: note.length > 42 ? `${note.slice(0, 42)}…` : note,
-        detail: "sent, new preview in ~5 min",
-      },
-    ]);
-    setCorrectionNote("");
-    setCorrectionOpen(false);
+    if (!onCorrect) {
+      setCorrections((current) => [
+        ...current,
+        {
+          id: `draft-${flagPage}-${current.length + 1}`,
+          page: flagPage,
+          passage: null,
+          note,
+          status: "sent",
+          label: note.length > 42 ? `${note.slice(0, 42)}…` : note,
+          detail: "sent, new preview in ~5 min",
+        },
+      ]);
+      setCorrectionNote("");
+      setCorrectionOpen(false);
+      return;
+    }
+    setCorrectionError(null);
+    try {
+      await onCorrect({ page: flagPage, note });
+      setCorrectionNote("");
+      setCorrectionOpen(false);
+    } catch (cause) {
+      setCorrectionError(
+        cause instanceof Error ? cause.message : "Could not send this correction.",
+      );
+    }
   }
 
   const popover = correctionOpen ? (
@@ -456,22 +491,24 @@ function ViewerWorkspace({
       page={flagPage}
       note={correctionNote}
       onNote={setCorrectionNote}
-      onSend={sendCorrection}
+      onSend={() => void sendCorrection()}
+      error={correctionError}
     />
   ) : null;
 
   return (
     <PreviewShell
       order={order}
-      variant={chrome}
+      notice={notice}
+      noticeTestId={noticeTestId}
       rail={
-        chrome === "staff" || isMobile ? undefined : (
-          <OrderRail order={order} corrections={corrections} />
+        isMobile ? undefined : (
+          <OrderRail order={order} corrections={corrections} onBuy={onBuy} />
         )
       }
       mobileBar={
-        chrome === "customer" && isMobile ? (
-          <MobileBuyBar order={order} onFlag={openCorrection} />
+        isMobile ? (
+          <MobileBuyBar order={order} onFlag={openCorrection} onBuy={onBuy} />
         ) : undefined
       }
       toolbar={
@@ -579,7 +616,6 @@ function ViewerWorkspace({
               </span>
               Sync scrolling
             </button>
-            {chrome === "customer" ? (
             <div className="relative hidden shrink-0 md:block">
               <button
                 type="button"
@@ -595,7 +631,6 @@ function ViewerWorkspace({
                 </div>
               ) : null}
             </div>
-            ) : null}
           </div>
           {popover && isMobile ? (
             <div className="fixed inset-x-4 bottom-28 z-30">{popover}</div>
