@@ -11,6 +11,7 @@ import {
 } from "@/lib/evaluations/catalog";
 import { MarketingHeader } from "@/components/flow/flow-header";
 import { buttonClasses } from "@/components/flow/ui";
+import { evaluationsLive } from "@/lib/flow/order-choice";
 import { CourseSample } from "./course-sample";
 import { DiplomaSample } from "./diploma-sample";
 import { SampleFrame } from "./report-chrome";
@@ -21,16 +22,19 @@ const OFFERS = [
     price: DIPLOMA_PRICE_LABEL,
     detail: DIPLOMA_DETAIL,
     testId: "diploma-price",
+    href: "/translate?service=diploma",
   },
   {
     name: "Course-by-course",
     price: COURSE_BY_COURSE_PRICE_LABEL,
     detail: COURSE_BY_COURSE_DETAIL,
     testId: "course-price",
+    href: "/translate?service=course_by_course",
   },
 ];
 
 export function EvaluationsView() {
+  const live = evaluationsLive();
   return (
     <div>
       <MarketingHeader section="evaluations" />
@@ -53,13 +57,27 @@ export function EvaluationsView() {
               {TRANSLATION_ADDON}
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
-              <Link href="/translate" className={buttonClasses("primary", "h-11 px-[18px] text-[15px]")}>
-                Upload documents
-              </Link>
-              <a
-                href="#samples"
-                className={buttonClasses("secondary", "h-11 px-[18px] text-[15px]")}
-              >
+              {live ? (
+                <>
+                  <Link
+                    href="/translate?service=diploma"
+                    className={buttonClasses("primary", "h-11 px-[18px] text-[15px]")}
+                  >
+                    Upload a diploma
+                  </Link>
+                  <Link
+                    href="/translate?service=course_by_course"
+                    className={buttonClasses("secondary", "h-11 px-[18px] text-[15px]")}
+                  >
+                    Upload a transcript
+                  </Link>
+                </>
+              ) : (
+                <Link href="/translate" className={buttonClasses("primary", "h-11 px-[18px] text-[15px]")}>
+                  Upload documents
+                </Link>
+              )}
+              <a href="#samples" className={buttonClasses("secondary", "h-11 px-[18px] text-[15px]")}>
                 See sample reports
               </a>
             </div>
@@ -96,6 +114,11 @@ export function EvaluationsView() {
                   <h3 className="text-lg font-bold tracking-[-0.3px]">{offer.name}</h3>
                   <p className="mt-2 text-[28px] font-bold tracking-[-0.6px]">{offer.price}</p>
                   <p className="mt-2 text-[15px] text-ink-muted">{offer.detail}</p>
+                  {live ? (
+                    <Link href={offer.href} className="mt-4 inline-block text-sm font-semibold text-primary">
+                      Upload for this evaluation
+                    </Link>
+                  ) : null}
                 </article>
               ))}
             </div>
