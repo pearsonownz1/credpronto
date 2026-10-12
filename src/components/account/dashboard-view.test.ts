@@ -59,7 +59,7 @@ describe("dashboard order rows", () => {
     expect(preview).toContain('href="/preview/tok-preview-24817"');
     expect(preview).toContain("after:absolute");
     expect(preview).toContain("after:inset-0");
-    expect(preview).toMatch(/<a [^>]*href="\/preview\/tok-preview-24817"[^>]*>Review &amp; buy<\/a>/);
+    expect(preview).toMatch(/<a [^>]*whitespace-nowrap[^>]*href="\/preview\/tok-preview-24817"[^>]*>Buy now<\/a>/);
     expect(preview).toContain("cursor-pointer");
     expect(preview).toContain("hover:bg-[#eef3fb]");
     expect(preview).toContain("focus-within:outline-primary");
@@ -71,16 +71,17 @@ describe("dashboard order rows", () => {
 
     const confirm = row(html, "order-CP-24702");
     expect(confirm).toContain('href="/confirm?token=tok-quoted-24702"');
-    expect(confirm).toMatch(/<a [^>]*href="\/confirm\?token=tok-quoted-24702"[^>]*>Confirm details<\/a>/);
+    expect(confirm).toMatch(/<a [^>]*whitespace-nowrap[^>]*href="\/confirm\?token=tok-quoted-24702"[^>]*>Confirm details<\/a>/);
     expect(row(html, "order-CP-24815")).toContain('href="/order/tok-progress-24815"');
     expect(row(html, "order-CP-24790")).toContain('href="/order/tok-paid-24790"');
     const ready = row(html, "order-CP-24611");
     expect(ready).toContain('href="/order/tok-ready-24611"');
-    expect(ready).toMatch(/<a [^>]*href="\/order\/tok-ready-24611"[^>]*>Download<\/a>/);
+    expect(ready).toMatch(/<a [^>]*whitespace-nowrap[^>]*href="\/order\/tok-ready-24611"[^>]*>Download<\/a>/);
+    expect(row(html, "order-CP-24790")).toContain("whitespace-nowrap");
 
     const card = row(html, "order-card-CP-24817");
     expect(card).toContain('href="/preview/tok-preview-24817"');
-    expect(card).toMatch(/<a [^>]*href="\/preview\/tok-preview-24817"[^>]*>Review &amp; buy<\/a>/);
+    expect(card).toMatch(/<a [^>]*whitespace-nowrap[^>]*href="\/preview\/tok-preview-24817"[^>]*>Buy now<\/a>/);
     expect(card).not.toContain("<button");
     expect(html.match(/data-testid="order-CP-/g)).toHaveLength(6);
     expect(html.match(/data-testid="order-card-CP-/g)).toHaveLength(6);
@@ -94,7 +95,7 @@ describe("dashboard order rows", () => {
       const html = dashboardHtml();
       const desktop = row(html, `order-${id}`);
       expect(desktop).toContain(`href="/preview/${id}"`);
-      expect(desktop).toMatch(new RegExp(`<a [^>]*href="/preview/${id}"[^>]*>Review &amp; buy</a>`));
+      expect(desktop).toMatch(new RegExp(`<a [^>]*whitespace-nowrap[^>]*href="/preview/${id}"[^>]*>Buy now</a>`));
       expect(anchors(desktop).every((anchor) => anchor.includes(`href="/preview/${id}"`))).toBe(true);
       expect(html).toContain(`<a`);
       expect(html.match(new RegExp(`href="/preview/${id}"`, "g"))?.length).toBe(5);
