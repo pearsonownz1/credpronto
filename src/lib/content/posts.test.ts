@@ -61,16 +61,16 @@ describe("guides", () => {
     );
 
     for (const post of [birth, uscis, notarized]) {
-      expect(post?.author).toBe("Guy Pearson");
+      expect(post?.author).toBe("CredPronto Editorial Team");
       expect(post?.date).toBe("2026-10-12");
-      expect(post?.body).toContain("By Guy Pearson");
+      expect(post?.body).toContain("By CredPronto Editorial Team");
       expect(post?.body).toContain("Last updated Oct 12, 2026");
       const jsonLd = articleJsonLd(post!);
       expect(jsonLd).toMatchObject({
         "@type": "Article",
         headline: post?.headline,
         dateModified: "2026-10-12",
-        author: { "@type": "Person", name: "Guy Pearson" },
+        author: { "@type": "Organization", name: "CredPronto Editorial Team" },
         mainEntityOfPage: post?.canonical,
       });
       expect(JSON.stringify(jsonLd)).not.toMatch(/AggregateRating|"@type":"Review"/);

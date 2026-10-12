@@ -73,4 +73,4 @@ Most previews are ready in about 10 minutes. Once you pay, the certified PDF unl
 Yes. Files are encrypted and visible only through your private order link, and we'll delete them when you ask.
 
 **Who's behind CredPronto?**
-CredPronto was founded by Guy Pearson, who co-founded ImmiTranslate in 2012 and runs GEO Credential Services (GCS).
+CredPronto is operated by a team with over a decade in certified translation and credential evaluation.

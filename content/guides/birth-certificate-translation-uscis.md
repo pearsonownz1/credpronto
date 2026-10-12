@@ -3,13 +3,13 @@ title: "Birth Certificate Translation for USCIS: What You Need"
 description: "How to get a certified birth certificate translation for USCIS: what to translate, matching name spellings, the certification, and how to upload it."
 url: /guides/birth-certificate-translation-uscis
 canonical: https://www.credpronto.com/guides/birth-certificate-translation-uscis
-author: Guy Pearson
+author: CredPronto Editorial Team
 last_updated: 2026-10-12
 ---
 
 # How to translate a birth certificate for USCIS
 
-*By Guy Pearson. Guy co-founded ImmiTranslate in 2012, later sold it, and runs GEO Credential Services (GCS.org). He has years of experience with translations and credential documents for immigration filings.*
+*By CredPronto Editorial Team.*
 
 *Last updated Oct 12, 2026*
 

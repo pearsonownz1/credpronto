@@ -3,13 +3,13 @@ title: "Certified vs. Notarized Translation: What's the Difference?"
 description: "A certified translation carries the translator's statement. A notarized one adds a notary who checks ID, not accuracy. Here's who asks for which."
 url: /guides/certified-vs-notarized-translation
 canonical: https://www.credpronto.com/guides/certified-vs-notarized-translation
-author: Guy Pearson
+author: CredPronto Editorial Team
 last_updated: 2026-10-12
 ---
 
 # Certified vs. notarized translation: what's the difference?
 
-*By Guy Pearson. Guy co-founded ImmiTranslate in 2012, later sold it, and runs GEO Credential Services (GCS.org). He has years of experience with translations and credential documents for immigration filings.*
+*By CredPronto Editorial Team.*
 
 *Last updated Oct 12, 2026*
 
