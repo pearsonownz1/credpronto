@@ -16,19 +16,15 @@ export type PreviewWork = {
   steps: Array<{ id: PreviewWorkStepId; label: string; state: "done" | "current" | "pending" }>;
 };
 
+/** Equal slices of the four real steps. The bar sits on the current step. */
 const STEP_PERCENT: Record<Exclude<PreviewWorkStepId, "ready">, number> = {
-  received: 18,
-  read: 46,
-  translating: 95,
+  received: 25,
+  read: 50,
+  translating: 75,
 };
 
-/** The working bar never passes this. 100 is only for a saved preview. */
-export const PREVIEW_BAR_MAX = 95;
-
-/** First polls are quick, then the page settles at a slower interval. */
-export const PREVIEW_POLL_FAST_MS = 5_000;
-export const PREVIEW_POLL_SLOW_MS = 15_000;
-export const PREVIEW_POLL_FAST_TICKS = 6;
+/** One interval for the whole wait. No backoff. */
+export const PREVIEW_POLL_MS = 3_000;
 
 /** A translation still on `progress.step === "translating"` after this is late. */
 export const PREVIEW_LONG_WAIT_MS = 15 * 60 * 1000;
@@ -59,8 +55,8 @@ export function previewIsReady(order: PreviewReadyOrder | null | undefined): boo
   return orderProgressStep(order) === "done";
 }
 
-export function previewPollDelay(completedPolls: number): number {
-  return completedPolls < PREVIEW_POLL_FAST_TICKS ? PREVIEW_POLL_FAST_MS : PREVIEW_POLL_SLOW_MS;
+export function previewPollDelay(): number {
+  return PREVIEW_POLL_MS;
 }
 
 /** Keep polling until a watermarked preview exists or the order itself has failed. */
@@ -129,11 +125,11 @@ export function previewWork(input: {
 
   const current = currentStep(input.status, input.progressStep);
   const index = steps.findIndex((step) => step.id === current);
-  const percent = Math.min(PREVIEW_BAR_MAX, STEP_PERCENT[current]);
+  const percent = STEP_PERCENT[current];
   return {
     phase: "working",
     percent,
-    displayPercent: Math.min(PREVIEW_BAR_MAX, Math.round(percent)),
+    displayPercent: percent,
     label: steps[index]?.label ?? translatingLabel,
     steps: steps.map((step, position) => ({
       ...step,

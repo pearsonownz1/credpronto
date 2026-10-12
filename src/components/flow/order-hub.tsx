@@ -4,6 +4,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 import { trackPreviewReady } from "@/lib/analytics/gtag-events";
 import { orderHubStep } from "@/lib/flow/present";
+import { previewIsReady } from "@/lib/flow/preview-progress";
 import { writeToken } from "@/lib/flow/session";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { GoogleAdsConversion } from "@/components/google-ads-conversion";
@@ -14,6 +15,7 @@ import { QuoteView } from "./quote-view";
 import { useReadingHandoff } from "./reading-handoff";
 import { FlowStatus } from "./status";
 import { useCustomerOrder } from "./use-order";
+import { usePreviewLate } from "./use-preview-late";
 
 export function OrderHub() {
   const params = useParams<{ token: string }>();
@@ -31,6 +33,7 @@ export function OrderHub() {
   }
   const { covering, reportOrder, endHandoff } = useReadingHandoff();
   const current = latest ?? order;
+  const previewLate = usePreviewLate(token, current?.progress?.step, previewIsReady(current));
   const view = orderHubStep(checkout, current?.status);
 
   const reportPreviewReady = useCallback((next: CustomerOrder) => {
@@ -102,6 +105,7 @@ export function OrderHub() {
         message={orderLiveMessage({
           loading: loading && !current,
           error,
+          late: previewLate,
           order: current,
         })}
       />

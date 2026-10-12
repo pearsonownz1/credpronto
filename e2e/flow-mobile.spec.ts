@@ -6,7 +6,7 @@ test("the turnaround stacks under the filename on a phone", async ({ page }) => 
   const row = page.getByTestId("file-row").filter({ visible: true }).first();
   const filename = row.locator("b");
   const turnaround = row.getByTestId("file-turnaround");
-  await expect(turnaround).toContainText("Ready in about 10 minutes");
+  await expect(turnaround).toContainText("Ready in a few minutes");
   const nameBox = await filename.boundingBox();
   const turnBox = await turnaround.boundingBox();
   expect(nameBox).toBeTruthy();

@@ -46,7 +46,9 @@ describe("processing view", () => {
     state.progressStep = "translating";
     const markup = html();
     expect(markup).toContain("Translating your document");
-    expect(markup).toContain("Usually ready in about 10 minutes. We&#x27;ll email you when your preview is ready.");
+    expect(markup).toContain("Usually ready in a few minutes. We&#x27;ll email you when your preview is ready.");
+    expect(markup).not.toContain("reading-fill");
+    expect(markup).not.toContain("reading-shine");
     expect(markup).toContain('data-testid="preview-steps"');
     expect(markup).toContain('data-testid="preview-step-translating"');
     expect(markup).toContain('data-state="current"');
@@ -54,15 +56,17 @@ describe("processing view", () => {
     expect(markup).not.toContain("Your preview is ready");
     expect(markup).not.toContain('data-testid="view-preview"');
     const value = Number(markup.match(/aria-valuenow="(\d+)"/)?.[1]);
-    expect(value).toBe(95);
+    expect(value).toBe(75);
   });
 
-  it("tells the customer when a preview is taking longer than usual", () => {
+  it("keeps the working copy when the API marks the order delayed before 15 minutes", () => {
     state.delayed = true;
     state.status = "processing";
+    state.progressStep = "translating";
     const markup = html();
-    expect(markup).toContain("Taking longer than usual, we&#x27;re on it.");
-    expect(markup).toContain('data-testid="translation-delayed"');
+    expect(markup).not.toContain("Taking longer than usual");
+    expect(markup).not.toContain('data-testid="translation-delayed"');
+    expect(markup).toContain("Translating your document");
     expect(markup).not.toContain('data-testid="view-preview"');
   });
 
@@ -88,7 +92,7 @@ describe("processing view", () => {
     expect(markup).toContain("Your preview is ready");
     expect(markup).toContain('data-testid="view-preview"');
     expect(markup).toContain("View preview");
-    expect(markup).not.toContain("Usually ready in about 10 minutes");
+    expect(markup).not.toContain("Usually ready in a few minutes");
     expect(markup).not.toContain('data-testid="preview-steps"');
     expect(markup).not.toContain('data-testid="progress-bar"');
   });

@@ -71,7 +71,7 @@ Keep a full set for yourself. If an officer asks about the document at an interv
 
 ## Getting it done with CredPronto
 
-Upload a scan or photo of both sides of the certificate. In about 10 minutes you'll get a free, watermarked side-by-side preview, which is the best time to check names, dates, and annotations against your passport. When it's right, pay $9.95 a page to unlock the certified PDF with its signed certification cover page. These are certified translations accepted by USCIS. If another office needs a notarized copy, notarization is available at checkout.
+Upload a scan or photo of both sides of the certificate. In a few minutes you'll get a free, watermarked side-by-side preview, which is the best time to check names, dates, and annotations against your passport. When it's right, pay $9.95 a page to unlock the certified PDF with its signed certification cover page. These are certified translations accepted by USCIS. If another office needs a notarized copy, notarization is available at checkout.
 
 **[Get your free preview →](/translate)**
 
