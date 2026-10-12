@@ -19,11 +19,11 @@ test("maria sees the order dashboard", async ({ page }) => {
   await expect(page.getByTestId("order-CP-24817")).toContainText("Birth certificate");
   await expect(page.getByTestId("order-CP-24817")).toContainText("Spanish → English");
   await expect(page.getByTestId("order-CP-24817")).toContainText("Preview ready");
-  await expect(page.getByTestId("order-CP-24817")).toHaveAttribute("href", "/preview/tok-preview-24817");
-  await expect(page.getByTestId("order-CP-24702")).toHaveAttribute("href", "/confirm?token=tok-quoted-24702");
-  await expect(page.getByTestId("order-CP-24815")).toHaveAttribute("href", "/order/tok-progress-24815");
-  await expect(page.getByTestId("order-CP-24790")).toHaveAttribute("href", "/order/tok-paid-24790");
-  await expect(page.getByTestId("order-CP-24611")).toHaveAttribute("href", "/order/tok-ready-24611");
+  await expect(page.getByTestId("order-CP-24817").locator('a[href="/preview/tok-preview-24817"]')).toHaveCount(2);
+  await expect(page.getByTestId("order-CP-24702").locator('a[href="/confirm?token=tok-quoted-24702"]')).toHaveCount(2);
+  await expect(page.getByTestId("order-CP-24815").locator('a[href="/order/tok-progress-24815"]')).toHaveCount(1);
+  await expect(page.getByTestId("order-CP-24790").locator('a[href="/order/tok-paid-24790"]')).toHaveCount(1);
+  await expect(page.getByTestId("order-CP-24611").locator('a[href="/order/tok-ready-24611"]')).toHaveCount(2);
   await expect(page.getByRole("link", { name: "Review & buy" })).toHaveAttribute("href", "/preview/tok-preview-24817");
   await expect(page.locator("[data-emphasis='primary']:visible")).toHaveCount(1);
   await expect(page.getByText("1 preview waiting")).toBeVisible();

@@ -58,6 +58,15 @@ describe("customer order presentation", () => {
     expect(orderStepHref(orders[4])).toBe("/order/tok-ready-24611");
     expect(presentOrder(orders[4], NOW).action.href).toBe("/order/tok-ready-24611");
     expect(orderStepHref({ status: "preview_ready", orderToken: null })).toBeNull();
+    const orderId = "11111111-1111-4111-8111-111111111111";
+    expect(orderStepHref({ id: orderId, status: "preview_ready", orderToken: null })).toBe(`/preview/${orderId}`);
+    expect(orderStepHref({ id: orderId, status: "quoted" })).toBe(`/confirm?token=${orderId}`);
+    expect(orderStepHref({ id: orderId, status: "processing" })).toBe(`/order/${orderId}`);
+    expect(orderStepHref({ id: orderId, status: "paid" })).toBe(`/order/${orderId}`);
+    expect(orderStepHref({ id: orderId, status: "delivered" })).toBe(`/order/${orderId}`);
+    expect(orderStepHref({ id: orderId, status: "preview_ready", orderToken: "tok-preview" })).toBe(
+      "/preview/tok-preview",
+    );
     expect(ordersInTab(orders, "ready", NOW)).toHaveLength(2);
     expect(previewWaiting(orders, NOW)).toHaveLength(1);
     expect(formatOrderDate("2026-10-11T12:00:00.000Z")).toBe("Oct 11");

@@ -5,8 +5,9 @@ import { connection } from "next/server";
 import { OrderHub } from "@/components/flow/order-hub";
 import { OrderLoadingFallback } from "@/components/flow/reading-handoff";
 import { waitsForCheckoutOrder } from "@/lib/orders/checkout-return";
+import { viewerOwnsOrder } from "@/lib/orders/owner-order";
 import { publicOrderExists } from "@/lib/orders/public-order-server";
-import { isOrderToken } from "@/lib/orders/token";
+import { isOrderId, isOrderToken } from "@/lib/orders/token";
 import { ROBOTS_NOINDEX } from "@/lib/seo";
 
 export const instant = false;
@@ -28,7 +29,9 @@ export default async function OrderPage({
   await connection();
   const checkout = Array.isArray(query.checkout) ? query.checkout[0] : query.checkout;
   // Success and cancel links keep the page up while the webhook lands.
-  if (!isOrderToken(token) || (!waitsForCheckoutOrder(checkout) && !(await publicOrderExists(token)))) {
+  if (isOrderId(token)) {
+    if (!(await viewerOwnsOrder(token))) notFound();
+  } else if (!isOrderToken(token) || (!waitsForCheckoutOrder(checkout) && !(await publicOrderExists(token)))) {
     notFound();
   }
 

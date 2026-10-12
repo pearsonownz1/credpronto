@@ -69,16 +69,23 @@ import { sourceFileBody, sourceFileTarget, type SourceFileResponse } from "./sou
 import { evaluationPreviewSources } from "./preview-documents";
 import { previewSignedTargets } from "./preview-targets";
 import { serviceDb, signedObjectUrl, uploadObject, type Db } from "./storage";
+import { requireUser } from "@/lib/auth/session";
 import { checkoutReturnUrl, orderTokenFromReturnUrl } from "./checkout-return";
-import { assertOrderTokenShape, hashOrderToken } from "./token";
+import { assertOrderTokenShape, hashOrderToken, isOrderId } from "./token";
 import { parseCorrectionBody } from "./corrections";
 import { decideChargeRefunded, decideCheckoutCompleted, decideCheckoutExpired } from "./webhook";
 import { checkedProgress } from "./translation-watch";
 import { previewPages, type CustomerOrder, type PreviewResponse } from "./view";
 
 async function orderForToken(token: string) {
-  assertOrderTokenShape(token);
   const db = serviceDb();
+  if (isOrderId(token)) {
+    const user = await requireUser();
+    const owned = await getOrderById(db, token);
+    if (!owned || owned.userId !== user.id) throw new HttpError("Order not found", 404);
+    return { db, order: owned, token };
+  }
+  assertOrderTokenShape(token);
   const order = await requireOrderByHash(db, hashOrderToken(token));
   return { db, order, token };
 }
@@ -265,7 +272,8 @@ export async function confirmOrder(token: string, body: unknown): Promise<Custom
     ...pricePatch,
   });
 
-  const updated = await requireOrderByHash(db, hashOrderToken(token));
+  const updated = await getOrderById(db, order.id);
+  if (!updated) throw new HttpError("Order not found", 404);
   return loadCustomerOrder(db, updated);
 }
 

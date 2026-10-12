@@ -72,6 +72,38 @@ describe("dashboard server auth", () => {
     expect(location.searchParams.get("next")).toBe("/dashboard/settings");
   });
 
+  it("sends a signed-out order id to sign-in", async () => {
+    vi.stubEnv("CREDPRONTO_MOCK", "");
+    vi.stubEnv("NEXT_PUBLIC_CREDPRONTO_MOCK", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
+
+    const id = "11111111-1111-4111-8111-111111111111";
+    const response = await proxy(new NextRequest(`http://127.0.0.1:3000/preview/${id}`));
+
+    expect(response.status).toBe(307);
+    const location = new URL(response.headers.get("location") ?? "");
+    expect(location.pathname).toBe("/sign-in");
+    expect(location.searchParams.get("next")).toBe(`/preview/${id}`);
+    expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+  });
+
+  it("lets a signed-in order id through to the page", async () => {
+    vi.stubEnv("CREDPRONTO_MOCK", "1");
+
+    const id = "11111111-1111-4111-8111-111111111111";
+    const response = await proxy(
+      new NextRequest(`http://127.0.0.1:3000/order/${id}`, {
+        headers: { cookie: mockCookie("maria.ruiz@email.com") },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+
   it("leaves public pages open", async () => {
     vi.stubEnv("CREDPRONTO_MOCK", "");
     vi.stubEnv("NEXT_PUBLIC_CREDPRONTO_MOCK", "");

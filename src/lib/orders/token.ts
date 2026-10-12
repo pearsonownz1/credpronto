@@ -16,6 +16,11 @@ export function isOrderToken(token: string): boolean {
   return token.length >= 43 && token.length <= 128 && /^[A-Za-z0-9_-]+$/.test(token);
 }
 
+/** Order primary keys are UUIDs. The customer list has these, not the raw email token. */
+export function isOrderId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
 export function assertOrderTokenShape(token: string): void {
   if (!isOrderToken(token)) {
     throw new HttpError("Order not found", 404);

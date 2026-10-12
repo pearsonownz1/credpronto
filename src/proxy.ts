@@ -3,7 +3,7 @@ import { safeNextPath } from "@/lib/auth/redirect";
 import { waitsForCheckoutOrder } from "@/lib/orders/checkout-return";
 import { publicOrderSegment } from "@/lib/orders/public-order";
 import { publicOrderExists } from "@/lib/orders/public-order-server";
-import { isOrderToken } from "@/lib/orders/token";
+import { isOrderId, isOrderToken } from "@/lib/orders/token";
 import { ROBOTS_NOINDEX } from "@/lib/seo";
 import { updateSession } from "@/lib/supabase/proxy";
 
@@ -34,6 +34,19 @@ function withPrivateRobots(response: NextResponse, pathname: string): NextRespon
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const token = publicOrderSegment(pathname);
+  if (token != null && isOrderId(token)) {
+    const session = await updateSession(request);
+    if (!session.signedIn) {
+      const redirect = signInRedirect(request);
+      for (const cookie of session.response.headers.getSetCookie()) {
+        redirect.headers.append("set-cookie", cookie);
+      }
+      return withPrivateRobots(redirect, pathname);
+    }
+    session.response.headers.set("Cache-Control", PRIVATE_NO_STORE);
+    return withPrivateRobots(session.response, pathname);
+  }
+
   if (token != null) {
     const checkout = request.nextUrl.searchParams.get("checkout");
     // A checkout return can beat the webhook. Leave the token in the URL and let the page retry.

@@ -20,8 +20,13 @@ import type { CustomerOrder } from "@/lib/api/types";
 const ROW_GRID =
   "grid grid-cols-[minmax(0,1.15fr)_minmax(0,1.45fr)_minmax(0,1.25fr)_minmax(0,0.55fr)_minmax(0,1.35fr)_minmax(0,0.7fr)_minmax(0,0.7fr)_minmax(0,1.15fr)] items-center";
 
-const ROW_LINK =
-  "cursor-pointer hover:bg-[#eef3fb] focus-visible:bg-[#eef3fb] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-[-2px]";
+const ROW_HOVER =
+  "relative isolate cursor-pointer hover:bg-[#eef3fb] focus-within:bg-[#eef3fb] focus-within:outline focus-within:outline-2 focus-within:outline-primary focus-within:outline-offset-[-2px]";
+
+const STRETCH_LINK = "after:absolute after:inset-0 after:z-0 after:content-['']";
+
+const ACTION_LINK =
+  "relative z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2";
 
 const TONE: Record<ChipTone, string> = {
   blue: "bg-[#eaf0ff] text-primary",
@@ -183,14 +188,16 @@ export function DashboardView() {
               {rows.map((order) => {
                 const view = presentOrder(order, now);
                 return (
-                  <OrderLink
+                  <div
                     key={order.id}
-                    order={order}
-                    view={view}
-                    testId={`order-${order.id}`}
-                    className={`${ROW_GRID} border-t border-line ${ROW_LINK}`}
+                    data-testid={`order-${order.id}`}
+                    className={`${ROW_GRID} border-t border-line ${ROW_HOVER}`}
                   >
-                    <span className="px-[18px] py-[13px] font-mono text-[12.5px]">{order.id}</span>
+                    <span className="px-[18px] py-[13px] font-mono text-[12.5px]">
+                      <RowAnchor order={order} view={view}>
+                        {order.id}
+                      </RowAnchor>
+                    </span>
                     <span className="px-[18px] py-[13px] font-semibold">{view.documents}</span>
                     <span className="px-[18px] py-[13px]">{view.pair}</span>
                     <span className="px-[18px] py-[13px]">{view.pages ?? "—"}</span>
@@ -202,7 +209,7 @@ export function DashboardView() {
                     <span className="px-[18px] py-[13px] text-right">
                       <NextStep view={view} />
                     </span>
-                  </OrderLink>
+                  </div>
                 );
               })}
             </div>
@@ -211,14 +218,13 @@ export function DashboardView() {
                 const view = presentOrder(order, now);
                 return (
                   <li key={order.id}>
-                    <OrderLink
-                      order={order}
-                      view={view}
-                      testId={`order-card-${order.id}`}
-                      className={`grid gap-2 px-4 py-4 ${ROW_LINK}`}
-                    >
+                    <div data-testid={`order-card-${order.id}`} className={`grid gap-2 px-4 py-4 ${ROW_HOVER}`}>
                       <span className="flex items-center justify-between gap-3">
-                        <span className="font-mono text-[12.5px]">{order.id}</span>
+                        <span className="font-mono text-[12.5px]">
+                          <RowAnchor order={order} view={view}>
+                            {order.id}
+                          </RowAnchor>
+                        </span>
                         <Chip view={view} />
                       </span>
                       <span className="font-semibold">{view.documents}</span>
@@ -228,7 +234,7 @@ export function DashboardView() {
                       <span className="text-right">
                         <NextStep view={view} />
                       </span>
-                    </OrderLink>
+                    </div>
                   </li>
                 );
               })}
@@ -269,33 +275,21 @@ function Chip({ view }: { view: OrderPresentation }) {
   );
 }
 
-function OrderLink({
+function RowAnchor({
   order,
   view,
-  testId,
-  className,
   children,
 }: {
   order: CustomerOrder;
   view: OrderPresentation;
-  testId: string;
-  className: string;
   children: React.ReactNode;
 }) {
-  if (!view.rowHref) {
-    return (
-      <div data-testid={testId} className={className}>
-        {children}
-      </div>
-    );
-  }
-  const action = view.action.label === "—" ? "Open order" : view.action.label;
+  if (!view.rowHref) return children;
   return (
     <Link
       href={view.rowHref}
-      data-testid={testId}
-      aria-label={`${order.id}, ${view.documents}, ${view.chip.label}. ${action}`}
-      className={className}
+      aria-label={`Open ${order.id}, ${view.documents}, ${view.chip.label}`}
+      className={STRETCH_LINK}
     >
       {children}
     </Link>
@@ -304,21 +298,22 @@ function OrderLink({
 
 function NextStep({ view }: { view: OrderPresentation }) {
   const { action } = view;
-  if (action.emphasis === "primary") {
+  if (action.href && action.emphasis === "primary") {
     return (
-      <span
+      <Link
+        href={action.href}
         data-emphasis="primary"
-        className="inline-flex items-center rounded-[var(--cp-radius)] bg-primary px-3 py-1.5 text-[13px] font-semibold text-white"
+        className={`${ACTION_LINK} inline-flex items-center rounded-[var(--cp-radius)] bg-primary px-3 py-1.5 text-[13px] font-semibold text-white`}
       >
         {action.label}
-      </span>
+      </Link>
     );
   }
-  if (action.emphasis === "link") {
+  if (action.href && action.emphasis === "link") {
     return (
-      <span data-emphasis="link" className="font-semibold text-primary">
+      <Link href={action.href} data-emphasis="link" className={`${ACTION_LINK} font-semibold text-primary`}>
         {action.label}
-      </span>
+      </Link>
     );
   }
   return <span className="text-ink-muted">{action.label}</span>;
