@@ -192,6 +192,7 @@ export function mockStaffDetail(id: string): StaffDetail | null {
     currency: summary.currency,
     createdAt: summary.createdAt,
     reviewReason: summary.reviewReason,
+    service: null,
     equivalencyCredentials: [],
     edge: null,
     filename: "birth-certificate.pdf",

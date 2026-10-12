@@ -80,10 +80,26 @@ export function sendPaymentReceipt(to: string, input: PaymentReceiptEmail): Prom
   return send(to, rendered.subject, rendered.text, rendered.html);
 }
 
-export function sendDeliveryReady(to: string): Promise<SendResult> {
-  return send(
-    to,
-    "Your CredPronto translation is ready to download",
-    "Your certified translation is approved. Open the CredPronto order link from your earlier email to download the translation and the certification. That link now allows the download.",
-  );
+export function deliveryReadyMessage(product: "translation" | "evaluation" = "translation"): {
+  subject: string;
+  text: string;
+} {
+  if (product === "evaluation") {
+    return {
+      subject: "Your CredPronto evaluation is ready to download",
+      text: "Your credential evaluation is approved. Open the CredPronto order link from your earlier email to download the evaluation report.",
+    };
+  }
+  return {
+    subject: "Your CredPronto translation is ready to download",
+    text: "Your certified translation is approved. Open the CredPronto order link from your earlier email to download the translation and the certification. That link now allows the download.",
+  };
+}
+
+export function sendDeliveryReady(
+  to: string,
+  product: "translation" | "evaluation" = "translation",
+): Promise<SendResult> {
+  const message = deliveryReadyMessage(product);
+  return send(to, message.subject, message.text);
 }

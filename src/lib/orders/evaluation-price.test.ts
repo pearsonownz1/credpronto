@@ -1,20 +1,23 @@
 import { describe, expect, it } from "vitest";
 import {
   checkoutPriceLines,
+  evaluationCheckoutTotal,
   evaluationFeeCents,
   evaluationQuote,
   lineItemsForOrder,
   parseEvaluationResult,
   parseOrderChoice,
+  translationOfferCents,
 } from "./evaluation-price";
 
 describe("evaluation quote", () => {
-  it("prices a diploma and adds the translation when the source is not English", () => {
+  it("prices a diploma and adds the translation only after the customer opts in", () => {
     const quote = evaluationQuote({
       service: "diploma",
       degreeCount: 2,
       sourceLanguage: "fr",
       billablePages: 3,
+      includeTranslation: true,
     });
     expect(quote.evaluationCents).toBe(3990);
     expect(quote.translationCents).toBe(2985);
@@ -35,6 +38,54 @@ describe("evaluation quote", () => {
         amountCents: 2985,
       },
     ]);
+  });
+
+  it("quotes one Spanish diploma at $19.95 until translation is chosen", () => {
+    const quoted = evaluationCheckoutTotal({
+      service: "diploma",
+      degreeCount: 1,
+      sourceLanguage: "es",
+      billablePages: 1,
+      includeTranslation: false,
+    });
+    expect(quoted).toEqual({
+      evaluationCents: 1995,
+      translationCents: 0,
+      includeTranslation: false,
+      totalCents: 1995,
+    });
+    expect(evaluationQuote({
+      service: "diploma",
+      degreeCount: 1,
+      sourceLanguage: "es",
+      billablePages: 1,
+    }).lineItems).toHaveLength(1);
+
+    const optedIn = evaluationCheckoutTotal({
+      service: "diploma",
+      degreeCount: 1,
+      sourceLanguage: "es",
+      billablePages: 1,
+      includeTranslation: true,
+    });
+    expect(optedIn).toEqual({
+      evaluationCents: 1995,
+      translationCents: 995,
+      includeTranslation: true,
+      totalCents: 2990,
+    });
+    expect(translationOfferCents({
+      service: "diploma",
+      sourceLanguage: "es",
+      billablePages: 1,
+      unitPriceCents: 995,
+    })).toBe(995);
+    expect(translationOfferCents({
+      service: "diploma",
+      sourceLanguage: "en",
+      billablePages: 1,
+      unitPriceCents: 995,
+    })).toBeNull();
   });
 
   it("prices course-by-course in English without a translation line", () => {

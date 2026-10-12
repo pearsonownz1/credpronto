@@ -3,16 +3,22 @@ import { PENDING_EQUIVALENCY } from "./equivalency";
 import { resolveEdgeCountrySlug, type Db } from "./db";
 import {
   chooseEquivalency,
+  combineEquivalencyRoutes,
   countrySlug,
   countrySlugFallbackFilter,
+  draftEquivalency,
   edgeContentExcerpt,
   edgeEquivalencyPrompt,
   edgeRowsFromSource,
+  equivalencyCredentialId,
+  mapEdgeEquivalencyRow,
   matchEdgeCredential,
   matchEdgeGradingScale,
+  pickEdgeEquivalency,
   resolveStoredCountrySlug,
   staffEdgeView,
   type EdgeCredentialRecord,
+  type EdgeEquivalencyRecord,
   type EdgeGradingScaleRecord,
 } from "./edge";
 
@@ -112,15 +118,24 @@ describe("EDGE reference matching", () => {
       credential({ id: "exact", title: "Example Diploma" }),
       credential({ id: "other", title: "Example Certificate", countrySlug: "france", country: "France" }),
     ];
-    expect(matchEdgeCredential(rows, { country: "México", title: " example   diploma " })?.id).toBe("exact");
+    expect(matchEdgeCredential(rows, { country: "México", title: " example   diploma " })).toMatchObject({
+      id: "exact",
+      matchMethod: "base",
+    });
     expect(matchEdgeCredential(rows, { country: "France", title: "Example Diploma" })).toBeNull();
     expect(matchEdgeCredential(rows, { country: PENDING_EQUIVALENCY, title: "Example Diploma" })).toBeNull();
     expect(
       matchEdgeCredential(
         [credential({ id: "broad", title: "Example Diploma" })],
         { country: "Mexico", title: "Example Diploma in Testing" },
-      )?.id,
-    ).toBe("broad");
+      ),
+    ).toMatchObject({ id: "broad", matchMethod: "base" });
+    expect(
+      matchEdgeCredential(
+        [credential({ id: "broad", title: "Example Diploma" })],
+        { country: "Mexico", title: "Exmple Diploma" },
+      ),
+    ).toMatchObject({ id: "broad", matchMethod: "fuzzy" });
     expect(
       matchEdgeCredential(
         [
@@ -130,6 +145,77 @@ describe("EDGE reference matching", () => {
         { country: "Mexico", title: "Example Diploma" },
       ),
     ).toBeNull();
+  });
+
+  it("maps gendered titles onto the base credential for that country", () => {
+    const mexico = [
+      credential({ id: "lic", title: "Licenciatura" }),
+      credential({ id: "titulo", title: "Título de Licenciado" }),
+      credential({ id: "ing", title: "Ingeniería" }),
+      credential({ id: "mae", title: "Maestría" }),
+      credential({ id: "doc", title: "Doctorado" }),
+      credential({ id: "bach", title: "Bachillerato" }),
+      credential({ id: "tec", title: "Técnico" }),
+      credential({ id: "derecho", title: "Licenciatura en Derecho" }),
+      credential({ id: "medicina", title: "Licenciatura en Medicina" }),
+    ];
+    const brazil = [
+      credential({ id: "bacharel", title: "Bacharelado", countrySlug: "brazil", country: "Brazil" }),
+      credential({ id: "lic-br", title: "Licenciatura", countrySlug: "brazil", country: "Brazil" }),
+    ];
+    const rows = [...mexico, ...brazil];
+
+    expect(
+      matchEdgeCredential(rows, { country: "Mexico", title: "LICENCIADA en Administración de Empresas" }),
+    ).toMatchObject({ id: "lic", matchMethod: "base" });
+    expect(matchEdgeCredential(rows, { country: "México", title: "Título de Licenciado" })).toMatchObject({
+      id: "titulo",
+      matchMethod: "base",
+    });
+    expect(matchEdgeCredential(rows, { country: "Mexico", title: "Ingeniera en Sistemas Computacionales" })).toMatchObject({
+      id: "ing",
+      matchMethod: "base",
+    });
+    expect(matchEdgeCredential(rows, { country: "Mexico", title: "Maestra en Educación" })).toMatchObject({
+      id: "mae",
+      matchMethod: "base",
+    });
+    expect(matchEdgeCredential(rows, { country: "Mexico", title: "Doctora en Ciencias" })).toMatchObject({
+      id: "doc",
+      matchMethod: "base",
+    });
+    expect(matchEdgeCredential(rows, { country: "Mexico", title: "Bachiller en Ciencias" })).toMatchObject({
+      id: "bach",
+      matchMethod: "base",
+    });
+    expect(matchEdgeCredential(rows, { country: "Mexico", title: "Técnica en Enfermería" })).toMatchObject({
+      id: "tec",
+      matchMethod: "base",
+    });
+    expect(matchEdgeCredential(rows, { country: "Brazil", title: "Bacharel em Engenharia" })).toMatchObject({
+      id: "bacharel",
+      matchMethod: "base",
+    });
+    expect(matchEdgeCredential(rows, { country: "Brazil", title: "Licenciado em Direito" })).toMatchObject({
+      id: "lic-br",
+      matchMethod: "base",
+    });
+    expect(matchEdgeCredential(rows, { country: "France", title: "LICENCIADA en Administración de Empresas" })).toBeNull();
+    expect(
+      matchEdgeCredential(
+        [
+          credential({ id: "derecho", title: "Licenciatura en Derecho" }),
+          credential({ id: "medicina", title: "Licenciatura en Medicina" }),
+        ],
+        { country: "Mexico", title: "Licenciada en Administración de Empresas" },
+      ),
+    ).toBeNull();
+    expect(
+      matchEdgeCredential(
+        [credential({ id: "lic", title: "Licenciatura" }), credential({ id: "titulo", title: "Título de Licenciado" })],
+        { country: "Mexico", title: "Licenciatur" },
+      ),
+    ).toMatchObject({ id: "lic", matchMethod: "fuzzy" });
   });
 
   it("picks the grading scale whose rows match the printed grades", () => {
@@ -349,6 +435,83 @@ describe("EDGE reference matching", () => {
     expect(prompt).toContain("EDGE level: number 6, First university degree");
     expect(prompt).toContain("10 = A");
     expect(prompt).toContain("confident");
+  });
+});
+
+function equivalency(patch: Partial<EdgeEquivalencyRecord> & { id: string; confidence: EdgeEquivalencyRecord["confidence"] }): EdgeEquivalencyRecord {
+  return {
+    edgeCredentialId: "cred-1",
+    country: "Mexico",
+    credentialTitle: "Example Diploma",
+    edgeLevel: "6",
+    usEquivalency: "Bachelor's degree",
+    basis: "First university degree in the fictional catalog.",
+    ...patch,
+  };
+}
+
+describe("EDGE equivalency suggestions", () => {
+  it("maps a row and prefers the higher confidence suggestion", () => {
+    expect(
+      mapEdgeEquivalencyRow({
+        id: "row-1",
+        edge_credential_id: "cred-1",
+        country: "Mexico",
+        credential_title: "Example Diploma",
+        edge_level: "6",
+        us_equivalency: "Bachelor's degree",
+        basis: "First university degree.",
+        confidence: "medium",
+      }),
+    ).toMatchObject({ id: "row-1", edgeCredentialId: "cred-1", confidence: "medium", edgeLevel: "6" });
+    expect(mapEdgeEquivalencyRow({ id: "row-1", confidence: "certain" })).toBeNull();
+    const picked = pickEdgeEquivalency([
+      equivalency({ id: "low", confidence: "low" }),
+      equivalency({ id: "high", confidence: "high" }),
+      equivalency({ id: "medium", confidence: "medium" }),
+    ]);
+    expect(picked?.id).toBe("high");
+  });
+
+  it("fills a confident suggestion and sends a weak or missing one to research", () => {
+    expect(equivalencyCredentialId({ matchedId: "matched", storedId: "stored", singleCredential: true })).toBe("matched");
+    expect(equivalencyCredentialId({ matchedId: null, storedId: "stored", singleCredential: true })).toBe("stored");
+    expect(equivalencyCredentialId({ matchedId: null, storedId: "stored", singleCredential: false })).toBeNull();
+
+    const high = draftEquivalency({
+      printed: "Example Diploma",
+      suggestion: equivalency({ id: "high", confidence: "high" }),
+      fallback: PENDING_EQUIVALENCY,
+    });
+    expect(high).toEqual({
+      usEquivalency: "Bachelor's degree",
+      basis: "First university degree in the fictional catalog.",
+      route: "qa_review",
+    });
+    expect(
+      draftEquivalency({
+        printed: "Example Diploma",
+        suggestion: equivalency({ id: "medium", confidence: "medium", usEquivalency: "Master's degree" }),
+        fallback: PENDING_EQUIVALENCY,
+      }).route,
+    ).toBe("qa_review");
+    expect(
+      draftEquivalency({
+        printed: "Licence",
+        suggestion: equivalency({ id: "low", confidence: "low" }),
+        fallback: PENDING_EQUIVALENCY,
+      }),
+    ).toMatchObject({ usEquivalency: "Bachelor's degree", route: "qa_research" });
+    expect(
+      draftEquivalency({
+        printed: "Certificado",
+        suggestion: null,
+        fallback: PENDING_EQUIVALENCY,
+      }),
+    ).toEqual({ usEquivalency: PENDING_EQUIVALENCY, basis: null, route: "qa_research" });
+    expect(combineEquivalencyRoutes(["qa_review", "qa_review"])).toBe("qa_review");
+    expect(combineEquivalencyRoutes(["qa_review", "qa_research"])).toBe("qa_research");
+    expect(combineEquivalencyRoutes([])).toBe("qa_research");
   });
 });
 

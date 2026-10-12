@@ -30,8 +30,9 @@ import {
 } from "./page-order";
 import { buildCombinedOriginal, type SourceFile } from "./pdf/combine";
 import { pdfPageTexts } from "./pdf-text";
-import { completeEvaluation } from "./evaluation";
+import { startEvaluationQuote } from "./evaluation";
 import { decideQuote, etaFromNow } from "./quote";
+import { humanReviewReason } from "./review-reason";
 import { notifyOrder } from "./webhook-delivery";
 import { downloadObject, uploadObject } from "./storage";
 import { quotePage, storedDensity } from "./billing";
@@ -451,7 +452,10 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
           });
           pageIndex += 1;
           pageBillable.push(quoted.billableUnits);
-          const needsReview = read.needsReview || quality.failed;
+          // A blank verso, an English page, or a shipping label is free. The reader
+          // marks a blank page unreadable, and that must not turn a priced quote into
+          // needs_review. A page we are actually billing still holds the quote.
+          const needsReview = quality.failed || (read.needsReview && !quoted.skip);
           pageNeedsReview.push(needsReview);
           return {
             pageNumber: page.appliedPage,
@@ -498,7 +502,7 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
 
     await replaceExtractedConfirmations(db, orderId, extractedFields);
     if (order.service && order.degreeCount != null) {
-      await completeEvaluation(db, order, {
+      const quoted = await startEvaluationQuote(db, order, {
         sourceLanguage: distinct.length === 1 ? distinct[0] : null,
         confidence: confidences.length > 0 ? Math.min(...confidences) : null,
         billablePages: pageBillable.reduce((sum, pages) => sum + pages, 0),
@@ -512,6 +516,13 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
         pageOrder: applied,
         token,
       });
+      if (quoted.status === "quoted" && !(await hasEvent(db, orderId, "quote_shown"))) {
+        await insertEvent(db, orderId, "quote_shown", {
+          billablePages: quoted.billablePages,
+          totalCents: quoted.totalCents,
+        });
+      }
+      if (quoted.status === "quoted") await notifyOrder(db, orderId, "order.quoted");
       await writeProgress("done");
       return;
     }
@@ -542,7 +553,7 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
     console.error(`analysis failed for ${orderId}: ${message}`, error);
     await updateOrder(db, orderId, {
       status: "needs_review",
-      review_reason: message,
+      review_reason: humanReviewReason(message) ?? "We could not read the upload.",
       eta_at: etaFromNow(24),
       page_order_basis: null,
       page_order: null,

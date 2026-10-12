@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { applyDiplomaEquivalency, assembleCourse, assembleDiploma } from "./evaluation";
 import {
+  EQUIVALENCY_QA_RESEARCH,
+  EQUIVALENCY_QA_REVIEW,
   EQUIVALENCY_UNMAPPED,
   PENDING_EQUIVALENCY,
   approvalBlockReason,
@@ -80,6 +82,11 @@ describe("assemble evaluation", () => {
     expect(approvalBlockReason(order)).toBe("The U.S. equivalency is still pending staff review");
     expect(onStaffReviewQueue(order)).toBe(true);
     expect(onStaffReviewQueue({ status: "paid", reviewReason: EQUIVALENCY_UNMAPPED })).toBe(true);
+    expect(onStaffReviewQueue({ status: "preview_ready", reviewReason: EQUIVALENCY_QA_REVIEW })).toBe(true);
+    expect(onStaffReviewQueue({ status: "preview_ready", reviewReason: EQUIVALENCY_QA_RESEARCH })).toBe(true);
+    expect(approvalBlockReason({ reviewReason: EQUIVALENCY_QA_REVIEW })).toBe(
+      "The U.S. equivalency is still pending staff review",
+    );
     const filled = applyDiplomaEquivalency(result, ["Bachelor's degree"]);
     expect(filled?.credentials[0]?.usEquivalency).toBe("Bachelor's degree");
     expect(applyDiplomaEquivalency(result, [PENDING_EQUIVALENCY])).toBeNull();

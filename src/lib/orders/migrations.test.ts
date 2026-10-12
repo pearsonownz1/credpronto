@@ -82,6 +82,24 @@ describe("auth migrations", () => {
     expect(edge.toLowerCase()).not.toMatch(/insert into/);
     expect(edge).toMatch(/edge_credential_id uuid/);
     expect(edge).toMatch(/edge_grading_scale_id uuid/);
+    const equivalencies = readFileSync(path.join(migrationsDir, "20261012130000_edge_equivalencies.sql"), "utf8");
+    expect(equivalencies).toMatch(/create table public\.edge_equivalencies/);
+    expect(equivalencies).toMatch(/edge_credential_id uuid not null references public\.edge_credentials/);
+    expect(equivalencies).toMatch(/credential_title text not null/);
+    expect(equivalencies).toMatch(/edge_level text/);
+    expect(equivalencies).toMatch(/us_equivalency text not null/);
+    expect(equivalencies).toMatch(/basis text not null/);
+    expect(equivalencies).toMatch(/confidence in \('high', 'medium', 'low'\)/);
+    expect(equivalencies).toMatch(/enable row level security/);
+    expect(equivalencies.toLowerCase()).not.toMatch(/create policy/);
+    expect(equivalencies.toLowerCase()).not.toMatch(/grant [^;]*to (anon|authenticated)/);
+    expect(equivalencies).toMatch(/to service_role/);
+    expect(equivalencies.toLowerCase()).not.toMatch(/insert into/);
+    const matchMethod = readFileSync(path.join(migrationsDir, "20261012160000_edge_match_method.sql"), "utf8");
+    expect(matchMethod).toMatch(/add column edge_match_method text/);
+    expect(matchMethod).toMatch(/edge_match_method in \('base', 'fuzzy'\)/);
+    expect(matchMethod.toLowerCase()).not.toMatch(/insert into/);
+    expect(matchMethod.toLowerCase()).not.toMatch(/create policy/);
     const lastUsed = readFileSync(path.join(migrationsDir, "20261012100000_api_keys_last_used_at.sql"), "utf8");
     expect(lastUsed).toMatch(/add column last_used_at timestamptz/);
     expect(lastUsed.toLowerCase()).not.toMatch(/create table/);
@@ -108,5 +126,20 @@ describe("auth migrations", () => {
       const sql = readFileSync(path.join(migrationsDir, file), "utf8");
       expect(sql.includes("staff_notified")).toBe(false);
     }
+  });
+
+  it("stores evaluation translation as an opt-in flag", () => {
+    const sql = readFileSync(
+      path.join(migrationsDir, "20261012150000_evaluation_translation_opt_in.sql"),
+      "utf8",
+    );
+    expect(sql).toMatch(/add column include_translation boolean not null default false/);
+    expect(sql).toMatch(/set include_translation = true/);
+    expect(sql).toMatch(/where coalesce\(translation_cents, 0\) > 0/);
+    expect(sql).toMatch(/translation_cents = 0/);
+    expect(sql).toMatch(/include_translation = true/);
+    expect(sql).toMatch(/translation_cents = billable_pages \* unit_price_cents/);
+    expect(sql.toLowerCase()).not.toMatch(/create type/);
+    expect(sql.toLowerCase()).not.toMatch(/add value/);
   });
 });

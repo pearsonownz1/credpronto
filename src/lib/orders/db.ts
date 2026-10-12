@@ -2,9 +2,11 @@ import { ADDON_CATALOG, type PricedAddon } from "./addons";
 import {
   countrySlugFallbackFilter,
   mapEdgeCredentialRow,
+  mapEdgeEquivalencyRow,
   mapEdgeGradingScaleRow,
   resolveStoredCountrySlug,
   type EdgeCredentialRecord,
+  type EdgeEquivalencyRecord,
   type EdgeGradingScaleRecord,
 } from "./edge";
 import { parseEvaluationResult } from "./evaluation-price";
@@ -82,6 +84,7 @@ function mapOrder(row: Row): OrderRecord {
     degreeCount: num(row.degree_count),
     evaluationCents: num(row.evaluation_cents),
     translationCents: num(row.translation_cents),
+    includeTranslation: row.include_translation === true,
     evaluationResult: parseEvaluationResult(row.evaluation_result),
     addonCents: num(row.addon_cents) ?? 0,
     expedited: row.expedited === true,
@@ -92,6 +95,8 @@ function mapOrder(row: Row): OrderRecord {
       row.notarization_status === "pending" || row.notarization_status === "done" ? row.notarization_status : null,
     edgeCredentialId: str(row.edge_credential_id),
     edgeGradingScaleId: str(row.edge_grading_scale_id),
+    edgeMatchMethod:
+      row.edge_match_method === "base" || row.edge_match_method === "fuzzy" ? row.edge_match_method : null,
     createdAt: str(row.created_at) ?? new Date().toISOString(),
     updatedAt: str(row.updated_at) ?? str(row.created_at) ?? new Date().toISOString(),
     progress: asOrderProgress(row.progress) ?? { step: "uploaded", pagesRead: 0, pagesTotal: 0 },
@@ -794,6 +799,21 @@ export async function listEdgeGradingScalesForCountry(
   });
 }
 
+export async function listEdgeEquivalenciesForCredential(
+  db: Db,
+  edgeCredentialId: string,
+): Promise<EdgeEquivalencyRecord[]> {
+  const { data, error } = await db
+    .from("edge_equivalencies")
+    .select("id, edge_credential_id, country, credential_title, edge_level, us_equivalency, basis, confidence")
+    .eq("edge_credential_id", edgeCredentialId);
+  fail(error);
+  return ((data ?? []) as Row[]).flatMap((row) => {
+    const mapped = mapEdgeEquivalencyRow(row);
+    return mapped ? [mapped] : [];
+  });
+}
+
 export async function getEdgeCredential(db: Db, id: string): Promise<EdgeCredentialRecord | null> {
   const { data, error } = await db
     .from("edge_credentials")
@@ -1024,14 +1044,16 @@ export async function insertQaRun(
   db: Db,
   input: { orderId: string; attempt: number; status: QaStatus; score: number; issues: QaIssue[] },
 ): Promise<void> {
-  const { error } = await db.from("order_qa_runs").insert({
-    order_id: input.orderId,
-    attempt: input.attempt,
-    status: input.status,
-    score: input.score,
-    issues: input.issues,
-  });
-  if (error?.code === "23505") return;
+  const { error } = await db.from("order_qa_runs").upsert(
+    {
+      order_id: input.orderId,
+      attempt: input.attempt,
+      status: input.status,
+      score: input.score,
+      issues: input.issues,
+    },
+    { onConflict: "order_id,attempt" },
+  );
   fail(error);
 }
 

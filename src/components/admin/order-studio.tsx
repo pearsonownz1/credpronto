@@ -18,12 +18,14 @@ import {
   shipOrder,
 } from "@/lib/api/mutations";
 import type { StaffDetail, StaffNote } from "@/lib/api/types";
-import { EQUIVALENCY_UNMAPPED, PENDING_EQUIVALENCY } from "@/lib/orders/equivalency";
+import { EQUIVALENCY_QA_REVIEW, PENDING_EQUIVALENCY, awaitingEquivalencyPublish } from "@/lib/orders/equivalency";
 import { languageLabel } from "@/lib/orders/languages";
 import type { PreviewOrder, PreviewPageSize } from "@/components/preview/preview-order";
 import { humanStatus } from "@/components/admin/orders-board";
 import { QaPanel } from "@/components/admin/qa-panel";
 import { approveButtonLabel, runStudioAction, type StudioTaskResult } from "@/components/admin/studio-action";
+import { sourceTextForDisplay } from "@/lib/orders/source-text";
+import { emptyTranslationMessage } from "@/lib/orders/translation-edit";
 import type { ViewerFocus } from "@/components/preview/side-by-side-viewer";
 
 const SideBySideViewer = dynamic(
@@ -198,7 +200,13 @@ export function OrderStudio({
                 data-testid="approve-order"
                 aria-busy={pending === "approve"}
                 disabled={pending !== null}
-                onClick={() =>
+                onClick={() => {
+                  const empty = detail.service ? null : emptyTranslationMessage(detail.pages);
+                  if (empty) {
+                    setError(empty);
+                    setMessage(null);
+                    return;
+                  }
                   void run("approve", async () => {
                     const result = await approveOrder(detail.id);
                     const data =
@@ -214,8 +222,8 @@ export function OrderStudio({
                           status: nextStatus,
                         }
                       : { ok: false, error: result.error };
-                  })
-                }
+                  });
+                }}
                 className="inline-flex h-9 items-center rounded-[var(--cp-radius)] border border-line bg-white px-3 text-sm font-semibold disabled:opacity-60"
               >
                 {approveButtonLabel(pending)}
@@ -262,7 +270,7 @@ export function OrderStudio({
         setPending={setPending}
       />
 
-      {detail.reviewReason === EQUIVALENCY_UNMAPPED ? (
+      {awaitingEquivalencyPublish(detail.reviewReason) ? (
         <form
           className="grid gap-3 rounded-[var(--cp-radius)] border border-line bg-white p-4"
           onSubmit={(event) => {
@@ -282,7 +290,9 @@ export function OrderStudio({
         >
           <p className="text-sm font-semibold">U.S. equivalency</p>
           <p className="text-sm text-ink-muted">
-            The preview says pending staff review. Set each credential before the clean report can be released.
+            {detail.reviewReason === EQUIVALENCY_QA_REVIEW
+              ? "Confirm the suggested U.S. equivalency before the clean report can be released."
+              : "Set each credential before the clean report can be released."}
           </p>
           {equivalencies.map((value, index) => {
             const credential = detail.equivalencyCredentials[index];
@@ -297,6 +307,7 @@ export function OrderStudio({
                 <legend className="text-sm">
                   {credential ? credential.credential : `Degree ${index + 1}`}
                 </legend>
+                {credential?.basis ? <p className="text-sm text-ink-muted">{credential.basis}</p> : null}
                 {(
                   [
                     ["usEquivalency", "U.S. equivalency", "Bachelor's degree"],
@@ -388,7 +399,7 @@ export function OrderStudio({
             <article key={page.id} className="grid gap-3 rounded-[var(--cp-radius)] border border-line bg-white p-4 md:grid-cols-2">
               <div>
                 <p className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink-muted">Page {page.pageNumber} source</p>
-                <p className="mt-2 whitespace-pre-wrap text-sm">{page.sourceText || "No source text"}</p>
+                <p className="mt-2 whitespace-pre-wrap text-sm">{sourceTextForDisplay(page.sourceText) || "No source text"}</p>
               </div>
               <div className="grid gap-2">
                 <p className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink-muted">Translation</p>

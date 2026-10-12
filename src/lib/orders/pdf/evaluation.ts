@@ -593,12 +593,52 @@ function pageYear(cursor: CourseCursor, label: string): void {
   cursor.y -= height + 2;
 }
 
+const EDGE_WORD = /\bEDGE\b/i;
+const CONFIDENCE_LABEL = /^(high|medium|low)$/i;
+
+function publicLabel(value: string, fallback: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || EDGE_WORD.test(trimmed) || CONFIDENCE_LABEL.test(trimmed)) return fallback;
+  return trimmed;
+}
+
+function publicGradeScale(value: string): string {
+  if (EDGE_WORD.test(value) || /\bconfidence\b/i.test(value)) return "Grades use the printed scale.";
+  return value;
+}
+
+/** Customer report copy. Drops a reference name, a confidence label, and any staff-only basis. */
+export function publicEvaluationReport(result: EvaluationResult): EvaluationResult {
+  if (result.kind === "diploma") {
+    return {
+      ...result,
+      credentials: result.credentials.map((credential) => {
+        const copy = { ...credential } as DiplomaCredential & { equivalencyBasis?: string };
+        delete copy.equivalencyBasis;
+        return {
+          ...copy,
+          country: publicLabel(copy.country, "Pending staff review"),
+          usEquivalency: publicLabel(copy.usEquivalency, "Pending staff review"),
+        };
+      }),
+    };
+  }
+  const copy = { ...result } as Extract<EvaluationResult, { kind: "course_by_course" }> & { equivalencyBasis?: string };
+  delete copy.equivalencyBasis;
+  return {
+    ...copy,
+    gradeScale: publicGradeScale(copy.gradeScale),
+    ...(copy.usEquivalency ? { usEquivalency: publicLabel(copy.usEquivalency, "Pending staff review") } : {}),
+  };
+}
+
 export async function renderEvaluationPdfs(
   result: EvaluationResult,
   meta: EvaluationReportMeta = DEFAULT_META,
 ): Promise<EvaluationPdfs> {
-  const clean = result.kind === "diploma" ? await renderDiploma(result, meta, false) : await renderCourses(result, meta, false);
-  const preview = result.kind === "diploma" ? await renderDiploma(result, meta, true) : await renderCourses(result, meta, true);
+  const shown = publicEvaluationReport(result);
+  const clean = shown.kind === "diploma" ? await renderDiploma(shown, meta, false) : await renderCourses(shown, meta, false);
+  const preview = shown.kind === "diploma" ? await renderDiploma(shown, meta, true) : await renderCourses(shown, meta, true);
   const loaded = await PDFDocument.load(clean);
   return { clean, preview, pageCount: loaded.getPageCount() };
 }

@@ -14,14 +14,23 @@ function textContent(node: ReactNode): string {
   return "";
 }
 
+const actionButtonClass = buttonClasses("primary", "mt-2 h-12 px-6 text-base no-underline");
+
 const components: Components = {
   a: ({ href, children }) => {
     const label = textContent(children).trim();
-    if (href === "/translate" && label.startsWith("Get your free preview")) {
+    if (href === "/translate" && (label.startsWith("Get your free preview") || label === "Upload your document")) {
       return (
-        <Link href="/translate" className={buttonClasses("primary", "mt-2 h-12 px-6 text-base no-underline")}>
+        <Link href="/translate" className={actionButtonClass}>
           {label}
         </Link>
+      );
+    }
+    if (href === "mailto:support@credpronto.com" && label === "Send message") {
+      return (
+        <a href={href} className={actionButtonClass}>
+          {label}
+        </a>
       );
     }
     if (href?.startsWith("/")) {

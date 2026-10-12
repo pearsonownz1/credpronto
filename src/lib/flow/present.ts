@@ -415,6 +415,39 @@ function priceLineLabel(item: EvaluationLine): string {
   return `${item.description} · ${item.quantity} ${noun} × ${unit}`;
 }
 
+export type DownloadFileKind = "translation" | "certification" | "evaluation";
+
+export type DownloadReadyCopy = {
+  title: string;
+  primaryTitle: string;
+  primaryFile: DownloadFileKind;
+  secondary: { title: string; file: "certification" } | null;
+  again: string;
+};
+
+/** Labels and file kinds for a paid download. Evaluations name the report, not a translation certificate. */
+export function downloadReadyCopy(order: {
+  orderType: string;
+  service: string | null;
+}): DownloadReadyCopy {
+  if (order.orderType === "evaluation" || order.service != null) {
+    return {
+      title: "Your credential evaluation is ready.",
+      primaryTitle: "Evaluation report",
+      primaryFile: "evaluation",
+      secondary: null,
+      again: "Need another credential evaluated?",
+    };
+  }
+  return {
+    title: "Your certified translation is ready.",
+    primaryTitle: "Certified translation",
+    primaryFile: "translation",
+    secondary: { title: "Certification page", file: "certification" },
+    again: "Need another document translated?",
+  };
+}
+
 export type DownloadPhase = "confirming" | "certifying" | "ready";
 
 export function downloadPhase(order: {

@@ -1,4 +1,4 @@
-import { evaluationQuote } from "@/lib/orders/evaluation-price";
+import { evaluationQuote, lineItemsForOrder, translationOfferCents } from "@/lib/orders/evaluation-price";
 import { languagesEqual } from "@/lib/orders/languages";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import { appendOrderChoice, type UploadChoice } from "./order-choice";
@@ -79,13 +79,13 @@ export type FlowClient = {
   ): Promise<CheckoutResult>;
   download(
     token: string,
-    file: "translation" | "certification",
+    file: "translation" | "certification" | "evaluation",
   ): Promise<{ url: string; expiresInSeconds: number }>;
   replaceDocument(token: string, documentId: string, file: File): Promise<CustomerOrder>;
   updateTargetLanguage(token: string, targetLanguage: string): Promise<CustomerOrder>;
   updateQuote(
     token: string,
-    body: { skipPages: number[]; targetLanguage?: string },
+    body: { skipPages?: number[]; targetLanguage?: string; includeTranslation?: boolean },
   ): Promise<CustomerOrder>;
   /** Mock walk-through moves a quoted order to preview_ready before checkout. */
   markPreviewReady(token: string): Promise<void>;
@@ -260,6 +260,7 @@ function withEvaluationChoice(
     degreeCount: choice.degreeCount,
     sourceLanguage: base.sourceLanguage,
     billablePages,
+    includeTranslation: false,
   });
   return {
     ...base,
@@ -268,6 +269,13 @@ function withEvaluationChoice(
     degreeCount: choice.degreeCount,
     evaluationCents: quote.evaluationCents,
     translationCents: quote.translationCents,
+    includeTranslation: false,
+    translationOfferCents: translationOfferCents({
+      service: choice.service,
+      sourceLanguage: base.sourceLanguage,
+      billablePages,
+      unitPriceCents: base.unitPriceCents,
+    }),
     totalCents: quote.totalCents,
     lineItems: quote.lineItems,
   };
@@ -462,21 +470,41 @@ const mockClient: FlowClient = {
       ...(body.targetLanguage ? { targetLanguage: body.targetLanguage } : {}),
     };
     const billablePages = quoteCounts(next).billable;
-    const translationCents =
-      next.orderType === "evaluation"
-        ? next.sourceLanguage === "en"
-          ? 0
-          : billablePages * next.unitPriceCents
-        : null;
+    const evaluationOrder = next.orderType === "evaluation" || next.service != null;
+    const wantsTranslation = body.includeTranslation ?? next.includeTranslation;
+    const translationCents = evaluationOrder
+      ? wantsTranslation && next.sourceLanguage && next.sourceLanguage !== "en"
+        ? billablePages * next.unitPriceCents
+        : 0
+      : null;
+    const includeTranslation = evaluationOrder ? (translationCents ?? 0) > 0 : next.includeTranslation;
     const totalCents =
-      next.orderType === "evaluation" && next.evaluationCents != null
+      evaluationOrder && next.evaluationCents != null
         ? next.evaluationCents + (translationCents ?? 0)
         : billablePages * next.unitPriceCents;
     const saved: CustomerOrder = {
       ...next,
       billablePages,
       totalCents,
+      includeTranslation,
+      translationOfferCents: translationOfferCents({
+        service: next.service,
+        sourceLanguage: next.sourceLanguage,
+        billablePages,
+        unitPriceCents: next.unitPriceCents,
+      }),
       ...(translationCents != null ? { translationCents } : {}),
+      ...(evaluationOrder && next.service && next.degreeCount != null && next.evaluationCents != null
+        ? {
+            lineItems: lineItemsForOrder({
+              service: next.service,
+              degreeCount: next.degreeCount,
+              evaluationCents: next.evaluationCents,
+              translationCents,
+              billablePages,
+            }),
+          }
+        : {}),
     };
     writeMockOrder(saved);
     return saved;

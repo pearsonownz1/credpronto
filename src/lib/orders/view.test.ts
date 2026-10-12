@@ -31,6 +31,7 @@ function orderRecord(): OrderRecord {
     degreeCount: null,
     evaluationCents: null,
     translationCents: null,
+    includeTranslation: false,
     evaluationResult: null,
     addonCents: 0,
     expedited: false,
@@ -40,6 +41,7 @@ function orderRecord(): OrderRecord {
     notarizationStatus: null,
     edgeCredentialId: null,
     edgeGradingScaleId: null,
+    edgeMatchMethod: null,
     createdAt: "2026-10-12T00:00:00.000Z",
     updatedAt: "2026-10-12T00:00:00.000Z",
     progress: { step: "done", pagesRead: 2, pagesTotal: 2 },
@@ -111,6 +113,7 @@ describe("customer order", () => {
         degreeCount: 1,
         evaluationCents: 1995,
         translationCents: 995,
+        includeTranslation: true,
         billablePages: 1,
         totalCents: 2990,
       },
@@ -125,10 +128,40 @@ describe("customer order", () => {
     expect(order.service).toBe("diploma");
     expect(order.degreeCount).toBe(1);
     expect(order.lineItems.map((item) => item.kind)).toEqual(["evaluation", "translation"]);
+    expect(order.includeTranslation).toBe(true);
+    expect(order.translationOfferCents).toBe(995);
     expect(order.evaluation).toBeNull();
     expect(order).not.toHaveProperty("edge");
     expect(order).not.toHaveProperty("edgeCredentialId");
+    expect(order).not.toHaveProperty("edgeMatchMethod");
     expect(JSON.stringify(order)).not.toContain("edge_credential");
+    expect(JSON.stringify(order)).not.toContain("edge_match");
+  });
+
+  it("offers translation on a Spanish diploma without adding it to the total", () => {
+    const order = toCustomerOrder({
+      order: {
+        ...orderRecord(),
+        orderType: "evaluation",
+        service: "diploma",
+        degreeCount: 1,
+        evaluationCents: 1995,
+        translationCents: 0,
+        includeTranslation: false,
+        billablePages: 1,
+        totalCents: 1995,
+      },
+      documents: [],
+      confirmations: [],
+      previewVersion: null,
+      paymentStatus: null,
+      deliveryStatus: null,
+      email: "ada@example.com",
+    });
+    expect(order.includeTranslation).toBe(false);
+    expect(order.translationOfferCents).toBe(995);
+    expect(order.totalCents).toBe(1995);
+    expect(order.lineItems.map((item) => item.kind)).toEqual(["evaluation"]);
   });
 
   it("returns the selected add-ons in catalog order with the stored address", () => {

@@ -290,7 +290,10 @@ function CheckoutForm({
                 value={service != null ? formatMoney(service) : "Pending"}
               />
             )}
-            <SummaryRow label="Certificate of accuracy" value="Included" />
+            <SummaryRow
+              label={evaluation ? "Evaluation report" : "Certificate of accuracy"}
+              value="Included"
+            />
             {order.addonOptions
               .filter((option) => selected.includes(option.id) && option.totalCents != null)
               .map((option) => (
@@ -311,7 +314,11 @@ function CheckoutForm({
         </div>
         <div className="mt-[18px]">
           <Checks
-            items={["Clean PDF, no watermark", "Signed certification page", "Emailed and downloadable anytime"]}
+            items={
+              evaluation
+                ? ["Evaluation report PDF", "Signed by the CredPronto Certification Team", "Emailed and downloadable anytime"]
+                : ["Clean PDF, no watermark", "Signed certification page", "Emailed and downloadable anytime"]
+            }
           />
         </div>
       </div>

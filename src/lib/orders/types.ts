@@ -83,6 +83,8 @@ export type DiplomaCredential = {
   field: string;
   dates: string;
   usEquivalency: string;
+  /** Staff-only note for the suggested equivalency. Omitted from customer output. */
+  equivalencyBasis?: string;
   documentsReviewed: string[];
 };
 
@@ -109,6 +111,8 @@ export type EvaluationResult =
       gpa: number;
       gradeScale: string;
       usEquivalency?: string;
+      /** Staff-only note for the suggested equivalency. Omitted from customer output. */
+      equivalencyBasis?: string;
       pageCount?: number;
     };
 
@@ -150,6 +154,8 @@ export type OrderRecord = {
   degreeCount: number | null;
   evaluationCents: number | null;
   translationCents: number | null;
+  /** True when the customer chose certified translation on an evaluation. */
+  includeTranslation: boolean;
   evaluationResult: EvaluationResult | null;
   addonCents: number;
   expedited: boolean;
@@ -159,6 +165,8 @@ export type OrderRecord = {
   notarizationStatus: "pending" | "done" | null;
   edgeCredentialId: string | null;
   edgeGradingScaleId: string | null;
+  /** base or fuzzy. Staff only. Omitted from customer and partner payloads. */
+  edgeMatchMethod: "base" | "fuzzy" | null;
   createdAt: string;
   updatedAt: string;
   progress: OrderProgress;

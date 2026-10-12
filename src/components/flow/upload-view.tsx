@@ -4,7 +4,13 @@ import { parseEvaluationService } from "@/lib/flow/order-choice";
 import { FlowHeader } from "./flow-header";
 import { UploadCard } from "./upload-card";
 
-export function UploadView({ initialService }: { initialService?: string | null }) {
+export function UploadView({
+  initialService,
+  sessionEmail,
+}: {
+  initialService?: string | null;
+  sessionEmail?: string | null;
+}) {
   const evaluation = parseEvaluationService(initialService);
   return (
     <div>
@@ -18,7 +24,7 @@ export function UploadView({ initialService }: { initialService?: string | null 
             ? "PDF or phone photos. You’ll preview a watermarked report, then pay. Staff sign off before it is released."
             : "PDF or phone photos. Choose a translation or an evaluation. We’ll price it before you pay."}
         </p>
-        <UploadCard initialService={initialService} />
+        <UploadCard initialService={initialService} sessionEmail={sessionEmail} />
       </main>
     </div>
   );

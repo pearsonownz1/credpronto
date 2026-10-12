@@ -54,6 +54,27 @@ export type EdgeGradingScaleInsert = {
   rows: Array<{ indigenous_grade: string; us_equivalent: string }>;
 };
 
+export type EquivalencyConfidence = "high" | "medium" | "low";
+
+export type EdgeEquivalencyRecord = {
+  id: string;
+  edgeCredentialId: string;
+  country: string;
+  credentialTitle: string;
+  edgeLevel: string | null;
+  usEquivalency: string;
+  basis: string;
+  confidence: EquivalencyConfidence;
+};
+
+export type EquivalencyRoute = "qa_review" | "qa_research";
+
+export type EquivalencyDraft = {
+  usEquivalency: string;
+  basis: string | null;
+  route: EquivalencyRoute;
+};
+
 const EXCERPT_CHARS = 400;
 
 /** Slug used as edge_credentials.country_slug and as the source-object key. */
@@ -106,6 +127,70 @@ export function normalizeCredentialTitle(title: string): string {
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
     .replace(/\s+/g, " ");
+}
+
+/** Longer phrases first so "titulo de licenciado" is not partly rewritten as "titulo de licenciatura". */
+const DEGREE_FORMS: ReadonlyArray<readonly [string, string]> = [
+  ["titulo de licenciatura", "licenciatura"],
+  ["titulo de licenciada", "licenciatura"],
+  ["titulo de licenciado", "licenciatura"],
+  ["licenciada", "licenciatura"],
+  ["licenciado", "licenciatura"],
+  ["titulo de ingenieria", "ingenieria"],
+  ["titulo de ingeniera", "ingenieria"],
+  ["titulo de ingeniero", "ingenieria"],
+  ["ingeniera", "ingenieria"],
+  ["ingeniero", "ingenieria"],
+  ["titulo de maestria", "maestria"],
+  ["titulo de maestra", "maestria"],
+  ["titulo de maestro", "maestria"],
+  ["maestra", "maestria"],
+  ["maestro", "maestria"],
+  ["titulo de doctorado", "doctorado"],
+  ["titulo de doctora", "doctorado"],
+  ["titulo de doctor", "doctorado"],
+  ["doctorado", "doctorado"],
+  ["doctora", "doctorado"],
+  ["doctor", "doctorado"],
+  ["titulo de bachillerato", "bachillerato"],
+  ["titulo de bachillera", "bachillerato"],
+  ["titulo de bachiller", "bachillerato"],
+  ["bachillerato", "bachillerato"],
+  ["bachillera", "bachillerato"],
+  ["bachiller", "bachillerato"],
+  ["titulo de tecnica", "tecnico"],
+  ["titulo de tecnico", "tecnico"],
+  ["tecnica", "tecnico"],
+  ["tecnico", "tecnico"],
+  ["bacharela", "bacharelado"],
+  ["bacharel", "bacharelado"],
+];
+
+const DEGREE_FORM_PATTERN = new RegExp(
+  `\\b(?:${[...DEGREE_FORMS]
+    .sort((left, right) => right[0].length - left[0].length)
+    .map(([form]) => form.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "\\s+"))
+    .join("|")})\\b`,
+  "g",
+);
+
+const DEGREE_BASE = new Map(DEGREE_FORMS);
+
+const FIELD_PHRASE = /\s+(?:en|em|in|de)\s+.+$/;
+
+/**
+ * One comparable title: normalized text, gendered and noun variants collapsed,
+ * then a trailing field phrase removed. "LICENCIADA en Administración de Empresas"
+ * and "Título de Licenciado" both become "licenciatura".
+ */
+export function baseCredentialTitle(title: string): string {
+  DEGREE_FORM_PATTERN.lastIndex = 0;
+  const mapped = normalizeCredentialTitle(title).replace(DEGREE_FORM_PATTERN, (match) => {
+    const key = match.replace(/\s+/g, " ");
+    return DEGREE_BASE.get(key) ?? match;
+  });
+  const dropped = mapped.replace(FIELD_PHRASE, "").trim();
+  return dropped || mapped;
 }
 
 export function mapEdgeCredentialRow(row: Record<string, unknown>): EdgeCredentialRecord | null {
@@ -212,25 +297,70 @@ export function edgeRowsFromSource(source: unknown): {
   return { credentials, gradingScales };
 }
 
+export type CredentialMatchMethod = "base" | "fuzzy";
+
+export type EdgeCredentialMatch = EdgeCredentialRecord & {
+  matchMethod: CredentialMatchMethod;
+};
+
 export function matchEdgeCredential(
   rows: readonly EdgeCredentialRecord[],
   input: { country: string; title: string },
-): EdgeCredentialRecord | null {
-  const title = normalizeCredentialTitle(input.title);
-  if (!title || input.country === PENDING_EQUIVALENCY) return null;
+): EdgeCredentialMatch | null {
+  const normalized = normalizeCredentialTitle(input.title);
+  const base = baseCredentialTitle(input.title);
+  if (!normalized || !base || input.country === PENDING_EQUIVALENCY) return null;
   const pool = rowsForCountry(rows, input.country);
-  const exact = pool.find((row) => normalizeCredentialTitle(row.title) === title);
-  if (exact) return exact;
+  if (pool.length === 0) return null;
+
+  const exact = pool.filter((row) => normalizeCredentialTitle(row.title) === normalized);
+  if (exact.length > 0) return tagged(preferCredentialId(exact), "base");
+
+  const baseHits = pool.filter((row) => baseCredentialTitle(row.title) === base);
+  if (baseHits.length > 0) {
+    const chosen = pickBaseCredential(baseHits, base);
+    return chosen ? tagged(chosen, "base") : null;
+  }
 
   const ranked = pool
-    .map((row) => ({ row, score: titleScore(title, normalizeCredentialTitle(row.title)) }))
+    .map((row) => ({
+      row,
+      score: Math.max(
+        titleScore(normalized, normalizeCredentialTitle(row.title)),
+        titleScore(base, baseCredentialTitle(row.title)),
+      ),
+    }))
     .filter((item) => item.score >= 0.8)
     .sort((a, b) => b.score - a.score || b.row.title.length - a.row.title.length);
   const best = ranked[0];
-  const next = ranked[1];
   if (!best) return null;
-  if (next && best.score - next.score < 0.05) return null;
-  return best.row;
+  const close = ranked.filter((item) => best.score - item.score < 0.05);
+  if (close.length === 1) return tagged(best.row, "fuzzy");
+  const bases = new Set(close.map((item) => baseCredentialTitle(item.row.title)));
+  if (bases.size !== 1) return null;
+  const shared = [...bases][0];
+  if (!shared) return null;
+  const chosen = pickBaseCredential(
+    close.map((item) => item.row),
+    shared,
+  );
+  return chosen ? tagged(chosen, "fuzzy") : null;
+}
+
+function tagged(row: EdgeCredentialRecord, matchMethod: CredentialMatchMethod): EdgeCredentialMatch {
+  return { ...row, matchMethod };
+}
+
+function preferCredentialId(rows: readonly EdgeCredentialRecord[]): EdgeCredentialRecord {
+  return [...rows].sort((left, right) => left.id.localeCompare(right.id))[0]!;
+}
+
+/** The generic base title wins. Several field-specific rows and no generic title stay unmatched. */
+function pickBaseCredential(rows: readonly EdgeCredentialRecord[], base: string): EdgeCredentialRecord | null {
+  const canonical = rows.filter((row) => normalizeCredentialTitle(row.title) === base);
+  if (canonical.length > 0) return preferCredentialId(canonical);
+  if (rows.length === 1) return rows[0] ?? null;
+  return null;
 }
 
 export function matchEdgeGradingScale(
@@ -294,6 +424,73 @@ export function chooseEquivalency(input: {
     if (proposed) return proposed;
   }
   return canonicalUsEquivalency(input.edgeUsEquivalency) ?? PENDING_EQUIVALENCY;
+}
+
+const CONFIDENCE_RANK: Record<EquivalencyConfidence, number> = { high: 3, medium: 2, low: 1 };
+
+export function mapEdgeEquivalencyRow(row: Record<string, unknown>): EdgeEquivalencyRecord | null {
+  const id = text(row.id);
+  const edgeCredentialId = text(row.edge_credential_id);
+  const country = text(row.country);
+  const credentialTitle = text(row.credential_title);
+  const usEquivalencyValue = text(row.us_equivalency);
+  const basis = text(row.basis);
+  const confidence = text(row.confidence);
+  if (!id || !edgeCredentialId || !country || !credentialTitle || !usEquivalencyValue || !basis) return null;
+  if (confidence !== "high" && confidence !== "medium" && confidence !== "low") return null;
+  return {
+    id,
+    edgeCredentialId,
+    country,
+    credentialTitle,
+    edgeLevel: text(row.edge_level),
+    usEquivalency: usEquivalencyValue,
+    basis,
+    confidence,
+  };
+}
+
+/** Highest confidence wins. A tie keeps the first row in that band. */
+export function pickEdgeEquivalency(rows: readonly EdgeEquivalencyRecord[]): EdgeEquivalencyRecord | null {
+  const ranked = [...rows].sort((a, b) => CONFIDENCE_RANK[b.confidence] - CONFIDENCE_RANK[a.confidence]);
+  return ranked[0] ?? null;
+}
+
+/**
+ * Prefer the matched credential. A single-credential order can fall back to the
+ * id already stored on the order when this pass does not match a title.
+ */
+export function equivalencyCredentialId(input: {
+  matchedId: string | null;
+  storedId: string | null;
+  singleCredential: boolean;
+}): string | null {
+  if (input.matchedId) return input.matchedId;
+  if (input.singleCredential && input.storedId) return input.storedId;
+  return null;
+}
+
+export function draftEquivalency(input: {
+  printed: string;
+  suggestion: EdgeEquivalencyRecord | null;
+  fallback: string;
+}): EquivalencyDraft {
+  if (!input.suggestion) {
+    return { usEquivalency: input.fallback, basis: null, route: "qa_research" };
+  }
+  const label = canonicalUsEquivalency(input.suggestion.usEquivalency) ?? input.fallback;
+  const usable = label !== PENDING_EQUIVALENCY;
+  const confident = input.suggestion.confidence === "high" || input.suggestion.confidence === "medium";
+  return {
+    usEquivalency: label,
+    basis: input.suggestion.basis.trim() || null,
+    route: usable && confident ? "qa_review" : "qa_research",
+  };
+}
+
+export function combineEquivalencyRoutes(routes: readonly EquivalencyRoute[]): EquivalencyRoute {
+  if (routes.length > 0 && routes.every((route) => route === "qa_review")) return "qa_review";
+  return "qa_research";
 }
 
 export function edgeEquivalencyPrompt(input: {
@@ -445,7 +642,34 @@ function titleScore(printed: string, reference: string): number {
   const max = Math.max(printed.length, reference.length);
   const similar = max === 0 ? 0 : 1 - levenshtein(printed, reference) / max;
   if (similar >= 0.88) score = Math.max(score, similar);
+  const grams = trigramDice(printed, reference);
+  if (grams >= 0.8) score = Math.max(score, grams);
   return score;
+}
+
+function trigramDice(left: string, right: string): number {
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+  const a = characterTrigrams(left);
+  const b = characterTrigrams(right);
+  if (a.length === 0 || b.length === 0) return 0;
+  const counts = new Map<string, number>();
+  for (const gram of a) counts.set(gram, (counts.get(gram) ?? 0) + 1);
+  let overlap = 0;
+  for (const gram of b) {
+    const remaining = counts.get(gram) ?? 0;
+    if (remaining > 0) {
+      overlap += 1;
+      counts.set(gram, remaining - 1);
+    }
+  }
+  return (2 * overlap) / (a.length + b.length);
+}
+
+function characterTrigrams(value: string): string[] {
+  const grams: string[] = [];
+  for (let index = 0; index <= value.length - 3; index += 1) grams.push(value.slice(index, index + 3));
+  return grams;
 }
 
 function jaccard(left: string[], right: string[]): number {

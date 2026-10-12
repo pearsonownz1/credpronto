@@ -1,3 +1,4 @@
+import { sourceTextForDisplay } from "@/lib/orders/source-text";
 import type {
   AdminList,
   AdminOrder,
@@ -155,7 +156,7 @@ function equivalencyCredentials(value: unknown): StaffDetail["equivalencyCredent
     const country = text(result.country);
     const usEquivalency = text(result.usEquivalency);
     if (!name || !country || !usEquivalency) return [];
-    return [{ credential: name, country, field: "Course-by-course", dates: "—", usEquivalency }];
+    return [{ credential: name, country, field: "Course-by-course", dates: "—", usEquivalency, basis: text(result.equivalencyBasis) }];
   }
   if (result.kind !== "diploma" || !Array.isArray(result.credentials)) return [];
   return result.credentials.flatMap((entry) => {
@@ -167,7 +168,7 @@ function equivalencyCredentials(value: unknown): StaffDetail["equivalencyCredent
     const dates = text(credential.dates);
     const usEquivalency = text(credential.usEquivalency);
     if (!name || !country || !field || !dates || !usEquivalency) return [];
-    return [{ credential: name, country, field, dates, usEquivalency }];
+    return [{ credential: name, country, field, dates, usEquivalency, basis: text(credential.equivalencyBasis) }];
   });
 }
 
@@ -197,7 +198,7 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
         id: text(item.id) ?? `${documentId}-${pageNumber}`,
         documentId,
         pageNumber,
-        sourceText: text(item.sourceText) ?? text(item.ocrText),
+        sourceText: sourceTextForDisplay(item.sourceText ?? item.ocrText),
         paragraphs: paragraphsOf(item.translation),
       });
     }
@@ -235,6 +236,7 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
     currency: text(row.currency) ?? "usd",
     createdAt,
     reviewReason: text(row.reviewReason),
+    service: row.service === "diploma" || row.service === "course_by_course" ? row.service : null,
     equivalencyCredentials: equivalencyCredentials(row.evaluationResult),
     edge: parseEdge(row.edge),
     filename,

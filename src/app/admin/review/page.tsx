@@ -2,7 +2,12 @@ import { Suspense } from "react";
 import { OrdersBoard } from "@/components/admin/orders-board";
 import { listAdminOrders } from "@/lib/api/server";
 import type { AdminList } from "@/lib/api/types";
-import { EQUIVALENCY_UNMAPPED, onStaffReviewQueue } from "@/lib/orders/equivalency";
+import {
+  EQUIVALENCY_QA_RESEARCH,
+  EQUIVALENCY_QA_REVIEW,
+  EQUIVALENCY_UNMAPPED,
+  onStaffReviewQueue,
+} from "@/lib/orders/equivalency";
 import { TRANSLATION_TIMEOUT_REASON } from "@/lib/orders/translation-failure";
 import { expeditedFirst } from "@/lib/orders/fulfillment";
 
@@ -21,7 +26,7 @@ export default function ReviewPage() {
 async function ReviewList() {
   const [result, flagged, stalled] = await Promise.all([
     loadStatuses([...REVIEW_STATUSES]),
-    listAdminOrders({ reviewReason: EQUIVALENCY_UNMAPPED, limit: 100 }),
+    loadReasons([EQUIVALENCY_UNMAPPED, EQUIVALENCY_QA_REVIEW, EQUIVALENCY_QA_RESEARCH]),
     listAdminOrders({ reviewReason: TRANSLATION_TIMEOUT_REASON, limit: 100 }),
   ]);
   if (!result.ok) {
@@ -63,8 +68,19 @@ async function ReviewList() {
   );
 }
 
+async function loadReasons(reasons: string[]): Promise<{ ok: true; data: AdminList } | { ok: false; error: string }> {
+  const results = await Promise.all(reasons.map((reviewReason) => listAdminOrders({ reviewReason, limit: 100 })));
+  return mergeLists(results);
+}
+
 async function loadStatuses(statuses: string[]): Promise<{ ok: true; data: AdminList } | { ok: false; error: string }> {
   const results = await Promise.all(statuses.map((status) => listAdminOrders({ status, limit: 100 })));
+  return mergeLists(results);
+}
+
+function mergeLists(
+  results: Array<{ ok: true; data: AdminList } | { ok: false; error: string }>,
+): { ok: true; data: AdminList } | { ok: false; error: string } {
   const failed = results.find((item) => !item.ok);
   if (failed && !failed.ok) return { ok: false, error: failed.error };
   const orders = results.flatMap((item) => (item.ok ? item.data.orders : []));
