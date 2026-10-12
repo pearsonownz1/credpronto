@@ -24,8 +24,15 @@ test("staff can review, edit, note, and refund an order", async ({ page }) => {
   await page.getByRole("link", { name: "CP-24802" }).click();
   await expect(page.getByTestId("resolve-review")).toBeVisible();
   await expect(page.getByText("Needs review: Low confidence on page 2")).toBeVisible();
+  await expect(page.getByTestId("qa-check")).toHaveCount(0);
 
   await page.goto("/admin/orders/CP-24790");
+  await expect(page.getByTestId("qa-status")).toHaveText("Fail");
+  await expect(page.getByTestId("qa-score")).toHaveText("72");
+  await expect(page.getByTestId("qa-attempts")).toHaveText("2");
+  await expect(page.getByTestId("page-status")).toContainText("Page 1");
+  await page.getByTestId("qa-issue-0").click();
+  await expect(page.getByTestId("page-status")).toContainText("Page 2");
   await expect(page.getByLabel("Translation page 1 segment 1")).toHaveValue("Birth certificate of María Ruiz.");
   await expect(page.getByTestId("notes-thread")).toContainText("Checked the name against the original scan.");
   await expect(page.getByTestId("activity-log")).toContainText("Payment received");

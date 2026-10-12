@@ -217,6 +217,24 @@ export function mockStaffDetail(id: string): StaffDetail | null {
         : summary.status === "paid"
           ? { status: "pending", approvedAt: null, deliveredAt: null }
           : null,
+    qa:
+      id === "CP-24790"
+        ? {
+            status: "fail",
+            score: 72,
+            attempts: 2,
+            issues: [
+              {
+                type: "date",
+                severity: "high",
+                page: 2,
+                original: "14 de marzo de 1994",
+                translated: "March 14, 1994",
+                note: "Confirm the day-first date.",
+              },
+            ],
+          }
+        : null,
   };
 }
 

@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { activityFor } from "@/lib/account/activity";
 import { formatOrderDate, formatOrderMoney } from "@/lib/account/present";
@@ -11,6 +11,8 @@ import type { StaffDetail, StaffNote } from "@/lib/api/types";
 import { languageLabel } from "@/lib/orders/languages";
 import type { PreviewOrder, PreviewPageSize } from "@/components/preview/preview-order";
 import { humanStatus } from "@/components/admin/orders-board";
+import { QaPanel } from "@/components/admin/qa-panel";
+import type { ViewerFocus } from "@/components/preview/side-by-side-viewer";
 
 const SideBySideViewer = dynamic(
   () => import("@/components/preview/side-by-side-viewer").then((mod) => mod.SideBySideViewer),
@@ -39,6 +41,8 @@ export function OrderStudio({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [confirmRefund, setConfirmRefund] = useState(false);
+  const [focusPage, setFocusPage] = useState<ViewerFocus | null>(null);
+  const focusNonce = useRef(0);
   const preview = useMemo(() => staffPreview(detail), [detail]);
   const activity = activityFor(detail, thread);
   const canEdit = EDITABLE.has(detail.status);
@@ -216,13 +220,23 @@ export function OrderStudio({
 
       {preview ? (
         <div className="h-[720px] overflow-hidden rounded-[var(--cp-radius)] border border-line bg-white">
-          <SideBySideViewer order={preview} chrome="staff" />
+          <SideBySideViewer order={preview} chrome="staff" focusPage={focusPage} />
         </div>
       ) : (
         <p className="rounded-[var(--cp-radius)] border border-line bg-white px-4 py-3 text-sm text-ink-muted">
           The files are stored for staff. This order response does not include signed PDF links, so the side-by-side viewer stays closed. Edit the translation text below.
         </p>
       )}
+
+      {detail.qa ? (
+        <QaPanel
+          qa={detail.qa}
+          onJump={(page) => {
+            focusNonce.current += 1;
+            setFocusPage({ page, nonce: focusNonce.current });
+          }}
+        />
+      ) : null}
 
       <section data-testid="page-editor" className="grid gap-3">
         <h2 className="text-lg font-semibold">Translation text</h2>

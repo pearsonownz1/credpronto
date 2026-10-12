@@ -64,6 +64,26 @@ export type StaffNote = {
   createdAt: string;
 };
 
+export type QaStatus = "pass" | "fail" | "retranslated";
+
+export type QaIssueType = "name" | "date" | "number" | "missing_text" | "layout";
+
+export type QaIssue = {
+  type: QaIssueType;
+  severity: string;
+  page: number;
+  original: string;
+  translated: string;
+  note: string;
+};
+
+export type QaReport = {
+  status: QaStatus;
+  score: number;
+  attempts: number;
+  issues: QaIssue[];
+};
+
 export type StaffDetail = {
   id: string;
   status: string;
@@ -82,6 +102,8 @@ export type StaffDetail = {
   delivery: { status: string; approvedAt: string | null; deliveredAt: string | null } | null;
   originalUrl: string | null;
   translationUrl: string | null;
+  /** Absent until the order payload includes a QA report. */
+  qa: QaReport | null;
 };
 
 export function errorMessage(body: unknown, status: number): string {

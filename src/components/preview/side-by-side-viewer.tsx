@@ -71,12 +71,17 @@ function useIsMobile() {
   return mobile;
 }
 
+export type ViewerFocus = { page: number; nonce: number };
+
 export function SideBySideViewer({
   order,
   chrome = "customer",
+  focusPage = null,
 }: {
   order: PreviewOrder;
   chrome?: "customer" | "staff";
+  /** Changes when staff asks the viewer to show a QA issue page. */
+  focusPage?: ViewerFocus | null;
 }) {
   const original = order.original.url;
   const translation = order.translation.url;
@@ -141,7 +146,7 @@ export function SideBySideViewer({
       engine={engine}
       plugins={plugins}
     >
-      <ViewerWorkspace order={order} chrome={chrome} />
+      <ViewerWorkspace order={order} chrome={chrome} focusPage={focusPage} />
     </EmbedPDF>
   );
 }
@@ -188,9 +193,11 @@ function usePageCount(documentId: string) {
 function ViewerWorkspace({
   order,
   chrome,
+  focusPage,
 }: {
   order: PreviewOrder;
   chrome: "customer" | "staff";
+  focusPage: ViewerFocus | null;
 }) {
   const isMobile = useIsMobile();
   const [role, setRole] = useState<Role>("original");
@@ -365,6 +372,12 @@ function ViewerWorkspace({
       suppressSync.current = false;
     }, 120);
   }
+
+  useEffect(() => {
+    if (!focusPage || !scrollCapability) return;
+    jumpBoth(focusPage.page, leadRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- jump when staff requests a page
+  }, [focusPage, scrollCapability]);
 
   function changeZoom(mode: "in" | "out" | "fit") {
     if (!zoomCapability) return;
