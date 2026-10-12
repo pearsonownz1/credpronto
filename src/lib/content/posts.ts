@@ -68,14 +68,7 @@ function loadLegacy(section: ContentSection, dir: string, name: string): Post {
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || frontSlug !== slug) {
     throw new Error(`${name}: slug must match the filename`);
   }
-  if (!cover.startsWith("/") || cover.includes("..")) {
-    throw new Error(`${name}: cover must be a site path`);
-  }
-
-  const coverFile = path.resolve(PUBLIC_ROOT, cover.replace(/^\/+/, ""));
-  if (!coverFile.startsWith(PUBLIC_ROOT + path.sep) || !fs.existsSync(coverFile)) {
-    throw new Error(`${name}: cover image is missing (${cover})`);
-  }
+  assertCoverFile(cover, name);
 
   const expectedCanonical = `${SITE_ORIGIN}/${section}/${slug}`;
   if (canonical !== expectedCanonical) {
@@ -109,6 +102,8 @@ function loadAuthoredGuide(section: ContentSection, dir: string, name: string): 
   const author = requiredString(data.author, "author", name);
   const date = dateString(data.last_updated, name, "last_updated");
   const body = parsed.content.trim();
+  const cover = `/guides/covers/${slug}.png`;
+  assertCoverFile(cover, name);
 
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
     throw new Error(`${name}: slug must match the filename`);
@@ -129,12 +124,22 @@ function loadAuthoredGuide(section: ContentSection, dir: string, name: string): 
     description,
     slug,
     date,
-    cover: null,
+    cover,
     canonical,
     draft: false,
     body,
     author,
   };
+}
+
+function assertCoverFile(cover: string, file: string): void {
+  if (!cover.startsWith("/") || cover.includes("..")) {
+    throw new Error(`${file}: cover must be a site path`);
+  }
+  const coverFile = path.resolve(PUBLIC_ROOT, cover.replace(/^\/+/, ""));
+  if (!coverFile.startsWith(PUBLIC_ROOT + path.sep) || !fs.existsSync(coverFile)) {
+    throw new Error(`${file}: cover image is missing (${cover})`);
+  }
 }
 
 function loadSection(section: ContentSection): Post[] {
@@ -180,21 +185,48 @@ export function formatPostDate(isoDate: string): string {
   }).format(new Date(Date.UTC(year, month - 1, day)));
 }
 
+export function guideCoverAlt(headline: string): string {
+  return `Cover for the guide "${headline}"`;
+}
+
+/** Approximate minutes to read, at 200 words per minute. */
+export function readingMinutes(body: string): number {
+  const words = body.trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.ceil(words / 200));
+}
+
 export function postMetadata(post: Post): Metadata {
+  const socialTitle = post.author ? post.documentTitle : post.title;
+  const image = post.cover ? new URL(post.cover, SITE_ORIGIN).toString() : null;
   const openGraph: NonNullable<Metadata["openGraph"]> = {
-    title: post.author ? post.documentTitle : post.title,
+    title: socialTitle,
     description: post.description,
     url: post.canonical,
     type: "article",
+    ...(image
+      ? {
+          images: [{ url: image, width: 1200, height: 630, alt: guideCoverAlt(post.headline) }],
+        }
+      : {}),
   };
-  if (post.cover) {
-    openGraph.images = [{ url: new URL(post.cover, SITE_ORIGIN).toString(), alt: post.headline }];
-  }
+  const twitter: NonNullable<Metadata["twitter"]> = image
+    ? {
+        card: "summary_large_image",
+        title: socialTitle,
+        description: post.description,
+        images: [image],
+      }
+    : {
+        card: "summary",
+        title: socialTitle,
+        description: post.description,
+      };
   return {
     title: post.documentTitle,
     description: post.description,
     alternates: { canonical: post.canonical },
     openGraph,
+    twitter,
   };
 }
 

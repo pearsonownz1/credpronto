@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { PostList } from "@/components/content/content-page";
+import { GuideCardGrid } from "@/components/content/content-page";
 import { GUIDES_CANONICAL } from "@/lib/content/faq";
 import { publishedPosts } from "@/lib/content/posts";
 
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 export default function GuidesIndexPage() {
   return (
-    <PostList
+    <GuideCardGrid
       kicker="Resources"
       title="Guides"
       lede="Certified translation guides, including what USCIS asks for, notarization, birth certificates, and how to prepare a document."
