@@ -19,12 +19,68 @@ export type PreviewWork = {
 const STEP_PERCENT: Record<Exclude<PreviewWorkStepId, "ready">, number> = {
   received: 18,
   read: 46,
-  translating: 76,
+  translating: 95,
 };
 
-/** The preview exists only when the order status says so. */
-export function previewIsReady(status: string | null | undefined): boolean {
-  return status === "preview_ready";
+/** The working bar never passes this. 100 is only for a saved preview. */
+export const PREVIEW_BAR_MAX = 95;
+
+/** First polls are quick, then the page settles at a slower interval. */
+export const PREVIEW_POLL_FAST_MS = 5_000;
+export const PREVIEW_POLL_SLOW_MS = 15_000;
+export const PREVIEW_POLL_FAST_TICKS = 6;
+
+/** A translation still on `progress.step === "translating"` after this is late. */
+export const PREVIEW_LONG_WAIT_MS = 15 * 60 * 1000;
+
+export type PreviewReadyOrder = {
+  status?: string | null;
+  /** Customer payload shape from `GET /api/orders/[token]`. */
+  progress?: { step?: string | null } | null;
+  /** Same step, when the caller already pulled it off `progress`. */
+  progressStep?: string | null;
+};
+
+function orderProgressStep(order: PreviewReadyOrder): string | null {
+  if (typeof order.progressStep === "string") return order.progressStep;
+  const step = order.progress?.step;
+  return typeof step === "string" ? step : null;
+}
+
+/**
+ * The watermarked preview exists.
+ * Keyed on `GET /api/orders/[token]`: `status === "preview_ready"` or
+ * `progress.step === "done"`. Still working while that step is `translating`
+ * or an earlier step (`uploaded`, `reading`, `language`, `counting`, `quoting`).
+ */
+export function previewIsReady(order: PreviewReadyOrder | null | undefined): boolean {
+  if (!order) return false;
+  if (order.status === "preview_ready") return true;
+  return orderProgressStep(order) === "done";
+}
+
+export function previewPollDelay(completedPolls: number): number {
+  return completedPolls < PREVIEW_POLL_FAST_TICKS ? PREVIEW_POLL_FAST_MS : PREVIEW_POLL_SLOW_MS;
+}
+
+/** Keep polling until a watermarked preview exists or the order itself has failed. */
+export function previewPollContinues(
+  order: PreviewReadyOrder | null,
+  httpStatus: number | null,
+): boolean {
+  if (httpStatus === 404 || httpStatus === 410) return false;
+  if (order && previewIsReady(order)) return false;
+  if (order && (order.status === "failed" || order.status === "cancelled")) return false;
+  return true;
+}
+
+export function translatingTooLong(input: {
+  progressStep?: string | null;
+  startedAt: number | null;
+  now: number;
+}): boolean {
+  if (input.progressStep !== "translating" || input.startedAt == null) return false;
+  return input.now - input.startedAt >= PREVIEW_LONG_WAIT_MS;
 }
 
 function currentStep(status: string, progressStep: string | null | undefined): Exclude<PreviewWorkStepId, "ready"> {
@@ -38,7 +94,6 @@ function currentStep(status: string, progressStep: string | null | undefined): E
     return "read";
   }
   if (
-    progressStep === "done" ||
     progressStep === "translating" ||
     status === "confirmed" ||
     status === "processing" ||
@@ -50,8 +105,8 @@ function currentStep(status: string, progressStep: string | null | undefined): E
 }
 
 /**
- * Progress for the preview step. The bar moves through the four steps and
- * reaches 100 only after the order status is `preview_ready`.
+ * Progress for the preview step. The bar moves through the working steps and
+ * reaches 100 only once the preview is ready (`preview_ready` or step `done`).
  */
 export function previewWork(input: {
   status: string;
@@ -62,7 +117,7 @@ export function previewWork(input: {
   const steps = PREVIEW_WORK_STEPS.map((step) =>
     step.id === "translating" ? { ...step, label: translatingLabel } : step,
   );
-  if (previewIsReady(input.status)) {
+  if (previewIsReady({ status: input.status, progressStep: input.progressStep })) {
     return {
       phase: "ready",
       percent: 100,
@@ -74,11 +129,11 @@ export function previewWork(input: {
 
   const current = currentStep(input.status, input.progressStep);
   const index = steps.findIndex((step) => step.id === current);
-  const percent = STEP_PERCENT[current];
+  const percent = Math.min(PREVIEW_BAR_MAX, STEP_PERCENT[current]);
   return {
     phase: "working",
     percent,
-    displayPercent: Math.min(99, Math.round(percent)),
+    displayPercent: Math.min(PREVIEW_BAR_MAX, Math.round(percent)),
     label: steps[index]?.label ?? translatingLabel,
     steps: steps.map((step, position) => ({
       ...step,

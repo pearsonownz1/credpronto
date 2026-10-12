@@ -47,6 +47,20 @@ describe("order live message", () => {
     expect(orderLiveMessage({ loading: true, order })).toBe("Quote ready: 2 pages, $19.90");
   });
 
+  it("announces a finished translation step as the preview", () => {
+    expect(
+      orderLiveMessage({
+        loading: false,
+        order: {
+          status: "processing",
+          billablePages: 2,
+          totalCents: 1990,
+          progress: { step: "done" },
+        },
+      }),
+    ).toBe("Your preview is ready.");
+  });
+
   it("announces translation from the order status", () => {
     expect(
       orderLiveMessage({
