@@ -2,17 +2,28 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { flowUsesMock, getFlowClient } from "@/lib/flow/client";
 import { pageLabel } from "@/lib/flow/pricing";
+import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
 import { FlowStatus } from "./status";
 import { useCustomerOrder, useStoredToken } from "./use-order";
 import { buttonClasses } from "./ui";
 
-export function ProcessingView({ token: pathToken }: { token?: string }) {
+export function ProcessingView({
+  token: pathToken,
+  onOrder,
+}: {
+  token?: string;
+  onOrder?: (order: CustomerOrder) => void;
+}) {
   const token = useStoredToken(pathToken);
   const router = useRouter();
   const { order, error, loading, reload } = useCustomerOrder(token, "while-working");
+  useEffect(() => {
+    if (order) onOrder?.(order);
+  }, [order, onOrder]);
   const mock = flowUsesMock();
   const ready = order?.status === "preview_ready";
   const waiting =

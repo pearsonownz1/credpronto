@@ -6,7 +6,13 @@ const ADS_ID = /^AW-\d+$/;
 /** How long to wait between unpaid order checks on the Stripe return URL. */
 export const CONVERSION_POLL_MS = 2000;
 
-const CONVERSION_STORAGE_PREFIX = "credpronto:google-ads-conversion:";
+const EVENT_PREFIX = {
+  conversion: "credpronto:google-ads-conversion:",
+  upload: "credpronto:google-ads-upload:",
+  preview_ready: "credpronto:google-ads-preview-ready:",
+} as const;
+
+export type AdsEventName = keyof typeof EVENT_PREFIX;
 
 export type GoogleAdsConversion = {
   send_to: string;
@@ -32,10 +38,15 @@ export function googleAdsId(): string {
   return GOOGLE_ADS_ID;
 }
 
-/** Empty when NEXT_PUBLIC_GOOGLE_ADS_CONVERSION_LABEL is unset. */
+/**
+ * Purchase conversion label. `NEXT_PUBLIC_GADS_PURCHASE_LABEL` wins.
+ * `NEXT_PUBLIC_GOOGLE_ADS_CONVERSION_LABEL` is the fallback. Empty when both are unset.
+ */
 export function googleAdsConversionLabel(): string | null {
-  const label = process.env.NEXT_PUBLIC_GOOGLE_ADS_CONVERSION_LABEL?.trim();
-  return label ? label : null;
+  const purchase = process.env.NEXT_PUBLIC_GADS_PURCHASE_LABEL?.trim();
+  if (purchase) return purchase;
+  const fallback = process.env.NEXT_PUBLIC_GOOGLE_ADS_CONVERSION_LABEL?.trim();
+  return fallback ? fallback : null;
 }
 
 export function googleAdsScriptSrc(id: string = googleAdsId()): string {
@@ -46,8 +57,49 @@ export function googleAdsInlineSnippet(id: string = googleAdsId()): string {
   return `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${id}');`;
 }
 
+export function eventStorageKey(event: AdsEventName, orderId: string): string {
+  return `${EVENT_PREFIX[event]}${orderId}`;
+}
+
 export function conversionStorageKey(orderId: string): string {
-  return `${CONVERSION_STORAGE_PREFIX}${orderId}`;
+  return eventStorageKey("conversion", orderId);
+}
+
+/** Sum of page counts when every file has one. Otherwise the total is unknown. */
+export function knownPageCount(pages: Array<number | null | undefined>): number | null {
+  if (pages.length === 0) return null;
+  let total = 0;
+  for (const count of pages) {
+    if (typeof count !== "number" || !Number.isFinite(count) || count < 0) return null;
+    total += count;
+  }
+  return total;
+}
+
+export function uploadEventParams(
+  orderId: string,
+  pageCount: number | null | undefined,
+): { order_id: string; page_count?: number } {
+  if (typeof pageCount === "number" && Number.isFinite(pageCount) && pageCount >= 0) {
+    return { order_id: orderId, page_count: pageCount };
+  }
+  return { order_id: orderId };
+}
+
+export function previewReadyEventParams(order: {
+  orderId: string;
+  status: string;
+  totalCents: number | null;
+}): { order_id: string; value?: number; currency: "USD" } | null {
+  if (order.status !== "preview_ready" || order.orderId.length === 0) return null;
+  const params: { order_id: string; value?: number; currency: "USD" } = {
+    order_id: order.orderId,
+    currency: "USD",
+  };
+  if (typeof order.totalCents === "number" && Number.isFinite(order.totalCents)) {
+    params.value = order.totalCents / 100;
+  }
+  return params;
 }
 
 export function readOrderPayment(body: unknown): OrderPaymentSnapshot | null {
@@ -104,12 +156,21 @@ type KeyValueStore = {
   setItem(key: string, value: string): void;
 };
 
-/** True the first time this order is claimed in the store. */
-export function claimConversion(orderId: string, store: KeyValueStore): boolean {
-  const key = conversionStorageKey(orderId);
+/** True the first time this order is claimed for the event. */
+export function claimOrderEvent(
+  event: AdsEventName,
+  orderId: string,
+  store: KeyValueStore,
+): boolean {
+  const key = eventStorageKey(event, orderId);
   if (store.getItem(key) === "1") return false;
   store.setItem(key, "1");
   return true;
+}
+
+/** True the first time this paid order is claimed in the store. */
+export function claimConversion(orderId: string, store: KeyValueStore): boolean {
+  return claimOrderEvent("conversion", orderId, store);
 }
 
 export type TrackConversionOptions = {
