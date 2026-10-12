@@ -169,6 +169,10 @@ export type OrderRecord = {
   edgeMatchMethod: "base" | "fuzzy" | null;
   createdAt: string;
   updatedAt: string;
+  /** Set when checkout settles. Null until then. */
+  paidAt: string | null;
+  staffAlertSentAt: string | null;
+  staffUrgentAlertSentAt: string | null;
   progress: OrderProgress;
 };
 

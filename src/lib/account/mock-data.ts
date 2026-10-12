@@ -101,6 +101,8 @@ export const MOCK_ADMIN_ORDERS: AdminOrder[] = [
     reviewReason: null,
     email: MOCK_CUSTOMER_EMAIL,
     expedited: false,
+    paidAt: null,
+    fulfillment: null,
   },
   {
     id: "CP-24802",
@@ -114,6 +116,8 @@ export const MOCK_ADMIN_ORDERS: AdminOrder[] = [
     reviewReason: "Low confidence on page 2",
     email: "ada@example.com",
     expedited: false,
+    paidAt: null,
+    fulfillment: null,
   },
   {
     id: "CP-24790",
@@ -127,6 +131,8 @@ export const MOCK_ADMIN_ORDERS: AdminOrder[] = [
     reviewReason: null,
     email: MOCK_CUSTOMER_EMAIL,
     expedited: false,
+    paidAt: "2026-10-10T12:05:00.000Z",
+    fulfillment: "awaiting_review",
   },
   {
     id: "CP-24740",
@@ -140,6 +146,8 @@ export const MOCK_ADMIN_ORDERS: AdminOrder[] = [
     reviewReason: null,
     email: "joao@example.com",
     expedited: true,
+    paidAt: null,
+    fulfillment: null,
   },
   {
     id: "CP-24611",
@@ -153,6 +161,8 @@ export const MOCK_ADMIN_ORDERS: AdminOrder[] = [
     reviewReason: null,
     email: MOCK_CUSTOMER_EMAIL,
     expedited: false,
+    paidAt: "2026-10-02T12:05:00.000Z",
+    fulfillment: "released",
   },
 ];
 

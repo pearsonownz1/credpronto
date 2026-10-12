@@ -64,6 +64,9 @@ function orderRecord(patch: Partial<OrderRecord> = {}): OrderRecord {
     edgeMatchMethod: "fuzzy",
     createdAt: "2026-10-12T00:00:00.000Z",
     updatedAt: "2026-10-12T00:00:00.000Z",
+    paidAt: "2026-10-12T00:00:00.000Z",
+    staffAlertSentAt: null,
+    staffUrgentAlertSentAt: null,
     progress: {
       step: "translating",
       pagesRead: 3,

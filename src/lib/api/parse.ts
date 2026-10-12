@@ -1,3 +1,4 @@
+import { fulfillmentState } from "@/lib/orders/release-decision";
 import { sourceTextForDisplay } from "@/lib/orders/source-text";
 import type {
   AdminList,
@@ -85,6 +86,11 @@ export function parseAdminOrder(value: unknown): AdminOrder | null {
     reviewReason: text(row.reviewReason),
     email: text(row.email),
     expedited: row.expedited === true,
+    paidAt: text(row.paidAt),
+    fulfillment:
+      row.fulfillment === "released" || row.fulfillment === "awaiting_review"
+        ? row.fulfillment
+        : fulfillmentState({ status, paidAt: text(row.paidAt) }),
   };
 }
 

@@ -258,6 +258,73 @@ ${receiptTable(rows, total)}`,
   return { subject: "Your CredPronto payment receipt", text, html };
 }
 
+export type StaffAlertEmail = {
+  urgent: boolean;
+  orderId: string;
+  sourceLanguage: string | null;
+  targetLanguage: string;
+  serviceType: string;
+  billablePages: number | null;
+  totalCents: number | null;
+  studioUrl: string;
+};
+
+/** Names and domains that must never appear in a CredPronto email. */
+export const BANNED_EMAIL_TEXT = /\bGuy\b|Pearson|\bGCS\b|gcs\.org|ImmiTranslate/i;
+
+export function staffServiceLabel(serviceType: string): string {
+  if (serviceType === "translation") return "Certified translation";
+  if (serviceType === "evaluation") return "Credential evaluation";
+  if (serviceType === "expert_letter") return "Expert letter";
+  return "Order";
+}
+
+export function renderStaffAlertEmail(input: StaffAlertEmail): RenderedEmail {
+  const language = emailLanguageLine(input.sourceLanguage, input.targetLanguage);
+  const service = staffServiceLabel(input.serviceType);
+  const pages =
+    input.billablePages == null
+      ? "Not set"
+      : input.billablePages === 1
+        ? "1 billable page"
+        : `${input.billablePages} billable pages`;
+  const total = input.totalCents == null ? "Not set" : formatEmailMoney(input.totalCents);
+  const heading = input.urgent ? "URGENT: this paid order is still waiting." : "A paid order needs review.";
+  const intro = input.urgent
+    ? "This order was paid and is still unapproved. Open it in the studio."
+    : "Payment cleared and this order needs a person to approve it.";
+  const rows = [
+    ["Order", input.orderId, true],
+    ["Language", language, false],
+    ["Service", service, false],
+    ["Pages", pages, false],
+    ["Total", total, false],
+  ] as const;
+  const html = layout({
+    preheader: input.urgent ? "Urgent: a paid order is still waiting." : "A paid order needs review.",
+    body: `${badge(input.urgent ? "URGENT" : "Paid", input.urgent ? "#FDECEC" : "#EEF3FF", input.urgent ? "#9B1C1C" : "#1F5EFF")}
+<h1 style="margin:14px 0 8px;font-size:24px;letter-spacing:-.4px;line-height:1.25">${escapeHtml(heading)}</h1>
+<p style="margin:0;color:#5B6575">${escapeHtml(intro)}</p>
+${detailTable(rows)}
+${button("Open in the studio", input.studioUrl)}`,
+  });
+  const text = [
+    heading,
+    "",
+    intro,
+    "",
+    `Order: ${input.orderId}`,
+    `Language: ${language}`,
+    `Service: ${service}`,
+    `Pages: ${pages}`,
+    `Total: ${total}`,
+    "",
+    `Open in the studio: ${input.studioUrl}`,
+  ].join("\n");
+  const subject = input.urgent ? "URGENT: CredPronto order still waiting" : "CredPronto order paid";
+  return { subject, text, html };
+}
+
 function lineLabel(description: string, pages: boolean, quantity: number, unitCents: number): string {
   if (pages && quantity > 0) {
     const noun = quantity === 1 ? "page" : "pages";

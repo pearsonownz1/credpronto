@@ -42,9 +42,25 @@ export function parseTrackingNumber(body: unknown): string {
   return tracking;
 }
 
-export function expeditedFirst<T extends { expedited: boolean; createdAt: string }>(orders: T[]): T[] {
+/**
+ * Oldest paid_at first. Unpaid orders follow. Expedited wins only when paid_at ties.
+ * A missing paid_at keeps the previous expedited-then-newest order.
+ */
+export function staffQueueOrder<T extends { expedited: boolean; createdAt: string; paidAt?: string | null }>(
+  orders: T[],
+): T[] {
   return [...orders].sort((a, b) => {
+    const aPaid = a.paidAt || null;
+    const bPaid = b.paidAt || null;
+    if (aPaid && bPaid && aPaid !== bPaid) return aPaid < bPaid ? -1 : 1;
+    if (Boolean(aPaid) !== Boolean(bPaid)) return aPaid ? -1 : 1;
     if (a.expedited !== b.expedited) return a.expedited ? -1 : 1;
     return b.createdAt.localeCompare(a.createdAt);
   });
+}
+
+export function expeditedFirst<T extends { expedited: boolean; createdAt: string; paidAt?: string | null }>(
+  orders: T[],
+): T[] {
+  return staffQueueOrder(orders);
 }

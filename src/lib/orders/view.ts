@@ -5,6 +5,7 @@ import { isPreviewDelayed } from "./translation-watch";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
 import { lineItemsForOrder, translationOfferCents } from "./evaluation-price";
 import { customerEvaluationResult, customerReviewReason } from "./equivalency";
+import { fulfillmentState, type FulfillmentState } from "./release-decision";
 import { compareCombinedPages } from "./page-order";
 import type {
   AddonId,
@@ -100,6 +101,10 @@ export type CustomerOrder = {
   progress: OrderProgress;
   /** True after 15 minutes with no preview, including a translation timeout in review. */
   delayed: boolean;
+  /** When checkout settled. Null until the order is paid. */
+  paidAt: string | null;
+  /** `released` after certification. `awaiting_review` while a paid order is still with staff. */
+  fulfillment: FulfillmentState | null;
 };
 
 export function toCustomerOrder(input: {
@@ -214,6 +219,8 @@ export function toCustomerOrder(input: {
     lineItems: lineItemsForOrder(input.order),
     evaluation: publicEvaluation(input.order.evaluationResult),
     progress: publicOrderProgress(asOrderProgress(input.order.progress) ?? UPLOADED_PROGRESS),
+    paidAt: input.order.paidAt,
+    fulfillment: fulfillmentState(input.order),
     delayed: isPreviewDelayed({
       status: input.order.status,
       previewVersion: input.previewVersion,
