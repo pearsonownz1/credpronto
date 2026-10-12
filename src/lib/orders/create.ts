@@ -24,6 +24,10 @@ export async function createOrder(request: Request): Promise<{
   orderToken: string;
   orderId: string;
   email: string;
+  documentCount: number;
+  estimatedCents: number | null;
+  sourceLanguage: string | null;
+  targetLanguage: string;
 }> {
   const form = await request.formData();
   const email = assertEmail(String(form.get("email") ?? ""));
@@ -75,7 +79,15 @@ export async function createOrder(request: Request): Promise<{
   await insertEvent(db, order.id, "upload_done", { fileCount: files.length });
   await insertEvent(db, order.id, "staff_notified", { channel: "event" });
 
-  return { orderToken, orderId: order.id, email };
+  return {
+    orderToken,
+    orderId: order.id,
+    email,
+    documentCount: prepared.length,
+    estimatedCents: order.evaluationCents,
+    sourceLanguage: order.sourceLanguage,
+    targetLanguage: order.targetLanguage,
+  };
 }
 
 export async function storeFiles(

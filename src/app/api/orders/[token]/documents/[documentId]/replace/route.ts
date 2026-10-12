@@ -13,7 +13,7 @@ export async function POST(request: Request, context: Context) {
     const order = await replaceOrderDocument(token, documentId, request);
     after(async () => {
       try {
-        await processOrder(order.orderId);
+        await processOrder(order.orderId, token);
       } catch (error) {
         console.error(error instanceof Error ? error.message : "replacement analysis failed");
       }

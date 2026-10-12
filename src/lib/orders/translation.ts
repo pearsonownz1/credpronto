@@ -323,7 +323,18 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
       });
       await resolveCorrections(db, open.map((correction) => correction.id), version);
 
-      if (clientEmail) await sendPreviewReady(clientEmail, token);
+      if (clientEmail) {
+        await sendPreviewReady(clientEmail, {
+          token,
+          orderId: order.id,
+          sourceLanguage: order.sourceLanguage,
+          targetLanguage: order.targetLanguage,
+          documentCount: documents.length,
+          pageCount: order.billablePages,
+          totalCents: order.totalCents,
+          includesTranslation: true,
+        });
+      }
       if (!(await latestReadyPreview(db, orderId))) {
         throw new HttpError("Preview did not save.", 500);
       }
