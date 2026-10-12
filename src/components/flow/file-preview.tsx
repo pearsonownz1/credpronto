@@ -84,7 +84,7 @@ export function FilePreview({
       }
       pdf = await openPdfDocument(fileUrl);
       if (cancelled) {
-        await pdf.destroy();
+        await pdf.loadingTask.destroy();
         pdf = null;
         return;
       }
@@ -106,7 +106,7 @@ export function FilePreview({
     return () => {
       cancelled = true;
       if (docRef.current === pdf) docRef.current = null;
-      void pdf?.destroy();
+      void pdf?.loadingTask.destroy();
       revokeTracked();
     };
   }, [token, fileId, kind, sourceUrl]);
