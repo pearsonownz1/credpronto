@@ -17,7 +17,6 @@ import {
   listCorrections,
   listDocuments,
   listPages,
-  listQaRuns,
   markPreview,
   nextPreviewVersion,
   resolveCorrections,
@@ -26,8 +25,13 @@ import {
   type Db,
 } from "./db";
 import { sendPreviewReady } from "./email";
-import { HttpError } from "./errors";
-import { QA_REVIEW_REASON, assessTranslation, qaStatusForRun, qaWillRetry, type QaIssue } from "./qa";
+import { AiUnavailableError, HttpError } from "./errors";
+import { QA_REVIEW_REASON, assessTranslation, qaAttemptForRound, qaStatusForRun, qaWillRetry, type QaIssue } from "./qa";
+import {
+  TRANSLATION_DEADLINE_MS,
+  decideTranslationFailure,
+  isTemporaryTranslationError,
+} from "./translation-failure";
 import { uploadObject } from "./storage";
 import type { ConfirmationRecord, CorrectionRecord, PageRecord } from "./types";
 
@@ -154,14 +158,22 @@ For a section title, use type "heading".
 ${pageText}`;
 
   const expected = input.pages.map((page) => page.number);
+  const deadline = AbortSignal.timeout(TRANSLATION_DEADLINE_MS);
   let last: ModelPage[] = [];
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const result = await generateObject(translationSchema, [
-      { role: "user", content: [{ type: "text", text: prompt }] },
-    ]);
-    last = result.pages;
-    const aligned = alignPages(expected, result.pages);
-    if (aligned) return aligned;
+    if (deadline.aborted) throw new AiUnavailableError("translation_timeout");
+    try {
+      const result = await generateObject(
+        translationSchema,
+        [{ role: "user", content: [{ type: "text", text: prompt }] }],
+        deadline,
+      );
+      last = result.pages;
+      const aligned = alignPages(expected, result.pages);
+      if (aligned) return aligned;
+    } catch (error) {
+      if (!isTemporaryTranslationError(error) || attempt === 1 || deadline.aborted) throw error;
+    }
   }
   const fallback = alignPages(expected, last);
   if (fallback) return fallback;
@@ -266,10 +278,6 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
       await uploadObject(db, "finals", translationPath, files.cleanTranslation, "application/pdf");
       await uploadObject(db, "finals", certificationPath, files.certification, "application/pdf");
       await uploadObject(db, "previews", previewPath, files.watermarkedPreview, "application/pdf");
-      await updateOrder(db, orderId, {
-        final_translation_path: translationPath,
-        certification_path: certificationPath,
-      });
 
       const assessment = assessTranslation({
         originalPages: pages.map((page) => ({ number: page.number, text: page.ocrText ?? "" })),
@@ -279,7 +287,7 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
         })),
         confirmations,
       });
-      const attempt = (await listQaRuns(db, orderId)).length + 1;
+      const attempt = qaAttemptForRound(round);
       const status = qaStatusForRun({ pass: assessment.pass, attempt });
       await insertQaRun(db, {
         orderId,
@@ -299,6 +307,10 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
       }
 
       await markPreview(db, orderId, version, "ready");
+      await updateOrder(db, orderId, {
+        final_translation_path: translationPath,
+        certification_path: certificationPath,
+      });
       await resolveCorrections(db, open.map((correction) => correction.id), version);
 
       const email = await customerEmail(db, order.customerId);
@@ -316,8 +328,16 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
       await updateOrder(db, orderId, { status: "correction_requested" });
     } catch (error) {
       await markPreview(db, orderId, version, "failed");
-      const message = error instanceof Error ? error.message : "Translation failed.";
-      await updateOrder(db, orderId, { status: "failed", review_reason: message });
+      const decision = decideTranslationFailure({
+        error,
+        readyPreview: (await latestReadyPreview(db, orderId)) != null,
+        openCorrections: open.length > 0,
+      });
+      await updateOrder(db, orderId, {
+        status: decision.status,
+        review_reason: decision.reviewReason,
+      });
+      if (!decision.notifyFailed) return;
       const { notifyOrder } = await import("./webhook-delivery");
       await notifyOrder(db, orderId, "order.failed");
       throw error;
