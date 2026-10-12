@@ -178,6 +178,69 @@ export function quotePageRows(order: CustomerOrder): QuotePageRow[] {
   }));
 }
 
+function rowsHaveBillableUnits(rows: QuotePageRow[]): boolean {
+  return rows.some((row) => typeof row.billableUnits === "number" && Number.isFinite(row.billableUnits));
+}
+
+/** Split the order's billed page count across files that have no per-page units. */
+function billedShares(
+  order: CustomerOrder,
+  byDocument: Map<string, QuotePageRow[]>,
+): Map<string, number> {
+  const targets: Array<{ id: string; weight: number }> = [];
+  let known = 0;
+  for (const document of order.documents) {
+    const fileRows = byDocument.get(document.id) ?? [];
+    if (rowsHaveBillableUnits(fileRows)) {
+      known += sumQuotedBillable(fileRows);
+      continue;
+    }
+    targets.push({
+      id: document.id,
+      weight: Math.max(document.pageCount ?? fileRows.length, 0),
+    });
+  }
+  for (const [id, fileRows] of byDocument) {
+    if (order.documents.some((document) => document.id === id)) continue;
+    if (rowsHaveBillableUnits(fileRows)) {
+      known += sumQuotedBillable(fileRows);
+      continue;
+    }
+    targets.push({ id, weight: fileRows.length });
+  }
+
+  if (order.billablePages == null) {
+    return new Map(targets.map((target) => [target.id, target.weight]));
+  }
+  return allocateShares(targets, Math.max(order.billablePages - known, 0));
+}
+
+function allocateShares(
+  targets: Array<{ id: string; weight: number }>,
+  total: number,
+): Map<string, number> {
+  const shares = new Map<string, number>();
+  if (targets.length === 0) return shares;
+  const weightSum = targets.reduce((sum, target) => sum + target.weight, 0);
+  if (weightSum <= 0) {
+    targets.forEach((target, index) => shares.set(target.id, index === 0 ? total : 0));
+    return shares;
+  }
+  const raw = targets.map((target) => (total * target.weight) / weightSum);
+  const floors = raw.map((value) => Math.floor(value));
+  let left = total - floors.reduce((sum, value) => sum + value, 0);
+  const order = raw
+    .map((value, index) => ({ index, frac: value - Math.floor(value) }))
+    .sort((a, b) => b.frac - a.frac || a.index - b.index);
+  for (const item of order) {
+    if (left <= 0) break;
+    floors[item.index] += 1;
+    left -= 1;
+  }
+  targets.forEach((target, index) => shares.set(target.id, floors[index] ?? 0));
+  return shares;
+}
+
 /** One group per uploaded file, with that file's page rows underneath. */
 export function quoteFileGroups(order: CustomerOrder): QuoteFileGroup[] {
   const rows = quotePageRows(order);
@@ -187,38 +250,35 @@ export function quoteFileGroups(order: CustomerOrder): QuoteFileGroup[] {
     list.push(row);
     byDocument.set(row.documentId, list);
   }
+  const shares = billedShares(order, byDocument);
 
   const seen = new Set<string>();
   const groups: QuoteFileGroup[] = [];
   for (const document of order.documents) {
     seen.add(document.id);
     const fileRows = byDocument.get(document.id) ?? [];
-    if (fileRows.length > 0) {
-      groups.push({
-        id: document.id,
-        filename: document.filename,
-        pages: fileRows.length,
-        billable: sumQuotedBillable(fileRows),
-        rows: fileRows,
-      });
-      continue;
-    }
+    const billable = rowsHaveBillableUnits(fileRows)
+      ? sumQuotedBillable(fileRows)
+      : (shares.get(document.id) ?? document.pageCount ?? 0);
     groups.push({
       id: document.id,
       filename: document.filename,
-      pages: document.pageCount,
-      billable: document.pageCount ?? 0,
-      rows: [],
+      pages: fileRows.length > 0 ? fileRows.length : document.pageCount,
+      billable,
+      rows: fileRows,
     });
   }
 
   for (const [id, fileRows] of byDocument) {
     if (seen.has(id) || fileRows.length === 0) continue;
+    const billable = rowsHaveBillableUnits(fileRows)
+      ? sumQuotedBillable(fileRows)
+      : (shares.get(id) ?? fileRows.length);
     groups.push({
       id,
       filename: fileRows[0]?.filename || "File",
       pages: fileRows.length,
-      billable: sumQuotedBillable(fileRows),
+      billable,
       rows: fileRows,
     });
   }

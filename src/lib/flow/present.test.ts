@@ -424,6 +424,38 @@ describe("quote counts", () => {
     expect(groups[1]?.rows).toEqual([]);
     expect(fileCountLabel(1)).toBe("1 billable page");
   });
+
+  it("uses the order's billed count when page units are missing", () => {
+    const quoted = order({
+      billablePages: 6,
+      documents: [
+        {
+          id: "cv",
+          filename: "cv.pdf",
+          pageCount: 3,
+          detectedLanguage: "es",
+          confidence: 0.9,
+          uploadPosition: 1,
+          appliedPosition: 1,
+        },
+      ],
+      pages: [1, 2, 3].map((pageNumber) => ({
+        id: `p${pageNumber}`,
+        documentId: "cv",
+        pageNumber,
+        uploadPage: pageNumber,
+        logicalPage: pageNumber,
+        orderHint: "第 1 页",
+        qualityScore: null,
+        qualityFlags: [],
+        qualityMessage: null,
+      })),
+    });
+    const [file] = quoteFileGroups(quoted);
+    expect(file?.billable).toBe(6);
+    expect(fileCountLabel(file?.billable ?? 0)).toBe("6 billable pages");
+    expect(quotePageRows(quoted).every((row) => row.filename !== "")).toBe(true);
+  });
 });
 
 describe("download phase", () => {

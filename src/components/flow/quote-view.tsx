@@ -121,7 +121,10 @@ export function QuoteBody({
   }
 
   const files = quoteFileGroups(live).map((group) => {
-    if (group.rows.length === 0) return group;
+    const unitsKnown = group.rows.some(
+      (row) => typeof row.billableUnits === "number" && Number.isFinite(row.billableUnits),
+    );
+    if (!unitsKnown) return group;
     return {
       ...group,
       billable: sumQuotedBillable(
