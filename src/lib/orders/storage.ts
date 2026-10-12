@@ -40,8 +40,14 @@ export async function signedObjectUrl(
   bucket: ObjectBucket,
   path: string,
   expiresIn: number,
+  options?: { download?: string },
 ): Promise<string> {
-  const { data, error } = await db.storage.from(bucket).createSignedUrl(path, expiresIn);
+  const download = options?.download?.trim();
+  const { data, error } = await db.storage.from(bucket).createSignedUrl(
+    path,
+    expiresIn,
+    download ? { download } : undefined,
+  );
   if (error || !data?.signedUrl) throw new Error(error?.message ?? "Could not sign URL");
   return data.signedUrl;
 }

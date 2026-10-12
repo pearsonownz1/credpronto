@@ -1,4 +1,5 @@
 import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET } from "./constants";
+import { orderDownloadFilename } from "./download-name";
 import {
   customerEmail,
   dismissCorrections,
@@ -100,19 +101,27 @@ export async function staffOrder(orderId: string) {
 
 async function signedFinals(
   db: Parameters<typeof signedObjectUrl>[0],
+  order: { id: string; targetLanguage: string },
   translationPath: string | null,
   certificationPath: string | null,
 ) {
   if (!translationPath || !certificationPath) {
     throw new HttpError("Translated files are not ready", 409);
   }
+  const names = (await listDocuments(db, order.id)).map((document) => document.filename);
+  const translationName = orderDownloadFilename("translation", names, order.targetLanguage);
+  const certificationName = orderDownloadFilename("certification", names, order.targetLanguage);
   const [translationUrl, certificationUrl] = await Promise.all([
-    signedObjectUrl(db, FINALS_BUCKET, translationPath, DOWNLOAD_URL_SECONDS),
-    signedObjectUrl(db, FINALS_BUCKET, certificationPath, DOWNLOAD_URL_SECONDS),
+    signedObjectUrl(db, FINALS_BUCKET, translationPath, DOWNLOAD_URL_SECONDS, { download: translationName }),
+    signedObjectUrl(db, FINALS_BUCKET, certificationPath, DOWNLOAD_URL_SECONDS, { download: certificationName }),
   ]);
   return {
-    translation: { url: translationUrl, expiresInSeconds: DOWNLOAD_URL_SECONDS },
-    certification: { url: certificationUrl, expiresInSeconds: DOWNLOAD_URL_SECONDS },
+    translation: { url: translationUrl, filename: translationName, expiresInSeconds: DOWNLOAD_URL_SECONDS },
+    certification: {
+      url: certificationUrl,
+      filename: certificationName,
+      expiresInSeconds: DOWNLOAD_URL_SECONDS,
+    },
   };
 }
 
@@ -128,7 +137,7 @@ export async function approveOrder(orderId: string) {
   const delivery = await getDelivery(db, order.id);
   if (!delivery) throw new HttpError("Payment has not created a delivery", 409);
   if (delivery.status === "delivered") {
-    const files = await signedFinals(db, delivery.finalPath, delivery.certificationPath);
+    const files = await signedFinals(db, order, delivery.finalPath, delivery.certificationPath);
     return { status: "delivered" as const, ...files };
   }
   if (!order.finalTranslationPath || !order.certificationPath) {
@@ -153,7 +162,7 @@ export async function approveOrder(orderId: string) {
 
   const email = await customerEmail(db, order.customerId);
   const sent = email ? await sendDeliveryReady(email) : { sent: false, skipped: true };
-  const files = await signedFinals(db, order.finalTranslationPath, order.certificationPath);
+  const files = await signedFinals(db, order, order.finalTranslationPath, order.certificationPath);
   if (!sent.sent && !sent.skipped) {
     return { status: "approved" as const, email: "failed" as const, ...files };
   }

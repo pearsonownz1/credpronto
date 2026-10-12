@@ -27,6 +27,7 @@ function signed(documents: OriginalSource[]): SignedOriginal[] {
     documentId: target.documentId,
     documentIndex: target.documentIndex,
     documentName: target.documentName,
+    filename: target.filename,
     url: `https://files.example/${target.documentId}`,
   }));
 }
@@ -39,6 +40,7 @@ describe("original download targets", () => {
         documentId: "doc-diploma",
         documentIndex: 0,
         documentName: "diploma.pdf",
+        filename: "diploma.pdf",
         bucket: ORIGINALS_BUCKET,
         path: "order-1/doc-diploma/diploma.pdf",
       },
@@ -46,6 +48,7 @@ describe("original download targets", () => {
         documentId: "doc-transcript",
         documentIndex: 1,
         documentName: "transcript.pdf",
+        filename: "transcript.pdf",
         bucket: ORIGINALS_BUCKET,
         path: "order-1/doc-transcript/transcript.pdf",
       },
@@ -62,6 +65,7 @@ describe("original download targets", () => {
       documentId: "doc-transcript",
       documentIndex: 1,
       documentName: "transcript.pdf",
+      filename: "transcript.pdf",
     });
   });
 
@@ -91,6 +95,7 @@ describe("original download response", () => {
     const body = originalDownloadResponse(signed([diploma]), DOWNLOAD_URL_SECONDS, null);
     expect(body).toEqual({
       url: "https://files.example/doc-diploma",
+      filename: "diploma.pdf",
       expiresInSeconds: 300,
       documentId: "doc-diploma",
       documentIndex: 0,
@@ -105,6 +110,7 @@ describe("original download response", () => {
     const body = originalDownloadResponse([second!], DOWNLOAD_URL_SECONDS, "doc-transcript");
     expect(body).toEqual({
       url: "https://files.example/doc-transcript",
+      filename: "transcript.pdf",
       expiresInSeconds: 300,
       documentId: "doc-transcript",
       documentIndex: 1,
@@ -126,12 +132,14 @@ describe("original download response", () => {
           documentId: "doc-diploma",
           documentIndex: 0,
           documentName: "diploma.pdf",
+          filename: "diploma.pdf",
           url: "https://files.example/doc-diploma",
         },
         {
           documentId: "doc-transcript",
           documentIndex: 1,
           documentName: "transcript.pdf",
+          filename: "transcript.pdf",
           url: "https://files.example/doc-transcript",
         },
       ],
