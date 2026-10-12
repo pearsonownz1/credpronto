@@ -47,6 +47,21 @@ describe("order live message", () => {
     expect(orderLiveMessage({ loading: true, order })).toBe("Quote ready: 2 pages, $19.90");
   });
 
+  it("announces translation from the order status", () => {
+    expect(
+      orderLiveMessage({
+        loading: false,
+        order: { status: "processing", billablePages: 2, totalCents: 1990 },
+      }),
+    ).toBe("Translating your document.");
+    expect(
+      orderLiveMessage({
+        loading: false,
+        order: { status: "preview_ready", billablePages: 2, totalCents: 1990 },
+      }),
+    ).toBe("Your preview is ready.");
+  });
+
   it("says a delayed translation is taking longer than usual", () => {
     expect(
       orderLiveMessage({

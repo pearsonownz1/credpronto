@@ -642,7 +642,7 @@ describe("order hub", () => {
     expect(orderHubStep(null, "draft")).toBe("quote");
     expect(orderHubStep(null, "processing")).toBe("processing");
     expect(orderHubStep(null, "correction_requested")).toBe("processing");
-    expect(orderHubStep(null, "preview_ready")).toBe("preview");
+    expect(orderHubStep(null, "preview_ready")).toBe("processing");
     expect(orderHubStep(null, "paid")).toBe("download");
     expect(orderHubStep(null, "approved")).toBe("download");
     expect(orderHubStep(undefined, undefined)).toBe("processing");

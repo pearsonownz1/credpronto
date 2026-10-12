@@ -85,17 +85,33 @@ export async function walkCustomerFlow(
 
   await shown(page, "start-preview").click();
   await expect(page).toHaveURL(/\/processing$/);
+  await expect(page.getByRole("heading", { name: "Translating your document" }).filter({ visible: true })).toBeVisible();
   await expect(shown(page, "progress-bar")).toBeVisible();
-  await expect(page.getByText("Files received").filter({ visible: true })).toBeVisible();
-  await expect(page.getByText("278 words").filter({ visible: true })).toBeVisible();
-  await expect(page.getByText("~4 min left").filter({ visible: true })).toBeVisible();
+  await expect(shown(page, "preview-step-translating")).toHaveAttribute("data-state", "current");
+  await expect(shown(page, "preview-step-ready")).toHaveAttribute("data-state", "pending");
+  const progress = Number(await shown(page, "progress-bar").getAttribute("aria-valuenow"));
+  expect(progress).toBeGreaterThan(0);
+  expect(progress).toBeLessThan(100);
+  await expect(shown(page, "view-preview")).toHaveCount(0);
   await expect(shown(page, "add-documents")).toBeVisible();
   await expect(shown(page, "flow-stepper").locator("[data-state=current]")).toContainText(
     "Preview",
   );
   await check();
 
-  await shown(page, "preview-ready").click();
+  await page.evaluate(() => {
+    const key = "credpronto-mock-order";
+    const order = JSON.parse(sessionStorage.getItem(key) || "{}");
+    order.status = "preview_ready";
+    sessionStorage.setItem(key, JSON.stringify(order));
+  });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Your preview is ready" }).filter({ visible: true })).toBeVisible();
+  await expect(shown(page, "preview-steps")).toHaveCount(0);
+  await expect(shown(page, "view-preview")).toBeVisible();
+  await check();
+
+  await shown(page, "view-preview").click();
   await expect(page).toHaveURL(/\/checkout$/);
   await expect(shown(page, "email")).toHaveValue("maria.ruiz@email.com");
   await expect(shown(page, "order-total")).toContainText("$19.90");
