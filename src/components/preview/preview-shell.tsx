@@ -9,6 +9,8 @@ export function PreviewShell({
   rail,
   mobileBar,
   status,
+  notice,
+  noticeTestId,
 }: {
   order?: PreviewOrder;
   toolbar?: ReactNode;
@@ -16,6 +18,8 @@ export function PreviewShell({
   rail?: ReactNode;
   mobileBar?: ReactNode;
   status?: string;
+  notice?: string;
+  noticeTestId?: string;
 }) {
   return (
     <div
@@ -55,6 +59,14 @@ export function PreviewShell({
           <span className="text-sm text-ink-muted">Preview</span>
         )}
       </header>
+      {notice ? (
+        <p
+          data-testid={noticeTestId}
+          className="shrink-0 border-b border-line bg-[var(--cp-blue-l)] px-4 py-2 text-center text-[13px] text-ink"
+        >
+          {notice}
+        </p>
+      ) : null}
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col bg-bg-muted">
           <div className="relative z-20 flex min-h-[52px] shrink-0 items-center border-b border-line bg-bg">
