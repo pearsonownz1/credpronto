@@ -177,6 +177,7 @@ export async function createV1Order(request: Request, key: ApiKeyRow): Promise<C
     userId: key.userId,
     serviceType: service,
     externalRef,
+    apiKeyId: key.id,
     sourceLanguage: quoteInput.sourceLanguage,
     targetLanguage,
     languageConfirmed: quoteInput.languageConfirmed,
