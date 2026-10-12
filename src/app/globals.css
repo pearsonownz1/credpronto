@@ -1,0 +1,21 @@
+@import "tailwindcss";
+@import "../styles/tokens.css";
+
+@theme inline {
+  --color-bg: var(--cp-bg);
+  --color-bg-muted: var(--cp-bg-muted);
+  --color-ink: var(--cp-ink);
+  --color-ink-muted: var(--cp-ink-muted);
+  --color-primary: var(--cp-primary);
+  --color-primary-hover: var(--cp-primary-hover);
+  --color-primary-ink: var(--cp-primary-ink);
+  --color-line: var(--cp-line);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --radius-cp: var(--cp-radius);
+}
+
+body {
+  background: var(--cp-bg);
+  color: var(--cp-ink);
+  font-family: var(--font-sans);
+}
