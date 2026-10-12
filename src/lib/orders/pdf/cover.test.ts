@@ -16,7 +16,8 @@ describe("certification cover", () => {
   it("uses the approving staff member, then the configured translator", () => {
     expect(coverTranslatorName("Ada Lovelace", "Configured")).toBe("Ada Lovelace");
     expect(coverTranslatorName("  ", "Configured")).toBe("Configured");
-    expect(coverTranslatorName(null, "  ")).toBe("CredPronto");
+    expect(coverTranslatorName(null, "  ")).toBe("CredPronto Certification Team");
+    expect(coverTranslatorName("guyp+cpadmin@mail.grokbot.com", "")).toBe("CredPronto Certification Team");
   });
 
   it("keeps a signature only for the configured translator", () => {
