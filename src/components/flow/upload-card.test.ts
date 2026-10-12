@@ -21,10 +21,14 @@ function html(sessionEmail?: string | null) {
 }
 
 describe("quote email field", () => {
-  it("asks an anonymous visitor for an email", () => {
+  it("asks an anonymous visitor for an email the form validates itself", () => {
     const markup = html(null);
+    expect(markup).toContain("noValidate");
     expect(markup).toContain("Email for your preview link");
     expect(markup).toContain('data-testid="email"');
+    expect(markup).toContain('data-testid="get-quote"');
+    expect(markup).not.toMatch(/data-testid="email"[^>]*required/);
+    expect(markup.match(/type="email"/g)).toHaveLength(1);
     expect(markup).not.toContain("Preview link goes to");
   });
 

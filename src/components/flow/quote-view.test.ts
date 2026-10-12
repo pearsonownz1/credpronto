@@ -91,6 +91,8 @@ describe("quote step actions", () => {
     expect(html).toContain('data-testid="page-viewer"');
     expect(html).toContain("md:w-[420px]");
     expect(html).toContain("Page 1");
+    expect(html).not.toContain("#fbf8ef");
+    expect(html).not.toContain("#e9e4d6");
   });
 
   it("shows Continue for a quoted order with a page line and a total", () => {

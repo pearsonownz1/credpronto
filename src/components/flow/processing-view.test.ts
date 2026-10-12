@@ -56,7 +56,8 @@ describe("processing view", () => {
     expect(markup).not.toContain("Your preview is ready");
     expect(markup).not.toContain('data-testid="view-preview"');
     const value = Number(markup.match(/aria-valuenow="(\d+)"/)?.[1]);
-    expect(value).toBe(75);
+    expect(value).toBe(92);
+    expect(value).not.toBe(75);
   });
 
   it("shows the delayed line from the order flag", () => {
@@ -80,7 +81,8 @@ describe("processing view", () => {
     expect(markup).toContain("Translating your document");
     expect(markup).not.toContain("Your preview is ready");
     expect(markup).not.toContain('data-testid="view-preview"');
-    expect(markup).toContain('aria-valuenow="75"');
+    expect(markup).toContain('aria-valuenow="92"');
+    expect(markup).not.toContain('aria-valuenow="75"');
     state.status = "processing";
     state.progressStep = "translating";
   });

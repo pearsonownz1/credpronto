@@ -1,7 +1,7 @@
 import { LOW_LANGUAGE_CONFIDENCE, UNIT_PRICE_CENTS } from "./constants";
 import { totalCents } from "./billing";
 import { IMAGE_QUALITY_REASON } from "./image-quality";
-import { isSupportedSourceLanguage } from "./languages";
+import { isSupportedSourceLanguage, languageLabel } from "./languages";
 
 export type QuoteDecision = {
   status: "quoted" | "needs_review";
@@ -50,7 +50,7 @@ export function decideQuote(input: {
     );
   } else if (!isSupportedSourceLanguage(input.language)) {
     reasons.push(
-      `Detected language "${input.language}" is not supported for automatic translation. A reviewer will take a look.`,
+      `Detected language "${languageLabel(input.language)}" is not supported for automatic translation. A reviewer will take a look.`,
     );
   } else if (input.confidence == null || input.confidence < LOW_LANGUAGE_CONFIDENCE) {
     const shown =

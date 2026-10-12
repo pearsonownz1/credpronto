@@ -26,6 +26,7 @@ import { pageStatusTag, sumQuotedBillable } from "@/lib/orders/skip-pages";
 import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FilePreview, inlineSourceUrl, type ViewerPage } from "./file-preview";
+import { PageDetails, PageThumb } from "./page-thumbs";
 import { FlowHeader } from "./flow-header";
 import { useReadingHandoff } from "./reading-handoff";
 import { ReadingFiles } from "./reading-files";
@@ -349,6 +350,12 @@ export function QuoteBody({
                   )}
                 />
                 {open ? (
+                  <PageDetails
+                    token={token}
+                    fileId={file.id}
+                    filename={file.filename}
+                    sourceUrl={inlineSourceUrl(live.documents.find((document) => document.id === file.id))}
+                  >
                   <div className="space-y-2 px-4 pb-3.5">
                     {file.rows.map((row, pageNumber) => {
                       const skipped = rowSkipped(row);
@@ -358,7 +365,7 @@ export function QuoteBody({
                           data-testid="page-row"
                           className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]"
                         >
-                          <FileThumb filename={file.filename} small />
+                          <PageThumb pageNumber={pageNumber} />
                           <span>Page {pageNumber + 1}</span>
                           <PageStatus
                             skip={skipped}
@@ -377,6 +384,7 @@ export function QuoteBody({
                       );
                     })}
                   </div>
+                  </PageDetails>
                 ) : null}
               </div>
             );
@@ -523,16 +531,6 @@ function InfoIcon() {
       <path d="M7 6.2V10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
       <circle cx="7" cy="4.1" r="0.7" fill="currentColor" />
     </svg>
-  );
-}
-
-function FileThumb({ filename, small = false }: { filename: string; small?: boolean }) {
-  const pdf = filename.toLowerCase().endsWith(".pdf");
-  return (
-    <div
-      className={`shrink-0 border border-line ${small ? "h-9 w-7" : "h-[66px] w-[52px]"} ${pdf ? "bg-[#fbf8ef]" : "bg-[#e9e4d6]"}`}
-      aria-hidden
-    />
   );
 }
 
