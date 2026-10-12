@@ -1,4 +1,5 @@
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
+import { appendOrderChoice, type UploadChoice } from "./order-choice";
 import { sampleCustomerOrder } from "./sample-order";
 import {
   EMAIL_KEY,
@@ -40,7 +41,7 @@ export type CheckoutResult =
   | { mode: "paid_test"; paymentStatus: "paid_test"; orderStatus: "paid" };
 
 export type FlowClient = {
-  upload(input: { email: string; files: File[] }): Promise<{
+  upload(input: { email: string; files: File[]; choice?: UploadChoice }): Promise<{
     orderToken: string;
     orderId: string;
   }>;
@@ -89,9 +90,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 const liveClient: FlowClient = {
-  upload({ email, files }) {
+  upload({ email, files, choice = { orderType: "translation" } }) {
     const form = new FormData();
     form.set("email", email);
+    appendOrderChoice(form, choice);
     for (const file of files) form.append("files", file);
     return request("/api/orders", { method: "POST", body: form });
   },
