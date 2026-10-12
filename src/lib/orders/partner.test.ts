@@ -130,6 +130,7 @@ describe("partner orders", () => {
       externalRef: "crm-1842",
       billablePages: 3,
       unitPriceCents: 995,
+      expeditedUnit: "order",
       totalCents: 2985,
       currency: "usd",
       payment: { status: "paid" },
@@ -235,6 +236,9 @@ describe("partner orders", () => {
     const course = new FormData();
     course.append("addons", "expedited");
     expect(readPartnerAddonBody(course, "evaluation")?.addons).toEqual(["expedited"]);
+    expect(toPartnerOrder({ order: order({ serviceType: "evaluation" }), paymentStatus: null, detail: false, qa: null }).expeditedUnit).toBe(
+      "order",
+    );
     expect(() => readPartnerAddonBody(course, "translation")).toThrow("Expedited is no longer offered");
     expect(readPartnerAddonBody(new FormData(), "translation")).toBeNull();
   });
