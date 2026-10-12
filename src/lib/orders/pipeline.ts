@@ -46,9 +46,11 @@ export async function processOrder(orderId: string, token: string | null = null)
   if (!order) return;
 
   if (order.status === "draft" || (order.status === "failed" && !order.languageConfirmed)) {
-    await analyzeOrder(db, order.id);
+    await analyzeOrder(db, order.id, token);
     return;
   }
+
+  if (order.service) return;
 
   if (
     order.status === "confirmed" ||

@@ -29,6 +29,7 @@ import {
 } from "./page-order";
 import { buildCombinedOriginal, type SourceFile } from "./pdf/combine";
 import { pdfPageTexts } from "./pdf-text";
+import { completeEvaluation } from "./evaluation";
 import { decideQuote, etaFromNow } from "./quote";
 import { notifyOrder } from "./webhook-delivery";
 import { downloadObject, uploadObject } from "./storage";
@@ -287,7 +288,7 @@ type Slot = {
   uploadPosition: number;
 };
 
-export async function analyzeOrder(db: Db, orderId: string): Promise<void> {
+export async function analyzeOrder(db: Db, orderId: string, token: string | null = null): Promise<void> {
   const order = await getOrderById(db, orderId);
   if (!order || order.languageConfirmed) return;
   if (order.status !== "draft" && order.status !== "failed") return;
@@ -355,6 +356,7 @@ export async function analyzeOrder(db: Db, orderId: string): Promise<void> {
     let missedDetection = false;
     const pageBillable: number[] = [];
     const pageNeedsReview: boolean[] = [];
+    const transcripts: string[] = [];
     let imageQuality = false;
 
     for (const slot of ordered) {
@@ -365,6 +367,7 @@ export async function analyzeOrder(db: Db, orderId: string): Promise<void> {
         .map((page) => slot.reads[page.uploadPage - 1]?.text ?? "")
         .filter(Boolean)
         .join("\n");
+      transcripts.push(joined);
       const reading = await readFields(joined);
       if (!reading) missedDetection = true;
 
@@ -448,6 +451,24 @@ export async function analyzeOrder(db: Db, orderId: string): Promise<void> {
     });
 
     await replaceExtractedConfirmations(db, orderId, extractedFields);
+    if (order.service && order.degreeCount != null) {
+      await completeEvaluation(db, order, {
+        sourceLanguage: distinct.length === 1 ? distinct[0] : null,
+        confidence: confidences.length > 0 ? Math.min(...confidences) : null,
+        billablePages: pageBillable.reduce((sum, pages) => sum + pages, 0),
+        imageQuality,
+        detectionAvailable: !missedDetection && distinct.length > 0,
+        languagesDisagree: distinct.length > 1,
+        pageText: transcripts.join("\n"),
+        filenames: ordered.map((slot) => slot.document.filename),
+        combinedPath,
+        pageOrderBasis: applied.basis,
+        pageOrder: applied,
+        token,
+      });
+      return;
+    }
+
     await updateOrder(db, orderId, {
       status: decision.status,
       source_language: distinct.length === 1 ? distinct[0] : null,

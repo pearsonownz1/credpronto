@@ -189,6 +189,7 @@ describe("preview mapping", () => {
         ],
         version: 1,
       },
+      report: null,
       corrections: [
         {
           id: "c1",

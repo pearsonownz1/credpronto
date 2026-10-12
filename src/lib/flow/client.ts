@@ -250,6 +250,7 @@ const mockClient: FlowClient = {
         })),
         version: 1,
       },
+      report: null,
       corrections: [],
     };
   },

@@ -1,4 +1,4 @@
-export type DownloadKind = "translation" | "certification" | "original";
+export type DownloadKind = "translation" | "certification" | "evaluation" | "original";
 
 const FALLBACK_STEM = "document";
 const MAX_FILENAME = 120;
@@ -21,7 +21,9 @@ export function downloadFilename(
   const suffix =
     kind === "translation"
       ? `-${targetLanguageCode(targetLanguage)}-certified.pdf`
-      : "-certificate.pdf";
+      : kind === "evaluation"
+        ? "-evaluation.pdf"
+        : "-certificate.pdf";
   return `${clipStem(base, MAX_FILENAME - suffix.length)}${suffix}`;
 }
 
@@ -30,7 +32,7 @@ export function downloadFilename(
  * Each source document contributes its own stem, in upload order.
  */
 export function orderDownloadFilename(
-  kind: "translation" | "certification",
+  kind: "translation" | "certification" | "evaluation",
   documentNames: readonly string[],
   targetLanguage = "en",
 ): string {

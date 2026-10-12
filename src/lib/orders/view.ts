@@ -168,8 +168,15 @@ export function toCustomerOrder(input: {
     evaluationCents: input.order.evaluationCents,
     translationCents: input.order.translationCents,
     lineItems: lineItemsForOrder(input.order),
-    evaluation: input.order.evaluationResult,
+    evaluation: publicEvaluation(input.order.evaluationResult),
   };
+}
+
+function publicEvaluation(result: EvaluationResult | null): EvaluationResult | null {
+  if (!result) return null;
+  const copy = { ...result };
+  delete copy.pageCount;
+  return copy;
 }
 
 export type PreviewPage = {
@@ -188,6 +195,7 @@ export type PreviewResponse = {
   billablePages: number | null;
   original: { url: string; pageCount: number; pages: PreviewPage[] };
   translation: { url: string; pageCount: number; pages: PreviewPage[]; version: number };
+  report: { url: string; pageCount: number } | null;
   corrections: Array<{
     id: string;
     documentId: string | null;
