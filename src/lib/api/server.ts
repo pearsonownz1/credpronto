@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { connection } from "next/server";
 import { parseAdminList, parseCustomerOrders, parseNotes, parseStaffDetail } from "@/lib/api/parse";
 import { errorMessage, type AdminList, type ApiResult, type CustomerOrder, type StaffDetail, type StaffNote } from "@/lib/api/types";
 import { mockAdminList, mockNotes, mockOrdersFor, mockStaffDetail } from "@/lib/account/mock-data";
@@ -37,9 +38,10 @@ async function serverResult(path: string, init?: RequestInit): Promise<ApiResult
 
 export async function listMyOrders(): Promise<ApiResult<{ orders: CustomerOrder[] }>> {
   if (isMockMode()) {
+    await connection();
     const account = await getAccount();
     if (!account) return { ok: false, status: 401, error: "Sign in required" };
-    return { ok: true, status: 200, data: { orders: mockOrdersFor(account.email) } };
+    return { ok: true, status: 200, data: { orders: mockOrdersFor(account.email, Date.now()) } };
   }
   const result = await serverResult("/api/me/orders");
   if (!result.ok) return result;

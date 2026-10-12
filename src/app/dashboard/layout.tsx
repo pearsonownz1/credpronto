@@ -1,9 +1,12 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { redirect } from "next/navigation";
 import { AccountShell } from "@/components/account/account-shell";
 import { safeNextPath } from "@/lib/auth/redirect";
 import { currentPath, getAccount } from "@/lib/account/session";
 import { listMyOrders } from "@/lib/api/server";
+
+export const instant = false;
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -14,6 +17,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 }
 
 async function DashboardGate({ children }: { children: React.ReactNode }) {
+  await connection();
   const account = await getAccount();
   const next = safeNextPath(await currentPath(), "/dashboard");
   if (!account) redirect(`/sign-in?next=${encodeURIComponent(next)}`);

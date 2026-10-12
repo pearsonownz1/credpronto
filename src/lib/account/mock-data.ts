@@ -5,7 +5,7 @@ export const MOCK_ADMIN_EMAIL = "admin@credpronto.com";
 
 const NOW_OFFSET = 6 * 60_000;
 
-export function mockOrdersFor(email: string, now = Date.now()): CustomerOrder[] {
+export function mockOrdersFor(email: string, now: number): CustomerOrder[] {
   if (email.trim().toLowerCase() !== MOCK_CUSTOMER_EMAIL) return [];
   return [
     customer("CP-24817", "preview_ready", {
