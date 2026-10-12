@@ -129,6 +129,7 @@ function orderRecord(result: EvaluationResult): OrderRecord {
     notarizationStatus: null,
     edgeCredentialId: "cred-1",
     edgeGradingScaleId: null,
+    edgeMatchMethod: "base",
     createdAt: "2026-10-12T00:00:00.000Z",
     updatedAt: "2026-10-12T00:00:00.000Z",
     progress: { step: "done", pagesRead: 1, pagesTotal: 1 },
@@ -189,6 +190,8 @@ describe("customer surfaces hide the reference", () => {
     }
     expect(order.reviewReason).toBeNull();
     expect(customerJson).not.toContain("edge_credential");
+    expect(customerJson).not.toContain("edgeMatchMethod");
+    expect(customerJson).not.toContain("edge_match");
     expect(CONFIDENCE_LABEL.test(order.reviewReason ?? "")).toBe(false);
 
     const partner = toPartnerOrder({
@@ -197,7 +200,10 @@ describe("customer surfaces hide the reference", () => {
       detail: true,
       qa: null,
     });
-    assertCustomerCopy("partner order", JSON.stringify(partner));
+    const partnerJson = JSON.stringify(partner);
+    assertCustomerCopy("partner order", partnerJson);
+    expect(partnerJson).not.toContain("edgeMatchMethod");
+    expect(partnerJson).not.toContain("edge_match");
     expect(partner.reviewReason).toBe("equivalency_qa_review");
 
     const received = renderOrderReceivedEmail({

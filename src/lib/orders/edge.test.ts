@@ -118,15 +118,24 @@ describe("EDGE reference matching", () => {
       credential({ id: "exact", title: "Example Diploma" }),
       credential({ id: "other", title: "Example Certificate", countrySlug: "france", country: "France" }),
     ];
-    expect(matchEdgeCredential(rows, { country: "México", title: " example   diploma " })?.id).toBe("exact");
+    expect(matchEdgeCredential(rows, { country: "México", title: " example   diploma " })).toMatchObject({
+      id: "exact",
+      matchMethod: "base",
+    });
     expect(matchEdgeCredential(rows, { country: "France", title: "Example Diploma" })).toBeNull();
     expect(matchEdgeCredential(rows, { country: PENDING_EQUIVALENCY, title: "Example Diploma" })).toBeNull();
     expect(
       matchEdgeCredential(
         [credential({ id: "broad", title: "Example Diploma" })],
         { country: "Mexico", title: "Example Diploma in Testing" },
-      )?.id,
-    ).toBe("broad");
+      ),
+    ).toMatchObject({ id: "broad", matchMethod: "base" });
+    expect(
+      matchEdgeCredential(
+        [credential({ id: "broad", title: "Example Diploma" })],
+        { country: "Mexico", title: "Exmple Diploma" },
+      ),
+    ).toMatchObject({ id: "broad", matchMethod: "fuzzy" });
     expect(
       matchEdgeCredential(
         [
@@ -136,6 +145,77 @@ describe("EDGE reference matching", () => {
         { country: "Mexico", title: "Example Diploma" },
       ),
     ).toBeNull();
+  });
+
+  it("maps gendered titles onto the base credential for that country", () => {
+    const mexico = [
+      credential({ id: "lic", title: "Licenciatura" }),
+      credential({ id: "titulo", title: "Título de Licenciado" }),
+      credential({ id: "ing", title: "Ingeniería" }),
+      credential({ id: "mae", title: "Maestría" }),
+      credential({ id: "doc", title: "Doctorado" }),
+      credential({ id: "bach", title: "Bachillerato" }),
+      credential({ id: "tec", title: "Técnico" }),
+      credential({ id: "derecho", title: "Licenciatura en Derecho" }),
+      credential({ id: "medicina", title: "Licenciatura en Medicina" }),
+    ];
+    const brazil = [
+      credential({ id: "bacharel", title: "Bacharelado", countrySlug: "brazil", country: "Brazil" }),
+      credential({ id: "lic-br", title: "Licenciatura", countrySlug: "brazil", country: "Brazil" }),
+    ];
+    const rows = [...mexico, ...brazil];
+
+    expect(
+      matchEdgeCredential(rows, { country: "Mexico", title: "LICENCIADA en Administración de Empresas" }),
+    ).toMatchObject({ id: "lic", matchMethod: "base" });
+    expect(matchEdgeCredential(rows, { country: "México", title: "Título de Licenciado" })).toMatchObject({
+      id: "titulo",
+      matchMethod: "base",
+    });
+    expect(matchEdgeCredential(rows, { country: "Mexico", title: "Ingeniera en Sistemas Computacionales" })).toMatchObject({
+      id: "ing",
+      matchMethod: "base",
+    });
+    expect(matchEdgeCredential(rows, { country: "Mexico", title: "Maestra en Educación" })).toMatchObject({
+      id: "mae",
+      matchMethod: "base",
+    });
+    expect(matchEdgeCredential(rows, { country: "Mexico", title: "Doctora en Ciencias" })).toMatchObject({
+      id: "doc",
+      matchMethod: "base",
+    });
+    expect(matchEdgeCredential(rows, { country: "Mexico", title: "Bachiller en Ciencias" })).toMatchObject({
+      id: "bach",
+      matchMethod: "base",
+    });
+    expect(matchEdgeCredential(rows, { country: "Mexico", title: "Técnica en Enfermería" })).toMatchObject({
+      id: "tec",
+      matchMethod: "base",
+    });
+    expect(matchEdgeCredential(rows, { country: "Brazil", title: "Bacharel em Engenharia" })).toMatchObject({
+      id: "bacharel",
+      matchMethod: "base",
+    });
+    expect(matchEdgeCredential(rows, { country: "Brazil", title: "Licenciado em Direito" })).toMatchObject({
+      id: "lic-br",
+      matchMethod: "base",
+    });
+    expect(matchEdgeCredential(rows, { country: "France", title: "LICENCIADA en Administración de Empresas" })).toBeNull();
+    expect(
+      matchEdgeCredential(
+        [
+          credential({ id: "derecho", title: "Licenciatura en Derecho" }),
+          credential({ id: "medicina", title: "Licenciatura en Medicina" }),
+        ],
+        { country: "Mexico", title: "Licenciada en Administración de Empresas" },
+      ),
+    ).toBeNull();
+    expect(
+      matchEdgeCredential(
+        [credential({ id: "lic", title: "Licenciatura" }), credential({ id: "titulo", title: "Título de Licenciado" })],
+        { country: "Mexico", title: "Licenciatur" },
+      ),
+    ).toMatchObject({ id: "lic", matchMethod: "fuzzy" });
   });
 
   it("picks the grading scale whose rows match the printed grades", () => {

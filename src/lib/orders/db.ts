@@ -95,6 +95,8 @@ function mapOrder(row: Row): OrderRecord {
       row.notarization_status === "pending" || row.notarization_status === "done" ? row.notarization_status : null,
     edgeCredentialId: str(row.edge_credential_id),
     edgeGradingScaleId: str(row.edge_grading_scale_id),
+    edgeMatchMethod:
+      row.edge_match_method === "base" || row.edge_match_method === "fuzzy" ? row.edge_match_method : null,
     createdAt: str(row.created_at) ?? new Date().toISOString(),
     updatedAt: str(row.updated_at) ?? str(row.created_at) ?? new Date().toISOString(),
     progress: asOrderProgress(row.progress) ?? { step: "uploaded", pagesRead: 0, pagesTotal: 0 },

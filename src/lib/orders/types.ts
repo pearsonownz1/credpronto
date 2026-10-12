@@ -165,6 +165,8 @@ export type OrderRecord = {
   notarizationStatus: "pending" | "done" | null;
   edgeCredentialId: string | null;
   edgeGradingScaleId: string | null;
+  /** base or fuzzy. Staff only. Omitted from customer and partner payloads. */
+  edgeMatchMethod: "base" | "fuzzy" | null;
   createdAt: string;
   updatedAt: string;
   progress: OrderProgress;

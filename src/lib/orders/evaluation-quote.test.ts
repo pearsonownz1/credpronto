@@ -47,6 +47,7 @@ function evaluationOrder(patch: Partial<OrderRecord> = {}): OrderRecord {
     notarizationStatus: null,
     edgeCredentialId: null,
     edgeGradingScaleId: null,
+    edgeMatchMethod: null,
     createdAt: "2026-10-12T00:00:00.000Z",
     updatedAt: "2026-10-12T00:00:00.000Z",
     progress: { step: "done", pagesRead: 1, pagesTotal: 1 },
