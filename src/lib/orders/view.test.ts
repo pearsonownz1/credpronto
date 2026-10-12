@@ -175,6 +175,31 @@ describe("customer order", () => {
     ).toEqual({ step: "reading", pagesRead: 6, pagesTotal: 9 });
     expect(toCustomerOrder({ ...shared, progress: { step: "scanning" } }).progress).toBeUndefined();
   });
+
+  it("passes page ids and optional billing fields, and omits them when absent", () => {
+    const priced = toCustomerOrder({
+      order: orderRecord(),
+      documents: [],
+      pages: [
+        page({ documentId: "doc-a", number: 1, billableUnits: 2, skip: true, skipReason: "already English" }),
+        page({ documentId: "doc-a", number: 2, billableUnits: null }),
+      ],
+      confirmations: [],
+      previewVersion: null,
+      paymentStatus: null,
+      deliveryStatus: null,
+      email: "ada@example.com",
+    });
+    expect(priced.pages[0]).toMatchObject({
+      id: "page-1",
+      billableUnits: 2,
+      skip: true,
+      skipReason: "already English",
+    });
+    expect(priced.pages[1]).not.toHaveProperty("billableUnits");
+    expect(priced.pages[1]).not.toHaveProperty("skip");
+    expect(priced.pages[1]?.id).toBe("page-2");
+  });
 });
 
 describe("preview pages", () => {

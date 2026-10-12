@@ -153,6 +153,8 @@ function mapPage(row: Row): PageRecord {
     qualityScore: num(row.quality_score),
     qualityFlags: stringList(row.quality_flags),
     qualityMessage: str(row.quality_message),
+    ...(typeof row.skipped === "boolean" ? { skip: row.skipped } : {}),
+    ...(str(row.skip_reason) ? { skipReason: str(row.skip_reason) } : {}),
   };
 }
 
@@ -493,6 +495,11 @@ export async function replacePages(
       quality_message: page.qualityMessage,
     })),
   );
+  fail(error);
+}
+
+export async function setPageSkipped(db: Db, pageId: string, skipped: boolean): Promise<void> {
+  const { error } = await db.from("document_pages").update({ skipped }).eq("id", pageId);
   fail(error);
 }
 

@@ -6,16 +6,23 @@ import { FlowApiError, getFlowClient } from "@/lib/flow/client";
 import { formatMoney, pageLabel } from "@/lib/flow/pricing";
 import {
   UPLOAD_ORDER_NOTE,
+  billablePriceLabel,
   canOpenConfirm,
   canSetSourceLanguage,
   displayedPageRule,
   languageChoices,
   languageLine,
+  quoteCounts,
+  quotePageRows,
+  quoteSummaryLabel,
   servicePriceLines,
   settleTargetLanguageUpdate,
   showTargetLanguagePicker,
+  skipPageNote,
+  skippedPageIndexes,
   targetChoices,
   totalLabel,
+  type QuotePageRow,
 } from "@/lib/flow/present";
 import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
 import type { CustomerOrder } from "@/lib/orders/view";
@@ -84,26 +91,66 @@ export function QuoteBody({
   token: string;
   onReplaced: () => void;
 }) {
+  const [patch, setPatch] = useState<{ source: CustomerOrder; order: CustomerOrder } | null>(null);
+  const live = patch?.source === order ? patch.order : order;
+  const [pendingSkip, setPendingSkip] = useState<number[] | null>(null);
+  const [skipError, setSkipError] = useState<string | null>(null);
+  const [skipPending, setSkipPending] = useState(false);
   const choices = languageChoices();
   const targets = targetChoices();
-  const picker = canSetSourceLanguage(order);
-  const sameLanguage = showTargetLanguagePicker(order);
+  const picker = canSetSourceLanguage(live);
+  const sameLanguage = showTargetLanguagePicker(live);
   const [language, setLanguage] = useState(order.sourceLanguage ?? choices[0]?.code ?? "es");
   const [target, setTarget] = useState(order.targetLanguage || "en");
   const [notice, setNotice] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
-  const sourceCode = picker ? language : (order.sourceLanguage ?? language);
-  const targetCode = sameLanguage ? target : order.targetLanguage;
-  const line = order.sourceLanguage
+  const sourceCode = picker ? language : (live.sourceLanguage ?? language);
+  const targetCode = sameLanguage ? target : live.targetLanguage;
+  const line = live.sourceLanguage
     ? languageLine({ sourceLanguage: sourceCode, targetLanguage: targetCode })
-    : languageLine(order);
-  const pages = order.billablePages ?? 0;
-  const qualityHold = order.reviewReason === IMAGE_QUALITY_REASON;
-  const evaluation = order.orderType === "evaluation";
+    : languageLine(live);
+  const pages = live.billablePages ?? 0;
+  const qualityHold = live.reviewReason === IMAGE_QUALITY_REASON;
+  const evaluation = live.orderType === "evaluation";
   const showPrice = !qualityHold;
-  const priceLines = showPrice ? servicePriceLines(order) : [];
-  const showContinue = canOpenConfirm(order);
-  const orderedPages = order.pageOrder && order.pageOrder.pages.length > 1 ? order.pageOrder : null;
+  const priceLines = showPrice ? quoteSummaryPrices(live) : [];
+  const showContinue = canOpenConfirm(live);
+  const orderedPages = live.pageOrder && live.pageOrder.pages.length > 1 ? live.pageOrder : null;
+  const pageRows = quotePageRows(live);
+  const counts = quoteSummaryLabel(quoteCounts(live));
+
+  function rowSkipped(row: QuotePageRow): boolean {
+    if (row.pageIndex == null) return row.skip === true;
+    if (pendingSkip) return pendingSkip.includes(row.pageIndex);
+    return row.skip === true;
+  }
+
+  async function onPageSkip(row: QuotePageRow, skip: boolean) {
+    if (row.pageIndex == null || skipPending) return;
+    const current = pendingSkip ?? skippedPageIndexes(live);
+    const nextIndexes = skip
+      ? [...new Set([...current, row.pageIndex])].sort((a, b) => a - b)
+      : current.filter((index) => index !== row.pageIndex);
+    if (skip === rowSkipped(row)) return;
+    setSkipError(null);
+    setPendingSkip(nextIndexes);
+    setSkipPending(true);
+    try {
+      const updated = await getFlowClient().updateQuote(token, { skipPages: nextIndexes });
+      setPatch({ source: order, order: updated });
+      setPendingSkip(null);
+    } catch (cause) {
+      setPendingSkip(null);
+      const failed = cause instanceof FlowApiError ? cause : null;
+      if (!failed || (failed.status >= 400 && failed.status < 500)) {
+        setSkipError(failed?.message ?? "We couldn't update that page.");
+      } else {
+        setSkipError(failed.message);
+      }
+    } finally {
+      setSkipPending(false);
+    }
+  }
 
   async function onUpdateLanguage() {
     setUpdating(true);
@@ -184,17 +231,20 @@ export function QuoteBody({
             ) : null}
           </div>
         </div>
-        {order.status === "needs_review" ? (
+        {live.status === "needs_review" ? (
           <p data-testid="review-note" className="mt-3 text-[13px] text-ink-muted">
-            {order.reviewReason ??
+            {live.reviewReason ??
               "A reviewer will confirm the language before this price is final."}
           </p>
         ) : null}
+        <p data-testid="quote-counts" className="mt-5 text-[13px] text-ink-muted">
+          {counts}
+        </p>
         <div
           data-testid="file-list"
-          className="mt-5 overflow-hidden rounded-[var(--cp-radius)] border border-line"
+          className="mt-2 overflow-hidden rounded-[var(--cp-radius)] border border-line"
         >
-          {order.documents.map((file, index) => (
+          {live.documents.map((file, index) => (
             <div
               key={file.id}
               className={`grid grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3.5 text-sm md:gap-4 ${index > 0 ? "border-t border-line" : ""}`}
@@ -218,31 +268,62 @@ export function QuoteBody({
             </div>
           ))}
         </div>
-        {orderedPages ? (
+        {pageRows.length > 0 ? (
           <div data-testid="page-order" className="mt-4">
-            <p data-testid="page-order-basis" className="text-[13px] text-ink-muted">
-              {orderedPages.basis === "logical"
-                ? "We ordered these pages from the printed page numbers."
-                : UPLOAD_ORDER_NOTE}
-            </p>
-            <ol className="mt-2 list-decimal space-y-1 pl-5 text-[13px]">
-              {orderedPages.pages.map((page) => (
-                <li key={`${page.documentId}-${page.uploadPage}-${page.appliedPage}`}>
-                  <span className="font-semibold">{page.filename || "Page"}</span>
-                  {page.logicalPage != null
-                    ? ` · printed page ${page.logicalPage}`
-                    : ` · page ${page.appliedPage}`}
-                  {page.hint ? ` · ${page.hint}` : ""}
-                  {page.uploadPosition !== page.appliedPosition || page.uploadPage !== page.appliedPage
-                    ? " · moved from the upload order"
-                    : ""}
-                </li>
-              ))}
+            {orderedPages ? (
+              <p data-testid="page-order-basis" className="text-[13px] text-ink-muted">
+                {orderedPages.basis === "logical"
+                  ? "We ordered these pages from the printed page numbers."
+                  : UPLOAD_ORDER_NOTE}
+              </p>
+            ) : null}
+            <ol className="mt-2 list-decimal space-y-2 pl-5 text-[13px]">
+              {pageRows.map((row) => {
+                const skipped = rowSkipped(row);
+                const dense = !skipped && row.billableUnits != null && row.billableUnits > 1;
+                return (
+                  <li key={row.key} data-testid="page-row">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className={skipped ? "line-through" : undefined}>
+                        <span className="font-semibold">{row.filename}</span>
+                        {row.logicalPage != null
+                          ? ` · printed page ${row.logicalPage}`
+                          : ` · page ${row.appliedPage}`}
+                        {row.hint ? ` · ${row.hint}` : ""}
+                        {row.moved ? " · moved from the upload order" : ""}
+                      </span>
+                      {dense ? (
+                        <span data-testid="billed-as" className="text-ink-muted">
+                          billed as {row.billableUnits}
+                        </span>
+                      ) : null}
+                      {skipped ? (
+                        <span data-testid="skip-note" className="text-ink-muted">
+                          {skipPageNote(row.skipReason)}
+                        </span>
+                      ) : null}
+                      {row.pageIndex != null ? (
+                        <PageSkipToggle
+                          pageIndex={row.pageIndex}
+                          skipped={skipped}
+                          disabled={skipPending}
+                          onChange={(skip) => void onPageSkip(row, skip)}
+                        />
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
             </ol>
+            {skipError ? (
+              <p role="alert" data-testid="skip-error" className="mt-2 text-[13px] text-[var(--cp-warn)]">
+                {skipError}
+              </p>
+            ) : null}
           </div>
         ) : null}
         <p data-testid="page-rule" className="mt-3 text-[12.5px] leading-normal text-ink-muted">
-          {displayedPageRule(order)}
+          {displayedPageRule(live)}
         </p>
       </div>
       <div>
@@ -270,19 +351,19 @@ export function QuoteBody({
           <SummaryRow
             testId="quote-total"
             label={qualityHold ? "Price" : "Total if you buy"}
-            value={qualityHold ? "Not quoted yet" : totalLabel(order.totalCents)}
+            value={qualityHold ? "Not quoted yet" : totalLabel(live.totalCents)}
             emphasize
           />
         </Summary>
         {qualityHold ? (
-          <ImageQuality order={order} token={token} onReplaced={onReplaced} />
+          <ImageQuality order={live} token={token} onReplaced={onReplaced} />
         ) : (
           <>
             {sameLanguage ? (
               <button
                 type="button"
                 data-testid="update-language"
-                disabled={updating || !token || target === order.targetLanguage}
+                disabled={updating || !token || target === live.targetLanguage}
                 onClick={() => void onUpdateLanguage()}
                 className={buttonClasses(
                   showContinue ? "secondary" : "primary",
@@ -328,6 +409,57 @@ export function QuoteBody({
         </div>
       </div>
     </FlowColumns>
+  );
+}
+
+function quoteSummaryPrices(order: CustomerOrder) {
+  if (order.lineItems.length === 0 && order.billablePages != null) {
+    return [
+      {
+        label: billablePriceLabel(order.billablePages, order.unitPriceCents),
+        amountCents: order.billablePages * order.unitPriceCents,
+      },
+    ];
+  }
+  return servicePriceLines(order);
+}
+
+function PageSkipToggle({
+  pageIndex,
+  skipped,
+  disabled,
+  onChange,
+}: {
+  pageIndex: number;
+  skipped: boolean;
+  disabled: boolean;
+  onChange: (skip: boolean) => void;
+}) {
+  const choice = (skip: boolean, label: string) => {
+    const selected = skipped === skip;
+    return (
+      <button
+        type="button"
+        aria-pressed={selected}
+        disabled={disabled || selected}
+        onClick={() => onChange(skip)}
+        className={`px-2 py-1 disabled:opacity-100 ${selected ? "bg-primary text-white" : "bg-bg text-ink hover:bg-bg-muted"}`}
+      >
+        {label}
+      </button>
+    );
+  };
+  return (
+    <span
+      data-testid={`page-skip-${pageIndex}`}
+      role="group"
+      aria-label="Translate or skip this page"
+      className={`inline-flex overflow-hidden rounded-[var(--cp-radius)] border border-line text-[12px] font-semibold ${disabled ? "opacity-60" : ""}`}
+    >
+      {choice(false, "Translate")}
+      <span className="w-px bg-line" aria-hidden />
+      {choice(true, "Skip")}
+    </span>
   );
 }
 

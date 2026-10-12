@@ -2,6 +2,7 @@ import { evaluationQuote } from "@/lib/orders/evaluation-price";
 import { languagesEqual } from "@/lib/orders/languages";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import { appendOrderChoice, type UploadChoice } from "./order-choice";
+import { quoteCounts } from "./present";
 import { dedupeUploads } from "./uploads";
 import { sampleCustomerOrder } from "./sample-order";
 import {
@@ -77,6 +78,10 @@ export type FlowClient = {
   ): Promise<{ url: string; expiresInSeconds: number }>;
   replaceDocument(token: string, documentId: string, file: File): Promise<CustomerOrder>;
   updateTargetLanguage(token: string, targetLanguage: string): Promise<CustomerOrder>;
+  updateQuote(
+    token: string,
+    body: { skipPages: number[]; targetLanguage?: string },
+  ): Promise<CustomerOrder>;
   /** Mock walk-through moves a quoted order to preview_ready before checkout. */
   markPreviewReady(token: string): Promise<void>;
 };
@@ -164,6 +169,13 @@ const liveClient: FlowClient = {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ targetLanguage }),
+    });
+  },
+  updateQuote(token, body) {
+    return request(`/api/orders/${encodeURIComponent(token)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
     });
   },
 };
@@ -339,6 +351,70 @@ const mockClient: FlowClient = {
     };
     writeMockOrder(next);
     return next;
+  },
+  async updateQuote(_token, body) {
+    if (typeof sessionStorage !== "undefined") {
+      const forced = sessionStorage.getItem("credpronto-mock-quote-error");
+      if (forced) {
+        const status = Number(forced);
+        throw new FlowApiError("We couldn't update that page.", Number.isInteger(status) ? status : 400);
+      }
+    }
+    const current = readMockOrder();
+    const skip = new Set(body.skipPages);
+    const orderedLength = current.pageOrder?.pages.length ?? 0;
+    const usePages = current.pages.length > 0 && current.pages.length >= orderedLength;
+    const pages = usePages
+      ? current.pages.map((page, index) => ({ ...page, skip: skip.has(index) }))
+      : current.pages.map((page) => {
+          if (!current.pageOrder) return page;
+          const index = current.pageOrder.pages.findIndex(
+            (row) =>
+              row.documentId === page.documentId &&
+              (page.uploadPage === row.uploadPage || page.pageNumber === row.appliedPage),
+          );
+          return index >= 0 ? { ...page, skip: skip.has(index) } : page;
+        });
+    const pageOrder = current.pageOrder
+      ? {
+          ...current.pageOrder,
+          pages: current.pageOrder.pages.map((page, index) => {
+            if (!usePages) return { ...page, skip: skip.has(index) };
+            const matchIndex = current.pages.findIndex(
+              (item) =>
+                item.documentId === page.documentId &&
+                ((item.uploadPage != null && item.uploadPage === page.uploadPage) ||
+                  item.pageNumber === page.appliedPage),
+            );
+            return matchIndex >= 0 ? { ...page, skip: skip.has(matchIndex) } : page;
+          }),
+        }
+      : current.pageOrder;
+    const next: CustomerOrder = {
+      ...current,
+      pages,
+      pageOrder,
+      ...(body.targetLanguage ? { targetLanguage: body.targetLanguage } : {}),
+    };
+    const billablePages = quoteCounts(next).billable;
+    const translationCents =
+      next.orderType === "evaluation"
+        ? next.sourceLanguage === "en"
+          ? 0
+          : billablePages * next.unitPriceCents
+        : null;
+    const totalCents =
+      next.orderType === "evaluation" && next.evaluationCents != null
+        ? next.evaluationCents + (translationCents ?? 0)
+        : billablePages * next.unitPriceCents;
+    const saved: CustomerOrder = {
+      ...next,
+      billablePages,
+      totalCents,
+      ...(translationCents != null ? { translationCents } : {}),
+    };
+    writeMockOrder(saved);
+    return saved;
   },
   async replaceDocument(_token, documentId) {
     const current = readMockOrder();

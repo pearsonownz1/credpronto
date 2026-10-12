@@ -38,9 +38,18 @@ export type CustomerOrder = {
   }>;
   pageOrder: {
     basis: PageOrderBasis;
-    pages: Array<StoredPage & { filename: string }>;
+    pages: Array<
+      StoredPage & {
+        filename: string;
+        id?: string;
+        billableUnits?: number | null;
+        skip?: boolean;
+        skipReason?: string | null;
+      }
+    >;
   } | null;
   pages: Array<{
+    id?: string;
     documentId: string;
     pageNumber: number;
     uploadPage: number | null;
@@ -49,6 +58,9 @@ export type CustomerOrder = {
     qualityScore: number | null;
     qualityFlags: string[];
     qualityMessage: string | null;
+    billableUnits?: number | null;
+    skip?: boolean;
+    skipReason?: string | null;
   }>;
   billablePages: number | null;
   unitPriceCents: number;
@@ -130,6 +142,7 @@ export function toCustomerOrder(input: {
         }
       : null,
     pages: pages.map((page) => ({
+      id: page.id,
       documentId: page.documentId,
       pageNumber: page.pageNumber,
       uploadPage: page.uploadPage,
@@ -138,6 +151,9 @@ export function toCustomerOrder(input: {
       qualityScore: page.qualityScore,
       qualityFlags: page.qualityFlags,
       qualityMessage: page.qualityMessage,
+      ...(page.billableUnits != null ? { billableUnits: page.billableUnits } : {}),
+      ...(typeof page.skip === "boolean" ? { skip: page.skip } : {}),
+      ...(page.skipReason ? { skipReason: page.skipReason } : {}),
     })),
     billablePages: input.order.billablePages,
     unitPriceCents: input.order.unitPriceCents,
