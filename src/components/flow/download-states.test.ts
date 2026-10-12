@@ -77,5 +77,36 @@ describe("download page", () => {
     expect(html).toContain("birth-certificate-EN-certified.pdf");
     expect(html).toContain('data-testid="download-certified"');
     expect(html).toContain('data-testid="download-certification"');
+    expect(html).toContain('data-step="download"');
+    expect(html).toContain('data-state="current"');
+    expect(html).not.toContain('data-state="done" data-step="download"');
+  });
+
+  it("keeps a paid order on Download with the review copy and a read-only preview", () => {
+    state.order = readyOrder({
+      status: "paid",
+      payment: { status: "paid" },
+      delivery: { status: "pending" },
+      fulfillment: "awaiting_review",
+      paidAt: "2026-04-01T00:00:00.000Z",
+      email: "buyer@example.com",
+      orderType: "translation",
+      service: null,
+    });
+    const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
+    expect(html).toContain(
+      "Paid. Our certified translator is doing a final check, and your PDF will be emailed and appear right here.",
+    );
+    expect(html).toContain("buyer@example.com");
+    expect(html).toContain("when the certified PDF is ready to download.");
+    expect(html).toContain('data-testid="paid-preview"');
+    expect(html).toContain('data-testid="email-note"');
+    expect(html).toContain('data-state="done" data-step="preview"');
+    expect(html).toContain('data-state="current" data-step="download"');
+    expect(html).not.toContain('data-state="done" data-step="download"');
+    expect(html).not.toContain('data-testid="download-certified"');
+    expect(html).not.toContain("Order not found");
+    expect(html).not.toContain("flag-correction");
+    expect(html).not.toContain("Pay ");
   });
 });

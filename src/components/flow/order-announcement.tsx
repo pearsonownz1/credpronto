@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { formatMoney } from "@/lib/flow/pricing";
+import { PAID_REVIEW_COPY } from "@/lib/flow/present";
 import type { CustomerOrder } from "@/lib/orders/view";
 
 const LOADING_ORDER = "Loading your order";
@@ -15,6 +16,7 @@ export function orderLiveMessage(input: {
   confirming?: boolean;
   checkout?: string | null;
   order: (Pick<CustomerOrder, "status" | "billablePages" | "totalCents"> & {
+    fulfillment?: CustomerOrder["fulfillment"];
     delayed?: boolean;
     progress?: { step?: string | null } | null;
   }) | null;
@@ -30,6 +32,15 @@ export function orderLiveMessage(input: {
 
   const pages = order.billablePages ?? 0;
   const pageText = `${pages} ${pages === 1 ? "page" : "pages"}`;
+  if (order.fulfillment === "awaiting_review") return PAID_REVIEW_COPY;
+  if (
+    order.fulfillment === "released" ||
+    order.status === "paid" ||
+    order.status === "approved" ||
+    order.status === "delivered"
+  ) {
+    return "Your translation is ready.";
+  }
   if (order.status === "needs_review" && order.delayed) {
     return "Taking longer than usual, we're on it.";
   }
@@ -39,9 +50,6 @@ export function orderLiveMessage(input: {
   }
   if (order.status === "draft") return "Reading your files…";
   if (order.status === "failed") return "We couldn't read these files.";
-  if (order.status === "paid" || order.status === "approved" || order.status === "delivered") {
-    return "Your translation is ready.";
-  }
   if (order.status === "preview_ready" || (order.progress?.step === "done" && order.status !== "needs_review")) {
     return "Your preview is ready.";
   }

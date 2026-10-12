@@ -74,6 +74,12 @@ function useIsMobile() {
 
 export type ViewerFocus = { page: number; nonce: number };
 
+export type PreviewChrome = "customer" | "staff" | "readonly";
+
+function showsPurchaseChrome(chrome: PreviewChrome) {
+  return chrome === "customer";
+}
+
 export function SideBySideViewer({
   order,
   chrome = "customer",
@@ -84,7 +90,7 @@ export function SideBySideViewer({
   noticeTestId,
 }: {
   order: PreviewOrder;
-  chrome?: "customer" | "staff";
+  chrome?: PreviewChrome;
   /** Changes when staff asks the viewer to show a QA issue page. */
   focusPage?: ViewerFocus | null;
   onBuy?: (body: CheckoutBody) => void | Promise<void>;
@@ -127,11 +133,15 @@ export function SideBySideViewer({
     [original, translation],
   );
 
+  const layout = chrome === "readonly" ? "embedded" : "page";
+  const purchase = showsPurchaseChrome(chrome);
+
   if (error) {
     return (
       <PreviewShell
-        order={order}
-        rail={chrome === "staff" ? undefined : <OrderRail order={order} corrections={order.corrections} panel={panel} />}
+        layout={layout}
+        order={layout === "embedded" ? undefined : order}
+        rail={purchase ? <OrderRail order={order} corrections={order.corrections} panel={panel} /> : undefined}
         notice={notice}
         noticeTestId={noticeTestId}
         status="The preview engine failed to load. Refresh to try again."
@@ -142,9 +152,10 @@ export function SideBySideViewer({
   if (isLoading || !engine) {
     return (
       <PreviewShell
-        order={order}
-        rail={chrome === "staff" ? undefined : <OrderRail order={order} corrections={order.corrections} panel={panel} />}
-        mobileBar={chrome === "staff" ? undefined : <MobileBuyBar order={order} onFlag={() => undefined} panel={panel} />}
+        layout={layout}
+        order={layout === "embedded" ? undefined : order}
+        rail={purchase ? <OrderRail order={order} corrections={order.corrections} panel={panel} /> : undefined}
+        mobileBar={purchase ? <MobileBuyBar order={order} onFlag={() => undefined} panel={panel} /> : undefined}
         notice={notice}
         noticeTestId={noticeTestId}
         status="Loading preview…"
@@ -220,7 +231,7 @@ function ViewerWorkspace({
   noticeTestId,
 }: {
   order: PreviewOrder;
-  chrome: "customer" | "staff";
+  chrome: PreviewChrome;
   focusPage: ViewerFocus | null;
   panel: AddonPanelState;
   onCorrect?: (input: { page: number; note: string }) => Promise<void>;
@@ -517,18 +528,21 @@ function ViewerWorkspace({
     />
   ) : null;
 
+  const purchase = showsPurchaseChrome(chrome);
+
   return (
     <PreviewShell
-      order={order}
+      layout={chrome === "readonly" ? "embedded" : "page"}
+      order={chrome === "readonly" ? undefined : order}
       notice={notice}
       noticeTestId={noticeTestId}
       rail={
-        chrome === "staff" || isMobile ? undefined : (
+        !purchase || isMobile ? undefined : (
           <OrderRail order={order} corrections={corrections} panel={panel} />
         )
       }
       mobileBar={
-        chrome === "customer" && isMobile ? (
+        purchase && isMobile ? (
           <MobileBuyBar order={order} onFlag={openCorrection} panel={panel} />
         ) : undefined
       }
@@ -637,7 +651,7 @@ function ViewerWorkspace({
               </span>
               Sync scrolling
             </button>
-            {chrome === "customer" ? (
+            {purchase ? (
             <div className="relative hidden shrink-0 md:block">
               <button
                 type="button"

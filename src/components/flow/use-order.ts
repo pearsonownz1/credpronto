@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { FlowApiError, getFlowClient, flowUsesMock } from "@/lib/flow/client";
 import { checkoutOrderRetryDelay } from "@/lib/orders/checkout-return";
 import { PREVIEW_POLL_MS, previewPollContinues } from "@/lib/flow/preview-progress";
-import { downloadPhase } from "@/lib/flow/present";
+import { downloadPhase, orderStatusPollDelay } from "@/lib/flow/present";
 import {
   EMAIL_KEY,
   MOCK_TOKEN,
@@ -137,11 +137,12 @@ export function useCustomerOrder(
         const next = await getFlowClient().getOrder(token);
         if (cancelled) return;
         setSnapshot({ token, order: next, error: null });
-        const keep =
-          mode === "until-download" || mode === "checkout"
-            ? downloadPhase(next) !== "ready"
-            : mode === "while-working" && WORKING.has(next.status);
-        if (keep) timer = window.setTimeout(load, 4000);
+        if (mode === "until-download" || mode === "checkout") {
+          const delay = orderStatusPollDelay(downloadPhase(next));
+          if (delay != null) timer = window.setTimeout(load, delay);
+        } else if (mode === "while-working" && WORKING.has(next.status)) {
+          timer = window.setTimeout(load, 4000);
+        }
       } catch (cause) {
         if (cancelled) return;
         if (mode === "checkout") {

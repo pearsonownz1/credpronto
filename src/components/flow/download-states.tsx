@@ -1,12 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { flowUsesMock, getFlowClient } from "@/lib/flow/client";
-import { downloadPhase, downloadReadyCopy, totalLabel, type DownloadFileKind } from "@/lib/flow/present";
+import {
+  PAID_REVIEW_COPY,
+  downloadPhase,
+  downloadReadyCopy,
+  paidReviewEmailLine,
+  totalLabel,
+  type DownloadFileKind,
+} from "@/lib/flow/present";
 import { orderDownloadFilename } from "@/lib/orders/download-name";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
+import { PaidPreview } from "./paid-preview";
 import { FlowStatus } from "./status";
 import { useCustomerOrder, useStoredEmail, useStoredToken } from "./use-order";
 import { buttonClasses } from "./ui";
@@ -16,20 +24,34 @@ const MOCK_HREF = "/samples/birth-certificate-en.pdf";
 export function DownloadStates({
   token: pathToken,
   pendingPayment = false,
+  onOrder,
 }: {
   token?: string;
   /** Stripe success return. Keep checking until the webhook records the order. */
   pendingPayment?: boolean;
+  onOrder?: (order: CustomerOrder) => void;
 }) {
   const token = useStoredToken(pathToken);
-  const email = useStoredEmail();
+  const storedEmail = useStoredEmail();
   const { order, error, loading } = useCustomerOrder(token, pendingPayment ? "checkout" : "until-download");
   const phase = order ? downloadPhase(order) : "confirming";
+  const email = order?.email?.trim() || storedEmail;
+  const onDownloadStep = phase === "certifying" || phase === "ready";
+
+  useEffect(() => {
+    if (order) onOrder?.(order);
+  }, [order, onOrder]);
 
   return (
     <div>
-      <FlowHeader current={phase === "ready" ? "download" : "preview"} />
-      <main className="mx-auto w-full max-w-[640px] px-4 pt-10 md:pt-16">
+      <FlowHeader current={onDownloadStep ? "download" : "preview"} />
+      <main
+        className={
+          phase === "certifying"
+            ? "mx-auto w-full max-w-6xl px-4 pt-10 pb-16"
+            : "mx-auto w-full max-w-[640px] px-4 pt-10 md:pt-16"
+        }
+      >
         {loading && !order ? (
           <FlowStatus
             testId="download-phase"
@@ -48,21 +70,42 @@ export function DownloadStates({
             body="Stripe is sending the receipt. This page checks until the payment is recorded."
           />
         ) : phase === "certifying" ? (
-          <FlowStatus
-            testId="download-phase"
-            kicker={`Order ${order.orderId}`}
-            title="Paid, being certified by our team"
-            body={
-              email
-                ? `We'll email ${email} when the certified PDF is ready to download.`
-                : "We'll email you when the certified PDF is ready to download."
-            }
-          />
+          <Certifying order={order} token={token} email={email} />
         ) : (
           <Ready order={order} token={token} email={email} />
         )}
       </main>
     </div>
+  );
+}
+
+function Certifying({
+  order,
+  token,
+  email,
+}: {
+  order: CustomerOrder;
+  token: string;
+  email: string;
+}) {
+  return (
+    <>
+      <div data-testid="download-phase" className="mx-auto w-full max-w-[720px] text-center">
+        <p className="preview-kicker blue">Order {order.orderId}</p>
+        <h1 className="mt-3 text-[28px] font-bold leading-tight tracking-[-0.5px] md:text-[32px]">
+          {PAID_REVIEW_COPY}
+        </h1>
+        <p data-testid="email-note" className="mt-3 text-base text-ink-muted">
+          {paidReviewEmailLine(email)}
+        </p>
+      </div>
+      <div
+        data-testid="paid-preview"
+        className="mt-8 h-[min(70vh,720px)] min-h-[420px] overflow-hidden rounded-[var(--cp-radius)] border border-line"
+      >
+        <PaidPreview token={token} order={order} />
+      </div>
+    </>
   );
 }
 

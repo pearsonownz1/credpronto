@@ -76,7 +76,11 @@ export function OrderHub() {
     body = (
       <>
         <GoogleAdsConversion token={token} enabled={checkout === "success"} />
-        <DownloadStates token={token} pendingPayment={checkout === "success"} />
+        <DownloadStates
+          token={token}
+          pendingPayment={checkout === "success"}
+          onOrder={setLatest}
+        />
       </>
     );
   } else if (loading && !current) {

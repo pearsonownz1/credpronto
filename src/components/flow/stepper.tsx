@@ -29,11 +29,7 @@ export function Stepper({
     >
       {STEPS.map((step, index) => {
         const state =
-          current === "download" || index < currentIndex
-            ? "done"
-            : index === currentIndex
-              ? "current"
-              : "upcoming";
+          index < currentIndex ? "done" : index === currentIndex ? "current" : "upcoming";
         return (
           <span
             key={step.id}
