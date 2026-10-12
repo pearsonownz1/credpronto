@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { sampleCustomerOrder } from "@/lib/flow/sample-order";
 import { CJK_PAGE_RULE } from "@/lib/orders/billing";
 import { QUOTE_BILLING_NOTE } from "@/lib/flow/present";
+import { evaluationQuote } from "@/lib/orders/evaluation-price";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { QuoteBody } from "./quote-view";
 
@@ -115,5 +116,63 @@ describe("quote step actions", () => {
     });
     expect(html).toContain('data-testid="continue"');
     expect(html).toContain("$19.90");
+  });
+
+  it("quotes a diploma at $19.95 and shows the translation as an opt-in", () => {
+    const quote = evaluationQuote({
+      service: "diploma",
+      degreeCount: 1,
+      sourceLanguage: "es",
+      billablePages: 1,
+    });
+    const html = htmlFor({
+      ...sampleCustomerOrder(),
+      orderType: "evaluation",
+      service: "diploma",
+      degreeCount: 1,
+      sourceLanguage: "es",
+      billablePages: 1,
+      evaluationCents: quote.evaluationCents,
+      translationCents: quote.translationCents,
+      includeTranslation: false,
+      translationOfferCents: 995,
+      totalCents: quote.totalCents,
+      lineItems: quote.lineItems,
+    });
+    expect(html).toContain('data-testid="quote-total"');
+    expect(html).toContain("$19.95");
+    expect(html).toContain('data-testid="include-translation"');
+    expect(html).toContain("Certified translation");
+    expect(html).toContain("$9.95");
+    expect(html).toContain("Evaluation report");
+    expect(html).not.toContain("$29.90");
+    expect(html).toContain('data-testid="continue"');
+  });
+
+  it("shows the $29.90 total after the customer opts into translation", () => {
+    const quote = evaluationQuote({
+      service: "diploma",
+      degreeCount: 1,
+      sourceLanguage: "es",
+      billablePages: 1,
+      includeTranslation: true,
+    });
+    const html = htmlFor({
+      ...sampleCustomerOrder(),
+      orderType: "evaluation",
+      service: "diploma",
+      degreeCount: 1,
+      sourceLanguage: "es",
+      billablePages: 1,
+      evaluationCents: quote.evaluationCents,
+      translationCents: quote.translationCents,
+      includeTranslation: true,
+      translationOfferCents: 995,
+      totalCents: quote.totalCents,
+      lineItems: quote.lineItems,
+    });
+    expect(html).toContain("$29.90");
+    expect(html).toContain('data-testid="include-translation"');
+    expect(html).toMatch(/data-testid="include-translation"[^>]*checked/);
   });
 });

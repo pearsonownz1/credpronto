@@ -5,7 +5,8 @@ import { checkoutBlockReason } from "./equivalency";
 import { downloadGate } from "./access";
 import { checkoutPreviewImageUrl } from "./checkout-image";
 import { checkoutLineProduct, checkoutProductDescription } from "./checkout-preview";
-import { checkoutPriceLines } from "./evaluation-price";
+import { checkoutPriceLines, evaluationCheckoutTotal } from "./evaluation-price";
+import { deliveryFileTarget } from "./delivery-file";
 import {
   DOWNLOAD_URL_SECONDS,
   FINALS_BUCKET,
@@ -57,7 +58,6 @@ import { normalizeLanguage } from "./languages";
 import { compareCombinedPages } from "./page-order";
 import { parseQuotePatch, quotePriceAfterSkip, sumQuotedBillable } from "./skip-pages";
 import { loadCustomerOrder } from "./pipeline";
-import { orderDownloadFilename } from "./download-name";
 import { originalDownloadResponse, originalTargets } from "./originals";
 import { sourceFileBody, sourceFileTarget, type SourceFileResponse } from "./source-file";
 import { evaluationPreviewSources } from "./preview-documents";
@@ -143,31 +143,44 @@ export async function patchOrderQuote(token: string, body: unknown): Promise<Cus
     orderPatch.target_language = language;
   }
 
-  if (patch.skipPages) {
+  let includeTranslation = order.includeTranslation;
+  if (patch.includeTranslation != null) {
+    if (!order.service || order.degreeCount == null) {
+      throw new HttpError("This order has no optional translation.", 400);
+    }
+    includeTranslation = patch.includeTranslation;
+  }
+
+  if (patch.skipPages || patch.includeTranslation != null) {
     const documents = await listDocuments(db, order.id);
     const pages = [...(await listPages(db, documents.map((document) => document.id)))].sort((a, b) =>
       compareCombinedPages(documents, a, b),
     );
-    for (const index of patch.skipPages) {
-      if (index >= pages.length) throw new HttpError("Unknown page.", 400);
-    }
-    const skip = new Set(patch.skipPages);
-    for (const [index, page] of pages.entries()) {
-      const skipped = skip.has(index);
-      if ((page.skip === true) !== skipped) await setPageSkipped(db, page.id, skipped);
-    }
-    const priced = quotePriceAfterSkip(
-      order,
-      sumQuotedBillable(
+    let billablePages = order.billablePages ?? 0;
+    if (patch.skipPages) {
+      for (const index of patch.skipPages) {
+        if (index >= pages.length) throw new HttpError("Unknown page.", 400);
+      }
+      const skip = new Set(patch.skipPages);
+      for (const [index, page] of pages.entries()) {
+        const skipped = skip.has(index);
+        if ((page.skip === true) !== skipped) await setPageSkipped(db, page.id, skipped);
+      }
+      billablePages = sumQuotedBillable(
         pages.map((page, index) => ({
           billableUnits: page.billableUnits,
           skip: skip.has(index),
         })),
-      ),
+      );
+    }
+    const priced = quotePriceAfterSkip(
+      { ...order, includeTranslation },
+      billablePages,
     );
     orderPatch.billable_pages = priced.billablePages;
     orderPatch.total_cents = priced.totalCents;
     if (priced.translationCents != null) orderPatch.translation_cents = priced.translationCents;
+    if (order.service) orderPatch.include_translation = priced.includeTranslation;
   }
 
   if (Object.keys(orderPatch).length > 0) await updateOrder(db, order.id, orderPatch);
@@ -188,13 +201,16 @@ export async function confirmOrder(token: string, body: unknown): Promise<Custom
 
   const documents = await listDocuments(db, order.id);
   const byId = new Map(documents.map((document) => [document.id, document]));
-  if (payload.documents.length !== documents.length) {
+  const evaluation = order.service != null && order.degreeCount != null;
+  if (payload.documents == null) {
+    if (!evaluation) throw new HttpError("Confirm the fields for every document.", 400);
+  } else if (payload.documents.length !== documents.length) {
     throw new HttpError("Confirm the fields for every document.", 400);
   }
 
   const fields: Array<{ documentId: string; fieldKey: string; confirmedValue: string }> = [];
   const seen = new Set<string>();
-  for (const document of payload.documents) {
+  for (const document of payload.documents ?? []) {
     if (!byId.has(document.documentId)) throw new HttpError("Unknown document.", 400);
     if (seen.has(document.documentId)) throw new HttpError("Confirm each document once.", 400);
     seen.add(document.documentId);
@@ -208,12 +224,28 @@ export async function confirmOrder(token: string, body: unknown): Promise<Custom
     }
   }
 
-  await confirmFields(db, order.id, fields);
+  if (fields.length > 0) await confirmFields(db, order.id, fields);
+  const pricePatch: Record<string, unknown> = {};
+  if (evaluation && order.service && order.degreeCount != null) {
+    const priced = evaluationCheckoutTotal({
+      service: order.service,
+      degreeCount: order.degreeCount,
+      sourceLanguage: language,
+      billablePages: order.billablePages ?? 0,
+      includeTranslation: payload.includeTranslation ?? order.includeTranslation,
+      addonCents: order.addonCents,
+    });
+    pricePatch.evaluation_cents = priced.evaluationCents;
+    pricePatch.translation_cents = priced.translationCents;
+    pricePatch.include_translation = priced.includeTranslation;
+    pricePatch.total_cents = priced.totalCents;
+  }
   await updateOrder(db, order.id, {
     status: "confirmed",
     source_language: language,
     language_confirmed: true,
     progress: checkedProgress(order.progress, { step: "translating", retries: 0 }),
+    ...pricePatch,
   });
 
   const updated = await requireOrderByHash(db, hashOrderToken(token));
@@ -360,14 +392,17 @@ export async function downloadOrderFile(
   });
   if (!gate.ok) throw new HttpError(gate.error, gate.status);
 
-  const path = file === "certification" ? delivery?.certificationPath : delivery?.finalPath;
-  if (!path) throw new HttpError("That file is not ready", 404);
   const documents = await listDocuments(db, order.id);
-  const filename = orderDownloadFilename(
+  const target = deliveryFileTarget({
     file,
-    documents.map((document) => document.filename),
-    order.targetLanguage,
-  );
+    service: order.service,
+    finalPath: delivery?.finalPath ?? null,
+    certificationPath: delivery?.certificationPath ?? null,
+    documentNames: documents.map((document) => document.filename),
+    targetLanguage: order.targetLanguage,
+  });
+  if (!target) throw new HttpError("That file is not ready", 404);
+  const { path, filename } = target;
   const url = await signedObjectUrl(db, FINALS_BUCKET, path, DOWNLOAD_URL_SECONDS, { download: filename });
   await insertEvent(db, order.id, "downloaded", { file });
   return { url, filename, expiresInSeconds: DOWNLOAD_URL_SECONDS };
@@ -755,10 +790,20 @@ async function refundCharge(db: Db, charge: Stripe.Charge) {
   return { received: true };
 }
 
-function readConfirmBody(body: unknown): { sourceLanguage: string; documents: ConfirmDocument[] } {
+function readConfirmBody(body: unknown): {
+  sourceLanguage: string;
+  documents: ConfirmDocument[] | null;
+  includeTranslation?: boolean;
+} {
   if (!body || typeof body !== "object") throw new HttpError("Expected a JSON body", 400);
   const record = body as Record<string, unknown>;
   if (typeof record.sourceLanguage !== "string") throw new HttpError("sourceLanguage is required", 400);
+  if ("includeTranslation" in record && typeof record.includeTranslation !== "boolean") {
+    throw new HttpError("includeTranslation must be true or false.", 400);
+  }
+  const includeTranslation =
+    typeof record.includeTranslation === "boolean" ? record.includeTranslation : undefined;
+  if (record.documents == null) return { sourceLanguage: record.sourceLanguage, documents: null, includeTranslation };
   if (!Array.isArray(record.documents)) throw new HttpError("documents is required", 400);
 
   const documents = record.documents.map((entry) => {
@@ -774,5 +819,5 @@ function readConfirmBody(body: unknown): { sourceLanguage: string; documents: Co
     return { documentId: document.documentId, fields };
   });
 
-  return { sourceLanguage: record.sourceLanguage, documents };
+  return { sourceLanguage: record.sourceLanguage, documents, includeTranslation };
 }

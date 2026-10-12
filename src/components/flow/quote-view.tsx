@@ -121,10 +121,13 @@ export function QuoteBody({
     ? languageLine({ sourceLanguage: sourceCode, targetLanguage: targetCode })
     : languageLine(live);
   const qualityHold = live.reviewReason === IMAGE_QUALITY_REASON;
-  const evaluation = live.orderType === "evaluation";
+  const evaluation = live.orderType === "evaluation" || live.service != null;
   const showPrice = !qualityHold;
   const priceLines = showPrice ? quoteSummaryPrices(live) : [];
   const showContinue = canOpenConfirm(live);
+  const offerCents = live.translationOfferCents;
+  const [translationPending, setTranslationPending] = useState(false);
+  const [translationError, setTranslationError] = useState<string | null>(null);
 
   function rowSkipped(row: QuotePageRow): boolean {
     if (row.pageIndex == null) return row.skip === true;
@@ -169,6 +172,24 @@ export function QuoteBody({
       }
     } finally {
       setSkipPending(false);
+    }
+  }
+
+  async function onToggleTranslation(includeTranslation: boolean) {
+    if (translationPending) return;
+    setTranslationError(null);
+    setTranslationPending(true);
+    try {
+      const updated = await getFlowClient().updateQuote(token, {
+        includeTranslation,
+        skipPages: pendingSkip ?? skippedPageIndexes(live),
+      });
+      setPatch({ source: order, order: updated });
+    } catch (cause) {
+      const failed = cause instanceof FlowApiError ? cause : null;
+      setTranslationError(failed?.message ?? "We couldn't update the translation.");
+    } finally {
+      setTranslationPending(false);
     }
   }
 
@@ -368,7 +389,28 @@ export function QuoteBody({
           ) : (
             <SummaryRow label="Pages" value="Pending" />
           )}
-          <SummaryRow label="Certification" value="Included" />
+          {evaluation && offerCents != null ? (
+            <label className="flex items-start gap-3 border-b border-line px-4 py-3 text-sm">
+              <input
+                data-testid="include-translation"
+                type="checkbox"
+                className="mt-1"
+                checked={live.includeTranslation}
+                disabled={translationPending}
+                onChange={(event) => void onToggleTranslation(event.target.checked)}
+              />
+              <span>
+                <span className="font-semibold">Certified translation</span>
+                <span className="text-ink-muted"> · {formatMoney(offerCents)}</span>
+              </span>
+            </label>
+          ) : null}
+          {translationError ? (
+            <p role="alert" data-testid="translation-error" className="px-4 pt-3 text-[13px] text-[var(--cp-warn)]">
+              {translationError}
+            </p>
+          ) : null}
+          <SummaryRow label={evaluation ? "Evaluation report" : "Certification"} value="Included" />
           <SummaryRow
             label="Preview"
             value="Free"

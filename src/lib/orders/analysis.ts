@@ -30,7 +30,7 @@ import {
 } from "./page-order";
 import { buildCombinedOriginal, type SourceFile } from "./pdf/combine";
 import { pdfPageTexts } from "./pdf-text";
-import { completeEvaluation } from "./evaluation";
+import { startEvaluationQuote } from "./evaluation";
 import { decideQuote, etaFromNow } from "./quote";
 import { notifyOrder } from "./webhook-delivery";
 import { downloadObject, uploadObject } from "./storage";
@@ -498,7 +498,7 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
 
     await replaceExtractedConfirmations(db, orderId, extractedFields);
     if (order.service && order.degreeCount != null) {
-      await completeEvaluation(db, order, {
+      const quoted = await startEvaluationQuote(db, order, {
         sourceLanguage: distinct.length === 1 ? distinct[0] : null,
         confidence: confidences.length > 0 ? Math.min(...confidences) : null,
         billablePages: pageBillable.reduce((sum, pages) => sum + pages, 0),
@@ -512,6 +512,13 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
         pageOrder: applied,
         token,
       });
+      if (quoted.status === "quoted" && !(await hasEvent(db, orderId, "quote_shown"))) {
+        await insertEvent(db, orderId, "quote_shown", {
+          billablePages: quoted.billablePages,
+          totalCents: quoted.totalCents,
+        });
+      }
+      if (quoted.status === "quoted") await notifyOrder(db, orderId, "order.quoted");
       await writeProgress("done");
       return;
     }

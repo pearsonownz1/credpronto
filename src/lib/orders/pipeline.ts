@@ -1,4 +1,5 @@
 import { analyzeOrder } from "./analysis";
+import { retryEvaluation, shouldPrepareEvaluationReport } from "./evaluation";
 import {
   customerEmail,
   getDelivery,
@@ -50,7 +51,12 @@ export async function processOrder(orderId: string, token: string | null = null)
     return;
   }
 
-  if (order.service) return;
+  if (order.service) {
+    if (shouldPrepareEvaluationReport(order) && order.sourceLanguage) {
+      await retryEvaluation(db, order, order.sourceLanguage);
+    }
+    return;
+  }
 
   if (
     order.status === "confirmed" ||

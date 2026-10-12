@@ -27,7 +27,7 @@ import { sendDeliveryReady } from "./email";
 import { fulfillmentFor, parseTrackingNumber } from "./fulfillment";
 import { HttpError } from "./errors";
 import { normalizeLanguage } from "./languages";
-import { evaluationQuote } from "./evaluation-price";
+import { evaluationCheckoutTotal } from "./evaluation-price";
 import { publishCourseEquivalency, publishDiplomaEquivalency, retryEvaluation } from "./evaluation";
 import { staffEdgeView } from "./edge";
 import { EQUIVALENCY_UNMAPPED, approvalBlockReason } from "./equivalency";
@@ -132,7 +132,7 @@ export async function staffOrder(orderId: string) {
 
 async function signedFinals(
   db: Parameters<typeof signedObjectUrl>[0],
-  order: { id: string; targetLanguage: string },
+  order: { id: string; targetLanguage: string; service: string | null },
   translationPath: string | null,
   certificationPath: string | null,
 ) {
@@ -140,8 +140,15 @@ async function signedFinals(
     throw new HttpError("Translated files are not ready", 409);
   }
   const names = (await listDocuments(db, order.id)).map((document) => document.filename);
-  const translationName = orderDownloadFilename("translation", names, order.targetLanguage);
-  const certificationName = orderDownloadFilename("certification", names, order.targetLanguage);
+  const translationName = orderDownloadFilename(
+    order.service ? "evaluation" : "translation",
+    names,
+    order.targetLanguage,
+  );
+  const certificationName =
+    order.service && translationPath === certificationPath
+      ? translationName
+      : orderDownloadFilename(order.service ? "evaluation" : "certification", names, order.targetLanguage);
   const [translationUrl, certificationUrl] = await Promise.all([
     signedObjectUrl(db, FINALS_BUCKET, translationPath, DOWNLOAD_URL_SECONDS, { download: translationName }),
     signedObjectUrl(db, FINALS_BUCKET, certificationPath, DOWNLOAD_URL_SECONDS, { download: certificationName }),
@@ -196,7 +203,9 @@ export async function approveOrder(orderId: string) {
   }
 
   const email = await customerEmail(db, order.customerId);
-  const sent = email ? await sendDeliveryReady(email) : { sent: false, skipped: true };
+  const sent = email
+    ? await sendDeliveryReady(email, order.service ? "evaluation" : "translation")
+    : { sent: false, skipped: true };
   const files = await signedFinals(db, order, order.finalTranslationPath, order.certificationPath);
   if (!sent.sent && !sent.skipped) {
     return { status: "approved" as const, email: "failed" as const, ...files };
@@ -272,11 +281,13 @@ export async function resolveReview(orderId: string, body: unknown) {
       const updated = await getOrderById(db, order.id);
       return { status: updated?.status ?? ("needs_review" as const), sourceLanguage: language };
     }
-    const quote = evaluationQuote({
+    const priced = evaluationCheckoutTotal({
       service: order.service,
       degreeCount: order.degreeCount,
       sourceLanguage: language,
-      billablePages: order.billablePages,
+      billablePages: order.billablePages ?? 0,
+      includeTranslation: order.includeTranslation,
+      addonCents: order.addonCents,
     });
     await updateOrder(db, order.id, {
       status: "preview_ready",
@@ -284,9 +295,10 @@ export async function resolveReview(orderId: string, body: unknown) {
       language_confirmed: true,
       review_reason: null,
       eta_at: null,
-      evaluation_cents: quote.evaluationCents,
-      translation_cents: quote.translationCents,
-      total_cents: quote.totalCents,
+      evaluation_cents: priced.evaluationCents,
+      translation_cents: priced.translationCents,
+      include_translation: priced.includeTranslation,
+      total_cents: priced.totalCents,
     });
     return { status: "preview_ready" as const, sourceLanguage: language };
   }

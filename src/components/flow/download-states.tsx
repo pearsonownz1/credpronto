@@ -3,23 +3,15 @@
 import Link from "next/link";
 import { useState } from "react";
 import { flowUsesMock, getFlowClient } from "@/lib/flow/client";
-import { downloadPhase, totalLabel } from "@/lib/flow/present";
+import { downloadPhase, downloadReadyCopy, totalLabel, type DownloadFileKind } from "@/lib/flow/present";
+import { orderDownloadFilename } from "@/lib/orders/download-name";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
 import { FlowStatus } from "./status";
 import { useCustomerOrder, useStoredEmail, useStoredToken } from "./use-order";
 import { buttonClasses } from "./ui";
 
-const MOCK_FILES = {
-  translation: {
-    href: "/samples/birth-certificate-en.pdf",
-    filename: "birth-certificate-EN-certified.pdf",
-  },
-  certification: {
-    href: "/samples/birth-certificate-en.pdf",
-    filename: "certification.pdf",
-  },
-} as const;
+const MOCK_HREF = "/samples/birth-certificate-en.pdf";
 
 export function DownloadStates({ token: pathToken }: { token?: string }) {
   const token = useStoredToken(pathToken);
@@ -76,13 +68,15 @@ function Ready({
   token: string;
   email: string;
 }) {
+  const copy = downloadReadyCopy(order);
+  const names = order.documents.map((document) => document.filename);
   return (
     <>
       <div className="flex size-12 items-center justify-center rounded-full bg-[#e8f6f0] text-2xl font-bold text-[var(--cp-ok)]">
         ✓
       </div>
       <h1 className="mt-5 text-[32px] font-bold tracking-[-0.6px] md:text-4xl">
-        Your certified translation is ready.
+        {copy.title}
       </h1>
       <p data-testid="email-note" className="mt-2.5 mb-7 text-base text-ink-muted">
         Paid {totalLabel(order.totalCents)} · Order {order.orderId}.{" "}
@@ -91,21 +85,24 @@ function Ready({
       <div className="overflow-hidden rounded-[var(--cp-radius)] border border-line">
         <FileRow
           token={token}
-          file="translation"
-          title="Certified translation"
-          testId="download-certified"
+          file={copy.primaryFile}
+          title={copy.primaryTitle}
+          filename={orderDownloadFilename(copy.primaryFile, names, order.targetLanguage)}
+          testId={copy.primaryFile === "evaluation" ? "download-evaluation" : "download-certified"}
           primary
         />
-        <FileRow
-          token={token}
-          file="certification"
-          title="Certification page"
-          testId="download-certification"
-        />
+        {copy.secondary ? (
+          <FileRow
+            token={token}
+            file={copy.secondary.file}
+            title={copy.secondary.title}
+            filename={orderDownloadFilename(copy.secondary.file, names, order.targetLanguage)}
+            testId="download-certification"
+          />
+        ) : null}
       </div>
       <p className="mt-5 text-[13.5px] leading-relaxed text-ink-muted">
-        Bookmark this page or use the link in your email to come back. Need another
-        document translated?{" "}
+        Bookmark this page or use the link in your email to come back. {copy.again}{" "}
         <Link
           href="/translate"
           className="font-semibold text-primary"
@@ -124,19 +121,20 @@ function FileRow({
   token,
   file,
   title,
+  filename,
   testId,
   primary,
 }: {
   token: string;
-  file: "translation" | "certification";
+  file: DownloadFileKind;
   title: string;
+  filename: string;
   testId: string;
   primary?: boolean;
 }) {
   const [error, setError] = useState<string | null>(null);
   const mock = flowUsesMock();
-  const href = MOCK_FILES[file].href;
-  const filename = MOCK_FILES[file].filename;
+  const href = MOCK_HREF;
   const className = buttonClasses(
     primary ? "primary" : "secondary",
     "h-10 shrink-0 px-[18px] text-[15px]",

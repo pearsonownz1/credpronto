@@ -13,6 +13,7 @@ import {
   canSetSourceLanguage,
   checkoutFailureMessage,
   displayedPageRule,
+  downloadReadyCopy,
   documentIdForPage,
   downloadPhase,
   joinParents,
@@ -80,6 +81,8 @@ function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
     degreeCount: null,
     evaluationCents: null,
     translationCents: null,
+    includeTranslation: false,
+    translationOfferCents: null,
     lineItems: [],
     evaluation: null,
     progress: { step: "done", pagesRead: 3, pagesTotal: 3 },
@@ -630,6 +633,25 @@ describe("evaluation prices", () => {
     expect(servicePriceLines(course)).toEqual([
       { label: "Course-by-course evaluation · 2 degrees × $39.95", amountCents: 7990 },
     ]);
+  });
+});
+
+describe("download copy", () => {
+  it("names an evaluation report and keeps a translation's certificate", () => {
+    expect(downloadReadyCopy({ orderType: "evaluation", service: "diploma" })).toEqual({
+      title: "Your credential evaluation is ready.",
+      primaryTitle: "Evaluation report",
+      primaryFile: "evaluation",
+      secondary: null,
+      again: "Need another credential evaluated?",
+    });
+    expect(downloadReadyCopy({ orderType: "translation", service: null })).toEqual({
+      title: "Your certified translation is ready.",
+      primaryTitle: "Certified translation",
+      primaryFile: "translation",
+      secondary: { title: "Certification page", file: "certification" },
+      again: "Need another document translated?",
+    });
   });
 });
 

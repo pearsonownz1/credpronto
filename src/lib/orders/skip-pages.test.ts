@@ -67,6 +67,12 @@ describe("quote patch", () => {
     expect(() => parseQuotePatch({ skipPages: ["p2"] })).toThrow(/page indexes/);
     expect(() => parseQuotePatch({ skipPages: [-1] })).toThrow(/page indexes/);
     expect(() => parseQuotePatch({ skipPages: [1.5] })).toThrow(/page indexes/);
+    expect(() => parseQuotePatch({ includeTranslation: "yes" })).toThrow(/includeTranslation must be true or false/);
+    expect(parseQuotePatch({ includeTranslation: true })).toEqual({ includeTranslation: true });
+    expect(parseQuotePatch({ includeTranslation: false, skipPages: [0] })).toEqual({
+      includeTranslation: false,
+      skipPages: [0],
+    });
     try {
       parseQuotePatch({ skipPages: "page-1" });
     } catch (error) {
@@ -89,7 +95,7 @@ describe("price after skip", () => {
         },
         1,
       ),
-    ).toEqual({ billablePages: 1, translationCents: null, totalCents: 995 });
+    ).toEqual({ billablePages: 1, translationCents: null, totalCents: 995, includeTranslation: false });
   });
 
   it("keeps the evaluation fee and drops the translation when every page is skipped", () => {
@@ -97,13 +103,32 @@ describe("price after skip", () => {
       quotePriceAfterSkip(
         {
           service: "diploma",
+          degreeCount: 1,
           sourceLanguage: "es",
           unitPriceCents: 995,
           evaluationCents: 1995,
           addonCents: 0,
+          includeTranslation: true,
         },
         0,
       ),
-    ).toEqual({ billablePages: 0, translationCents: 0, totalCents: 1995 });
+    ).toEqual({ billablePages: 0, translationCents: 0, totalCents: 1995, includeTranslation: true });
+  });
+
+  it("leaves a one-page diploma at $19.95 when translation stays off", () => {
+    expect(
+      quotePriceAfterSkip(
+        {
+          service: "diploma",
+          degreeCount: 1,
+          sourceLanguage: "es",
+          unitPriceCents: 995,
+          evaluationCents: 1995,
+          addonCents: 0,
+          includeTranslation: false,
+        },
+        1,
+      ),
+    ).toEqual({ billablePages: 1, translationCents: 0, totalCents: 1995, includeTranslation: false });
   });
 });
