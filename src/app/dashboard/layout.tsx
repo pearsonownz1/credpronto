@@ -7,7 +7,6 @@ import { safeNextPath } from "@/lib/auth/redirect";
 import { currentPath, getAccount } from "@/lib/account/session";
 import { listMyOrders } from "@/lib/api/server";
 
-export const dynamic = "force-dynamic";
 export const instant = false;
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
