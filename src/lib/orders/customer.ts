@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
+import { addonStripeLines, parseCheckoutBody, serviceCents } from "./addons";
 import { downloadGate } from "./access";
 import { checkoutPreviewImageUrl } from "./checkout-image";
 import { checkoutLineProduct, checkoutProductDescription } from "./checkout-preview";
@@ -26,6 +27,7 @@ import {
   markPaymentRefunded,
   paymentByIntent,
   paymentBySession,
+  replaceOrderAddons,
   restorePreviewReadyOrder,
   requireOrderByHash,
   settledPayment,
@@ -289,13 +291,26 @@ async function downloadOriginals(token: string, documentId: string | null) {
   return originalDownloadResponse(signed, DOWNLOAD_URL_SECONDS, documentId);
 }
 
-export async function startCheckout(token: string) {
+export async function startCheckout(token: string, body: unknown = {}) {
   const { db, order } = await orderForToken(token);
   if (order.status !== "preview_ready") throw new HttpError("Preview is not ready", 409);
-  if (!order.languageConfirmed || !order.billablePages || order.totalCents == null) {
+  if (await settledPayment(db, order.id)) throw new HttpError("This order is already paid", 409);
+  const selection = parseCheckoutBody(body, order.billablePages);
+  const base = serviceCents(order);
+  if (
+    !order.languageConfirmed ||
+    base == null ||
+    (order.service != null && (order.evaluationCents == null || order.translationCents == null))
+  ) {
     throw new HttpError("This order is not ready to pay", 409);
   }
-  if (await settledPayment(db, order.id)) throw new HttpError("This order is already paid", 409);
+  const total = base + selection.addonCents;
+  await replaceOrderAddons(db, order.id, {
+    addons: selection.addons,
+    shippingAddress: selection.shippingAddress,
+    addonCents: selection.addonCents,
+    totalCents: total,
+  });
 
   if (process.env.CHECKOUT_PLACEHOLDER === "1") {
     await insertEvent(db, order.id, "checkout_started", { mode: "paid_test" });
@@ -303,7 +318,7 @@ export async function startCheckout(token: string) {
     await insertPayment(db, {
       orderId: order.id,
       sessionId,
-      amountCents: order.totalCents,
+      amountCents: total,
       status: "paid_test",
       paidAt: new Date().toISOString(),
     });
@@ -324,7 +339,7 @@ export async function startCheckout(token: string) {
     sourceLanguage: order.sourceLanguage,
     targetLanguage: order.targetLanguage,
     documentNames: documents.map((document) => document.filename),
-    pages: order.billablePages,
+    pages: order.billablePages ?? 0,
   });
   const preview = await latestReadyPreview(db, order.id);
   const imageUrl = preview ? await checkoutPreviewImageUrl(db, order.id, preview.previewPath) : null;
@@ -338,14 +353,22 @@ export async function startCheckout(token: string) {
         quantity: 1,
         price_data: {
           currency: order.currency,
-          unit_amount: order.totalCents,
+          unit_amount: base,
           product_data: checkoutLineProduct({
-            billablePages: order.billablePages,
+            billablePages: order.billablePages ?? 1,
             description,
             imageUrl,
           }),
         },
       },
+      ...addonStripeLines(selection.addons).map((line) => ({
+        quantity: line.quantity,
+        price_data: {
+          currency: order.currency,
+          unit_amount: line.unitAmountCents,
+          product_data: { name: line.name },
+        },
+      })),
     ],
     success_url: `${appOrigin()}/order/${token}?checkout=success`,
     cancel_url: `${appOrigin()}/order/${token}?checkout=cancel`,
@@ -356,7 +379,7 @@ export async function startCheckout(token: string) {
     orderId: order.id,
     sessionId: session.id,
     paymentIntentId: paymentIntent,
-    amountCents: order.totalCents,
+    amountCents: total,
     status: "pending",
   });
   return { url: session.url, sessionId: session.id };

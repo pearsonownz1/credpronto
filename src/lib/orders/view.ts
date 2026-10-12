@@ -1,8 +1,10 @@
+import { ADDON_CATALOG, addonOptions, type AddonOption } from "./addons";
 import { pageRuleForLanguages } from "./billing";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
 import { lineItemsForOrder } from "./evaluation-price";
 import { compareCombinedPages } from "./page-order";
 import type {
+  AddonId,
   ConfirmationRecord,
   DocumentRecord,
   EvaluationLine,
@@ -12,6 +14,7 @@ import type {
   OrderType,
   PageOrderBasis,
   PageRecord,
+  ShippingAddress,
   StoredPage,
 } from "./types";
 
@@ -48,6 +51,9 @@ export type CustomerOrder = {
   }>;
   billablePages: number | null;
   unitPriceCents: number;
+  addons: AddonId[];
+  addonOptions: AddonOption[];
+  shippingAddress: ShippingAddress | null;
   totalCents: number | null;
   currency: string;
   pageRule: string;
@@ -80,6 +86,7 @@ export function toCustomerOrder(input: {
   paymentStatus: string | null;
   deliveryStatus: string | null;
   email: string | null;
+  addons?: Array<{ id: AddonId }>;
 }): CustomerOrder {
   const confidences = input.documents
     .map((document) => document.confidence)
@@ -129,6 +136,15 @@ export function toCustomerOrder(input: {
     })),
     billablePages: input.order.billablePages,
     unitPriceCents: input.order.unitPriceCents,
+    addons: [...(input.addons ?? [])]
+      .sort(
+        (a, b) =>
+          ADDON_CATALOG.findIndex((item) => item.id === a.id) -
+          ADDON_CATALOG.findIndex((item) => item.id === b.id),
+      )
+      .map((item) => item.id),
+    addonOptions: addonOptions(input.order.billablePages),
+    shippingAddress: input.order.shippingAddress,
     totalCents: input.order.totalCents,
     currency: input.order.currency,
     pageRule: pageRuleForLanguages([
