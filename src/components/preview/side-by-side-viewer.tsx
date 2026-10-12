@@ -129,6 +129,45 @@ export function SideBySideViewer({
   );
 }
 
+function usePageCount(documentId: string) {
+  const scroll = useScroll(documentId);
+  const { provides } = useScrollCapability();
+  const [totalPages, setTotalPages] = useState(0);
+
+  useEffect(() => {
+    if (!provides) return;
+
+    const sync = () => {
+      const count = provides.forDocument(documentId).getTotalPages();
+      if (count > 0) setTotalPages(count);
+    };
+
+    sync();
+    const timers = [100, 400, 1000].map((delay) => window.setTimeout(sync, delay));
+    const stopLayout = provides.onLayoutReady((event) => {
+      if (event.documentId === documentId && event.totalPages > 0) {
+        setTotalPages(event.totalPages);
+      }
+    });
+    const stopPage = provides.onPageChange((event) => {
+      if (event.documentId === documentId && event.totalPages > 0) {
+        setTotalPages(event.totalPages);
+      }
+    });
+
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+      stopLayout();
+      stopPage();
+    };
+  }, [documentId, provides]);
+
+  return {
+    currentPage: scroll.state.currentPage,
+    totalPages: totalPages || scroll.state.totalPages,
+  };
+}
+
 function ViewerWorkspace() {
   const isMobile = useIsMobile();
   const [role, setRole] = useState<Role>("original");
@@ -137,13 +176,14 @@ function ViewerWorkspace() {
   const { provides: scrollCapability } = useScrollCapability();
   const { provides: zoomCapability } = useZoomCapability();
   const { provides: viewportCapability } = useViewportCapability();
-  const leadScroll = useScroll(DOCUMENT_ID[lead]);
+  const leadScroll = usePageCount(DOCUMENT_ID[lead]);
   const snapshot = useRef<Snapshot>({
     pageNumber: 1,
     x: 0,
     y: 0,
     zoom: ZoomMode.FitWidth,
   });
+  const pendingRestore = useRef<Role | null>(null);
   const syncScrollRef = useRef(syncScroll);
   const suppressSync = useRef(false);
   const leadRef = useRef(lead);
@@ -202,7 +242,13 @@ function ViewerWorkspace() {
   }, [scrollCapability]);
 
   useEffect(() => {
-    if (!isMobile || !scrollCapability || !zoomCapability || !viewportCapability) {
+    if (
+      !isMobile ||
+      pendingRestore.current !== role ||
+      !scrollCapability ||
+      !zoomCapability ||
+      !viewportCapability
+    ) {
       return;
     }
     const documentId = DOCUMENT_ID[role];
@@ -221,9 +267,10 @@ function ViewerWorkspace() {
           alignY: 0,
           behavior: "instant",
         });
+        pendingRestore.current = null;
         window.setTimeout(() => {
           suppressSync.current = false;
-        }, 120);
+        }, 200);
         window.clearInterval(timer);
       } else if (tries > 40) {
         window.clearInterval(timer);
@@ -285,19 +332,24 @@ function ViewerWorkspace() {
   function showRole(next: Role) {
     if (next === role) return;
     const metrics = scrollCapability?.forDocument(DOCUMENT_ID[role]).getMetrics();
+    const anchor = metrics
+      ? visibleAnchor(metrics)
+      : { pageNumber: pageNumber || 1, x: 0, y: 0 };
+    const page = pageNumber || anchor.pageNumber || 1;
     const zoom = zoomCapability?.forDocument(DOCUMENT_ID[role]).getState();
-    if (metrics) {
-      snapshot.current = {
-        ...visibleAnchor(metrics),
-        zoom: zoom?.zoomLevel ?? snapshot.current.zoom,
-      };
-    }
+    snapshot.current = {
+      pageNumber: page,
+      x: anchor.pageNumber === page ? anchor.x : 0,
+      y: anchor.pageNumber === page ? anchor.y : 0,
+      zoom: zoom?.currentZoomLevel || snapshot.current.zoom,
+    };
+    pendingRestore.current = next;
     rememberLead(next);
     setRole(next);
   }
 
-  const pageNumber = leadScroll.state.currentPage || 0;
-  const totalPages = leadScroll.state.totalPages || 0;
+  const pageNumber = leadScroll.currentPage || 0;
+  const totalPages = leadScroll.totalPages || 0;
   const visibleRoles: Role[] = isMobile
     ? [role]
     : ["original", "translation"];
@@ -439,18 +491,18 @@ function DocumentPane({
   onJump: (pageNumber: number) => void;
 }) {
   const documentId = DOCUMENT_ID[role];
-  const { state } = useScroll(documentId);
+  const { currentPage, totalPages } = usePageCount(documentId);
   const { state: zoomState } = useZoom(documentId);
   const zoom = Math.round((zoomState.currentZoomLevel || 0) * 100);
 
   return (
     <section
       data-testid={`pane-${role}`}
-      data-page={state.currentPage}
+      data-page={currentPage}
       data-zoom={zoom}
-      data-total={state.totalPages}
+      data-total={totalPages}
       aria-label={label}
-      className="flex min-h-0 min-w-0 flex-1 flex-col"
+      className="flex min-h-0 min-w-0 flex-1 flex-col border-line md:border-l md:first:border-l-0"
     >
       <h2 className="flex h-8 shrink-0 items-center border-b border-line px-3 text-xs font-medium uppercase tracking-wide text-ink-muted">
         {label}
