@@ -609,7 +609,7 @@ describe("evaluation prices", () => {
       ],
     });
     expect(servicePriceLines(diploma)).toEqual([
-      { label: "Diploma evaluation · 1 degree × $19.95", amountCents: 1995 },
+      { label: "Diploma evaluation", amountCents: 1995 },
       { label: "Certified translation · 2 pages × $9.95", amountCents: 1990 },
     ]);
 
@@ -631,7 +631,62 @@ describe("evaluation prices", () => {
       ],
     });
     expect(servicePriceLines(course)).toEqual([
-      { label: "Course-by-course evaluation · 2 degrees × $39.95", amountCents: 7990 },
+      { label: "Course-by-course evaluation", amountCents: 7990 },
+    ]);
+  });
+
+  it("sends evaluation details to the preview instead of a certification row", () => {
+    const diploma = order({
+      orderType: "evaluation",
+      service: "diploma",
+      degreeCount: 1,
+      evaluationCents: 1995,
+      translationCents: 0,
+      totalCents: 1995,
+      billablePages: 1,
+      evaluation: {
+        kind: "diploma",
+        credentials: [
+          {
+            applicant: "Ada Lovelace",
+            institution: "Example University",
+            country: "France",
+            credential: "Licence",
+            field: "Mathematics",
+            dates: "2018–2022",
+            usEquivalency: "Bachelor's degree",
+            documentsReviewed: ["diploma.pdf"],
+          },
+        ],
+      },
+      lineItems: [
+        {
+          kind: "evaluation",
+          description: "Diploma evaluation",
+          quantity: 1,
+          unitAmountCents: 1995,
+          amountCents: 1995,
+        },
+      ],
+    });
+    const mapped = toPreviewOrder(diploma, {
+      status: "preview_ready",
+      totalCents: 1995,
+      unitPriceCents: 995,
+      billablePages: 1,
+      original: { url: "https://files.example/original", pageCount: 1, pages: [] },
+      translation: { url: "https://files.example/report", pageCount: 1, pages: [], version: 1 },
+      report: { url: "https://files.example/report", pageCount: 1 },
+      corrections: [],
+    });
+    expect(mapped.product).toBe("evaluation");
+    expect(mapped.pricing.lines).toEqual([{ label: "Diploma evaluation", amountCents: 1995 }]);
+    expect(mapped.evaluationDetails).toEqual([
+      { label: "Credential holder", value: "Ada Lovelace" },
+      { label: "School", value: "Example University" },
+      { label: "Degree", value: "Licence" },
+      { label: "Dates", value: "2018–2022" },
+      { label: "U.S. equivalency", value: "Bachelor's degree" },
     ]);
   });
 });

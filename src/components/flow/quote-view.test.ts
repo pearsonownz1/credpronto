@@ -80,17 +80,22 @@ describe("quote step actions", () => {
     expect(CJK_PAGE_RULE).not.toContain("400 units");
   });
 
-  it("shows the turnaround beside the file name", () => {
+  it("keeps the green turnaround beside the file name after the quote is ready", () => {
     const html = htmlFor(sampleCustomerOrder());
     expect(html).toContain('data-testid="file-turnaround"');
     expect(html).toContain("Ready in a few minutes");
     expect(html).not.toContain("10 minutes");
     expect(html).toContain("text-[var(--cp-ok)]");
     expect(html).toContain("md:flex-row");
-    expect(html).toContain('data-testid="file-thumb-skeleton"');
+    expect(html).not.toContain('data-testid="file-thumb-skeleton"');
+    expect(html).not.toContain('data-testid="page-details"');
+    expect(html).not.toContain('data-testid="page-thumb"');
+    expect(html).not.toContain("page-skip-");
     expect(html).toContain('data-testid="page-viewer"');
     expect(html).toContain("md:w-[420px]");
     expect(html).toContain("Page 1");
+    expect(html).not.toContain("#fbf8ef");
+    expect(html).not.toContain("#e9e4d6");
   });
 
   it("shows Continue for a quoted order with a page line and a total", () => {
@@ -145,7 +150,12 @@ describe("quote step actions", () => {
     expect(html).toContain('data-testid="include-translation"');
     expect(html).toContain("Certified translation");
     expect(html).toContain("$9.95");
+    expect(html).toContain("Diploma evaluation");
     expect(html).toContain("Evaluation report");
+    expect(html).not.toContain("1 degree ×");
+    expect(html).not.toContain(QUOTE_BILLING_NOTE);
+    expect(html).not.toContain('data-testid="file-billable"');
+    expect(html).not.toContain("Page details");
     expect(html).not.toContain("$29.90");
     expect(html).toContain('data-testid="continue"');
   });

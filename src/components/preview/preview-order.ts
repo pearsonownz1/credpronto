@@ -63,6 +63,8 @@ export type PreviewOrder = {
     /** Set from the order API. Evaluation orders list the evaluation fee here. */
     lines?: PreviewPriceLine[];
   };
+  /** Credential holder, school, degree, and dates. Replaces the certification row. */
+  evaluationDetails?: Array<{ label: string; value: string }>;
   included: string[];
   corrections: PreviewCorrection[];
   /** Prices come from the order. Options that are absent stay hidden. */

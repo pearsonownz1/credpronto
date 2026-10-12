@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { DIPLOMA_DETAIL, DIPLOMA_PRICE_LABEL } from "@/lib/evaluations/catalog";
+import { HeroUpload } from "./hero-upload";
 import { buttonClasses } from "./ui";
 
 const STATS = [
@@ -55,11 +56,12 @@ export function HomeHero() {
             </p>
           ))}
         </div>
+        <HeroUpload />
         <div className="mt-8 flex flex-wrap items-center gap-5">
           <Link
             href="/translate"
             data-testid="hero-get-started"
-            className={buttonClasses("primary", "h-12 px-6 text-base")}
+            className={buttonClasses("secondary", "h-12 px-6 text-base")}
           >
             Get started
           </Link>

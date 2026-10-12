@@ -16,20 +16,20 @@ export type PreviewWork = {
   steps: Array<{ id: PreviewWorkStepId; label: string; state: "done" | "current" | "pending" }>;
 };
 
-/** Equal slices of the four real steps. The bar sits on the current step. */
-const STEP_PERCENT: Record<Exclude<PreviewWorkStepId, "ready">, number> = {
-  received: 25,
-  read: 50,
-  translating: 75,
-};
-
 /** One interval for the whole wait. No backoff. */
 export const PREVIEW_POLL_MS = 3_000;
+
+/** Translating starts here and eases upward. It does not open at 75. */
+export const TRANSLATING_FLOOR = 92;
+const TRANSLATING_SPAN = 6;
+/** Time constant for the ease from 92 toward 98. */
+const TRANSLATING_EASE_MS = 120_000;
+const TRANSLATING_CAP = 98;
 
 export type PreviewReadyOrder = {
   status?: string | null;
   /** Customer payload shape from `GET /api/orders/[token]`. */
-  progress?: { step?: string | null } | null;
+  progress?: { step?: string | null; pagesRead?: number | null; pagesTotal?: number | null } | null;
   /** Same step, when the caller already pulled it off `progress`. */
   progressStep?: string | null;
 };
@@ -69,8 +69,82 @@ export function previewPollContinues(
   return true;
 }
 
-function currentStep(status: string, progressStep: string | null | undefined): Exclude<PreviewWorkStepId, "ready"> {
-  if (progressStep === "uploaded") return "received";
+function pageRatio(pagesRead: number | null | undefined, pagesTotal: number | null | undefined): number {
+  if (typeof pagesTotal !== "number" || !Number.isFinite(pagesTotal) || pagesTotal <= 0) return 0;
+  if (typeof pagesRead !== "number" || !Number.isFinite(pagesRead) || pagesRead <= 0) return 0;
+  return Math.min(1, pagesRead / pagesTotal);
+}
+
+/**
+ * Ease from 92 toward 98 while `progress.step` stays `translating`
+ * and the payload has no unfinished page count. Elapsed time is real
+ * time on that step. The value stays under 100 until `done`.
+ */
+export function translatingEase(elapsedMs: number): number {
+  const elapsed = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0;
+  const eased = TRANSLATING_SPAN * (1 - Math.exp(-elapsed / TRANSLATING_EASE_MS));
+  return Math.min(TRANSLATING_CAP, TRANSLATING_FLOOR + eased);
+}
+
+/**
+ * Translating percent. Unfinished `pagesRead` / `pagesTotal` is the
+ * sub-progress and moves the bar from 92 toward 98. A full page count is
+ * the quote, not translation progress, so that case eases with real time.
+ * This never returns 75.
+ */
+export function translatingPercent(input: {
+  pagesRead?: number | null;
+  pagesTotal?: number | null;
+  translatingElapsedMs?: number;
+}): number {
+  const total = input.pagesTotal;
+  const read = input.pagesRead;
+  if (
+    typeof total === "number" &&
+    Number.isFinite(total) &&
+    total > 0 &&
+    typeof read === "number" &&
+    Number.isFinite(read) &&
+    read >= 0 &&
+    read < total
+  ) {
+    return TRANSLATING_FLOOR + TRANSLATING_SPAN * (read / total);
+  }
+  return translatingEase(input.translatingElapsedMs ?? 0);
+}
+
+/**
+ * Bar percent from `progress.step`, `pagesRead`, and `pagesTotal`.
+ * uploaded 5, reading 5–60, language 70, counting 80, quoting 90,
+ * translating ~92, done 100.
+ */
+export function previewStepPercent(input: {
+  progressStep?: string | null;
+  pagesRead?: number | null;
+  pagesTotal?: number | null;
+  translatingElapsedMs?: number;
+}): number {
+  switch (input.progressStep) {
+    case "uploaded":
+      return 5;
+    case "reading":
+      return 5 + 55 * pageRatio(input.pagesRead, input.pagesTotal);
+    case "language":
+      return 70;
+    case "counting":
+      return 80;
+    case "quoting":
+      return 90;
+    case "translating":
+      return translatingPercent(input);
+    case "done":
+      return 100;
+    default:
+      return 5;
+  }
+}
+
+function currentStep(progressStep: string | null | undefined): Exclude<PreviewWorkStepId, "ready"> {
   if (
     progressStep === "reading" ||
     progressStep === "language" ||
@@ -79,26 +153,21 @@ function currentStep(status: string, progressStep: string | null | undefined): E
   ) {
     return "read";
   }
-  if (
-    progressStep === "translating" ||
-    status === "confirmed" ||
-    status === "processing" ||
-    status === "correction_requested" ||
-    status === "needs_review"
-  ) {
-    return "translating";
-  }
+  if (progressStep === "translating" || progressStep === "done") return "translating";
   return "received";
 }
 
 /**
- * Progress for the preview step. The bar moves through the working steps and
+ * Progress for the preview step. The bar follows the API `progress` fields and
  * reaches 100 only once the preview is ready (`preview_ready` or step `done`).
  */
 export function previewWork(input: {
   status: string;
   orderType?: string | null;
   progressStep?: string | null;
+  pagesRead?: number | null;
+  pagesTotal?: number | null;
+  translatingElapsedMs?: number;
 }): PreviewWork {
   const translatingLabel = input.orderType === "evaluation" ? "Building the report" : "Translating and laying out";
   const steps = PREVIEW_WORK_STEPS.map((step) =>
@@ -114,13 +183,14 @@ export function previewWork(input: {
     };
   }
 
-  const current = currentStep(input.status, input.progressStep);
+  const current = currentStep(input.progressStep);
   const index = steps.findIndex((step) => step.id === current);
-  const percent = STEP_PERCENT[current];
+  const percent =
+    input.progressStep === "done" ? translatingPercent(input) : previewStepPercent(input);
   return {
     phase: "working",
     percent,
-    displayPercent: percent,
+    displayPercent: Math.round(percent),
     label: steps[index]?.label ?? translatingLabel,
     steps: steps.map((step, position) => ({
       ...step,

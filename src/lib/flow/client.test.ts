@@ -87,6 +87,26 @@ describe("order upload", () => {
   });
 });
 
+describe("quote update", () => {
+  it("patches target language and translation choice without skipPages", async () => {
+    const fetchSpy = vi.fn(async () => json({ orderId: "order-1", status: "quoted" }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await getFlowClient().updateQuote("order token", {
+      targetLanguage: "en",
+      includeTranslation: true,
+    });
+
+    const body = JSON.stringify({ targetLanguage: "en", includeTranslation: true });
+    expect(fetchSpy).toHaveBeenCalledWith("/api/orders/order%20token", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body,
+    });
+    expect(body).not.toContain("skipPages");
+  });
+});
+
 describe("target language update", () => {
   it("patches /api/orders/[token] with the chosen target", async () => {
     const fetchSpy = vi.fn(async () => json({ orderId: "order-1", status: "quoted" }));

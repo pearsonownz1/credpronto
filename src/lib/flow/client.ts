@@ -35,9 +35,19 @@ export type ConfirmDocumentInput = {
   date_format: string;
 };
 
+export type EvaluationConfirmDocument = {
+  documentId: string;
+  holder_name: string;
+  school: string;
+  degree: string;
+  dates_attended: string;
+  date_awarded: string;
+};
+
 export type ConfirmInput = {
   sourceLanguage: string;
-  documents: ConfirmDocumentInput[];
+  documents?: Array<ConfirmDocumentInput | EvaluationConfirmDocument>;
+  includeTranslation?: boolean;
 };
 
 export type CheckoutResult =
@@ -85,7 +95,7 @@ export type FlowClient = {
   updateTargetLanguage(token: string, targetLanguage: string): Promise<CustomerOrder>;
   updateQuote(
     token: string,
-    body: { skipPages?: number[]; targetLanguage?: string; includeTranslation?: boolean },
+    body: { targetLanguage?: string; includeTranslation?: boolean },
   ): Promise<CustomerOrder>;
   /** Mock walk-through moves a quoted order to preview_ready before checkout. */
   markPreviewReady(token: string): Promise<void>;
@@ -316,21 +326,32 @@ const mockClient: FlowClient = {
   },
   async confirm(_token, body) {
     const current = readMockOrder();
+    const documents = body.documents ?? [];
+    const confirmed = new Map(
+      documents.flatMap((document) =>
+        Object.entries(document)
+          .filter((entry): entry is [string, string] => entry[0] !== "documentId" && typeof entry[1] === "string")
+          .map(([fieldKey, value]) => [`${document.documentId}:${fieldKey}`, value]),
+      ),
+    );
+    const seen = new Set(current.confirmations.map((field) => `${field.documentId}:${field.fieldKey}`));
+    const confirmations = current.confirmations.map((field) => {
+      const value = confirmed.get(`${field.documentId}:${field.fieldKey}`);
+      return value == null ? field : { ...field, confirmedValue: value };
+    });
+    for (const [key, value] of confirmed) {
+      if (seen.has(key)) continue;
+      const [documentId, fieldKey] = key.split(":");
+      if (!documentId || !fieldKey) continue;
+      confirmations.push({ documentId, fieldKey, originalValue: null, confirmedValue: value });
+    }
     const next: CustomerOrder = {
       ...current,
       status: "processing",
       sourceLanguage: body.sourceLanguage,
       languageConfirmed: true,
       progress: { ...current.progress, step: "translating" },
-      confirmations: current.confirmations.map((field) => {
-        const document = body.documents.find((item) => item.documentId === field.documentId);
-        if (!document) return field;
-        const value = (document as Record<string, string>)[field.fieldKey];
-        return {
-          ...field,
-          confirmedValue: typeof value === "string" ? value : field.confirmedValue,
-        };
-      }),
+      confirmations,
     };
     writeMockOrder(next);
     return next;
@@ -434,39 +455,8 @@ const mockClient: FlowClient = {
       }
     }
     const current = readMockOrder();
-    const skip = new Set(body.skipPages);
-    const orderedLength = current.pageOrder?.pages.length ?? 0;
-    const usePages = current.pages.length > 0 && current.pages.length >= orderedLength;
-    const pages = usePages
-      ? current.pages.map((page, index) => ({ ...page, skip: skip.has(index) }))
-      : current.pages.map((page) => {
-          if (!current.pageOrder) return page;
-          const index = current.pageOrder.pages.findIndex(
-            (row) =>
-              row.documentId === page.documentId &&
-              (page.uploadPage === row.uploadPage || page.pageNumber === row.appliedPage),
-          );
-          return index >= 0 ? { ...page, skip: skip.has(index) } : page;
-        });
-    const pageOrder = current.pageOrder
-      ? {
-          ...current.pageOrder,
-          pages: current.pageOrder.pages.map((page, index) => {
-            if (!usePages) return { ...page, skip: skip.has(index) };
-            const matchIndex = current.pages.findIndex(
-              (item) =>
-                item.documentId === page.documentId &&
-                ((item.uploadPage != null && item.uploadPage === page.uploadPage) ||
-                  item.pageNumber === page.appliedPage),
-            );
-            return matchIndex >= 0 ? { ...page, skip: skip.has(matchIndex) } : page;
-          }),
-        }
-      : current.pageOrder;
     const next: CustomerOrder = {
       ...current,
-      pages,
-      pageOrder,
       ...(body.targetLanguage ? { targetLanguage: body.targetLanguage } : {}),
     };
     const billablePages = quoteCounts(next).billable;

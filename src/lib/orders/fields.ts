@@ -10,6 +10,17 @@ export const CONFIRMATION_FIELD_KEYS = [
 
 export type ConfirmationFieldKey = (typeof CONFIRMATION_FIELD_KEYS)[number];
 
+/** Credential details collected on an evaluation, instead of birth-certificate fields. */
+export const EVALUATION_FIELD_KEYS = [
+  "holder_name",
+  "school",
+  "degree",
+  "dates_attended",
+  "date_awarded",
+] as const;
+
+export type EvaluationFieldKey = (typeof EVALUATION_FIELD_KEYS)[number];
+
 export const DATE_FORMATS = ["MM/DD/YYYY", "DD/MM/YYYY"] as const;
 export type DateFormat = (typeof DATE_FORMATS)[number];
 

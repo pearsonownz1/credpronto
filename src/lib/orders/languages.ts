@@ -22,6 +22,8 @@ const LANGUAGE_NAMES: Record<string, string> = {
   swedish: "sv",
   danish: "da",
   norwegian: "no",
+  bokmal: "no",
+  "bokmål": "no",
   finnish: "fi",
   czech: "cs",
   hungarian: "hu",
@@ -33,6 +35,42 @@ const LANGUAGE_NAMES: Record<string, string> = {
   tagalog: "tl",
   filipino: "tl",
   english: "en",
+};
+
+/** Customer-facing names. `nb` is Bokmål and shares the Norwegian label. */
+const CODE_LABELS: Record<string, string> = {
+  es: "Spanish",
+  pt: "Portuguese",
+  fr: "French",
+  de: "German",
+  it: "Italian",
+  zh: "Chinese",
+  ja: "Japanese",
+  ko: "Korean",
+  ar: "Arabic",
+  ru: "Russian",
+  hi: "Hindi",
+  vi: "Vietnamese",
+  pl: "Polish",
+  uk: "Ukrainian",
+  nl: "Dutch",
+  tr: "Turkish",
+  ro: "Romanian",
+  el: "Greek",
+  th: "Thai",
+  id: "Indonesian",
+  sv: "Swedish",
+  da: "Danish",
+  no: "Norwegian (Bokmål)",
+  fi: "Finnish",
+  cs: "Czech",
+  hu: "Hungarian",
+  he: "Hebrew",
+  fa: "Persian",
+  bn: "Bengali",
+  ur: "Urdu",
+  tl: "Tagalog",
+  en: "English",
 };
 
 const SUPPORTED = new Set([
@@ -59,7 +97,6 @@ const SUPPORTED = new Set([
   "sv",
   "da",
   "no",
-  "nb",
   "fi",
   "cs",
   "hu",
@@ -80,13 +117,14 @@ export function normalizeLanguage(value: string | null | undefined): string | nu
 }
 
 export function isSupportedSourceLanguage(code: string | null): boolean {
-  return code != null && code !== "en" && SUPPORTED.has(code);
+  const normalized = normalizeLanguage(code);
+  return normalized != null && normalized !== "en" && SUPPORTED.has(normalized);
 }
 
 export function languageLabel(code: string): string {
-  const entry = Object.entries(LANGUAGE_NAMES).find(([, value]) => value === code);
-  if (!entry) return code;
-  return entry[0].slice(0, 1).toUpperCase() + entry[0].slice(1);
+  const normalized = normalizeLanguage(code);
+  if (normalized && CODE_LABELS[normalized]) return CODE_LABELS[normalized];
+  return "Unknown";
 }
 
 export function languagesEqual(
@@ -100,14 +138,29 @@ export function languagesEqual(
 
 /** Languages the customer can send on confirm. `needs_review` is staff-only. */
 export function sourceLanguageChoices(): Array<{ code: string; label: string }> {
-  return [...SUPPORTED]
-    .map((code) => ({ code, label: languageLabel(code) }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+  const seen = new Set<string>();
+  const choices: Array<{ code: string; label: string }> = [];
+  for (const code of SUPPORTED) {
+    const label = languageLabel(code);
+    if (seen.has(code) || seen.has(label)) continue;
+    if (/^[a-z]{2,3}$/i.test(label)) continue;
+    seen.add(code);
+    seen.add(label);
+    choices.push({ code, label });
+  }
+  return choices.sort((a, b) => a.label.localeCompare(b.label));
 }
 
 /** Target languages, including English. The quote page saves a new choice with PATCH. */
 export function targetLanguageChoices(): Array<{ code: string; label: string }> {
-  return [{ code: "en", label: languageLabel("en") }, ...sourceLanguageChoices()].sort((a, b) =>
-    a.label.localeCompare(b.label),
-  );
+  const choices = [{ code: "en", label: languageLabel("en") }, ...sourceLanguageChoices()];
+  const seen = new Set<string>();
+  return choices
+    .filter((choice) => {
+      if (seen.has(choice.code) || seen.has(choice.label)) return false;
+      seen.add(choice.code);
+      seen.add(choice.label);
+      return true;
+    })
+    .sort((a, b) => a.label.localeCompare(b.label));
 }

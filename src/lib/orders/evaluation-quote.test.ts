@@ -193,6 +193,36 @@ describe("evaluation confirm", () => {
     );
   });
 
+  it("stores credential fields instead of birth-certificate fields", async () => {
+    vi.spyOn(db, "listDocuments").mockResolvedValue([
+      { id: "doc-1" } as Awaited<ReturnType<typeof db.listDocuments>>[number],
+    ]);
+    vi.spyOn(db, "confirmFields").mockResolvedValue(undefined);
+    vi.spyOn(db, "requireOrderByHash").mockResolvedValue(evaluationOrder());
+
+    await confirmOrder(token, {
+      sourceLanguage: "es",
+      documents: [
+        {
+          documentId: "doc-1",
+          holder_name: "Ada Lovelace",
+          school: "Example University",
+          degree: "Licence",
+          dates_attended: "2018–2022",
+          date_awarded: "2022",
+        },
+      ],
+    });
+
+    expect(db.confirmFields).toHaveBeenCalledWith(expect.anything(), "order-1", [
+      { documentId: "doc-1", fieldKey: "holder_name", confirmedValue: "Ada Lovelace" },
+      { documentId: "doc-1", fieldKey: "school", confirmedValue: "Example University" },
+      { documentId: "doc-1", fieldKey: "degree", confirmedValue: "Licence" },
+      { documentId: "doc-1", fieldKey: "dates_attended", confirmedValue: "2018–2022" },
+      { documentId: "doc-1", fieldKey: "date_awarded", confirmedValue: "2022" },
+    ]);
+  });
+
   it("still requires document fields on a translation", async () => {
     vi.spyOn(db, "requireOrderByHash").mockResolvedValue(
       evaluationOrder({ service: null, degreeCount: null, orderType: "translation", evaluationCents: null }),

@@ -1,21 +1,17 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { knownPageCount } from "@/lib/analytics/google-ads";
-import { trackOrderUpload } from "@/lib/analytics/gtag-events";
-import { FlowApiError, flowUsesMock, getFlowClient } from "@/lib/flow/client";
+import { customerEmailError } from "@/lib/flow/customer-email";
 import {
   parseEvaluationService,
   uploadChoiceFromSelection,
   type UploadChoice,
 } from "@/lib/flow/order-choice";
 import { pageLabel } from "@/lib/flow/pricing";
-import { dedupeUploads } from "@/lib/flow/uploads";
+import { CUSTOMER_FILE_ACCEPT, dedupeUploads } from "@/lib/flow/uploads";
 import { sampleCustomerOrder } from "@/lib/flow/sample-order";
-import { writeEmail, writeToken } from "@/lib/flow/session";
-import { rememberUpload } from "@/lib/flow/upload-blobs";
 import {
   COURSE_BY_COURSE_PRICE_LABEL,
   DIPLOMA_PRICE_LABEL,
@@ -23,8 +19,8 @@ import {
   TRANSLATION_PAGE_LABEL,
 } from "@/lib/evaluations/catalog";
 import type { EvaluationService } from "@/lib/orders/types";
-import { useReadingHandoff } from "./reading-handoff";
 import { buttonClasses, fieldClass } from "./ui";
+import { useQuoteUpload } from "./use-quote-upload";
 
 type ListedFile = {
   id: string;
@@ -83,20 +79,17 @@ export function UploadCard({
   initialService?: string | null;
   sessionEmail?: string | null;
 }) {
-  const router = useRouter();
-  const mock = flowUsesMock();
+  const { mock, pending, error, setError, submit } = useQuoteUpload();
   const signedInEmail = useQuoteEmail(sessionEmail);
-  const { beginUpload, setUploadRatio, orderCreated, endHandoff } = useReadingHandoff();
   const inputRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
   const [email, setEmail] = useState(mock ? "maria.ruiz@email.com" : "");
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [picked, setPicked] = useState<File[]>([]);
   const [product, setProduct] = useState<"translation" | EvaluationService>(
     parseEvaluationService(initialService) ?? "translation",
   );
   const [degrees, setDegrees] = useState("1");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-
   const files: ListedFile[] =
     mock && picked.length === 0
       ? SAMPLE_FILES
@@ -124,7 +117,16 @@ export function UploadCard({
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError(null);
+    if (!signedInEmail) {
+      const problem = customerEmailError(email);
+      if (problem) {
+        setEmailError(problem);
+        setError(null);
+        emailRef.current?.focus();
+        return;
+      }
+    }
+    setEmailError(null);
     const selected = choice();
     if (!selected) {
       setError("Enter at least 1 degree.");
@@ -134,43 +136,7 @@ export function UploadCard({
       setError("Add at least one PDF or photo.");
       return;
     }
-    const address = (signedInEmail ?? email).trim();
-    if (!address) {
-      setError("Enter a valid email address");
-      return;
-    }
-    beginUpload();
-    setPending(true);
-    try {
-      const client = getFlowClient();
-      const result = await client.upload({
-        email: address,
-        files: mock ? [] : picked,
-        choice: selected,
-        onProgress: setUploadRatio,
-      });
-      trackOrderUpload(result.orderId, pageCount);
-      writeToken(result.orderToken);
-      writeEmail(address);
-      rememberUpload(result.orderToken, picked);
-      orderCreated();
-      const useOrderRoute =
-        !mock ||
-        (typeof window !== "undefined" &&
-          sessionStorage.getItem("credpronto-mock-order-route") === "1");
-      router.push(
-        useOrderRoute ? `/order/${encodeURIComponent(result.orderToken)}` : "/quote",
-      );
-    } catch (cause) {
-      endHandoff();
-      const message =
-        cause instanceof FlowApiError
-          ? cause.message
-          : "We couldn't upload those files.";
-      setError(message);
-    } finally {
-      setPending(false);
-    }
+    await submit({ email: signedInEmail ?? email, files: picked, choice: selected, pageCount });
   }
 
   return (
@@ -181,7 +147,7 @@ export function UploadCard({
           <p className="mt-1.5 mb-[18px] text-[13.5px] text-ink-muted">{intro.lede}</p>
         </>
       ) : null}
-      <form onSubmit={onSubmit}>
+      <form noValidate onSubmit={onSubmit}>
         <fieldset data-testid="order-choice" className="mb-4">
           <legend className="mb-1.5 text-[13px] font-semibold">What do you need?</legend>
           <div className="grid gap-2">
@@ -260,7 +226,7 @@ export function UploadCard({
             data-testid="file-input"
             type="file"
             multiple
-            accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
+            accept={CUSTOMER_FILE_ACCEPT}
             className="sr-only"
             onChange={(event) => takeFiles(event.target.files)}
           />
@@ -296,16 +262,26 @@ export function UploadCard({
               Email for your preview link
             </span>
             <input
+              ref={emailRef}
               data-testid="email"
               type="email"
-              required
               autoComplete="email"
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              aria-invalid={emailError ? true : undefined}
+              aria-describedby={emailError ? "email-error" : undefined}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                if (emailError) setEmailError(null);
+              }}
               className={fieldClass}
             />
           </label>
         )}
+        {emailError ? (
+          <p id="email-error" role="alert" data-testid="email-error" className="mt-1.5 text-sm text-[var(--cp-warn)]">
+            {emailError}
+          </p>
+        ) : null}
         {error ? (
           <p role="alert" className="mt-3 text-sm text-[var(--cp-warn)]">
             {error}

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { flowUsesMock, getFlowClient } from "@/lib/flow/client";
 import { previewIsReady, previewWork } from "@/lib/flow/preview-progress";
 import type { CustomerOrder } from "@/lib/orders/view";
@@ -23,6 +23,9 @@ export function ProcessingView({
   const { order, error, loading, reload } = useCustomerOrder(token, "until-preview");
   const ready = previewIsReady(order);
   const takingLong = Boolean(order?.delayed) && !ready;
+  const easing =
+    !ready && (order?.progress?.step === "translating" || order?.progress?.step === "done");
+  const translatingElapsed = useTranslatingElapsed(easing);
   useEffect(() => {
     if (order) onOrder?.(order);
   }, [order, onOrder]);
@@ -33,6 +36,9 @@ export function ProcessingView({
         status: order.status,
         orderType: order.orderType,
         progressStep: order.progress?.step,
+        pagesRead: order.progress?.pagesRead,
+        pagesTotal: order.progress?.pagesTotal,
+        translatingElapsedMs: translatingElapsed,
       })
     : null;
 
@@ -145,6 +151,25 @@ export function ProcessingView({
       </main>
     </div>
   );
+}
+
+function useTranslatingElapsed(active: boolean) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!active) {
+      const reset = window.setTimeout(() => setElapsed(0), 0);
+      return () => window.clearTimeout(reset);
+    }
+    const started = Date.now();
+    let timer = 0;
+    const tick = () => {
+      setElapsed(Date.now() - started);
+      timer = window.setTimeout(tick, 400);
+    };
+    timer = window.setTimeout(tick, 400);
+    return () => window.clearTimeout(timer);
+  }, [active]);
+  return active ? elapsed : 0;
 }
 
 function StepMark({ state }: { state: "done" | "current" | "pending" }) {

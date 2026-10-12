@@ -406,13 +406,58 @@ export function servicePriceLines(order: {
 }
 
 function priceLineLabel(item: EvaluationLine): string {
+  if (item.kind === "evaluation") return item.description;
   const unit = formatMoney(item.unitAmountCents);
-  if (item.kind === "evaluation") {
-    const noun = item.quantity === 1 ? "degree" : "degrees";
-    return `${item.description} · ${item.quantity} ${noun} × ${unit}`;
-  }
   const noun = item.quantity === 1 ? "page" : "pages";
   return `${item.description} · ${item.quantity} ${noun} × ${unit}`;
+}
+
+const EVALUATION_CONFIRM_LABELS: Record<string, string> = {
+  holder_name: "Credential holder",
+  school: "School",
+  degree: "Degree",
+  dates_attended: "Dates attended",
+  date_awarded: "Date awarded",
+};
+
+/** Preview rail rows for an evaluation. Prefers the report, then confirmed fields. */
+export function evaluationPreviewDetails(order: {
+  evaluation: CustomerOrder["evaluation"];
+  confirmations: CustomerOrder["confirmations"];
+}): Array<{ label: string; value: string }> {
+  const result = order.evaluation;
+  if (result?.kind === "diploma") {
+    return result.credentials.flatMap((credential, index) => {
+      const prefix = result.credentials.length > 1 ? `Degree ${index + 1} · ` : "";
+      return detailRows([
+        [`${prefix}Credential holder`, credential.applicant],
+        [`${prefix}School`, credential.institution],
+        [`${prefix}Degree`, credential.credential],
+        [`${prefix}Dates`, credential.dates],
+        [`${prefix}U.S. equivalency`, credential.usEquivalency],
+      ]);
+    });
+  }
+  if (result?.kind === "course_by_course") {
+    return detailRows([
+      ["Credential holder", result.applicant],
+      ["School", result.institution],
+      ["Degree", result.credential],
+      ["U.S. equivalency", result.usEquivalency ?? ""],
+    ]);
+  }
+  return detailRows(
+    Object.entries(EVALUATION_CONFIRM_LABELS).map(([key, label]) => [
+      label,
+      order.confirmations.find((field) => field.fieldKey === key)?.confirmedValue ?? "",
+    ]),
+  );
+}
+
+function detailRows(rows: Array<[string, string]>): Array<{ label: string; value: string }> {
+  return rows
+    .map(([label, value]) => ({ label, value: value.trim() }))
+    .filter((row) => row.value.length > 0);
 }
 
 export type DownloadFileKind = "translation" | "certification" | "evaluation";
@@ -576,6 +621,7 @@ export function toPreviewOrder(
       pages: mapPages(preview.translation.pages),
     },
     product: order.orderType === "evaluation" ? "evaluation" : "translation",
+    evaluationDetails: order.orderType === "evaluation" || order.service != null ? evaluationPreviewDetails(order) : undefined,
     pricing: {
       perPageCents: preview.unitPriceCents,
       pages,
