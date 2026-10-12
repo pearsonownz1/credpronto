@@ -242,6 +242,7 @@ export async function insertOrder(
     orderType?: "translation" | "evaluation" | "expert_letter";
     service?: "diploma" | "course_by_course" | null;
     degreeCount?: number | null;
+    evaluationCents?: number | null;
     externalRef?: string | null;
     sourceLanguage?: string | null;
     targetLanguage?: string | null;
@@ -257,6 +258,7 @@ export async function insertOrder(
       order_type: input.orderType ?? "translation",
       service: input.service ?? null,
       degree_count: input.degreeCount ?? null,
+      ...(input.evaluationCents != null ? { evaluation_cents: input.evaluationCents } : {}),
       status: "draft",
       utm_source: input.utmSource,
       utm_medium: input.utmMedium,

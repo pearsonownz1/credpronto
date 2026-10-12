@@ -9,6 +9,11 @@ export function evaluationUnitCents(service: EvaluationService): number {
   return service === "diploma" ? DIPLOMA_UNIT_CENTS : COURSE_BY_COURSE_UNIT_CENTS;
 }
 
+/** Known at upload, before language detection or a page count. */
+export function evaluationFeeCents(service: EvaluationService, degreeCount: number): number {
+  return degreeCount * evaluationUnitCents(service);
+}
+
 export function evaluationServiceDescription(service: EvaluationService): string {
   return service === "diploma" ? "Diploma evaluation" : "Course-by-course evaluation";
 }
@@ -55,7 +60,7 @@ export function evaluationQuote(input: {
   lineItems: EvaluationLine[];
 } {
   const unitAmountCents = evaluationUnitCents(input.service);
-  const evaluationCents = input.degreeCount * unitAmountCents;
+  const evaluationCents = evaluationFeeCents(input.service, input.degreeCount);
   const translationCents = needsBundledTranslation(input.sourceLanguage)
     ? input.billablePages * UNIT_PRICE_CENTS
     : 0;

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { evaluationQuote, lineItemsForOrder, parseEvaluationResult, parseOrderChoice } from "./evaluation-price";
+import {
+  evaluationFeeCents,
+  evaluationQuote,
+  lineItemsForOrder,
+  parseEvaluationResult,
+  parseOrderChoice,
+} from "./evaluation-price";
 
 describe("evaluation quote", () => {
   it("prices a diploma and adds the translation when the source is not English", () => {
@@ -63,6 +69,12 @@ describe("evaluation quote", () => {
         billablePages: null,
       }),
     ).toEqual([]);
+  });
+
+  it("prices the evaluation fee at upload, before a translation quote", () => {
+    expect(evaluationFeeCents("diploma", 1)).toBe(1995);
+    expect(evaluationFeeCents("diploma", 2)).toBe(3990);
+    expect(evaluationFeeCents("course_by_course", 3)).toBe(11985);
   });
 
   it("requires a service and a degree count for an evaluation upload", () => {
