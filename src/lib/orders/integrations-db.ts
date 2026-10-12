@@ -189,7 +189,7 @@ export async function insertWebhookDelivery(
   db: Db,
   input: {
     endpointId: string;
-    orderId: string;
+    orderId: string | null;
     event: WebhookEvent;
     attempt: number;
     status: "pending" | "succeeded" | "failed";

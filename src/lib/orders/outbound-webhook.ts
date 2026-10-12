@@ -1,7 +1,19 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { HttpError } from "./errors";
 
-export const WEBHOOK_EVENTS = ["order.quoted", "order.delivered", "order.failed"] as const;
+export const WEBHOOK_EVENTS = [
+  "order.quoted",
+  "order.delivered",
+  "order.failed",
+  "order.preview_ready",
+  "order.paid",
+  "order.completed",
+  "webhook.test",
+] as const;
+
+/** One attempt, short timeout. The retrying events stay on the existing schedule. */
+export const LIFECYCLE_WEBHOOK_EVENTS = ["order.preview_ready", "order.paid", "order.completed"] as const;
+export type LifecycleWebhookEvent = (typeof LIFECYCLE_WEBHOOK_EVENTS)[number];
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
 export function generateWebhookSecret(): string {
@@ -24,7 +36,7 @@ export function webhookBody(input: {
   id: string;
   type: WebhookEvent;
   createdAt: string;
-  orderId: string;
+  orderId: string | null;
   status: string;
   externalRef: string | null;
 }): string {

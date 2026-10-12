@@ -28,6 +28,19 @@ describe("outbound webhooks", () => {
     });
   });
 
+  it("signs a test event that has no order", () => {
+    const body = webhookBody({
+      id: "evt_test",
+      type: "webhook.test",
+      createdAt: "2026-10-12T00:00:00.000Z",
+      orderId: null,
+      status: "test",
+      externalRef: null,
+    });
+    expect(JSON.parse(body)).toMatchObject({ type: "webhook.test", data: { orderId: null, status: "test" } });
+    expect(JSON.parse(body)).not.toHaveProperty("secret");
+  });
+
   it("retries after 60 seconds, then 5 minutes, then stops", () => {
     expect(nextRetrySeconds(1)).toBe(60);
     expect(nextRetrySeconds(2)).toBe(300);

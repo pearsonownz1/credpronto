@@ -46,7 +46,7 @@ export type WebhookEventName = (typeof WEBHOOK_EVENTS)[number];
  * Chips the delivery pipeline can post today.
  * The server also emits `order.delivered` and `order.failed`, which are not in this list.
  */
-export const LIVE_WEBHOOK_EVENTS = ["order.quoted"] as const;
+export const LIVE_WEBHOOK_EVENTS = ["order.quoted", "order.preview_ready", "order.paid", "order.completed"] as const;
 
 export type ApiKeyMode = "live" | "test";
 

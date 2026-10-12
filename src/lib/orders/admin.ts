@@ -1,6 +1,6 @@
 import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET } from "./constants";
 import { approverDisplayName, stampApprovedCover } from "./certification";
-import { notifyOrder } from "./webhook-delivery";
+import { notifyLifecycle, notifyOrder } from "./webhook-delivery";
 import { orderDownloadFilename } from "./download-name";
 import {
   customerEmail,
@@ -212,6 +212,7 @@ export async function approveOrder(orderId: string) {
   });
   await updateOrder(db, order.id, { status: "delivered" });
   await notifyOrder(db, order.id, "order.delivered");
+  await notifyLifecycle(db, order.id, "order.completed");
   return {
     status: "delivered" as const,
     email: sent.skipped ? ("skipped" as const) : ("sent" as const),
