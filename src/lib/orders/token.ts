@@ -11,8 +11,13 @@ export function hashOrderToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
 }
 
+/** Raw email-link tokens are 32+ CSPRNG bytes, base64url, and nothing else. */
+export function isOrderToken(token: string): boolean {
+  return token.length >= 43 && token.length <= 128 && /^[A-Za-z0-9_-]+$/.test(token);
+}
+
 export function assertOrderTokenShape(token: string): void {
-  if (token.length < 43 || token.length > 128 || !/^[A-Za-z0-9_-]+$/.test(token)) {
+  if (!isOrderToken(token)) {
     throw new HttpError("Order not found", 404);
   }
 }

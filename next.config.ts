@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { privateCrawlHeaders } from "./src/lib/seo";
 
 const nextConfig: NextConfig = {
   async headers() {
@@ -10,6 +11,8 @@ const nextConfig: NextConfig = {
           { key: "Access-Control-Allow-Origin", value: "*" },
         ],
       },
+      // Matched on the request path, so error responses stay noindex too.
+      ...privateCrawlHeaders(),
     ];
   },
   cacheComponents: true,

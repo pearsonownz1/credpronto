@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
 import { UploadView } from "@/components/flow/upload-view";
+import { TRANSLATE_CANONICAL, TRANSLATE_DESCRIPTION, TRANSLATE_TITLE } from "@/lib/seo";
 
 export const metadata: Metadata = {
-  title: "Upload · CredPronto",
-  description: "Upload a PDF or phone photos and get an exact price.",
+  title: TRANSLATE_TITLE,
+  description: TRANSLATE_DESCRIPTION,
+  alternates: {
+    canonical: TRANSLATE_CANONICAL,
+  },
 };
 
 export default function TranslatePage() {
