@@ -8,6 +8,39 @@ test("customer walks from landing through download", async ({ page }) => {
   await walkCustomerFlow(page);
 });
 
+test("a quote file shows a first-page thumbnail and opens a preview", async ({ page }) => {
+  await page.goto("/order/mock-token");
+  await expect(page.getByRole("heading", { name: /exact price/ }).filter({ visible: true })).toBeVisible();
+  const list = page.getByTestId("file-list").filter({ visible: true });
+  const turnaround = list.getByTestId("file-turnaround").first();
+  await expect(turnaround).toContainText("Ready in about 10 minutes");
+  const filename = list.locator("b").first();
+  const nameBox = await filename.boundingBox();
+  const turnBox = await turnaround.boundingBox();
+  expect(nameBox).toBeTruthy();
+  expect(turnBox).toBeTruthy();
+  expect(turnBox!.x).toBeGreaterThan(nameBox!.x + nameBox!.width - 4);
+
+  const thumb = list.getByTestId("file-thumb-button").first();
+  await expect(thumb).toBeVisible();
+  const box = await thumb.boundingBox();
+  expect(box).toBeTruthy();
+  expect(Math.round(box!.width)).toBe(72);
+  expect(Math.round(box!.height)).toBe(96);
+
+  await thumb.click();
+  const preview = page.getByTestId("file-preview");
+  await expect(preview).toBeVisible();
+  await expect(preview.getByTestId("file-preview-page")).toHaveCount(3);
+  await page.keyboard.press("Escape");
+  await expect(preview).toBeHidden();
+
+  await thumb.click();
+  await expect(preview).toBeVisible();
+  await page.mouse.click(8, 8);
+  await expect(preview).toBeHidden();
+});
+
 test("a loaded quote replaces the loading announcement", async ({ page }) => {
   await page.goto("/order/mock-token");
   await expect(page.getByRole("heading", { name: /exact price/ }).filter({ visible: true })).toBeVisible();
