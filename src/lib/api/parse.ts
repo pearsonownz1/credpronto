@@ -155,10 +155,12 @@ function equivalencyCredentials(value: unknown): StaffDetail["equivalencyCredent
     if (!entry || typeof entry !== "object") return [];
     const credential = entry as Record<string, unknown>;
     const name = text(credential.credential);
+    const country = text(credential.country);
     const field = text(credential.field);
+    const dates = text(credential.dates);
     const usEquivalency = text(credential.usEquivalency);
-    if (!name || !field || !usEquivalency) return [];
-    return [{ credential: name, field, usEquivalency }];
+    if (!name || !country || !field || !dates || !usEquivalency) return [];
+    return [{ credential: name, country, field, dates, usEquivalency }];
   });
 }
 

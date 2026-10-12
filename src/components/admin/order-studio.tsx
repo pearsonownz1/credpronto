@@ -50,11 +50,12 @@ export function OrderStudio({
   const [note, setNote] = useState("");
   const [language, setLanguage] = useState(detail.sourceLanguage ?? "");
   const [equivalencies, setEquivalencies] = useState(() =>
-    detail.equivalencyCredentials.length > 0
-      ? detail.equivalencyCredentials.map((item) =>
-          item.usEquivalency === PENDING_EQUIVALENCY ? "" : item.usEquivalency,
-        )
-      : [""],
+    (detail.equivalencyCredentials.length > 0 ? detail.equivalencyCredentials : [null]).map((item) => ({
+      usEquivalency: !item || item.usEquivalency === PENDING_EQUIVALENCY ? "" : item.usEquivalency,
+      country: !item || item.country === PENDING_EQUIVALENCY ? "" : item.country,
+      field: !item || item.field === PENDING_EQUIVALENCY ? "" : item.field,
+      dates: !item || item.dates === PENDING_EQUIVALENCY ? "" : item.dates,
+    })),
   );
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -229,7 +230,12 @@ export function OrderStudio({
           onSubmit={(event) => {
             event.preventDefault();
             void run("equivalency", async () => {
-              const result = await assignEquivalency(detail.id, equivalencies);
+              const result = await assignEquivalency(detail.id, {
+                equivalencies: equivalencies.map((item) => item.usEquivalency),
+                countries: equivalencies.map((item) => item.country),
+                fields: equivalencies.map((item) => item.field),
+                dates: equivalencies.map((item) => item.dates),
+              });
               return result.ok
                 ? { ok: true, message: "Equivalency saved. The clean report is ready for approval." }
                 : { ok: false, error: result.error };
@@ -242,20 +248,36 @@ export function OrderStudio({
           </p>
           {equivalencies.map((value, index) => {
             const credential = detail.equivalencyCredentials[index];
+            const patch = (key: "usEquivalency" | "country" | "field" | "dates", nextValue: string) => {
+              const next = equivalencies.map((item, itemIndex) =>
+                itemIndex === index ? { ...item, [key]: nextValue } : item,
+              );
+              setEquivalencies(next);
+            };
             return (
-              <label key={`${credential?.credential ?? "degree"}-${index}`} className="grid gap-1 text-sm">
-                {credential ? `${credential.credential} · ${credential.field}` : `Degree ${index + 1}`}
-                <input
-                  value={value}
-                  onChange={(event) => {
-                    const next = [...equivalencies];
-                    next[index] = event.target.value;
-                    setEquivalencies(next);
-                  }}
-                  placeholder="Bachelor's degree"
-                  className="h-9 rounded-[var(--cp-radius)] border border-line px-2"
-                />
-              </label>
+              <fieldset key={`${credential?.credential ?? "degree"}-${index}`} className="grid gap-2">
+                <legend className="text-sm">
+                  {credential ? credential.credential : `Degree ${index + 1}`}
+                </legend>
+                {(
+                  [
+                    ["usEquivalency", "U.S. equivalency", "Bachelor's degree"],
+                    ["country", "Country", "Mexico"],
+                    ["field", "Field", "Administración de Empresas"],
+                    ["dates", "Dates", "18 de junio de 2019"],
+                  ] as const
+                ).map(([key, label, placeholder]) => (
+                  <label key={key} className="grid gap-1 text-sm">
+                    {label}
+                    <input
+                      value={value[key]}
+                      onChange={(event) => patch(key, event.target.value)}
+                      placeholder={placeholder}
+                      className="h-9 rounded-[var(--cp-radius)] border border-line px-2"
+                    />
+                  </label>
+                ))}
+              </fieldset>
             );
           })}
           <button

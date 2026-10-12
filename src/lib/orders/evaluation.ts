@@ -68,6 +68,16 @@ function filled(value: string): string | null {
   return trimmed ? trimmed : null;
 }
 
+/** "Licenciada en Administración de Empresas" → the subject, when field was left blank. */
+function subjectFromTitle(credential: string): string | null {
+  const match = credential.match(/\ben\s+(.+)$/i);
+  return filled(match?.[1] ?? "");
+}
+
+function orPending(value: string, fallback = ""): string {
+  return filled(value) ?? filled(fallback) ?? PENDING_EQUIVALENCY;
+}
+
 export function assembleDiploma(input: {
   extracted: DiplomaExtract;
   degreeCount: number;
@@ -79,18 +89,15 @@ export function assembleDiploma(input: {
   for (const item of input.extracted.credentials) {
     const applicant = filled(item.applicant);
     const institution = filled(item.institution);
-    const country = filled(item.country);
     const credential = filled(item.credential);
-    const field = filled(item.field);
-    const dates = filled(item.dates);
-    if (!applicant || !institution || !country || !credential || !field || !dates) return null;
+    if (!applicant || !institution || !credential) return null;
     credentials.push({
       applicant,
       institution,
-      country,
+      country: orPending(item.country),
       credential,
-      field,
-      dates,
+      field: orPending(item.field, subjectFromTitle(credential) ?? ""),
+      dates: orPending(item.dates),
       usEquivalency: usEquivalency(credential) ?? PENDING_EQUIVALENCY,
       documentsReviewed: input.documentsReviewed,
     });
@@ -98,17 +105,29 @@ export function assembleDiploma(input: {
   return { kind: "diploma", credentials };
 }
 
+function staffValue(stored: string, submitted: string | undefined): string | null {
+  const value = submitted?.trim() ?? "";
+  if (value && value !== PENDING_EQUIVALENCY) return value;
+  if (stored !== PENDING_EQUIVALENCY && stored.trim()) return stored;
+  return null;
+}
+
 export function applyDiplomaEquivalency(
   result: Extract<EvaluationResult, { kind: "diploma" }>,
   equivalencies: string[],
+  extras?: { countries?: string[]; fields?: string[]; dates?: string[] },
 ): Extract<EvaluationResult, { kind: "diploma" }> | null {
   if (equivalencies.length !== result.credentials.length) return null;
   const credentials = [];
   for (let index = 0; index < result.credentials.length; index += 1) {
     const credential = result.credentials[index];
-    const value = equivalencies[index]?.trim() ?? "";
-    if (!credential || !value || value === PENDING_EQUIVALENCY) return null;
-    credentials.push({ ...credential, usEquivalency: value });
+    if (!credential) return null;
+    const usEquivalency = staffValue(credential.usEquivalency, equivalencies[index]);
+    const country = staffValue(credential.country, extras?.countries?.[index]);
+    const field = staffValue(credential.field, extras?.fields?.[index]);
+    const dates = staffValue(credential.dates, extras?.dates?.[index]);
+    if (!usEquivalency || !country || !field || !dates) return null;
+    credentials.push({ ...credential, usEquivalency, country, field, dates });
   }
   return { ...result, credentials };
 }
@@ -117,12 +136,13 @@ export async function publishDiplomaEquivalency(
   db: Db,
   order: OrderRecord,
   equivalencies: string[],
+  extras?: { countries?: string[]; fields?: string[]; dates?: string[] },
 ): Promise<void> {
   const current = order.evaluationResult;
   if (order.reviewReason !== EQUIVALENCY_UNMAPPED || !current || current.kind !== "diploma") {
     throw new HttpError("This order is not waiting for an equivalency", 409);
   }
-  const next = applyDiplomaEquivalency(current, equivalencies);
+  const next = applyDiplomaEquivalency(current, equivalencies, extras);
   if (!next) throw new HttpError("Each credential needs a U.S. equivalency", 400);
 
   const version = await nextPreviewVersion(db, order.id);
@@ -199,8 +219,11 @@ async function extractDiploma(text: string): Promise<DiplomaExtract> {
           type: "text",
           text: `Extract each degree from this credential document.
 Return one credential per degree that is printed. Copy names, institutions, countries, fields, and dates as printed.
-credential is the degree title (for example Licence, Maîtrise, Bachillerato).
-dates is the period as printed. Use an empty string only when a field is absent. Do not invent a degree.
+credential is the degree title as printed (for example Licence, Licenciatura, Licenciada, Licenciado, Maîtrise, Bachillerato).
+field is the subject. For "Licenciada en Administración de Empresas", field is "Administración de Empresas".
+country is the country of the institution. If the country is not printed, infer it from the city or state (Guadalajara, Jalisco is Mexico). Use an empty string only when no place is printed.
+dates is the examination or conferral date as printed.
+Return the student's granted title even when a field is missing. Do not add degrees for the rector or other signatories. Do not invent a degree.
 
 Document text:
 ${text.slice(0, 12000)}`,
