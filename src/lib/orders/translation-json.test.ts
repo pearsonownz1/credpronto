@@ -131,7 +131,7 @@ describe("runTranslationPage JSON parse", () => {
     await runTranslationPage({} as Db, { orderId, version: 1, jobId });
 
     expect(ai.generateObject).toHaveBeenCalledTimes(1);
-    expect(promptText(ai.generateObject.mock.calls[0] ?? [])).not.toContain("Retry rules");
+    expect(promptText(vi.mocked(ai.generateObject).mock.calls[0] ?? [])).not.toContain("Retry rules");
     expect(jobs.failPageJob).toHaveBeenCalledTimes(1);
     expect(db.updateOrder).toHaveBeenCalledWith(
       expect.anything(),
