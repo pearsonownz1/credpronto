@@ -71,7 +71,13 @@ function useIsMobile() {
   return mobile;
 }
 
-export function SideBySideViewer({ order }: { order: PreviewOrder }) {
+export function SideBySideViewer({
+  order,
+  chrome = "customer",
+}: {
+  order: PreviewOrder;
+  chrome?: "customer" | "staff";
+}) {
   const original = order.original.url;
   const translation = order.translation.url;
   const wasmUrl = new URL("/pdfium/pdfium.wasm", window.location.origin).href;
@@ -110,7 +116,8 @@ export function SideBySideViewer({ order }: { order: PreviewOrder }) {
     return (
       <PreviewShell
         order={order}
-        rail={<OrderRail order={order} corrections={order.corrections} />}
+        variant={chrome}
+        rail={chrome === "customer" ? <OrderRail order={order} corrections={order.corrections} /> : undefined}
         status="The preview engine failed to load. Refresh to try again."
       />
     );
@@ -120,8 +127,9 @@ export function SideBySideViewer({ order }: { order: PreviewOrder }) {
     return (
       <PreviewShell
         order={order}
-        rail={<OrderRail order={order} corrections={order.corrections} />}
-        mobileBar={<MobileBuyBar order={order} onFlag={() => undefined} />}
+        variant={chrome}
+        rail={chrome === "customer" ? <OrderRail order={order} corrections={order.corrections} /> : undefined}
+        mobileBar={chrome === "customer" ? <MobileBuyBar order={order} onFlag={() => undefined} /> : undefined}
         status="Loading preview…"
       />
     );
@@ -133,7 +141,7 @@ export function SideBySideViewer({ order }: { order: PreviewOrder }) {
       engine={engine}
       plugins={plugins}
     >
-      <ViewerWorkspace order={order} />
+      <ViewerWorkspace order={order} chrome={chrome} />
     </EmbedPDF>
   );
 }
@@ -177,7 +185,13 @@ function usePageCount(documentId: string) {
   };
 }
 
-function ViewerWorkspace({ order }: { order: PreviewOrder }) {
+function ViewerWorkspace({
+  order,
+  chrome,
+}: {
+  order: PreviewOrder;
+  chrome: "customer" | "staff";
+}) {
   const isMobile = useIsMobile();
   const [role, setRole] = useState<Role>("original");
   const [lead, setLead] = useState<Role>("original");
@@ -449,13 +463,14 @@ function ViewerWorkspace({ order }: { order: PreviewOrder }) {
   return (
     <PreviewShell
       order={order}
+      variant={chrome}
       rail={
-        isMobile ? undefined : (
+        chrome === "staff" || isMobile ? undefined : (
           <OrderRail order={order} corrections={corrections} />
         )
       }
       mobileBar={
-        isMobile ? (
+        chrome === "customer" && isMobile ? (
           <MobileBuyBar order={order} onFlag={openCorrection} />
         ) : undefined
       }
@@ -564,6 +579,7 @@ function ViewerWorkspace({ order }: { order: PreviewOrder }) {
               </span>
               Sync scrolling
             </button>
+            {chrome === "customer" ? (
             <div className="relative hidden shrink-0 md:block">
               <button
                 type="button"
@@ -579,6 +595,7 @@ function ViewerWorkspace({ order }: { order: PreviewOrder }) {
                 </div>
               ) : null}
             </div>
+            ) : null}
           </div>
           {popover && isMobile ? (
             <div className="fixed inset-x-4 bottom-28 z-30">{popover}</div>
