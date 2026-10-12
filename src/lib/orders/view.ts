@@ -1,4 +1,5 @@
 import { ADDON_CATALOG, addonOptions, type AddonOption } from "./addons";
+import { readOrderProgress, type OrderReadProgress } from "./reading-progress";
 import { pageRuleForLanguages } from "./billing";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
 import { lineItemsForOrder } from "./evaluation-price";
@@ -75,6 +76,8 @@ export type CustomerOrder = {
   translationCents: number | null;
   lineItems: EvaluationLine[];
   evaluation: EvaluationResult | null;
+  /** Set when the order API reports read progress. */
+  progress?: OrderReadProgress;
 };
 
 export function toCustomerOrder(input: {
@@ -87,6 +90,7 @@ export function toCustomerOrder(input: {
   deliveryStatus: string | null;
   email: string | null;
   addons?: Array<{ id: AddonId }>;
+  progress?: unknown;
 }): CustomerOrder {
   const confidences = input.documents
     .map((document) => document.confidence)
@@ -97,6 +101,7 @@ export function toCustomerOrder(input: {
   const filenames = new Map(documents.map((document) => [document.id, document.filename]));
   const pages = [...(input.pages ?? [])].sort((a, b) => compareCombinedPages(documents, a, b));
   const stored = input.order.pageOrder;
+  const progress = readOrderProgress(input.progress);
 
   return {
     orderId: input.order.id,
@@ -169,6 +174,7 @@ export function toCustomerOrder(input: {
     translationCents: input.order.translationCents,
     lineItems: lineItemsForOrder(input.order),
     evaluation: publicEvaluation(input.order.evaluationResult),
+    ...(progress ? { progress } : {}),
   };
 }
 

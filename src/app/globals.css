@@ -103,3 +103,56 @@ body {
   border-color: var(--cp-primary);
   color: var(--cp-primary);
 }
+
+.reading-fill {
+  transition: width 700ms ease;
+}
+
+.reading-shine {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.05) 35%,
+    rgba(255, 255, 255, 0.45) 50%,
+    rgba(255, 255, 255, 0.05) 65%,
+    transparent 100%
+  );
+  animation: reading-shine 2.2s ease-in-out infinite;
+}
+
+.reading-spinner {
+  box-sizing: border-box;
+  border: 2px solid rgba(31, 94, 255, 0.22);
+  border-top-color: var(--cp-primary);
+  animation: reading-spin 0.7s linear infinite;
+}
+
+@keyframes reading-shine {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes reading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reading-fill {
+    transition: none;
+  }
+
+  .reading-shine,
+  .reading-spinner {
+    animation: none;
+  }
+
+  .reading-spinner {
+    border-color: var(--cp-primary);
+  }
+}
