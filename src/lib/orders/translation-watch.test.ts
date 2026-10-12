@@ -148,6 +148,19 @@ describe("translation watchdog", () => {
       pagesTotal: 3,
       retries: 1,
     });
+    expect(
+      checkedProgress(
+        { step: "translating", pagesRead: 12, pagesTotal: 12, pagesDone: 4, pagesTranslateTotal: 9 },
+        { step: "translating", retries: 1 },
+      ),
+    ).toEqual({
+      step: "translating",
+      pagesRead: 12,
+      pagesTotal: 12,
+      pagesDone: 4,
+      pagesTranslateTotal: 9,
+      retries: 1,
+    });
     expect(progressRetries({ retries: 2 })).toBe(2);
     expect(progressRetries({ retries: 1.5 })).toBe(0);
   });

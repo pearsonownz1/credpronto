@@ -126,6 +126,23 @@ describe("reading presentation", () => {
       pagesRead: 2,
       pagesTotal: 2,
     });
+    expect(
+      asOrderProgress({
+        step: "translating",
+        pagesRead: 12,
+        pagesTotal: 12,
+        pagesDone: 4,
+        pagesTranslateTotal: 9,
+        retries: 1,
+      }),
+    ).toEqual({
+      step: "translating",
+      pagesRead: 12,
+      pagesTotal: 12,
+      pagesDone: 4,
+      pagesTranslateTotal: 9,
+      retries: 1,
+    });
   });
 
   it("requires integer page counts for a stored progress value", () => {

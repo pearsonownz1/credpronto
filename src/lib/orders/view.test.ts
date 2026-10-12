@@ -272,6 +272,28 @@ describe("customer order", () => {
     expect(
       toCustomerOrder({
         ...shared,
+        order: {
+          ...orderRecord(),
+          progress: {
+            step: "translating",
+            pagesRead: 12,
+            pagesTotal: 12,
+            pagesDone: 4,
+            pagesTranslateTotal: 9,
+            retries: 1,
+          },
+        },
+      }).progress,
+    ).toEqual({
+      step: "translating",
+      pagesRead: 12,
+      pagesTotal: 12,
+      pagesDone: 4,
+      pagesTranslateTotal: 9,
+    });
+    expect(
+      toCustomerOrder({
+        ...shared,
         order: { ...orderRecord(), progress: { step: "reading", pagesRead: 6, pagesTotal: 9 } },
       }).progress,
     ).toEqual({ step: "reading", pagesRead: 6, pagesTotal: 9 });

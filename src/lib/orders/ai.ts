@@ -22,9 +22,11 @@ export async function generateObject<T>(
   schema: ZodType<T>,
   messages: ModelMessage[],
   signal?: AbortSignal,
+  options?: { maxRetries?: number },
 ): Promise<T> {
+  const maxRetries = options?.maxRetries ?? AI_MAX_RETRIES;
   let last: unknown;
-  for (let attempt = 0; attempt <= AI_MAX_RETRIES; attempt += 1) {
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     if (signal?.aborted) break;
     try {
       const result = await generateText({
@@ -42,7 +44,7 @@ export async function generateObject<T>(
       const cause =
         error instanceof Error && error.cause instanceof Error ? ` (cause: ${error.cause.message})` : "";
       console.error(`AI model ${translationModelId()} failed: ${message}${cause}`, error);
-      if (signal?.aborted || attempt === AI_MAX_RETRIES) break;
+      if (signal?.aborted || attempt === maxRetries) break;
     }
   }
   const message = last instanceof Error ? last.message : "The model did not respond";

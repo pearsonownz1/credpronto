@@ -4,6 +4,7 @@ import { AI_ATTEMPT_TIMEOUT_MS, AI_MAX_RETRIES } from "./ai";
 import {
   TRANSLATION_DEADLINE_MS,
   TRANSLATION_MAX_DURATION_SEC,
+  TRANSLATION_PAGE_DEADLINE_MS,
   TRANSLATION_SHUTDOWN_MS,
   TRANSLATION_TIMEOUT_REASON,
   decideTranslationFailure,
@@ -18,6 +19,7 @@ describe("translation failure", () => {
     expect(TRANSLATION_DEADLINE_MS).toBe(TRANSLATION_MAX_DURATION_SEC * 1000 - TRANSLATION_SHUTDOWN_MS);
     expect(TRANSLATION_DEADLINE_MS).toBeLessThan(TRANSLATION_MAX_DURATION_SEC * 1000);
     expect(TRANSLATION_DEADLINE_MS).toBeGreaterThan(AI_ATTEMPT_TIMEOUT_MS);
+    expect(TRANSLATION_PAGE_DEADLINE_MS).toBe(TRANSLATION_DEADLINE_MS);
   });
 
   it("sends a timeout to review without order.failed", () => {

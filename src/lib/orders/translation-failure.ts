@@ -11,6 +11,11 @@ export const TRANSLATION_MAX_DURATION_SEC = 300;
 export const TRANSLATION_SHUTDOWN_MS = 45_000;
 /** One translateDocument call, including its single retry, stays under this. */
 export const TRANSLATION_DEADLINE_MS = TRANSLATION_MAX_DURATION_SEC * 1000 - TRANSLATION_SHUTDOWN_MS;
+/**
+ * One billable page uses the same budget so the invocation can record a failure
+ * before the platform kills the function at maxDuration.
+ */
+export const TRANSLATION_PAGE_DEADLINE_MS = TRANSLATION_DEADLINE_MS;
 
 export function isTemporaryTranslationError(error: unknown): boolean {
   if (error instanceof AiUnavailableError) return true;
