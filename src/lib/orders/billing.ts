@@ -49,7 +49,8 @@ export type PageLineItem = {
   pageIndex: number;
   billableUnits: number;
   skip: boolean;
-  skipReason: SkipReason | null;
+  /** Auto skips use english, blank, or label. A customer skip can keep its own wording. */
+  skipReason: string | null;
 };
 
 export type PageQuote = PageLineItem & {
@@ -255,20 +256,59 @@ export function quotePages(
 }
 
 /**
- * Line item for a stored page. The stored unit count wins so the sum matches
- * `orders.total_cents`. Skip reason is read from the page text.
+ * Density written to `document_pages.billable_units`.
+ * A skipped page still stores the formula, at least 1, so turning the skip off charges that page.
+ */
+export function storedDensity(
+  quote: Pick<PageQuote, "skip" | "billingBasis" | "counted" | "billableUnits">,
+): number {
+  if (!quote.skip) return quote.billableUnits;
+  if (quote.billingBasis === "cjk") return billableCjkUnits(quote.counted);
+  return billableUnits(quote.counted);
+}
+
+/**
+ * Charged line for a stored page. `skip: false` bills the stored density.
+ * `skip: true`, or a missing flag on a page the live quote would skip, bills 0.
+ * A stored reason such as "already English" is kept.
  */
 export function lineItemForStoredPage(input: {
   pageIndex: number;
   text: string | null;
   targetLanguage?: string | null;
   billableUnits: number | null;
+  skip?: boolean;
+  skipReason?: string | null;
 }): PageLineItem {
   const live = quotePage({
     text: input.text ?? "",
     targetLanguage: input.targetLanguage,
     pageIndex: input.pageIndex,
   });
+  if (input.skip === false) {
+    const units =
+      input.billableUnits == null
+        ? live.skip
+          ? storedDensity(live)
+          : live.billableUnits
+        : input.billableUnits;
+    return {
+      pageIndex: input.pageIndex,
+      billableUnits: units,
+      skip: false,
+      skipReason: null,
+    };
+  }
+  const storedReason = input.skipReason?.trim() ? input.skipReason : null;
+  const autoSkip = input.skip == null && (live.skip || input.billableUnits === 0);
+  if (input.skip === true || autoSkip) {
+    return {
+      pageIndex: input.pageIndex,
+      billableUnits: 0,
+      skip: true,
+      skipReason: storedReason ?? live.skipReason ?? (input.billableUnits === 0 ? "blank" : null),
+    };
+  }
   if (input.billableUnits == null) {
     return {
       pageIndex: live.pageIndex,
@@ -277,12 +317,11 @@ export function lineItemForStoredPage(input: {
       skipReason: live.skipReason,
     };
   }
-  const skip = input.billableUnits === 0;
   return {
     pageIndex: input.pageIndex,
     billableUnits: input.billableUnits,
-    skip,
-    skipReason: skip ? (live.skipReason ?? "blank") : null,
+    skip: false,
+    skipReason: null,
   };
 }
 

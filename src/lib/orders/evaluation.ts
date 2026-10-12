@@ -647,6 +647,8 @@ export async function completeEvaluation(
     await markPreview(db, order.id, version, "ready");
     await storeTranslationPreview(db, order, version, language);
     await insertEvent(db, order.id, "preview_ready", { version, pageCount: files.pageCount });
+    const { notifyLifecycle } = await import("./webhook-delivery");
+    await notifyLifecycle(db, order.id, "order.preview_ready");
     const email = await customerEmail(db, order.customerId);
     if (email) {
       await sendPreviewReady(email, {

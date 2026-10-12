@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { sampleCustomerOrder } from "@/lib/flow/sample-order";
 import { CJK_PAGE_RULE } from "@/lib/orders/billing";
+import { QUOTE_BILLING_NOTE } from "@/lib/flow/present";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { QuoteBody } from "./quote-view";
 
@@ -72,8 +73,10 @@ describe("quote step actions", () => {
       sourceLanguage: "zh",
       pageRule: CJK_PAGE_RULE,
     });
-    expect(html).toContain("1000 Chinese, Japanese, or Korean characters");
+    expect(html).toContain(QUOTE_BILLING_NOTE);
+    expect(html).toContain("1,000 characters");
     expect(html).not.toContain("400 units");
+    expect(CJK_PAGE_RULE).not.toContain("400 units");
   });
 
   it("shows Continue for a quoted order with a page line and a total", () => {

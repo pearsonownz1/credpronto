@@ -240,7 +240,7 @@ export function articleJsonLd(post: Post) {
     datePublished: post.date,
     dateModified: post.date,
     author: {
-      "@type": "Person",
+      "@type": "Organization",
       name: post.author,
     },
     mainEntityOfPage: post.canonical,

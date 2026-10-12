@@ -1,15 +1,29 @@
 import { describe, expect, it } from "vitest";
 import { HttpError } from "./errors";
 import { offSessionPaymentParams } from "./off-session";
-import { billingCardBody, requireStripeTestKey, setupIntentCreateParams } from "./saved-card";
+import {
+  billingCardBody,
+  cardExpiryFromStripe,
+  requireStripeTestKey,
+  setupIntentCreateParams,
+  shouldReadCardExpiry,
+} from "./saved-card";
 
 describe("saved card", () => {
   it("returns brand and last4 only when both are stored", () => {
     expect(billingCardBody(null)).toEqual({ card: null });
     expect(billingCardBody({ brand: "visa", last4: null })).toEqual({ card: null });
     expect(billingCardBody({ brand: "visa", last4: "4242" })).toEqual({
-      card: { brand: "visa", last4: "4242" },
+      card: { brand: "visa", last4: "4242", expMonth: null, expYear: null },
     });
+    expect(billingCardBody({ brand: "visa", last4: "4242", expMonth: 4, expYear: 2028 })).toEqual({
+      card: { brand: "visa", last4: "4242", expMonth: 4, expYear: 2028 },
+    });
+    expect(cardExpiryFromStripe({ exp_month: 4, exp_year: 2028 })).toEqual({ expMonth: 4, expYear: 2028 });
+    expect(cardExpiryFromStripe({ exp_month: 13, exp_year: 2028 })).toEqual({ expMonth: null, expYear: null });
+    expect(shouldReadCardExpiry("sk_test_123")).toBe(true);
+    expect(shouldReadCardExpiry("sk_live_123")).toBe(false);
+    expect(shouldReadCardExpiry(null)).toBe(false);
   });
 
   it("creates an off-session SetupIntent for the Stripe customer", () => {

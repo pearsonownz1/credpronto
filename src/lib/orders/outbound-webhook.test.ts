@@ -6,6 +6,7 @@ import {
   credProntoSignature,
   nextRetrySeconds,
   webhookBody,
+  webhookReadBody,
 } from "./outbound-webhook";
 
 describe("outbound webhooks", () => {
@@ -27,10 +28,43 @@ describe("outbound webhooks", () => {
     });
   });
 
+  it("signs a test event that has no order", () => {
+    const body = webhookBody({
+      id: "evt_test",
+      type: "webhook.test",
+      createdAt: "2026-10-12T00:00:00.000Z",
+      orderId: null,
+      status: "test",
+      externalRef: null,
+    });
+    expect(JSON.parse(body)).toMatchObject({ type: "webhook.test", data: { orderId: null, status: "test" } });
+    expect(JSON.parse(body)).not.toHaveProperty("secret");
+  });
+
   it("retries after 60 seconds, then 5 minutes, then stops", () => {
     expect(nextRetrySeconds(1)).toBe(60);
     expect(nextRetrySeconds(2)).toBe(300);
     expect(nextRetrySeconds(3)).toBeNull();
+  });
+
+  it("returns the url, the secret's last 4, and the last delivery", () => {
+    const body = webhookReadBody({
+      url: "https://example.com/hooks",
+      signingSecret: "whsec_abc123c0ff",
+      lastDelivery: { status: "succeeded", event: "order.quoted", at: "2026-10-12T00:00:00.000Z", responseStatus: 200 },
+    });
+    expect(body).toEqual({
+      url: "https://example.com/hooks",
+      secretLast4: "c0ff",
+      lastDelivery: { status: "succeeded", event: "order.quoted", at: "2026-10-12T00:00:00.000Z", responseStatus: 200 },
+    });
+    expect(body).not.toHaveProperty("secret");
+    expect(JSON.stringify(body)).not.toContain("whsec_abc123c0ff");
+    expect(webhookReadBody({ url: null, signingSecret: null, lastDelivery: null })).toEqual({
+      url: null,
+      secretLast4: null,
+      lastDelivery: null,
+    });
   });
 
   it("accepts only https urls", () => {

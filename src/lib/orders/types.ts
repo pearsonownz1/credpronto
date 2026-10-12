@@ -192,6 +192,9 @@ export type PageRecord = {
   qualityScore: number | null;
   qualityFlags: string[];
   qualityMessage: string | null;
+  /** Present when the quote can skip this side. Omitted until that column exists. */
+  skip?: boolean;
+  skipReason?: string | null;
 };
 
 export type ConfirmationRecord = {

@@ -1,5 +1,6 @@
 import { ADDON_CATALOG, addonOptions, type AddonOption } from "./addons";
 import { lineItemForStoredPage, pageRuleForLanguages, type PageLineItem } from "./billing";
+import { readOrderProgress, type OrderReadProgress } from "./reading-progress";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
 import { lineItemsForOrder } from "./evaluation-price";
 import { compareCombinedPages } from "./page-order";
@@ -37,21 +38,30 @@ export type CustomerOrder = {
   }>;
   pageOrder: {
     basis: PageOrderBasis;
-    pages: Array<StoredPage & { filename: string }>;
+    pages: Array<
+      StoredPage & {
+        filename: string;
+        id?: string;
+        billableUnits?: number | null;
+        skip?: boolean;
+        skipReason?: string | null;
+      }
+    >;
   } | null;
   pages: Array<{
+    id?: string;
     documentId: string;
     pageNumber: number;
-    pageIndex: number;
-    billableUnits: number;
-    skip: boolean;
-    skipReason: PageLineItem["skipReason"];
+    pageIndex?: number;
     uploadPage: number | null;
     logicalPage: number | null;
     orderHint: string | null;
     qualityScore: number | null;
     qualityFlags: string[];
     qualityMessage: string | null;
+    billableUnits?: number | null;
+    skip?: boolean;
+    skipReason?: string | null;
   }>;
   /** Per-page quote lines. The order total is their billable units at $9.95. */
   pageLineItems: PageLineItem[];
@@ -81,6 +91,8 @@ export type CustomerOrder = {
   translationCents: number | null;
   lineItems: EvaluationLine[];
   evaluation: EvaluationResult | null;
+  /** Set when the order API reports read progress. */
+  progress?: OrderReadProgress;
 };
 
 export function toCustomerOrder(input: {
@@ -93,6 +105,7 @@ export function toCustomerOrder(input: {
   deliveryStatus: string | null;
   email: string | null;
   addons?: Array<{ id: AddonId }>;
+  progress?: unknown;
 }): CustomerOrder {
   const confidences = input.documents
     .map((document) => document.confidence)
@@ -108,9 +121,12 @@ export function toCustomerOrder(input: {
       text: page.ocrText,
       targetLanguage: input.order.targetLanguage,
       billableUnits: page.billableUnits,
+      skip: page.skip,
+      skipReason: page.skipReason,
     }),
   );
   const stored = input.order.pageOrder;
+  const progress = readOrderProgress(input.progress);
 
   return {
     orderId: input.order.id,
@@ -138,23 +154,21 @@ export function toCustomerOrder(input: {
           })),
         }
       : null,
-    pages: pages.map((page, pageIndex) => {
-      const line = pageLineItems[pageIndex];
-      return {
-        documentId: page.documentId,
-        pageNumber: page.pageNumber,
-        pageIndex: line?.pageIndex ?? pageIndex,
-        billableUnits: line?.billableUnits ?? 0,
-        skip: line?.skip ?? false,
-        skipReason: line?.skipReason ?? null,
-        uploadPage: page.uploadPage,
-        logicalPage: page.logicalPage,
-        orderHint: page.orderHint,
-        qualityScore: page.qualityScore,
-        qualityFlags: page.qualityFlags,
-        qualityMessage: page.qualityMessage,
-      };
-    }),
+    pages: pages.map((page, pageIndex) => ({
+      id: page.id,
+      documentId: page.documentId,
+      pageNumber: page.pageNumber,
+      pageIndex,
+      uploadPage: page.uploadPage,
+      logicalPage: page.logicalPage,
+      orderHint: page.orderHint,
+      qualityScore: page.qualityScore,
+      qualityFlags: page.qualityFlags,
+      qualityMessage: page.qualityMessage,
+      ...(page.billableUnits != null ? { billableUnits: page.billableUnits } : {}),
+      ...(typeof page.skip === "boolean" ? { skip: page.skip } : {}),
+      ...(page.skipReason ? { skipReason: page.skipReason } : {}),
+    })),
     pageLineItems,
     billablePages: input.order.billablePages,
     unitPriceCents: input.order.unitPriceCents,
@@ -191,6 +205,7 @@ export function toCustomerOrder(input: {
     translationCents: input.order.translationCents,
     lineItems: lineItemsForOrder(input.order),
     evaluation: publicEvaluation(input.order.evaluationResult),
+    ...(progress ? { progress } : {}),
   };
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bearerApiKey, generateApiKey, hashApiKey, liveOrderPostBlocked, parseApiKeyMode, parseApiKeyName } from "./api-key";
+import { bearerApiKey, generateApiKey, hashApiKey, liveOrderPostBlocked, parseApiKeyMode, parseApiKeyName, publicApiKey } from "./api-key";
 import { HttpError } from "./errors";
 
 describe("API keys", () => {
@@ -26,6 +26,24 @@ describe("API keys", () => {
     expect(liveOrderPostBlocked("cp_live_", "sk_test_123")).toBe(true);
     expect(liveOrderPostBlocked("cp_test_", "sk_test_123")).toBe(false);
     expect(liveOrderPostBlocked("cp_live_", "sk_live_123")).toBe(false);
+  });
+
+  it("returns lastUsedAt and never the hash", () => {
+    const body = publicApiKey({
+      id: "key-1",
+      name: "Production",
+      prefix: "cp_live_",
+      last4: "ab12",
+      createdAt: "2026-10-12T00:00:00.000Z",
+      lastUsedAt: null,
+      revokedAt: null,
+    });
+    expect(body.lastUsedAt).toBeNull();
+    expect(body).not.toHaveProperty("secret");
+    expect(body).not.toHaveProperty("keyHash");
+    expect(
+      publicApiKey({ ...body, lastUsedAt: "2026-10-12T01:00:00.000Z" }).lastUsedAt,
+    ).toBe("2026-10-12T01:00:00.000Z");
   });
 
   it("validates name and mode", () => {

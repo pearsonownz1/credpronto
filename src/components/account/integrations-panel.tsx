@@ -306,9 +306,11 @@ export function IntegrationsPanel() {
                   </span>
                 ))}
               </div>
-              <p data-testid="webhook-events-soon" className="mt-1 text-[12.5px] text-ink-muted">
-                {pendingWebhookEvents().join(", ")} are coming soon.
-              </p>
+              {pendingWebhookEvents().length > 0 ? (
+                <p data-testid="webhook-events-soon" className="mt-1 text-[12.5px] text-ink-muted">
+                  {pendingWebhookEvents().join(", ")} are coming soon.
+                </p>
+              ) : null}
               <div className="mt-3.5 flex flex-wrap items-center gap-3">
                 <button
                   type="button"

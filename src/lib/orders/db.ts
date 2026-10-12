@@ -153,6 +153,8 @@ function mapPage(row: Row): PageRecord {
     qualityScore: num(row.quality_score),
     qualityFlags: stringList(row.quality_flags),
     qualityMessage: str(row.quality_message),
+    ...(typeof row.skipped === "boolean" ? { skip: row.skipped } : {}),
+    ...(str(row.skip_reason) ? { skipReason: str(row.skip_reason) } : {}),
   };
 }
 
@@ -254,6 +256,7 @@ export async function insertOrder(
     degreeCount?: number | null;
     evaluationCents?: number | null;
     externalRef?: string | null;
+    apiKeyId?: string | null;
     sourceLanguage?: string | null;
     targetLanguage?: string | null;
     languageConfirmed?: boolean;
@@ -278,6 +281,7 @@ export async function insertOrder(
       ...(input.userId ? { user_id: input.userId } : {}),
       ...(input.serviceType ? { service_type: input.serviceType, order_type: input.orderType ?? input.serviceType } : {}),
       ...(input.externalRef ? { external_ref: input.externalRef } : {}),
+      ...(input.apiKeyId ? { api_key_id: input.apiKeyId } : {}),
       ...(input.sourceLanguage ? { source_language: input.sourceLanguage } : {}),
       ...(input.targetLanguage ? { target_language: input.targetLanguage } : {}),
       ...(input.languageConfirmed ? { language_confirmed: true } : {}),
@@ -467,6 +471,8 @@ export async function replacePages(
     qualityScore: number | null;
     qualityFlags: string[];
     qualityMessage: string | null;
+    skipped?: boolean;
+    skipReason?: string | null;
   }>,
 ): Promise<void> {
   const deleted = await db.from("document_pages").delete().eq("document_id", documentId);
@@ -489,8 +495,15 @@ export async function replacePages(
       quality_score: page.qualityScore,
       quality_flags: page.qualityFlags,
       quality_message: page.qualityMessage,
+      skipped: page.skipped ?? false,
+      skip_reason: page.skipReason ?? null,
     })),
   );
+  fail(error);
+}
+
+export async function setPageSkipped(db: Db, pageId: string, skipped: boolean): Promise<void> {
+  const { error } = await db.from("document_pages").update({ skipped }).eq("id", pageId);
   fail(error);
 }
 

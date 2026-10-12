@@ -1,7 +1,8 @@
 -- CJK pages bill on characters: greatest(1, ceil(word_count / 1000)).
 -- word_count for billing_basis = 'cjk' is the Han/Hiragana/Katakana/Hangul count.
--- A skipped page (already English, blank, or a shipping label) stores billable_units = 0.
--- The skip reason is derived from ocr_text. This migration adds no column and no table.
+-- Analysis stores that density in billable_units (at least 1). The check still accepts
+-- billable_units = 0. Whether the density is charged is document_pages.skipped.
+-- This migration adds no column and no table.
 -- NOT VALID keeps rows quoted under the previous 400-unit rule in place.
 
 alter table public.document_pages drop constraint document_pages_billable_rule_chk;
@@ -36,4 +37,4 @@ alter table public.document_pages
   ) not valid;
 
 comment on column public.document_pages.billing_basis is
-  'words: billable_units is 0 when the page is skipped, otherwise greatest(1, ceil(word_count / 250)). cjk: word_count is the CJK character count and billable_units is 0 when skipped, otherwise greatest(1, ceil(word_count / 1000)).';
+  'words: billable_units is 0 or greatest(1, ceil(word_count / 250)). cjk: word_count is the CJK character count and billable_units is 0 or greatest(1, ceil(word_count / 1000)). Analysis stores the density. skipped decides the charge.';

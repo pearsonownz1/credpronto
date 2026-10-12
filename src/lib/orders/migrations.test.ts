@@ -82,6 +82,21 @@ describe("auth migrations", () => {
     expect(edge.toLowerCase()).not.toMatch(/insert into/);
     expect(edge).toMatch(/edge_credential_id uuid/);
     expect(edge).toMatch(/edge_grading_scale_id uuid/);
+    const lastUsed = readFileSync(path.join(migrationsDir, "20261012100000_api_keys_last_used_at.sql"), "utf8");
+    expect(lastUsed).toMatch(/add column last_used_at timestamptz/);
+    expect(lastUsed.toLowerCase()).not.toMatch(/create table/);
+    const lifecycle = readFileSync(path.join(migrationsDir, "20261012100100_webhook_delivery_events.sql"), "utf8");
+    expect(lifecycle).toMatch(/order\.preview_ready/);
+    expect(lifecycle).toMatch(/order\.paid/);
+    expect(lifecycle).toMatch(/order\.completed/);
+    expect(lifecycle).toMatch(/webhook\.test/);
+    expect(lifecycle).toMatch(/alter column order_id drop not null/);
+    expect(lifecycle.toLowerCase()).not.toMatch(/create table/);
+    expect(lifecycle.toLowerCase()).not.toMatch(/add column/);
+    const apiOrders = readFileSync(path.join(migrationsDir, "20261012100200_orders_api_key_id.sql"), "utf8");
+    expect(apiOrders).toMatch(/add column api_key_id uuid references public\.api_keys/);
+    expect(apiOrders).toMatch(/on delete set null/);
+    expect(apiOrders.toLowerCase()).not.toMatch(/create table/);
     expect(billing).toMatch(/stripe_customer_id text not null/);
     expect(billing).not.toMatch(/card_number/);
     for (const sql of [apiKeys, endpoints, deliveries, externalRef, billing]) {

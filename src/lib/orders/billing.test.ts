@@ -10,8 +10,10 @@ import {
   countCjkChars,
   countCjkUnits,
   pageRuleForLanguages,
+  lineItemForStoredPage,
   quotePage,
   quotePages,
+  storedDensity,
   sumBillableUnits,
   totalCents,
   type PageQuote,
@@ -171,6 +173,44 @@ describe("billable page math", () => {
       }),
     ];
     expect(samples.every(obeysStoredRule)).toBe(true);
+    expect(samples.every((quote) => storedDensity(quote) >= 1)).toBe(true);
+    const english = samples[3];
+    expect(english?.skip).toBe(true);
+    expect(english?.billableUnits).toBe(0);
+    expect(storedDensity(english!)).toBe(1);
+    expect(storedDensity(samples[0]!)).toBe(1);
+  });
+
+  it("charges a skipped stored page as zero and keeps a customer skip reason", () => {
+    expect(
+      lineItemForStoredPage({
+        pageIndex: 0,
+        text: "This is to certify that the record is true.",
+        targetLanguage: "en",
+        billableUnits: 1,
+        skip: true,
+        skipReason: "already English",
+      }),
+    ).toEqual({
+      pageIndex: 0,
+      billableUnits: 0,
+      skip: true,
+      skipReason: "already English",
+    });
+    expect(
+      lineItemForStoredPage({
+        pageIndex: 1,
+        text: "This is to certify that the record is true.",
+        targetLanguage: "en",
+        billableUnits: 1,
+        skip: false,
+      }),
+    ).toEqual({
+      pageIndex: 1,
+      billableUnits: 1,
+      skip: false,
+      skipReason: null,
+    });
   });
 
   it("describes the rule that applies to the detected language", () => {

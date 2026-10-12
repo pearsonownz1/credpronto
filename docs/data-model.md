@@ -30,7 +30,7 @@ The hash is not a password hash. It does not need to be slow. It only prevents a
 
 Price for a translation is `$9.95` per billable page (`orders.unit_price_cents` defaults to `995`, `currency` defaults to `usd`).
 
-A billable page is one physical side, priced from the text on that side. Blank pages, shipping labels, and pages that are already English (when the translation is into English) store `billable_units = 0`. The skip reason is derived from `ocr_text` when the order is read. It is not a column.
+A billable page is one physical side, priced from the text on that side. `billable_units` stores the density for that side, at least 1, including a blank side (`word_count` 0). `skipped` and `skip_reason` decide whether that density is charged. Blank pages, shipping labels, and pages that are already English (when the translation is into English) are stored with `skipped` true. The order total and each `pageLineItems` row count those sides as 0. Turning the skip off charges the stored density. The check still accepts `billable_units = 0`.
 
 For Chinese, Japanese, and Korean (`billing_basis = 'cjk'`), `word_count` stores the Han, Hiragana, Katakana, and Hangul character count. Digits and Latin letters on that page are not added.
 
@@ -38,9 +38,9 @@ For Chinese, Japanese, and Korean (`billing_basis = 'cjk'`), `word_count` stores
 billable_units = 0 or greatest(1, ceil(word_count / 1000))
 ```
 
-| CJK characters on that side | Billable units |
+| CJK characters on that side | Density stored |
 | --- | --- |
-| skipped | 0 |
+| 0 | 1 |
 | 1–1000 | 1 |
 | 1001–2000 | 2 |
 
@@ -50,16 +50,16 @@ For every other page (`billing_basis = 'words'`):
 billable_units = 0 or greatest(1, ceil(word_count / 250))
 ```
 
-| Words on that side | Billable units |
+| Words on that side | Density stored |
 | --- | --- |
-| skipped | 0 |
+| 0 | 1 |
 | 1–250 | 1 |
 | 251–500 | 2 |
 | 501–750 | 3 |
 
 The check constraint `document_pages_billable_rule_chk` rejects any other pair. `word_count` and `billable_units` stay null until the count is known. `GET /api/orders/[token]` returns the sentence for the rule that applied in `pageRule`, and `pageLineItems` with `pageIndex`, `billableUnits`, `skip`, and `skipReason`.
 
-`orders.billable_pages` is the sum of `billable_units` across every side of every document on the order. For a translation, `orders.total_cents` must equal `billable_pages * unit_price_cents + addon_cents` whenever the page count and total are set. `addon_cents` defaults to 0. A translation cannot move to `paid`, `approved`, or `delivered` unless the language pair is confirmed, `billable_pages` is at least 1, and the total matches that product. Evaluation and expert-letter orders may carry a total without a page count.
+`orders.billable_pages` is the sum of charged units across every side: 0 when that side is skipped, otherwise its `billable_units`. For a translation, `orders.total_cents` must equal `billable_pages * unit_price_cents + addon_cents` whenever the page count and total are set. `addon_cents` defaults to 0. A translation cannot move to `paid`, `approved`, or `delivered` unless the language pair is confirmed, `billable_pages` is at least 1, and the total matches that product. Evaluation and expert-letter orders may carry a total without a page count.
 
 Example: a two-sided diploma, 180 words on the first side and 400 on the second, is `1 + 2 = 3` billable pages, `$29.85`, `total_cents = 2985`.
 

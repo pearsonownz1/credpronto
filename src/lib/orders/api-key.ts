@@ -26,6 +26,27 @@ export function generateApiKey(mode: ApiKeyMode): GeneratedApiKey {
   return { secret, prefix, last4: secret.slice(-4), hash: hashApiKey(secret) };
 }
 
+/** Fields returned by GET and POST `/api/me/api-keys`. `secret` is added only on create. */
+export function publicApiKey(key: {
+  id: string;
+  name: string;
+  prefix: string;
+  last4: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+}) {
+  return {
+    id: key.id,
+    name: key.name,
+    prefix: key.prefix,
+    last4: key.last4,
+    createdAt: key.createdAt,
+    lastUsedAt: key.lastUsedAt,
+    revokedAt: key.revokedAt,
+  };
+}
+
 export function parseApiKeyMode(value: unknown): ApiKeyMode {
   if (value === "live" || value === "test") return value;
   throw new HttpError("mode must be live or test", 400, "validation_error");

@@ -1,7 +1,19 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { HttpError } from "./errors";
 
-export const WEBHOOK_EVENTS = ["order.quoted", "order.delivered", "order.failed"] as const;
+export const WEBHOOK_EVENTS = [
+  "order.quoted",
+  "order.delivered",
+  "order.failed",
+  "order.preview_ready",
+  "order.paid",
+  "order.completed",
+  "webhook.test",
+] as const;
+
+/** One attempt, short timeout. The retrying events stay on the existing schedule. */
+export const LIFECYCLE_WEBHOOK_EVENTS = ["order.preview_ready", "order.paid", "order.completed"] as const;
+export type LifecycleWebhookEvent = (typeof LIFECYCLE_WEBHOOK_EVENTS)[number];
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
 export function generateWebhookSecret(): string {
@@ -24,7 +36,7 @@ export function webhookBody(input: {
   id: string;
   type: WebhookEvent;
   createdAt: string;
-  orderId: string;
+  orderId: string | null;
   status: string;
   externalRef: string | null;
 }): string {
@@ -55,4 +67,31 @@ export function nextRetrySeconds(attempt: number): number | null {
 
 export function isWebhookEvent(value: string): value is WebhookEvent {
   return (WEBHOOK_EVENTS as readonly string[]).includes(value);
+}
+
+export type WebhookLastDelivery = {
+  status: string;
+  event: string;
+  at: string;
+  responseStatus: number | null;
+};
+
+/** Last 4 characters of the signing secret. The full secret is never returned from a read. */
+export function webhookSecretLast4(secret: string): string {
+  return secret.slice(-4);
+}
+
+export function webhookReadBody(input: {
+  url: string | null;
+  signingSecret: string | null;
+  lastDelivery: WebhookLastDelivery | null;
+}): { url: string | null; secretLast4: string | null; lastDelivery: WebhookLastDelivery | null } {
+  if (!input.url || !input.signingSecret) {
+    return { url: null, secretLast4: null, lastDelivery: null };
+  }
+  return {
+    url: input.url,
+    secretLast4: webhookSecretLast4(input.signingSecret),
+    lastDelivery: input.lastDelivery,
+  };
 }

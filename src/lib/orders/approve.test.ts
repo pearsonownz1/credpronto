@@ -54,6 +54,7 @@ describe("approveOrder cover stamp", () => {
     vi.spyOn(email, "sendDeliveryReady").mockResolvedValue({ sent: true, skipped: false });
     vi.spyOn(storage, "signedObjectUrl").mockResolvedValue("https://files.example/signed");
     vi.spyOn(webhooks, "notifyOrder").mockResolvedValue(undefined);
+    vi.spyOn(webhooks, "notifyLifecycle").mockResolvedValue(undefined);
   });
 
   it("fails the approval and returns the stamp error when the cover restamp throws", async () => {
@@ -72,6 +73,7 @@ describe("approveOrder cover stamp", () => {
     expect(email.sendDeliveryReady).not.toHaveBeenCalled();
     expect(db.insertEvent).not.toHaveBeenCalled();
     expect(webhooks.notifyOrder).not.toHaveBeenCalled();
+    expect(webhooks.notifyLifecycle).not.toHaveBeenCalled();
   });
 
   it("updates status and sends the delivery email only after the stamp succeeds", async () => {
@@ -97,5 +99,6 @@ describe("approveOrder cover stamp", () => {
     expect(steps.indexOf("stamp")).toBeLessThan(steps.indexOf("email"));
     expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, { status: "approved" });
     expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, { status: "delivered" });
+    expect(webhooks.notifyLifecycle).toHaveBeenCalledWith(expect.anything(), orderId, "order.completed");
   });
 });

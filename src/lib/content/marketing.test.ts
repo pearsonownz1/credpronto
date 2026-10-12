@@ -48,6 +48,9 @@ describe("approved marketing pages", () => {
       "Are my documents private?",
       "Who's behind CredPronto?",
     ]);
+    expect(homeFaq().find((item) => item.question === "Who's behind CredPronto?")?.answer).toBe(
+      "CredPronto is operated by a team with over a decade in certified translation and credential evaluation.",
+    );
     expect(evaluationsFaq()).toHaveLength(4);
     const jsonLd = homeFaqJsonLd();
     expect(jsonLd["@type"]).toBe("FAQPage");

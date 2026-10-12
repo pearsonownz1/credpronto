@@ -730,8 +730,8 @@ A key is `cp_live_` or `cp_test_` plus 32 bytes of CSPRNG hex (64 hex characters
 
 | Method | Path | Body | Result |
 | --- | --- | --- | --- |
-| `GET` | `/api/me/api-keys` | | `{ "keys": [ { id, name, prefix, last4, createdAt, revokedAt } ] }` |
-| `POST` | `/api/me/api-keys` | `{ "name": "Production", "mode": "live" \| "test" }` | `201` `{ id, name, prefix, last4, secret, createdAt }`. `secret` is the full key. |
+| `GET` | `/api/me/api-keys` | | `{ "keys": [ { id, name, prefix, last4, createdAt, lastUsedAt, revokedAt } ] }`. `lastUsedAt` is an ISO timestamp or `null`. |
+| `POST` | `/api/me/api-keys` | `{ "name": "Production", "mode": "live" \| "test" }` | `201` `{ id, name, prefix, last4, secret, createdAt, lastUsedAt }`. `secret` is the full key. `lastUsedAt` is `null` until the key authenticates a request. |
 | `DELETE` | `/api/me/api-keys/[id]` | | `{ "id", "revokedAt" }`. A revoked key no longer authenticates. `404` when the id is not owned by the session. |
 
 `name` is 1 to 80 characters. `mode` is required. `prefix` is `cp_live_` when `mode` is `live` and `cp_test_` when `mode` is `test`.
@@ -743,7 +743,7 @@ One Stripe Customer per profile (`billing_customers.user_id`). Card numbers are 
 | Method | Path | Result |
 | --- | --- | --- |
 | `POST` | `/api/me/billing/setup-intent` | `{ "clientSecret": "seti_…", "customerId": "cus_…" }`. Creates the Stripe Customer on first use and a SetupIntent with `usage: off_session`. |
-| `GET` | `/api/me/billing` | `{ "card": { "brand": "visa", "last4": "4242" } }` or `{ "card": null }` |
+| `GET` | `/api/me/billing` | `{ "card": { "brand": "visa", "last4": "4242", "expMonth": 4, "expYear": 2028 } }` or `{ "card": null }`. `expMonth` and `expYear` come from the saved Stripe PaymentMethod when `STRIPE_SECRET_KEY` starts with `sk_test_`. They are `null` when Stripe is not in test mode or the card expiry cannot be read. |
 | `DELETE` | `/api/me/billing` | Detaches the payment method and clears `payment_method_id`, `brand`, and `last4`. The Stripe Customer id stays. `{ "card": null }` |
 
 SetupIntent and the off-session charge run only when `STRIPE_SECRET_KEY` starts with `sk_test_`. Otherwise `503` `{ "error": "Payments not configured", "code": "payments_not_configured" }`. The webhook `setup_intent.succeeded` copies `brand` and `last4` onto the row. `POST /api/me/billing/setup-intent` can also be confirmed by the client; `GET` reads whatever is stored.
@@ -764,11 +764,22 @@ One endpoint per profile.
 
 `url` must be `https`. `400` `{ "error": "Webhook URL must be https", "code": "validation_error" }` otherwise. The signing secret is 32 bytes of hex prefixed with `whsec_`. It is stored so deliveries can be signed, and it is returned only from this `PUT`. A later `PUT` rotates it and returns the new secret once.
 
+`GET /api/me/webhook` returns the saved endpoint without the secret:
+
+```json
+{ "url": "https://example.com/hooks/credpronto", "secretLast4": "c0ff", "lastDelivery": { "status": "succeeded", "event": "order.quoted", "at": "2026-10-12T00:00:00.000Z", "responseStatus": 200 } }
+```
+
+`secretLast4` is the last 4 characters of the signing secret. `lastDelivery` is the newest `webhook_deliveries` row for that endpoint, or `null`. When the profile has no endpoint, the body is `{ "url": null, "secretLast4": null, "lastDelivery": null }`.
+
 Deliveries are posted for orders whose `user_id` has an endpoint:
 
 | Event | When |
 | --- | --- |
 | `order.quoted` | Analysis sets the order to `quoted` |
+| `order.preview_ready` | The translation or evaluation pipeline saves a preview |
+| `order.paid` | Checkout, the Stripe webhook, or an API-key charge marks the order paid |
+| `order.completed` | Staff approval marks the delivery delivered |
 | `order.delivered` | Delivery becomes `delivered` |
 | `order.failed` | The order becomes `failed` |
 
@@ -787,11 +798,42 @@ Deliveries are posted for orders whose `user_id` has an endpoint:
 
 `CredPronto-Signature` is `t=<unix seconds>,v1=<hex>`. `v1` is HMAC-SHA256 of `${t}.${rawBody}` using the current signing secret, hex-encoded. Receivers reject a timestamp more than 5 minutes off.
 
-Each delivery is stored in `webhook_deliveries`. A non-2xx response or a network error is retried up to 3 attempts total (immediately, then after 60 seconds, then after 5 minutes). `attempt` is 1, 2, or 3. `status` is `pending`, `succeeded`, or `failed`. After the third failure the row stays `failed` and no further retry is scheduled.
+`order.quoted`, `order.delivered`, and `order.failed` are stored in `webhook_deliveries` and retried up to 3 attempts (immediately, then after 60 seconds, then after 5 minutes). `order.preview_ready`, `order.paid`, and `order.completed` are one attempt with a 5 second timeout. A network error or a non-2xx response is recorded as `failed` and is not retried. The caller still finishes.
+
+`POST /api/me/webhook/test` sends `webhook.test` to the saved URL with the same `CredPronto-Signature` header and records that delivery. `404` `{ "error": "Save a webhook URL first", "code": "not_found" }` when no URL is saved. The response is `{ "status", "event", "at", "responseStatus" }`. The signing secret is not included.
+
+`webhook_deliveries.event` is `order.quoted`, `order.delivered`, `order.failed`, `order.preview_ready`, `order.paid`, `order.completed`, or `webhook.test`. `order_id` is null only for `webhook.test`.
+
+### API orders
+
+`GET /api/me/api-orders` lists orders this signed-in customer placed with an API key (`orders.api_key_id`). Dashboard orders are not included.
+
+```json
+{
+  "orders": [
+    {
+      "id": "…",
+      "externalRef": "crm-1842",
+      "keyName": "Production",
+      "keyPrefix": "cp_live_",
+      "keyLast4": "ab12",
+      "pages": 1,
+      "status": "paid",
+      "amountCents": 995,
+      "currency": "usd",
+      "placedAt": "2026-10-12T00:00:00.000Z",
+      "downloadUrl": null,
+      "viewUrl": null
+    }
+  ]
+}
+```
+
+`pages` is `billable_pages`. `amountCents` is the settled charge (`paid` or `paid_test`), or `null` when nothing has been charged. `downloadUrl` and `viewUrl` are `null` because the raw order token is not stored. The key hash and the raw key are not returned.
 
 ### Public API
 
-`Authorization: Bearer <secret>`. The secret is hashed and matched to an unrevoked `api_keys` row. `401` `{ "error": "Invalid API key", "code": "invalid_api_key" }` otherwise.
+`Authorization: Bearer <secret>`. The secret is hashed and matched to an unrevoked `api_keys` row. A match sets `last_used_at`. `401` `{ "error": "Invalid API key", "code": "invalid_api_key" }` otherwise.
 
 While `STRIPE_SECRET_KEY` starts with `sk_test_`, `cp_live_` keys may call `GET` but `POST /api/v1/orders` returns `403` `{ "error": "Live mode is disabled", "code": "live_mode_disabled" }`. `cp_test_` keys may create orders.
 
@@ -916,13 +958,15 @@ The clean translation in `finals` (`file=translation`) starts with the certifica
 
 ### Tables
 
-`api_keys`: `id`, `user_id` → `auth.users`, `name`, `prefix` (`cp_live_` or `cp_test_`), `key_hash` (unique lowercase hex SHA-256), `last4`, `created_at`, `revoked_at` null until delete. RLS: the owner selects their rows; staff select all. Writes go through the service role.
+`orders.api_key_id` nullable → `api_keys`. Set by `POST /api/v1/orders`. Null for dashboard orders. Deleting the key sets it null.
+
+`api_keys`: `id`, `user_id` → `auth.users`, `name`, `prefix` (`cp_live_` or `cp_test_`), `key_hash` (unique lowercase hex SHA-256), `last4`, `created_at`, `last_used_at` null until the key authenticates a request, `revoked_at` null until delete. RLS: the owner selects their rows; staff select all. Writes go through the service role.
 
 `billing_customers`: `user_id` primary key → `auth.users`, `stripe_customer_id` unique, `payment_method_id` null, `brand` null, `last4` null, `created_at`, `updated_at`. No card number. RLS: the owner selects their row. Writes go through the service role.
 
 `webhook_endpoints`: `id`, `user_id` unique → `auth.users`, `url`, `signing_secret`, `created_at`, `updated_at`. The secret is not readable by the customer session. RLS: no customer policy. Staff select. Writes go through the service role.
 
-`webhook_deliveries`: `id`, `endpoint_id`, `order_id`, `event` (`order.quoted`, `order.delivered`, `order.failed`), `attempt`, `status` (`pending`, `succeeded`, `failed`), `response_status` null, `created_at`, `next_retry_at` null. RLS: staff select. Writes go through the service role.
+`webhook_deliveries`: `id`, `endpoint_id`, `order_id` null only for `webhook.test`, `event` (`order.quoted`, `order.delivered`, `order.failed`, `order.preview_ready`, `order.paid`, `order.completed`, `webhook.test`), `attempt`, `status` (`pending`, `succeeded`, `failed`), `response_status` null, `created_at`, `next_retry_at` null. RLS: staff select. Writes go through the service role.
 
 `order_qa_runs`: `id`, `order_id`, `attempt` (unique per order, 1–3), `status` (`pass`, `fail`, `retranslated`), `score` 0–100, `issues` jsonb, `created_at`. RLS: staff select. Customers do not select QA rows. Writes go through the service role.
 

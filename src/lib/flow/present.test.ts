@@ -5,8 +5,10 @@ import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import {
   LANGUAGE_PENDING,
+  QUOTE_BILLING_NOTE,
   UPLOAD_ORDER_NOTE,
   TARGET_LANGUAGE_REVIEW_MESSAGE,
+  billablePriceLabel,
   canOpenConfirm,
   canSetSourceLanguage,
   checkoutFailureMessage,
@@ -16,9 +18,13 @@ import {
   joinParents,
   languageLine,
   orderHubStep,
+  quoteCounts,
+  quotePageRows,
+  quoteSummaryLabel,
   servicePriceLines,
   settleTargetLanguageUpdate,
   showTargetLanguagePicker,
+  skippedPageIndexes,
   splitParents,
   toPreviewOrder,
   totalLabel,
@@ -215,16 +221,148 @@ describe("quote language", () => {
 });
 
 describe("page rule", () => {
-  it("renders the order pageRule for word and CJK billing", () => {
-    expect(displayedPageRule(order())).toBe(WORD_PAGE_RULE);
+  it("replaces the 400-unit fine print on the quote", () => {
+    expect(displayedPageRule(order())).toBe(QUOTE_BILLING_NOTE);
     const cjk = order({
       sourceLanguage: "zh",
       pageRule: CJK_PAGE_RULE,
     });
-    expect(displayedPageRule(cjk)).toBe(CJK_PAGE_RULE);
-    expect(displayedPageRule(cjk)).toContain("1000");
+    expect(displayedPageRule(cjk)).toBe(QUOTE_BILLING_NOTE);
     expect(displayedPageRule(cjk)).not.toContain("400 units");
-    expect(displayedPageRule(cjk)).not.toBe(WORD_PAGE_RULE);
+    expect(cjk.pageRule).not.toContain("400 units");
+    expect(cjk.pageRule).toContain("1000");
+  });
+});
+
+describe("quote counts", () => {
+  it("counts files, physical pages, and billable units", () => {
+    expect(quoteSummaryLabel(quoteCounts(order()))).toBe("2 files, 3 pages, 3 billable");
+    const dense = order({
+      documents: [
+        {
+          id: "cv",
+          filename: "cv.pdf",
+          pageCount: 2,
+          detectedLanguage: "es",
+          confidence: 0.9,
+          uploadPosition: 1,
+          appliedPosition: 1,
+        },
+      ],
+      pages: [
+        {
+          id: "p1",
+          documentId: "cv",
+          pageNumber: 1,
+          uploadPage: 1,
+          logicalPage: null,
+          orderHint: null,
+          qualityScore: null,
+          qualityFlags: [],
+          qualityMessage: null,
+          billableUnits: 2,
+        },
+        {
+          id: "p2",
+          documentId: "cv",
+          pageNumber: 2,
+          uploadPage: 2,
+          logicalPage: null,
+          orderHint: null,
+          qualityScore: null,
+          qualityFlags: [],
+          qualityMessage: null,
+          skip: true,
+          skipReason: "already English",
+        },
+      ],
+      billablePages: 2,
+    });
+    expect(quoteCounts(dense)).toEqual({ files: 1, pages: 2, billable: 2 });
+    expect(quoteSummaryLabel(quoteCounts(dense))).toBe("1 file, 2 pages, 2 billable");
+    const rows = quotePageRows(dense);
+    expect(rows.map((row) => row.pageId)).toEqual(["p1", "p2"]);
+    expect(rows.map((row) => row.pageIndex)).toEqual([0, 1]);
+    expect(rows[0]?.billableUnits).toBe(2);
+    expect(rows[1]?.skipReason).toBe("already English");
+    expect(skippedPageIndexes(dense)).toEqual([1]);
+    expect(billablePriceLabel(2, 995)).toBe("2 billable pages × $9.95");
+    expect(billablePriceLabel(1, 995)).toBe("1 billable page × $9.95");
+  });
+
+  it("leaves page rows off when the new fields are missing", () => {
+    expect(quotePageRows(order())).toEqual([]);
+  });
+
+  it("addresses a reordered page by its index in the pages list", () => {
+    const reordered = order({
+      documents: [
+        {
+          id: "cv",
+          filename: "cv.pdf",
+          pageCount: 2,
+          detectedLanguage: "es",
+          confidence: 0.9,
+          uploadPosition: 1,
+          appliedPosition: 1,
+        },
+      ],
+      pages: [
+        {
+          id: "p1",
+          documentId: "cv",
+          pageNumber: 1,
+          uploadPage: 1,
+          logicalPage: null,
+          orderHint: null,
+          qualityScore: null,
+          qualityFlags: [],
+          qualityMessage: null,
+        },
+        {
+          id: "p2",
+          documentId: "cv",
+          pageNumber: 2,
+          uploadPage: 2,
+          logicalPage: null,
+          orderHint: null,
+          qualityScore: null,
+          qualityFlags: [],
+          qualityMessage: null,
+          skip: true,
+          skipReason: "already English",
+        },
+      ],
+      pageOrder: {
+        basis: "logical",
+        pages: [
+          {
+            documentId: "cv",
+            filename: "cv.pdf",
+            uploadPosition: 1,
+            appliedPosition: 1,
+            uploadPage: 2,
+            appliedPage: 2,
+            logicalPage: 1,
+            hint: null,
+            confidence: null,
+          },
+          {
+            documentId: "cv",
+            filename: "cv.pdf",
+            uploadPosition: 1,
+            appliedPosition: 1,
+            uploadPage: 1,
+            appliedPage: 1,
+            logicalPage: 2,
+            hint: null,
+            confidence: null,
+          },
+        ],
+      },
+    });
+    expect(quotePageRows(reordered).map((row) => row.pageIndex)).toEqual([1, 0]);
+    expect(skippedPageIndexes(reordered)).toEqual([1]);
   });
 });
 

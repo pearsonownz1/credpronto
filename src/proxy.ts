@@ -1,8 +1,26 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { safeNextPath } from "@/lib/auth/redirect";
 import { publicOrderSegment } from "@/lib/orders/public-order";
 import { publicOrderExists } from "@/lib/orders/public-order-server";
 import { ROBOTS_NOINDEX } from "@/lib/seo";
 import { updateSession } from "@/lib/supabase/proxy";
+
+const PRIVATE_NO_STORE = "private, no-store";
+
+function isDashboardPath(pathname: string): boolean {
+  return pathname === "/dashboard" || pathname.startsWith("/dashboard/");
+}
+
+function signInRedirect(request: NextRequest): NextResponse {
+  const next = safeNextPath(`${request.nextUrl.pathname}${request.nextUrl.search}`, "/dashboard");
+  const url = request.nextUrl.clone();
+  url.pathname = "/sign-in";
+  url.search = "";
+  url.searchParams.set("next", next);
+  const response = NextResponse.redirect(url, 307);
+  response.headers.set("Cache-Control", PRIVATE_NO_STORE);
+  return response;
+}
 
 function withPrivateRobots(response: NextResponse, pathname: string): NextResponse {
   if (pathname === "/preview" || pathname.startsWith("/preview/") || pathname === "/order" || pathname.startsWith("/order/")) {
@@ -29,7 +47,21 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  return withPrivateRobots(await updateSession(request), pathname);
+  const session = await updateSession(request);
+  if (isDashboardPath(pathname)) {
+    // Cache Components would stream a public shell before the layout redirect,
+    // so a signed-out document request stayed 200. Redirect before that shell.
+    if (!session.signedIn) {
+      const redirect = signInRedirect(request);
+      for (const cookie of session.response.headers.getSetCookie()) {
+        redirect.headers.append("set-cookie", cookie);
+      }
+      return withPrivateRobots(redirect, pathname);
+    }
+    session.response.headers.set("Cache-Control", PRIVATE_NO_STORE);
+  }
+
+  return withPrivateRobots(session.response, pathname);
 }
 
 export const config = {

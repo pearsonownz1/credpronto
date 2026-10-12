@@ -1,0 +1,162 @@
+export const READING_STEPS = [
+  "uploaded",
+  "reading",
+  "language",
+  "counting",
+  "quoting",
+  "done",
+] as const;
+
+export type ReadingStep = (typeof READING_STEPS)[number];
+
+/** Steps the customer sees. `done` completes the list only after the quote exists. */
+export const READING_LIST = [
+  { id: "uploaded", label: "Uploaded" },
+  { id: "reading", label: "Reading pages" },
+  { id: "language", label: "Detecting language" },
+  { id: "counting", label: "Counting translatable text" },
+  { id: "quoting", label: "Building your quote" },
+] as const;
+
+export type ReadingListStep = (typeof READING_LIST)[number]["id"];
+
+export type OrderReadProgress = {
+  step: ReadingStep;
+  pagesRead?: number;
+  pagesTotal?: number;
+};
+
+export type StepState = "done" | "current" | "pending";
+
+export type ReadingPresentation = {
+  /** Bar width, 0–100. Stays below 100 until the order is quoted. */
+  percent: number;
+  /** Integer shown beside the bar. Fallback stays at or below 89. */
+  displayPercent: number;
+  label: string;
+  steps: Array<{ id: ReadingListStep; label: string; state: StepState }>;
+};
+
+const STEP_SET = new Set<string>(READING_STEPS);
+
+/** Time constant for the fallback ease toward 90%. About 86% at 60s. */
+const FALLBACK_EASE_MS = 20_000;
+const FALLBACK_CAP = 89.9;
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+export function readOrderProgress(value: unknown): OrderReadProgress | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (typeof row.step !== "string" || !STEP_SET.has(row.step)) return null;
+  const pagesRead = finiteNumber(row.pagesRead);
+  const pagesTotal = finiteNumber(row.pagesTotal);
+  return {
+    step: row.step as ReadingStep,
+    ...(pagesRead !== undefined ? { pagesRead } : {}),
+    ...(pagesTotal !== undefined ? { pagesTotal } : {}),
+  };
+}
+
+function readRatio(progress: OrderReadProgress): number {
+  const total = progress.pagesTotal;
+  const read = progress.pagesRead;
+  if (total == null || read == null || total <= 0) return 0;
+  return Math.min(1, Math.max(0, read / total));
+}
+
+/** Percent for a progress payload, including 100 for `done`. */
+export function liveReadingPercent(progress: OrderReadProgress): number {
+  switch (progress.step) {
+    case "uploaded":
+      return 5;
+    case "reading":
+      return 5 + 55 * readRatio(progress);
+    case "language":
+      return 75;
+    case "counting":
+      return 90;
+    case "quoting":
+      return 95;
+    case "done":
+      return 100;
+  }
+}
+
+/** Ease toward 90% and stay under it. */
+export function fallbackReadingPercent(elapsedMs: number): number {
+  const elapsed = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0;
+  const eased = 90 * (1 - Math.exp(-elapsed / FALLBACK_EASE_MS));
+  return Math.min(FALLBACK_CAP, eased);
+}
+
+function fallbackStep(percent: number): ReadingListStep {
+  if (percent >= 80) return "quoting";
+  if (percent >= 75) return "counting";
+  if (percent >= 60) return "language";
+  if (percent >= 5) return "reading";
+  return "uploaded";
+}
+
+function readingLabel(progress: OrderReadProgress): string {
+  if (progress.step === "reading") {
+    const total = progress.pagesTotal;
+    const read = progress.pagesRead;
+    if (total != null && read != null && total > 0 && read > 0) {
+      const pages = Math.max(1, Math.round(total));
+      const page = Math.min(pages, Math.max(1, Math.round(read)));
+      return `Reading page ${page} of ${pages}`;
+    }
+    return "Reading pages";
+  }
+  if (progress.step === "done") return "Building your quote";
+  return READING_LIST.find((step) => step.id === progress.step)?.label ?? "Uploaded";
+}
+
+function stepStates(current: ReadingListStep, complete: boolean): ReadingPresentation["steps"] {
+  const index = READING_LIST.findIndex((step) => step.id === current);
+  return READING_LIST.map((step, position) => ({
+    id: step.id,
+    label: step.label,
+    state: complete ? "done" : position < index ? "done" : position === index ? "current" : "pending",
+  }));
+}
+
+export function readingPresentation(input: {
+  progress: unknown;
+  status: string;
+  elapsedMs: number;
+}): ReadingPresentation {
+  if (input.status === "quoted") {
+    return {
+      percent: 100,
+      displayPercent: 100,
+      label: "Building your quote",
+      steps: stepStates("quoting", true),
+    };
+  }
+
+  const progress = readOrderProgress(input.progress);
+  if (progress) {
+    const raw = liveReadingPercent(progress);
+    const percent = raw >= 100 ? 95 : raw;
+    const current: ReadingListStep = progress.step === "done" ? "quoting" : progress.step;
+    return {
+      percent,
+      displayPercent: Math.round(percent),
+      label: readingLabel(progress.step === "done" ? { ...progress, step: "quoting" } : progress),
+      steps: stepStates(current, false),
+    };
+  }
+
+  const percent = fallbackReadingPercent(input.elapsedMs);
+  const current = fallbackStep(percent);
+  return {
+    percent,
+    displayPercent: Math.min(89, Math.round(percent)),
+    label: readingLabel({ step: current }),
+    steps: stepStates(current, false),
+  };
+}

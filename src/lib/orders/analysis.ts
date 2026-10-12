@@ -33,7 +33,7 @@ import { completeEvaluation } from "./evaluation";
 import { decideQuote, etaFromNow } from "./quote";
 import { notifyOrder } from "./webhook-delivery";
 import { downloadObject, uploadObject } from "./storage";
-import { quotePage } from "./billing";
+import { quotePage, storedDensity } from "./billing";
 import { countWords } from "./words";
 import type { DocumentRecord } from "./types";
 
@@ -422,8 +422,10 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
           return {
             pageNumber: page.appliedPage,
             wordCount: quoted.counted,
-            billableUnits: quoted.billableUnits,
+            billableUnits: storedDensity(quoted),
             billingBasis: quoted.billingBasis,
+            skipped: quoted.skip,
+            skipReason: quoted.skipReason,
             ocrText: read.text,
             needsReview,
             widthPt: meta.widthPt,

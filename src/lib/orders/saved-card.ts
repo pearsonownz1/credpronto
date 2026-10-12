@@ -17,11 +17,31 @@ export function requireStripeTestKey(): string {
   return key;
 }
 
-export function billingCardBody(card: { brand: string | null; last4: string | null } | null): {
-  card: { brand: string; last4: string } | null;
+export function shouldReadCardExpiry(stripeKey: string | null | undefined): boolean {
+  return Boolean(stripeKey?.startsWith("sk_test_"));
+}
+
+/** Stripe test-mode PaymentMethod card expiry. Invalid values stay unknown. */
+export function cardExpiryFromStripe(card: { exp_month?: number | null; exp_year?: number | null } | null | undefined): {
+  expMonth: number | null;
+  expYear: number | null;
+} {
+  const month = card?.exp_month;
+  const year = card?.exp_year;
+  if (typeof month !== "number" || typeof year !== "number") return { expMonth: null, expYear: null };
+  if (!Number.isInteger(month) || month < 1 || month > 12) return { expMonth: null, expYear: null };
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) return { expMonth: null, expYear: null };
+  return { expMonth: month, expYear: year };
+}
+
+export function billingCardBody(
+  card: { brand: string | null; last4: string | null; expMonth?: number | null; expYear?: number | null } | null,
+): {
+  card: { brand: string; last4: string; expMonth: number | null; expYear: number | null } | null;
 } {
   if (!card?.brand || !card.last4) return { card: null };
-  return { card: { brand: card.brand, last4: card.last4 } };
+  const expiry = cardExpiryFromStripe({ exp_month: card.expMonth, exp_year: card.expYear });
+  return { card: { brand: card.brand, last4: card.last4, expMonth: expiry.expMonth, expYear: expiry.expYear } };
 }
 
 export function setupIntentCreateParams(customerId: string, userId: string) {
@@ -33,8 +53,25 @@ export function setupIntentCreateParams(customerId: string, userId: string) {
   };
 }
 
+async function readTestModeCard(paymentMethodId: string): Promise<{ exp_month?: number | null; exp_year?: number | null } | null> {
+  try {
+    const stripe = new Stripe(requireStripeTestKey());
+    const method = await stripe.paymentMethods.retrieve(paymentMethodId);
+    return method.card ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function currentBillingCard(db: Db, userId: string) {
-  return billingCardBody(await billingCustomerForUser(db, userId));
+  const row = await billingCustomerForUser(db, userId);
+  if (!row?.brand || !row.last4) return billingCardBody(row);
+  if (!row.paymentMethodId || !shouldReadCardExpiry(process.env.STRIPE_SECRET_KEY)) {
+    return billingCardBody(row);
+  }
+  const card = await readTestModeCard(row.paymentMethodId);
+  const expiry = cardExpiryFromStripe(card);
+  return billingCardBody({ ...row, expMonth: expiry.expMonth, expYear: expiry.expYear });
 }
 
 export async function createSetupIntent(db: Db, user: { id: string; email: string | null }) {
