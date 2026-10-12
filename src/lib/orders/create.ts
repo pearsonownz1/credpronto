@@ -83,7 +83,7 @@ export async function createOrder(request: Request): Promise<{
     orderToken,
     orderId: order.id,
     email,
-    documentCount: prepared.length,
+    documentCount: files.length,
     estimatedCents: order.evaluationCents,
     sourceLanguage: order.sourceLanguage,
     targetLanguage: order.targetLanguage,
