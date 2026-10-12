@@ -6,6 +6,8 @@ import {
   customerEmail,
   dismissCorrections,
   getDelivery,
+  getEdgeCredential,
+  getEdgeGradingScale,
   getOrderById,
   hasEvent,
   insertEvent,
@@ -26,7 +28,8 @@ import { fulfillmentFor, parseTrackingNumber } from "./fulfillment";
 import { HttpError } from "./errors";
 import { normalizeLanguage } from "./languages";
 import { evaluationQuote } from "./evaluation-price";
-import { publishDiplomaEquivalency, retryEvaluation } from "./evaluation";
+import { publishCourseEquivalency, publishDiplomaEquivalency, retryEvaluation } from "./evaluation";
+import { staffEdgeView } from "./edge";
 import { EQUIVALENCY_UNMAPPED, approvalBlockReason } from "./equivalency";
 import { etaFromNow } from "./quote";
 import { signedObjectUrl } from "./storage";
@@ -72,6 +75,10 @@ export async function staffOrder(orderId: string) {
     listQaRuns(db, order.id),
   ]);
   const latestQa = qaRuns[qaRuns.length - 1] ?? null;
+  const [edgeCredential, edgeScale] = await Promise.all([
+    order.edgeCredentialId ? getEdgeCredential(db, order.edgeCredentialId) : Promise.resolve(null),
+    order.edgeGradingScaleId ? getEdgeGradingScale(db, order.edgeGradingScaleId) : Promise.resolve(null),
+  ]);
 
   return {
     ...order,
@@ -110,6 +117,7 @@ export async function staffOrder(orderId: string) {
     payment,
     delivery,
     fulfillment: fulfillmentFor(order),
+    edge: staffEdgeView({ credential: edgeCredential, scale: edgeScale }),
     qa: latestQa
       ? {
           status: latestQa.status,
@@ -232,6 +240,12 @@ export async function resolveReview(orderId: string, body: unknown) {
   if (order.reviewReason === EQUIVALENCY_UNMAPPED) {
     const equivalencies = stringList(body, "equivalencies");
     if (!equivalencies) throw new HttpError("Each credential needs a U.S. equivalency", 400);
+    if (order.evaluationResult?.kind === "course_by_course") {
+      const equivalency = equivalencies[0];
+      if (!equivalency) throw new HttpError("Each credential needs a U.S. equivalency", 400);
+      await publishCourseEquivalency(db, order, equivalency);
+      return { status: order.status, reviewReason: null as string | null };
+    }
     await publishDiplomaEquivalency(db, order, equivalencies, {
       countries: optionalStrings(body, "countries"),
       fields: optionalStrings(body, "fields"),

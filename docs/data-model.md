@@ -100,7 +100,7 @@ The buyer email captured at upload. `email` is `citext` and unique, so `Ada@exam
 
 ### `orders`
 
-One purchase of one `service_type`: `translation`, `evaluation`, or `expert_letter`. `order_type` repeats that product and defaults to `translation`. A customer evaluation also sets `service` to `diploma` or `course_by_course` and `degree_count` to the number of degrees. `evaluation_cents` is `degree_count` times 1995 or 3995. `translation_cents` is 0 when the source is English and otherwise `billable_pages * unit_price_cents`. For those orders `total_cents` is `evaluation_cents + translation_cents + addon_cents`, not the page product alone. `addon_cents` is the sum of checkout add-ons. `expedited` is true when that add-on was purchased, and the staff queue sorts those orders first. Mail stores `shipping_name`, `shipping_line1`, `shipping_line2`, `shipping_city`, `shipping_state`, `shipping_postal_code`, and `shipping_country` (`US`). `mail_status` is `pending` or `shipped`, with `mail_tracking` once it ships. `notarization_status` is `pending` or `done`. Apply `supabase/migrations/20261012080000_order_addons.sql` separately; the app does not run it. `evaluation_result` is the diploma credentials or the course-by-course table. `target_language` defaults to `en`. `source_language` is filled by detection and then confirmed. `eta_at` is the promise shown with the quote. `public_token_hash` is the return-link secret described above. `user_id` is a nullable foreign key to `auth.users`. It stays null until a verified sign-in claims the order. Claim matches `customers.email` to the verified account email and only updates rows whose `user_id` is still null. `updated_at` is maintained by `private.set_updated_at` on every update.
+One purchase of one `service_type`: `translation`, `evaluation`, or `expert_letter`. `order_type` repeats that product and defaults to `translation`. A customer evaluation also sets `service` to `diploma` or `course_by_course` and `degree_count` to the number of degrees. `evaluation_cents` is `degree_count` times 1995 or 3995. `translation_cents` is 0 when the source is English and otherwise `billable_pages * unit_price_cents`. For those orders `total_cents` is `evaluation_cents + translation_cents + addon_cents`, not the page product alone. `addon_cents` is the sum of checkout add-ons. `expedited` is true when that add-on was purchased, and the staff queue sorts those orders first. Mail stores `shipping_name`, `shipping_line1`, `shipping_line2`, `shipping_city`, `shipping_state`, `shipping_postal_code`, and `shipping_country` (`US`). `mail_status` is `pending` or `shipped`, with `mail_tracking` once it ships. `notarization_status` is `pending` or `done`. Apply `supabase/migrations/20261012080000_order_addons.sql` separately; the app does not run it. `evaluation_result` is the diploma credentials or the course-by-course table. `target_language` defaults to `en`. `source_language` is filled by detection and then confirmed. `eta_at` is the promise shown with the quote. `public_token_hash` is the return-link secret described above. `user_id` is a nullable foreign key to `auth.users`. It stays null until a verified sign-in claims the order. Claim matches `customers.email` to the verified account email and only updates rows whose `user_id` is still null. `updated_at` is maintained by `private.set_updated_at` on every update. `edge_credential_id` and `edge_grading_scale_id` point at the matched EDGE rows for an evaluation. Both are null until a match. Customer routes do not return them. Apply `supabase/migrations/20261012090000_edge_reference.sql` separately; the app does not run it and does not load the rows.
 
 ### `order_addons`
 
@@ -115,6 +115,42 @@ One uploaded file on an order. `original_path` is the object key in the `origina
 One side of a document. `page_number` starts at 1 and is unique per document. After analysis it is the applied page inside that file, matching the combined original. `upload_page` is the page index in the uploaded file before that reorder. `logical_page` is the printed page number when the model saw one. `order_hint` is the cue (`page 1/2`, `suite`). `ocr_text` is the text used for the word count and for the side-by-side review. `needs_review` marks a side a person must check (low confidence, unreadable scan, suspected wrong language, or a failed image-quality gate). `quality_score` is legibility from 0 to 1. `quality_flags` is a subset of `blurry`, `cropped`, `glare`, `too_dark`, and `unreadable_fields`. `quality_message` is the retake text when a photo or scan is flagged, or when its score is below 0.6. Severe flags (`blurry`, `too_dark`, `unreadable_fields`, `cropped` when the crop cuts off text) cap `quality_score` below 0.6 and set `orders.review_reason` to `image_quality`. `billable_units` follows the rule above.
 
 `orders.page_order_basis` is `logical` or `upload`. `orders.page_order` is the recorded sequence: each page's upload position, applied position, upload page, applied page, logical page, hint, and confidence.
+
+### `edge_credentials`
+
+Licensed AACRAO EDGE credential reference. Columns: `id` uuid, `country_slug`, `country`, `title`, `content`, `level_number`, `level_title`, `url`, `us_equivalency` (nullable). Index on `(country_slug, lower(title))`. RLS is enabled with no anon or authenticated policy. Only the service role can read or write. The source files are not in the repo.
+
+Load one object keyed by country. A key that is already a lowercase hyphenated slug is `country_slug`. Any other key uses `countrySlug(country)`, then `countrySlug(key)`. `countrySlug` strips accents, lowercases, and turns other characters into single hyphens (`México` → `mexico`, `Côte d'Ivoire` → `cote-d-ivoire`, `United States` → `united-states`).
+
+```json
+{
+  "mexico": {
+    "country": "Mexico",
+    "credentials": [
+      {
+        "title": "…",
+        "content": "…",
+        "level": { "number": 6, "title": "…" },
+        "url": "https://…",
+        "us_equivalency": "Bachelor's degree"
+      }
+    ],
+    "grading_scales": [
+      {
+        "title": "…",
+        "raw": null,
+        "rows": [{ "indigenous_grade": "10", "us_equivalent": "A" }]
+      }
+    ]
+  }
+}
+```
+
+Each credential becomes one `edge_credentials` row: `country_slug`, `country`, `title`, `content` (empty string when blank), `level_number` from `level.number`, `level_title` from `level.title`, `url`, `us_equivalency`. Blank `url` and `us_equivalency` are null. `id` is generated. A blank title is skipped.
+
+### `edge_grading_scales`
+
+Licensed grading scales for the same country groups. Columns: `id` uuid, `country_slug`, `title`, `raw` (nullable original text), `rows` jsonb. `rows` is an array of `{indigenous_grade, us_equivalent}`. A row missing either string is dropped. Same RLS as `edge_credentials`: service role only, no anon or authenticated policy.
 
 ### `confirmations`
 

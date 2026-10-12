@@ -454,7 +454,7 @@ async function renderCourses(
   const eqW = CONTENT_W * 0.5 - gap;
   const statW = (CONTENT_W - eqW - gap * 2) / 2;
   const boxBottom = cursor.y - boxH;
-  const equivalency = usEquivalency(result.credential) ?? result.credential;
+  const equivalency = result.usEquivalency ?? usEquivalency(result.credential) ?? result.credential;
   drawStat(cursor.page, kit, MARGIN, boxBottom, eqW, boxH, "U.S. EQUIVALENCY", equivalency, true);
   drawStat(cursor.page, kit, MARGIN + eqW + gap, boxBottom, statW, boxH, "SEMESTER HOURS", amount(result.totalHours), false);
   drawStat(

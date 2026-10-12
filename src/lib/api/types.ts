@@ -104,6 +104,17 @@ export type StaffDetail = {
     dates: string;
     usEquivalency: string;
   }>;
+  edge: {
+    title: string;
+    levelNumber: number | null;
+    levelTitle: string | null;
+    contentExcerpt: string;
+    url: string | null;
+    gradingScale: {
+      title: string;
+      rows: Array<{ indigenousGrade: string; usEquivalent: string }>;
+    } | null;
+  } | null;
   filename: string;
   pages: StaffPage[];
   corrections: StaffCorrection[];

@@ -145,6 +145,35 @@ describe("customer order presentation", () => {
     expect(detail?.filename).toBe("diploma.pdf");
     expect(detail?.originalUrl).toBeNull();
     expect(detail?.qa).toBeNull();
+    expect(detail?.edge).toBeNull();
+    expect(
+      parseStaffDetail({
+        id: "ord-edge",
+        status: "preview_ready",
+        createdAt: "2026-10-12T00:00:00.000Z",
+        edge: {
+          title: "Example Diploma",
+          levelNumber: 6,
+          levelTitle: "First university degree",
+          contentExcerpt: "Fictional excerpt",
+          url: "https://example.test/edge",
+          gradingScale: {
+            title: "Example scale",
+            rows: [{ indigenousGrade: "10", usEquivalent: "A" }],
+          },
+        },
+      })?.edge,
+    ).toEqual({
+      title: "Example Diploma",
+      levelNumber: 6,
+      levelTitle: "First university degree",
+      contentExcerpt: "Fictional excerpt",
+      url: "https://example.test/edge",
+      gradingScale: {
+        title: "Example scale",
+        rows: [{ indigenousGrade: "10", usEquivalent: "A" }],
+      },
+    });
   });
 
   it("keeps a QA report only when the payload includes one", () => {

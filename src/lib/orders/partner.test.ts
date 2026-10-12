@@ -36,6 +36,8 @@ function order(patch: Partial<OrderRecord> = {}): OrderRecord {
     mailStatus: null,
     mailTracking: null,
     notarizationStatus: null,
+    edgeCredentialId: null,
+    edgeGradingScaleId: null,
     createdAt: "2026-10-12T00:00:00.000Z",
     ...patch,
   };

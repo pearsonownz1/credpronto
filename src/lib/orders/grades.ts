@@ -100,14 +100,34 @@ export type ScoredCourse = RawCourse & {
   gradePoints: number;
 };
 
+export const EDGE_GRADE_SCALE_TEXT =
+  "Local grades that match the national grading scale use that scale's U.S. equivalent. Other grades use the printed scale.";
+
+export type EdgeGradePoints = {
+  indigenousGrade: string;
+  usEquivalent: string;
+};
+
+export function mapEdgeGrade(localGrade: string, rows: readonly EdgeGradePoints[]): MappedGrade | null {
+  const key = gradeKey(localGrade);
+  if (!key) return null;
+  const row = rows.find((item) => gradeKey(item.indigenousGrade) === key);
+  if (!row) return null;
+  return pointsFromUsEquivalent(row.usEquivalent);
+}
+
 export function scoreCourses(
   courses: RawCourse[],
   scale: GradeScale,
-): { courses: ScoredCourse[]; totalHours: number; gpa: number } | null {
+  edgeRows?: readonly EdgeGradePoints[],
+): { courses: ScoredCourse[]; totalHours: number; gpa: number; usedEdge: boolean } | null {
   const scored: ScoredCourse[] = [];
+  let usedEdge = false;
   for (const course of courses) {
     if (!Number.isFinite(course.localCredits) || course.localCredits < 0) return null;
-    const mapped = mapLocalGrade(course.localGrade, scale);
+    const fromEdge = edgeRows && edgeRows.length > 0 ? mapEdgeGrade(course.localGrade, edgeRows) : null;
+    if (fromEdge) usedEdge = true;
+    const mapped = fromEdge ?? mapLocalGrade(course.localGrade, scale);
     if (!mapped) return null;
     const usSemesterHours = course.localCredits;
     scored.push({
@@ -120,5 +140,38 @@ export function scoreCourses(
   const totalHours = round2(scored.reduce((sum, course) => sum + course.usSemesterHours, 0));
   if (totalHours <= 0) return null;
   const points = scored.reduce((sum, course) => sum + course.gradePoints, 0);
-  return { courses: scored, totalHours, gpa: round2(points / totalHours) };
+  return { courses: scored, totalHours, gpa: round2(points / totalHours), usedEdge };
+}
+
+function gradeKey(value: string): string {
+  const trimmed = value.trim().toLowerCase().replace(/\s+/g, " ").replace(/,/g, ".");
+  if (!trimmed) return "";
+  if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? String(parsed) : trimmed;
+  }
+  return trimmed;
+}
+
+function pointsFromUsEquivalent(value: string): MappedGrade | null {
+  const letter = value.trim().toUpperCase().match(/\b(A|B|C|D|F)([+-])?\b/);
+  if (letter) {
+    const token = `${letter[1]}${letter[2] ?? ""}`;
+    const points = LETTER_POINTS[token];
+    if (points != null) return { usGrade: token, points };
+  }
+  const numeric = value.replace(/,/g, ".").match(/\b(\d+(?:\.\d+)?)\b/);
+  if (!numeric) return null;
+  const points = Number(numeric[1]);
+  if (!Number.isFinite(points) || points < 0 || points > 4) return null;
+  let usGrade = "F";
+  let gap = Infinity;
+  for (const [token, valuePoints] of Object.entries(LETTER_POINTS)) {
+    const next = Math.abs(valuePoints - points);
+    if (next < gap) {
+      gap = next;
+      usGrade = token;
+    }
+  }
+  return { usGrade, points };
 }
