@@ -4,12 +4,24 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom";
 import { getFlowClient } from "@/lib/flow/client";
 import { openPdfDocument, renderPdfPage } from "@/lib/flow/pdf-preview";
-import { resolvePreviewSource } from "@/lib/flow/preview-source";
+import {
+  resolvePreviewSource,
+  SIGNED_URL_REFRESH_SKEW_MS,
+  signedSourceStale,
+  type PreviewSource,
+} from "@/lib/flow/preview-source";
 import { uploadBlobFor } from "@/lib/flow/upload-blobs";
 import { pageStatusTag } from "@/lib/orders/skip-pages";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 
 const RENDER_WIDTH = 960;
+
+async function openPreviewDocument(source: PreviewSource): Promise<PDFDocumentProxy> {
+  if (source.kind === "blob") {
+    return openPdfDocument({ data: new Uint8Array(await source.blob.arrayBuffer()) });
+  }
+  return openPdfDocument({ url: source.url });
+}
 
 export type ViewerPage = {
   skip?: boolean;
@@ -65,6 +77,7 @@ export function FilePreview({
   const [pageCount, setPageCount] = useState(0);
   const [index, setIndex] = useState(0);
   const [open, setOpen] = useState(false);
+  const [signedUntil, setSignedUntil] = useState<string | null>(null);
   if (request !== requestKey) {
     setRequest(requestKey);
     setPhase(kind === "file" ? "hidden" : "loading");
@@ -73,6 +86,7 @@ export function FilePreview({
     setPageCount(0);
     setIndex(0);
     setOpen(false);
+    setSignedUntil(null);
   }
   const docRef = useRef<PDFDocumentProxy | null>(null);
   const urlsRef = useRef<string[]>([]);
@@ -80,6 +94,48 @@ export function FilePreview({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const sourceObjectUrl = useRef<string | null>(null);
+  const urlSourceRef = useRef<Extract<PreviewSource, { kind: "url" }> | null>(null);
+  const imageRetries = useRef(0);
+
+  const loadSigned = useCallback(() => getFlowClient().sourceFile(token, fileId), [token, fileId]);
+
+  const rememberUrl = useCallback((source: PreviewSource | null) => {
+    urlSourceRef.current = source?.kind === "url" ? source : null;
+    setSignedUntil(source?.kind === "url" ? source.expiresAt : null);
+  }, []);
+
+  const recoverImage = useCallback(async () => {
+    if (imageRetries.current >= 1) {
+      setPhase("hidden");
+      return;
+    }
+    imageRetries.current += 1;
+    const failed = urlSourceRef.current;
+    const source = await resolvePreviewSource({
+      blob: uploadBlobFor(token, fileId, filename),
+      sourceUrl,
+      cached: failed ? { ...failed, expiresAt: "1970-01-01T00:00:00.000Z" } : null,
+      loadSigned,
+    });
+    if (!source) {
+      setPhase("hidden");
+      return;
+    }
+    if (source.kind === "blob") {
+      const href = URL.createObjectURL(source.blob);
+      if (sourceObjectUrl.current) URL.revokeObjectURL(sourceObjectUrl.current);
+      sourceObjectUrl.current = href;
+      rememberUrl(null);
+      setImageUrl(href);
+      return;
+    }
+    if (failed && source.url === failed.url) {
+      setPhase("hidden");
+      return;
+    }
+    rememberUrl(source);
+    setImageUrl(source.url);
+  }, [token, fileId, filename, sourceUrl, loadSigned, rememberUrl]);
 
   const revokeTracked = useCallback(() => {
     for (const url of blobs.current) URL.revokeObjectURL(url);
@@ -103,14 +159,18 @@ export function FilePreview({
     if (kind === "file") return;
     let cancelled = false;
     let pdf: PDFDocumentProxy | null = null;
+    urlSourceRef.current = null;
+    imageRetries.current = 0;
 
     async function load() {
       const source = await resolvePreviewSource({
         blob: uploadBlobFor(token, fileId, filename),
         sourceUrl,
-        loadSigned: () => getFlowClient().sourceFile(token, fileId),
+        cached: urlSourceRef.current,
+        loadSigned,
       });
       if (cancelled) return;
+      rememberUrl(source);
       if (!source) {
         setPhase("hidden");
         return;
@@ -121,10 +181,7 @@ export function FilePreview({
         setImageUrl(href);
         return;
       }
-      pdf =
-        source.kind === "blob"
-          ? await openPdfDocument({ data: new Uint8Array(await source.blob.arrayBuffer()) })
-          : await openPdfDocument({ url: source.url });
+      pdf = await openPreviewDocument(source);
       if (cancelled) {
         await pdf.loadingTask.destroy();
         pdf = null;
@@ -147,34 +204,108 @@ export function FilePreview({
 
     return () => {
       cancelled = true;
-      if (docRef.current === pdf) docRef.current = null;
-      void pdf?.loadingTask.destroy();
+      const current = docRef.current ?? pdf;
+      docRef.current = null;
+      void current?.loadingTask.destroy().catch(() => {});
       if (sourceObjectUrl.current) {
         URL.revokeObjectURL(sourceObjectUrl.current);
         sourceObjectUrl.current = null;
       }
       revokeTracked();
     };
-  }, [token, fileId, filename, kind, sourceUrl, storePage, revokeTracked]);
+  }, [token, fileId, filename, kind, sourceUrl, storePage, revokeTracked, loadSigned, rememberUrl]);
+
+  useEffect(() => {
+    if (!signedUntil || kind === "file") return;
+    const at = Date.parse(signedUntil);
+    if (!Number.isFinite(at)) return;
+    let cancelled = false;
+    const delay = Math.max(0, at - Date.now() - SIGNED_URL_REFRESH_SKEW_MS);
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const source = await resolvePreviewSource({
+          blob: uploadBlobFor(token, fileId, filename),
+          sourceUrl,
+          cached: urlSourceRef.current,
+          loadSigned,
+        });
+        if (cancelled || !source || source.kind !== "url") return;
+        const previousUrl = urlSourceRef.current?.url;
+        if (kind === "image") {
+          rememberUrl(source);
+          if (source.url !== previousUrl) setImageUrl(source.url);
+          return;
+        }
+        if (source.url === previousUrl) {
+          rememberUrl(source);
+          return;
+        }
+        try {
+          const pdf = await openPdfDocument({ url: source.url });
+          if (cancelled) {
+            await pdf.loadingTask.destroy();
+            return;
+          }
+          const previous = docRef.current;
+          docRef.current = pdf;
+          setPageCount(pdf.numPages);
+          rememberUrl(source);
+          if (previous && previous !== pdf) void previous.loadingTask.destroy().catch(() => {});
+        } catch {
+          // Pages already painted stay on screen.
+        }
+      })();
+    }, delay);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [signedUntil, kind, token, fileId, filename, sourceUrl, loadSigned, rememberUrl]);
 
   useEffect(() => {
     if (kind !== "pdf" || phase !== "ready" || urlsRef.current[index]) return;
-    const pdf = docRef.current;
-    if (!pdf || index < 0 || index >= pdf.numPages) return;
     let cancelled = false;
-    void renderPdfPage(pdf, index + 1, RENDER_WIDTH)
-      .then((url) => {
+    void (async () => {
+      let pdf = docRef.current;
+      const cached = urlSourceRef.current;
+      if (cached?.expiresAt && signedSourceStale(cached.expiresAt)) {
+        const source = await resolvePreviewSource({
+          blob: uploadBlobFor(token, fileId, filename),
+          sourceUrl,
+          cached,
+          loadSigned,
+        });
+        if (cancelled || !source) return;
+        try {
+          pdf = await openPreviewDocument(source);
+        } catch {
+          return;
+        }
+        if (cancelled) {
+          await pdf.loadingTask.destroy();
+          return;
+        }
+        const previous = docRef.current;
+        docRef.current = pdf;
+        rememberUrl(source.kind === "url" ? source : null);
+        if (previous && previous !== pdf) void previous.loadingTask.destroy().catch(() => {});
+      }
+      if (!pdf || index < 0 || index >= pdf.numPages) return;
+      try {
+        const url = await renderPdfPage(pdf, index + 1, RENDER_WIDTH);
         if (cancelled) {
           URL.revokeObjectURL(url);
           return;
         }
         storePage(index, url);
-      })
-      .catch(() => {});
+      } catch {
+        // Leave the viewer on the last page that rendered.
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [index, phase, kind, storePage]);
+  }, [index, phase, kind, storePage, token, fileId, filename, sourceUrl, loadSigned, rememberUrl]);
 
   useEffect(() => {
     if (!open) return;
@@ -212,7 +343,10 @@ export function FilePreview({
         src={kind === "image" ? imageUrl : (urls[0] ?? null)}
         onOpen={openFrom}
         onReady={() => setPhase("ready")}
-        onFail={() => setPhase("hidden")}
+        onFail={() => {
+          if (kind === "image") void recoverImage();
+          else setPhase("hidden");
+        }}
       />
     );
 
@@ -297,7 +431,10 @@ export function FilePreview({
                   onLoad={() => {
                     if (kind === "image") setPhase("ready");
                   }}
-                  onError={() => setPhase("hidden")}
+                  onError={() => {
+                    if (kind === "image") void recoverImage();
+                    else setPhase("hidden");
+                  }}
                   className={`block w-full ${freeLabel ? "opacity-40" : ""}`}
                 />
               ) : (
