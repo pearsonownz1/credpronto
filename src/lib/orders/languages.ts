@@ -89,9 +89,25 @@ export function languageLabel(code: string): string {
   return entry[0].slice(0, 1).toUpperCase() + entry[0].slice(1);
 }
 
+export function languagesEqual(
+  left: string | null | undefined,
+  right: string | null | undefined,
+): boolean {
+  const a = normalizeLanguage(left);
+  const b = normalizeLanguage(right);
+  return a != null && a === b;
+}
+
 /** Languages the customer can send on confirm. `needs_review` is staff-only. */
 export function sourceLanguageChoices(): Array<{ code: string; label: string }> {
   return [...SUPPORTED]
     .map((code) => ({ code, label: languageLabel(code) }))
     .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** Target languages, including English. There is no customer route that saves this choice. */
+export function targetLanguageChoices(): Array<{ code: string; label: string }> {
+  return [{ code: "en", label: languageLabel("en") }, ...sourceLanguageChoices()].sort((a, b) =>
+    a.label.localeCompare(b.label),
+  );
 }

@@ -5,11 +5,14 @@ import { useState, type ChangeEvent } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
 import { formatMoney, pageLabel } from "@/lib/flow/pricing";
 import {
+  UPLOAD_ORDER_NOTE,
   canSetSourceLanguage,
   displayedPageRule,
   languageChoices,
   languageLine,
   servicePriceLines,
+  showTargetLanguagePicker,
+  targetChoices,
   totalLabel,
 } from "@/lib/flow/present";
 import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
@@ -82,10 +85,15 @@ function QuoteBody({
   onReplaced: () => void;
 }) {
   const choices = languageChoices();
+  const targets = targetChoices();
   const picker = canSetSourceLanguage(order);
+  const sameLanguage = showTargetLanguagePicker(order);
   const [language, setLanguage] = useState(order.sourceLanguage ?? choices[0]?.code ?? "es");
+  const [target, setTarget] = useState(order.targetLanguage || "en");
+  const sourceCode = picker ? language : (order.sourceLanguage ?? language);
+  const targetCode = sameLanguage ? target : order.targetLanguage;
   const line = order.sourceLanguage
-    ? languageLine({ ...order, sourceLanguage: picker ? language : order.sourceLanguage })
+    ? languageLine({ sourceLanguage: sourceCode, targetLanguage: targetCode })
     : languageLine(order);
   const pages = order.billablePages ?? 0;
   const qualityHold = order.reviewReason === IMAGE_QUALITY_REASON;
@@ -112,7 +120,21 @@ function QuoteBody({
             className={`${fieldClass} flex items-center justify-between gap-3`}
           >
             <span>{line}</span>
-            {picker ? (
+            {sameLanguage ? (
+              <select
+                data-testid="target-language"
+                aria-label="Target language"
+                value={target}
+                onChange={(event) => setTarget(event.target.value)}
+                className="bg-transparent text-[13px] font-semibold text-primary outline-none"
+              >
+                {targets.map((choice) => (
+                  <option key={choice.code} value={choice.code}>
+                    {choice.label}
+                  </option>
+                ))}
+              </select>
+            ) : picker ? (
               <select
                 data-testid="language-picker"
                 aria-label="Source language"
@@ -153,7 +175,7 @@ function QuoteBody({
                 <div className="text-[12.5px] text-ink-muted">
                   {file.detectedLanguage ? languageLine({
                     sourceLanguage: file.detectedLanguage,
-                    targetLanguage: order.targetLanguage,
+                    targetLanguage: targetCode,
                   }) : "Language not detected"}
                 </div>
               </div>
@@ -168,13 +190,15 @@ function QuoteBody({
             <p data-testid="page-order-basis" className="text-[13px] text-ink-muted">
               {orderedPages.basis === "logical"
                 ? "We ordered these pages from the printed page numbers."
-                : "We kept the order you uploaded them."}
+                : UPLOAD_ORDER_NOTE}
             </p>
             <ol className="mt-2 list-decimal space-y-1 pl-5 text-[13px]">
               {orderedPages.pages.map((page) => (
                 <li key={`${page.documentId}-${page.uploadPage}-${page.appliedPage}`}>
                   <span className="font-semibold">{page.filename || "Page"}</span>
-                  {page.logicalPage != null ? ` · printed page ${page.logicalPage}` : ""}
+                  {page.logicalPage != null
+                    ? ` · printed page ${page.logicalPage}`
+                    : ` · page ${page.appliedPage}`}
                   {page.hint ? ` · ${page.hint}` : ""}
                   {page.uploadPosition !== page.appliedPosition || page.uploadPage !== page.appliedPage
                     ? " · moved from the upload order"
@@ -217,9 +241,9 @@ function QuoteBody({
             emphasize
           />
         </Summary>
-        {order.status === "quoted" ? (
+        {order.status === "quoted" || (order.status === "needs_review" && !qualityHold) ? (
           <Link
-            href={`/confirm?lang=${encodeURIComponent(language)}`}
+            href={`/confirm?lang=${encodeURIComponent(sourceCode)}&target=${encodeURIComponent(targetCode)}`}
             data-testid="continue"
             className={buttonClasses("primary", "mt-4 h-[50px] w-full text-[15px]")}
           >

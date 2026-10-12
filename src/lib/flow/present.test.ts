@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { addonOptions } from "@/lib/orders/addons";
 import { CJK_PAGE_RULE, WORD_PAGE_RULE } from "@/lib/orders/billing";
+import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import {
   LANGUAGE_PENDING,
+  UPLOAD_ORDER_NOTE,
+  canOpenConfirm,
   canSetSourceLanguage,
   checkoutFailureMessage,
   displayedPageRule,
@@ -12,8 +15,9 @@ import {
   joinParents,
   languageLine,
   orderHubStep,
-  splitParents,
   servicePriceLines,
+  showTargetLanguagePicker,
+  splitParents,
   toPreviewOrder,
   totalLabel,
 } from "./present";
@@ -91,6 +95,52 @@ describe("quote language", () => {
   it("offers a picker only while confirm can set the language", () => {
     expect(canSetSourceLanguage(order())).toBe(true);
     expect(languageLine(order())).toBe("Spanish → English");
+  });
+
+  it("asks for a new target when the detected source matches the target", () => {
+    const english = order({
+      status: "needs_review",
+      sourceLanguage: "en",
+      targetLanguage: "en",
+      reviewReason: "The document appears to already be in English.",
+      billablePages: 3,
+      totalCents: 2985,
+    });
+    expect(showTargetLanguagePicker(english)).toBe(true);
+    expect(languageLine({ sourceLanguage: "en", targetLanguage: "es" })).toBe("English → Spanish");
+    expect(showTargetLanguagePicker(order())).toBe(false);
+    expect(canOpenConfirm(english)).toBe(true);
+    expect(canOpenConfirm(order({ status: "needs_review", reviewReason: IMAGE_QUALITY_REASON }))).toBe(
+      false,
+    );
+  });
+
+  it("keeps the upload page-order sentence", () => {
+    expect(UPLOAD_ORDER_NOTE).toBe("We kept the pages in the order you uploaded them.");
+  });
+
+  it("shows the billable page count from the order, not the file count", () => {
+    const dense = order({
+      billablePages: 6,
+      totalCents: 5970,
+      documents: [
+        {
+          id: "cv",
+          filename: "GuyPearsonCV_under2MB.pdf",
+          pageCount: 3,
+          detectedLanguage: "en",
+          confidence: 0.99,
+          uploadPosition: 1,
+          appliedPosition: 1,
+        },
+      ],
+    });
+    expect(servicePriceLines(dense)).toEqual([
+      { label: "6 pages × $9.95", amountCents: 5970 },
+    ]);
+    expect(servicePriceLines(order({ billablePages: 3, totalCents: 2985 }))).toEqual([
+      { label: "3 pages × $9.95", amountCents: 2985 },
+    ]);
   });
 });
 

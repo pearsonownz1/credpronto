@@ -1,6 +1,7 @@
 import { evaluationQuote } from "@/lib/orders/evaluation-price";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import { appendOrderChoice, type UploadChoice } from "./order-choice";
+import { dedupeUploads } from "./uploads";
 import { sampleCustomerOrder } from "./sample-order";
 import {
   EMAIL_KEY,
@@ -109,7 +110,7 @@ const liveClient: FlowClient = {
     const form = new FormData();
     form.set("email", email);
     appendOrderChoice(form, choice);
-    for (const file of files) form.append("files", file);
+    for (const file of dedupeUploads(files)) form.append("files", file);
     return request("/api/orders", { method: "POST", body: form });
   },
   getOrder(token) {

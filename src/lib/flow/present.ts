@@ -1,5 +1,11 @@
 import { serviceCents } from "@/lib/orders/addons";
-import { languageLabel, sourceLanguageChoices } from "@/lib/orders/languages";
+import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
+import {
+  languageLabel,
+  languagesEqual,
+  sourceLanguageChoices,
+  targetLanguageChoices,
+} from "@/lib/orders/languages";
 import type { EvaluationLine } from "@/lib/orders/types";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import {
@@ -8,6 +14,8 @@ import {
 } from "@/components/preview/preview-order";
 
 export const LANGUAGE_PENDING = "We'll confirm the language";
+
+export const UPLOAD_ORDER_NOTE = "We kept the pages in the order you uploaded them.";
 
 const PREVIEW_INCLUDED = [
   "Clean PDF, no watermark",
@@ -33,6 +41,27 @@ export function canSetSourceLanguage(order: { status: string }): boolean {
 
 export function languageChoices() {
   return sourceLanguageChoices();
+}
+
+export function targetChoices() {
+  return targetLanguageChoices();
+}
+
+/** True when the detected source and the order target are the same language. */
+export function showTargetLanguagePicker(order: {
+  sourceLanguage: string | null;
+  targetLanguage: string;
+}): boolean {
+  return languagesEqual(order.sourceLanguage, order.targetLanguage);
+}
+
+/**
+ * Confirm is the next step for a quoted order, and for a language review that
+ * still has a price. A photo retake stays on the quote.
+ */
+export function canOpenConfirm(order: { status: string; reviewReason: string | null }): boolean {
+  if (order.status === "quoted") return true;
+  return order.status === "needs_review" && order.reviewReason !== IMAGE_QUALITY_REASON;
 }
 
 export function languageLine(order: {

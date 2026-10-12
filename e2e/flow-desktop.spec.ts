@@ -101,3 +101,71 @@ test("page order and a blurry photo are shown before a quote", async ({ page }) 
   });
   await expect(page.getByRole("heading", { name: "Reading your files…" }).filter({ visible: true })).toBeVisible();
 });
+
+test("an English quote can pick a target language and continue", async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem(
+      "credpronto-mock-order",
+      JSON.stringify({
+        status: "needs_review",
+        sourceLanguage: "en",
+        targetLanguage: "en",
+        reviewReason:
+          "The document appears to already be in English. A reviewer will confirm whether a translation is needed.",
+        totalCents: 2985,
+        billablePages: 3,
+        unitPriceCents: 995,
+        documents: [
+          {
+            id: "cv",
+            filename: "GuyPearsonCV_under2MB.pdf",
+            pageCount: 3,
+            detectedLanguage: "en",
+            confidence: 0.99,
+            uploadPosition: 1,
+            appliedPosition: 1,
+          },
+        ],
+        pageOrder: {
+          basis: "upload",
+          pages: [1, 2, 3].map((page) => ({
+            documentId: "cv",
+            filename: "GuyPearsonCV_under2MB.pdf",
+            uploadPosition: 1,
+            appliedPosition: 1,
+            uploadPage: page,
+            appliedPage: page,
+            logicalPage: null,
+            hint: null,
+            confidence: null,
+          })),
+        },
+      }),
+    );
+  });
+
+  await page.goto("/quote");
+  const language = page.getByTestId("detected-language").filter({ visible: true });
+  await expect(language).toContainText("English → English");
+  await expect(page.getByTestId("target-language").filter({ visible: true })).toBeVisible();
+  await expect(page.getByTestId("file-list").filter({ visible: true })).toContainText(
+    "GuyPearsonCV_under2MB.pdf",
+  );
+  await expect(page.getByTestId("file-list").filter({ visible: true }).getByText("GuyPearsonCV_under2MB.pdf")).toHaveCount(1);
+  await expect(page.getByTestId("page-order-basis").filter({ visible: true })).toHaveText(
+    "We kept the pages in the order you uploaded them.",
+  );
+  await expect(page.getByTestId("page-order").filter({ visible: true })).toContainText("page 1");
+  await expect(page.getByTestId("quote-total").filter({ visible: true })).toContainText("$29.85");
+  await expect(page.locator("[data-testid=logo] img").first()).toHaveAttribute(
+    "src",
+    "/brand/credpronto-logo.svg",
+  );
+
+  await page.getByTestId("target-language").filter({ visible: true }).selectOption("es");
+  await expect(language).toContainText("English → Spanish");
+  await page.getByTestId("continue").filter({ visible: true }).click();
+  await expect(page).toHaveURL(/\/confirm\?/);
+  await expect(page.getByRole("heading", { name: "Confirm the important details." })).toBeVisible();
+  await expect(page.getByText("English → Spanish").filter({ visible: true })).toBeVisible();
+});
