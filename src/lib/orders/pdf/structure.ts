@@ -1,3 +1,4 @@
+import { SEAL_TEXT_MAX } from "../translation-output";
 import type { FieldRow, RenderBlock } from "./layout";
 
 export type TextItem = {
@@ -783,9 +784,9 @@ export type ModelBlock = {
 function cleanSealText(text: string): string {
   const stripped = text.replace(/^\[Seal:\s*/i, "").replace(/\]$/, "").trim();
   const caption = sealCaptionFromText(stripped);
-  if (caption !== "Official seal") return caption;
-  if (isSealMaterial(stripped)) return caption;
-  return collapseLetterSpacing(stripped);
+  const chosen = caption !== "Official seal" ? caption : isSealMaterial(stripped) ? caption : collapseLetterSpacing(stripped);
+  if (chosen.length <= SEAL_TEXT_MAX) return chosen;
+  return chosen.slice(0, SEAL_TEXT_MAX).trimEnd();
 }
 
 function fromModelBlock(block: ModelBlock): RenderBlock[] {

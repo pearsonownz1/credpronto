@@ -119,8 +119,19 @@ describe("runTranslationPage JSON parse", () => {
     expect(promptText(second)).toContain("Retry rules");
     expect(promptText(second)).toContain("Do not repeat text inside seals");
     expect(promptText(second)).toMatch(/concise/i);
-    expect(first[3]).toEqual({ maxRetries: 0 });
-    expect(second[3]).toEqual({ maxRetries: 0, model: "fallback/model" });
+    expect(first[3]).toEqual({
+      maxRetries: 0,
+      maxOutputTokens: 65_536,
+      reasoning: "low",
+    });
+    expect(second[3]).toEqual({
+      maxRetries: 0,
+      maxOutputTokens: 65_536,
+      reasoning: "low",
+      model: "fallback/model",
+    });
+    expect(promptText(first)).toContain("at most 80 characters");
+    expect(promptText(first)).not.toContain("one label or value per line");
     expect(jobs.completePageJob).toHaveBeenCalled();
     expect(jobs.failPageJob).not.toHaveBeenCalled();
     expect(db.updateOrder).not.toHaveBeenCalled();
