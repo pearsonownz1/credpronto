@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES } from "./constants";
 import { HttpError } from "./errors";
 
@@ -24,6 +25,19 @@ export function safeFilename(name: string): string {
   const base = name.split(/[/\\]/).pop() ?? "upload";
   const cleaned = base.replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 120);
   return cleaned || "upload";
+}
+
+/** Keep the first file for each SHA-256. Later copies of the same bytes are dropped. */
+export function dedupeUploads<T extends { bytes: Uint8Array }>(files: readonly T[]): T[] {
+  const seen = new Set<string>();
+  const unique: T[] = [];
+  for (const file of files) {
+    const hash = createHash("sha256").update(file.bytes).digest("hex");
+    if (seen.has(hash)) continue;
+    seen.add(hash);
+    unique.push(file);
+  }
+  return unique;
 }
 
 export function assertUploadBudget(files: { size: number }[]): void {
