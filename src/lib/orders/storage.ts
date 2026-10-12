@@ -29,6 +29,12 @@ export async function uploadObject(
   if (error) throw new Error(error.message);
 }
 
+export async function listObjectNames(db: Db, bucket: ObjectBucket, prefix: string): Promise<string[]> {
+  const { data, error } = await db.storage.from(bucket).list(prefix, { limit: 100 });
+  if (error) throw new Error(error.message);
+  return (data ?? []).flatMap((item) => (item.id && item.name ? [item.name] : []));
+}
+
 export async function downloadObject(db: Db, bucket: ObjectBucket, path: string): Promise<Uint8Array> {
   const { data, error } = await db.storage.from(bucket).download(path);
   if (error || !data) throw new Error(error?.message ?? "Download failed");
