@@ -5,6 +5,7 @@ import { useState, type FormEvent } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
 import { pageLabel } from "@/lib/flow/pricing";
 import {
+  customerEmail,
   joinParents,
   languageLine,
   splitParents,
@@ -13,7 +14,7 @@ import {
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
 import { FlowStatus } from "./status";
-import { useCustomerOrder, useStoredEmail, useStoredToken } from "./use-order";
+import { useCustomerOrder, useStoredToken } from "./use-order";
 import {
   Field,
   FlowColumns,
@@ -73,7 +74,7 @@ function valueOf(order: CustomerOrder, documentId: string, key: string) {
 function ConfirmForm({ token, order }: { token: string; order: CustomerOrder }) {
   const router = useRouter();
   const params = useSearchParams();
-  const email = useStoredEmail();
+  const email = customerEmail(order);
   const multiple = order.documents.length > 1;
   const language = params.get("lang") || order.sourceLanguage || "es";
   const [docs, setDocs] = useState<Record<string, DocFields>>(() => {

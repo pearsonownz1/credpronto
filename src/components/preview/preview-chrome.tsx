@@ -73,6 +73,7 @@ export function OrderRail({
                 className="flex gap-2.5 py-2 text-[13px]"
               >
                 <span className="preview-kicker min-w-[34px] normal-case tracking-normal">
+                  {correction.documentName ? `${correction.documentName} · ` : null}
                   P.{correction.page}
                 </span>
                 <span>
@@ -132,12 +133,14 @@ export function MobileBuyBar({
 
 export function CorrectionPopover({
   page,
+  documentName,
   note,
   onNote,
   onSend,
   error,
 }: {
   page: number;
+  documentName?: string;
   note: string;
   onNote: (value: string) => void;
   onSend: () => void;
@@ -154,7 +157,10 @@ export function CorrectionPopover({
       onSubmit={submit}
       className="w-[270px] max-w-full rounded-[var(--cp-radius)] border border-line bg-bg p-3 shadow-[0_12px_32px_-12px_rgba(11,18,32,0.35)]"
     >
-      <p className="preview-kicker mb-2">Correction · page {page}</p>
+      <p className="preview-kicker mb-2">
+        Correction · page {page}
+        {documentName ? ` · ${documentName}` : ""}
+      </p>
       <p className="mb-2 border-l-2 border-[#e2a400] pl-2 text-xs leading-snug text-ink-muted">
         This page is drawn as an image, so the note is tied to the page rather
         than a selected passage.

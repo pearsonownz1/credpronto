@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { flowUsesMock, getFlowClient } from "@/lib/flow/client";
 import { pageLabel } from "@/lib/flow/pricing";
+import { customerEmail } from "@/lib/flow/present";
 import { FlowHeader } from "./flow-header";
 import { FlowStatus } from "./status";
 import { useCustomerOrder, useStoredToken } from "./use-order";
@@ -43,8 +44,8 @@ export function ProcessingView({ token: pathToken }: { token?: string }) {
             </h1>
             <p className="mt-2.5 mb-8 text-base text-ink-muted">
               {waiting
-                ? "Translation is waiting to run. You can leave this page — we'll email you when the preview is ready."
-                : "Usually about 10 minutes. We'll email you the moment your preview is ready."}
+                ? `Translation is waiting to run. You can leave this page — we'll email ${customerEmail(order) || "you"} when the preview is ready.`
+                : `Usually about 10 minutes. We'll email ${customerEmail(order) || "you"} the moment your preview is ready.`}
             </p>
             {waiting ? (
               <p data-testid="translation-wait" className="mb-6 text-sm text-ink-muted">

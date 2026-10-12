@@ -6,6 +6,7 @@ import {
   canSetSourceLanguage,
   checkoutFailureMessage,
   displayedPageRule,
+  customerEmail,
   documentIdForPage,
   downloadPhase,
   joinParents,
@@ -186,9 +187,21 @@ describe("preview mapping", () => {
     };
     const mapped = toPreviewOrder(order(), preview);
     expect(mapped.original.url).toBe("https://files.example/original");
-    expect(mapped.original.pages[1]).toEqual({ page: 2, widthPt: 500, heightPt: 700 });
+    expect(mapped.original.pages[1]).toEqual({
+      page: 2,
+      widthPt: 500,
+      heightPt: 700,
+      documentId: "doc-a",
+      documentIndex: 0,
+      documentName: "a.pdf",
+    });
     expect(mapped.pricing.totalCents).toBe(2985);
     expect(mapped.corrections[0]?.note).toBe("use the passport spelling");
+    expect(mapped.corrections[0]?.documentId).toBe("doc-a");
+    expect(mapped.corrections[0]?.documentName).toBe("a.pdf");
+    expect(customerEmail(order())).toBe("ada@example.com");
+    expect(customerEmail({ email: "  " })).toBe("");
+    expect(customerEmail({ email: null })).toBe("");
     expect(documentIdForPage(order().documents, 2)).toBe("doc-a");
     expect(documentIdForPage(order().documents, 3)).toBe("doc-b");
   });
