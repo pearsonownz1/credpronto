@@ -288,10 +288,15 @@ type Slot = {
   uploadPosition: number;
 };
 
+/** Website quotes run on an unconfirmed draft. A confirmed language means that pass already finished. */
+export function orderAwaitingAnalysis(order: { languageConfirmed: boolean; status: string } | null): boolean {
+  if (!order || order.languageConfirmed) return false;
+  return order.status === "draft" || order.status === "failed";
+}
+
 export async function analyzeOrder(db: Db, orderId: string, token: string | null = null): Promise<void> {
   const order = await getOrderById(db, orderId);
-  if (!order || order.languageConfirmed) return;
-  if (order.status !== "draft" && order.status !== "failed") return;
+  if (!order || !orderAwaitingAnalysis(order)) return;
 
   const documents = await claimDocuments(db, orderId);
   if (documents.length === 0) return;

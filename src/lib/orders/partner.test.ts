@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { EVALUATION_REVIEW_REASON, partnerQuoteAction, toPartnerOrder } from "./partner";
+import { orderAwaitingAnalysis } from "./analysis";
+import { UNIT_PRICE_CENTS } from "./constants";
+import { decideQuote } from "./quote";
+import { EVALUATION_REVIEW_REASON, apiOrderBeforeQuote, partnerQuoteAction, quotedForCharge, toPartnerOrder } from "./partner";
 import type { OrderRecord } from "./types";
 
 function order(patch: Partial<OrderRecord> = {}): OrderRecord {
@@ -42,6 +45,36 @@ function order(patch: Partial<OrderRecord> = {}): OrderRecord {
 }
 
 describe("partner orders", () => {
+  it("quotes an API upload on the same unconfirmed draft pass as the website", () => {
+    const before = apiOrderBeforeQuote("fr");
+    expect(before).toEqual({ sourceLanguage: "fr", languageConfirmed: false });
+    expect(orderAwaitingAnalysis({ languageConfirmed: before.languageConfirmed, status: "draft" })).toBe(true);
+    // Confirming the language before analysis returns immediately and the order stays unpriced.
+    expect(orderAwaitingAnalysis({ languageConfirmed: true, status: "draft" })).toBe(false);
+
+    const decision = decideQuote({
+      billableUnits: [1],
+      pageNeedsReview: [false],
+      language: "fr",
+      confidence: 0.95,
+      detectionAvailable: true,
+      languagesDisagree: false,
+    });
+    expect(decision).toMatchObject({ status: "quoted", billablePages: 1, totalCents: UNIT_PRICE_CENTS, reviewReason: null });
+    expect(
+      partnerQuoteAction({
+        status: decision.status,
+        billablePages: decision.billablePages,
+        totalCents: decision.totalCents,
+        reviewReason: decision.reviewReason,
+        sourceLanguage: before.sourceLanguage,
+        service: "translation",
+      }),
+    ).toBe("use");
+    expect(quotedForCharge({ status: decision.status, totalCents: decision.totalCents })).toBe(true);
+    expect(quotedForCharge({ status: "draft", totalCents: null })).toBe(false);
+  });
+
   it("prices a quoted order and overrides a language-only hold", () => {
     const priced = {
       status: "quoted",

@@ -74,6 +74,25 @@ type QuoteInput = {
   service: PartnerService;
 };
 
+/**
+ * Analysis quotes a draft only while the language is still unconfirmed, the same pass the website runs.
+ * `source_language` is stored for that pass and confirmed after the quote. Confirming it first skips
+ * analysis and leaves billable pages empty, which is `quote_unavailable`.
+ */
+export function apiOrderBeforeQuote(sourceLanguage: string | null): {
+  sourceLanguage: string | null;
+  languageConfirmed: false;
+} {
+  return { sourceLanguage, languageConfirmed: false };
+}
+
+/** A fresh API order can be charged only after analysis has priced it. */
+export function quotedForCharge<T extends { status: string; totalCents: number | null }>(
+  order: T,
+): order is T & { totalCents: number } {
+  return order.status === "quoted" && order.totalCents != null;
+}
+
 /** `use` keeps a quote. `override` clears a language-only hold. Otherwise the order cannot be priced. */
 export function partnerQuoteAction(input: QuoteInput): "use" | "override" | "unavailable" {
   if (input.billablePages == null || input.billablePages < 1 || input.totalCents == null) return "unavailable";
@@ -142,6 +161,7 @@ export async function createV1Order(request: Request, key: ApiKeyRow): Promise<C
     throw new HttpError("source_language is not supported", 400, "validation_error");
   }
   const targetLanguage = parseLanguage(form.get("target_language"), "target_language", false) ?? "en";
+  const quoteInput = apiOrderBeforeQuote(sourceLanguage);
   const files = await prepareFiles(form);
   const email = await emailForUser(db, key.userId);
   const customer = await upsertCustomer(db, email);
@@ -156,9 +176,9 @@ export async function createV1Order(request: Request, key: ApiKeyRow): Promise<C
     userId: key.userId,
     serviceType: service,
     externalRef,
-    sourceLanguage,
+    sourceLanguage: quoteInput.sourceLanguage,
     targetLanguage,
-    languageConfirmed: Boolean(sourceLanguage),
+    languageConfirmed: quoteInput.languageConfirmed,
   });
 
   await insertEvent(db, order.id, "upload_started", { fileCount: files.length, api: true });
@@ -311,7 +331,7 @@ async function finishPartnerOrder(
     };
   }
 
-  if (order.status !== "quoted" || order.totalCents == null) {
+  if (!quotedForCharge(order)) {
     if (!fresh) {
       return { body: await present(db, order, false), orderId: order.id, startTranslation: false };
     }
