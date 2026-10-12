@@ -171,6 +171,8 @@ describe("customer surfaces hide the reference", () => {
     expect(customerReviewReason("Language detection confidence is low (0.20).")).toContain("confidence");
     expect(partnerReviewReason("high")).toBeNull();
     expect(partnerReviewReason("EDGE match")).toBeNull();
+    expect(partnerReviewReason("Language detection confidence is low (0.20).")).toBeNull();
+    expect(partnerReviewReason("Matched on the catalog basis.")).toBeNull();
     expect(partnerReviewReason("equivalency_qa_research")).toBe("equivalency_qa_research");
 
     const order = toCustomerOrder({

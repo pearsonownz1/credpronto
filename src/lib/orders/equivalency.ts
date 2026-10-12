@@ -27,10 +27,14 @@ export function customerReviewReason(reason: string | null): string | null {
   return reason;
 }
 
-/** Partner reads keep a routing code, and drop a reason that names the reference or its label. */
+/** Words that name an internal score or the page-order / equivalency basis. */
+const PARTNER_HIDDEN = /\b(?:confidence|basis)\b/i;
+
+/** Partner reads keep a routing code, and drop a reason that names the reference, a score, or a basis. */
 export function partnerReviewReason(reason: string | null): string | null {
   if (!reason) return null;
   if (containsEdgeMarker(reason) || CONFIDENCE_LABEL.test(reason.trim())) return null;
+  if (PARTNER_HIDDEN.test(reason)) return null;
   return reason;
 }
 

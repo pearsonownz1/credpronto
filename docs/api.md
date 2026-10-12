@@ -837,7 +837,17 @@ Deliveries are posted for orders whose `user_id` has an endpoint:
 
 ### Public API
 
-`Authorization: Bearer <secret>`. The secret is hashed and matched to an unrevoked `api_keys` row. A match sets `last_used_at`. `401` `{ "error": "Invalid API key", "code": "invalid_api_key" }` otherwise.
+`Authorization: Bearer <secret>`. The secret is hashed and matched to an unrevoked `api_keys` row. A match sets `last_used_at`. `401` `{ "error": "Invalid API key", "code": "invalid_api_key" }` otherwise. A missing or malformed `Authorization` header is the same `401`. The hash and the raw key are not written on the order.
+
+Each key may make 60 requests per minute, counted on the API process that handled the request. The 61st request in that window is `429`. `Retry-After` is the number of seconds until the window ends.
+
+```json
+{ "error": "Too many requests", "code": "rate_limited", "retryAfterSeconds": 12 }
+```
+
+`retryAfterSeconds` matches `Retry-After`. A different key has its own window. An invalid key does not consume a slot.
+
+Partner JSON never includes EDGE fields, an equivalency basis, a page-order `basis`, a `confidence` score, or the internal translation retry count. A `reviewReason` that is only `high`, `medium`, or `low`, or that names EDGE, confidence, or a basis, is `null`.
 
 While `STRIPE_SECRET_KEY` starts with `sk_test_`, `cp_live_` keys may call `GET` but `POST /api/v1/orders` returns `403` `{ "error": "Live mode is disabled", "code": "live_mode_disabled" }`. `cp_test_` keys may create orders.
 
@@ -853,7 +863,9 @@ While `STRIPE_SECRET_KEY` starts with `sk_test_`, `cp_live_` keys may call `GET`
 | `service` | yes | `translation` or `evaluation` |
 | `external_ref` | no | Stored on the order. Unique per `user_id`. A repeat returns the existing order with `200`. |
 
-The order is owned by the key's user (`orders.user_id`). Analysis quotes it. The saved card is then charged off-session for `totalCents` in Stripe test mode (`confirm: true`, `off_session: true`). A successful charge marks the payment `paid`, records `paid`, and for `translation` starts the normal translation pipeline. `evaluation` is quoted and charged the same way, then set to `needs_review` with `reviewReason` `Credential evaluation is reviewed by staff.` It does not enter translation.
+The order is owned by the key's user (`orders.user_id`). Analysis quotes it with the same page pricing as `POST /api/orders` (`$9.95` per billable page; an evaluation also includes its evaluation fee). The saved card is then charged off-session for `totalCents` in Stripe test mode (`confirm: true`, `off_session: true`). A successful charge marks the payment `paid`, records `paid`, and for `translation` starts the normal translation pipeline. `evaluation` is quoted and charged the same way, then set to `needs_review` with `reviewReason` `Credential evaluation is reviewed by staff.` It does not enter translation.
+
+`billablePages`, `unitPriceCents`, and `totalCents` are the quote. `progress` and `delayed` use the same rules as `GET /api/v1/orders/[id]`.
 
 `201` after a new charge:
 
@@ -869,7 +881,9 @@ The order is owned by the key's user (`orders.user_id`). Analysis quotes it. The
   "unitPriceCents": 995,
   "totalCents": 2985,
   "currency": "usd",
-  "payment": { "status": "paid" }
+  "payment": { "status": "paid" },
+  "progress": { "step": "done", "pagesRead": 3, "pagesTotal": 3 },
+  "delayed": false
 }
 ```
 
@@ -893,11 +907,41 @@ Other codes: `400` `validation_error`, `415` `unsupported_type`, `409` `quote_un
 
 #### `GET /api/v1/orders/[id]`
 
-The shape above, plus `reviewReason` and `qa` (the same object as the admin order, or `null`). `404` `{ "error": "Order not found", "code": "not_found" }` when the id is not owned by the key's user.
+The create shape, plus `reviewReason` and `qa` (the same object as the admin order, or `null`). `404` `{ "error": "Order not found", "code": "not_found" }` when the id is not owned by the key's user.
+
+`progress.step` is `uploaded`, `reading`, `language`, `counting`, `quoting`, `done`, or `translating`. `pagesRead` and `pagesTotal` are the physical pages read during analysis. `pagesDone` and `pagesTranslateTotal` are included while pages are translated: `pagesDone` is how many of those pages are finished, and `pagesTranslateTotal` is how many will be translated. The retry counter stored on the order is omitted.
+
+`delayed` is false until a translation is waiting on a preview. It becomes true when that preview is still missing more than 15 minutes after translation started. It stays true when the order is `needs_review` with `reviewReason` `translation_timeout`. A saved preview sets it back to false.
+
+```json
+{
+  "id": "…",
+  "status": "processing",
+  "service": "translation",
+  "sourceLanguage": "es",
+  "targetLanguage": "en",
+  "externalRef": "crm-1842",
+  "billablePages": 3,
+  "unitPriceCents": 995,
+  "totalCents": 2985,
+  "currency": "usd",
+  "payment": { "status": "paid" },
+  "progress": {
+    "step": "translating",
+    "pagesRead": 3,
+    "pagesTotal": 3,
+    "pagesDone": 1,
+    "pagesTranslateTotal": 3
+  },
+  "delayed": false,
+  "reviewReason": null,
+  "qa": null
+}
+```
 
 #### `GET /api/v1/orders/[id]/files`
 
-Originals are the caller's uploads and are signed at any status. The clean translation and the certification page follow the same payment and approval gate as `GET /api/orders/[token]/download`. When that gate is closed they are `null`, not an error.
+Originals are the caller's uploads and are signed at any status. The clean translation and the certification page are the final files. Their URLs are returned only once the file is released: payment is `paid` or `paid_test`, and delivery is `approved` or `delivered`. That is the same gate as `GET /api/orders/[token]/download`. Until then `translation` and `certification` are `null`, not an error. A refund locks them again.
 
 ```json
 {
