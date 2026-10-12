@@ -32,6 +32,7 @@ import {
   TRANSLATION_DEADLINE_MS,
   decideTranslationFailure,
   isTemporaryTranslationError,
+  raceWorkAgainstDeadline,
 } from "./translation-failure";
 import { checkedProgress } from "./translation-watch";
 import { uploadObject } from "./storage";
@@ -105,14 +106,17 @@ function alignPages(expected: number[], returned: ModelPage[]): Array<{ pageNumb
   return null;
 }
 
-async function translateDocument(input: {
-  filename: string;
-  sourceLanguage: string;
-  fields: ConfirmationRecord[];
-  pages: Array<PageRecord & { number: number }>;
-  corrections: CorrectionRecord[];
-  qaIssues: QaIssue[];
-}) {
+async function translateDocument(
+  input: {
+    filename: string;
+    sourceLanguage: string;
+    fields: ConfirmationRecord[];
+    pages: Array<PageRecord & { number: number }>;
+    corrections: CorrectionRecord[];
+    qaIssues: QaIssue[];
+  },
+  signal?: AbortSignal,
+) {
   const notes = input.corrections
     .map((correction) => {
       const page = input.pages.find((item) => item.number === correction.pageNumber);
@@ -160,7 +164,7 @@ For a section title, use type "heading".
 ${pageText}`;
 
   const expected = input.pages.map((page) => page.number);
-  const deadline = AbortSignal.timeout(TRANSLATION_DEADLINE_MS);
+  const deadline = signal ?? AbortSignal.timeout(TRANSLATION_DEADLINE_MS);
   let last: ModelPage[] = [];
   for (let attempt = 0; attempt < 2; attempt += 1) {
     if (deadline.aborted) throw new AiUnavailableError("translation_timeout");
@@ -182,7 +186,52 @@ ${pageText}`;
   throw new HttpError("The translation did not return every page.", 502);
 }
 
+/** Write a terminal status when a translation is still Processing or waiting on the first preview. */
+export async function recordTranslationFailure(db: Db, orderId: string, error: unknown): Promise<void> {
+  const order = await getOrderById(db, orderId);
+  if (!order) return;
+  const translating = order.progress?.step === "translating";
+  const stuck =
+    order.status === "processing" ||
+    (translating && (order.status === "confirmed" || order.status === "correction_requested"));
+  if (!stuck) return;
+  const open = (await listCorrections(db, orderId)).filter((correction) => correction.status === "open");
+  const decision = decideTranslationFailure({
+    error,
+    readyPreview: (await latestReadyPreview(db, orderId)) != null,
+    openCorrections: open.length > 0,
+  });
+  await updateOrder(db, orderId, {
+    status: decision.status,
+    review_reason: decision.reviewReason,
+    progress: checkedProgress(order.progress, { step: "done" }),
+  });
+  if (!decision.notifyFailed) return;
+  const { notifyOrder } = await import("./webhook-delivery");
+  await notifyOrder(db, orderId, "order.failed");
+}
+
+/**
+ * Translate, then lay out. The model abort fires before maxDuration so a
+ * timeout still writes status and review_reason. Layout that ignores the
+ * abort loses the race and the same failure is recorded.
+ */
 export async function translateOrder(db: Db, orderId: string, token: string | null): Promise<void> {
+  const deadline = AbortSignal.timeout(TRANSLATION_DEADLINE_MS);
+  try {
+    await raceWorkAgainstDeadline(translateOrderWork(db, orderId, token, deadline), deadline);
+  } catch (error) {
+    await recordTranslationFailure(db, orderId, error);
+    if (!isTemporaryTranslationError(error)) throw error;
+  }
+}
+
+async function translateOrderWork(
+  db: Db,
+  orderId: string,
+  token: string | null,
+  deadline: AbortSignal,
+): Promise<void> {
   let pendingQa: QaIssue[] = [];
   for (let round = 0; round < 3; round += 1) {
     const order = await getOrderById(db, orderId);
@@ -213,40 +262,45 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
     if (claim.error) throw new Error(claim.error.message);
     if ((claim.data ?? []).length === 0) return;
 
-    const documents = inReadingOrder(await listDocuments(db, orderId));
-    const pages = withCombinedNumbers(
-      documents,
-      await listPages(
-        db,
-        documents.map((document) => document.id),
-      ),
-    );
-    if (pages.length === 0 || !order.combinedOriginalPath) {
-      throw new HttpError("The original pages are not ready to translate.", 409);
-    }
-
-    const confirmations = await listConfirmations(db, orderId);
-    const clientEmail = await customerEmail(db, order.customerId);
-    const version = await nextPreviewVersion(db, orderId);
-    const previewPath = `${orderId}/preview-v${version}.pdf`;
-    const inserted = await insertPreview(db, { orderId, version, previewPath });
-    if (inserted === "exists") return;
-
+    let version: number | null = null;
     try {
+      if (deadline.aborted) throw new AiUnavailableError("translation_timeout");
+      const documents = inReadingOrder(await listDocuments(db, orderId));
+      const pages = withCombinedNumbers(
+        documents,
+        await listPages(
+          db,
+          documents.map((document) => document.id),
+        ),
+      );
+      if (pages.length === 0 || !order.combinedOriginalPath) {
+        throw new HttpError("The original pages are not ready to translate.", 409);
+      }
+
+      const confirmations = await listConfirmations(db, orderId);
+      const clientEmail = await customerEmail(db, order.customerId);
+      version = await nextPreviewVersion(db, orderId);
+      const previewPath = `${orderId}/preview-v${version}.pdf`;
+      const inserted = await insertPreview(db, { orderId, version, previewPath });
+      if (inserted === "exists") return;
+
       const renderedPages: RenderPage[] = [];
       const translatedCounts = new Map<string, number>();
       const model = translationModelId();
       for (const document of documents) {
         const documentPages = pages.filter((page) => page.documentId === document.id);
         const fields = confirmations.filter((field) => field.documentId === document.id);
-        const translated = await translateDocument({
-          filename: document.filename,
-          sourceLanguage: order.sourceLanguage,
-          fields,
-          pages: documentPages,
-          corrections: open,
-          qaIssues: pendingQa,
-        });
+        const translated = await translateDocument(
+          {
+            filename: document.filename,
+            sourceLanguage: order.sourceLanguage,
+            fields,
+            pages: documentPages,
+            corrections: open,
+            qaIssues: pendingQa,
+          },
+          deadline,
+        );
         await insertTranslation(db, {
           documentId: document.id,
           version,
@@ -292,6 +346,7 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
       await uploadObject(db, "finals", translationPath, files.cleanTranslation, "application/pdf");
       await uploadObject(db, "finals", certificationPath, files.certification, "application/pdf");
       await uploadObject(db, "previews", previewPath, files.watermarkedPreview, "application/pdf");
+      if (deadline.aborted) throw new AiUnavailableError("translation_timeout");
 
       const assessment = assessTranslation({
         originalPages: pages.map((page) => ({ number: page.number, text: page.ocrText ?? "" })),
@@ -359,7 +414,7 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
       await notifyLifecycle(db, orderId, "order.preview_ready");
       return;
     } catch (error) {
-      await markPreview(db, orderId, version, "failed");
+      if (version != null) await markPreview(db, orderId, version, "failed");
       const decision = decideTranslationFailure({
         error,
         readyPreview: (await latestReadyPreview(db, orderId)) != null,

@@ -1,4 +1,5 @@
 import { analyzeOrder } from "./analysis";
+import { retryEvaluation, shouldPrepareEvaluationReport } from "./evaluation";
 import {
   customerEmail,
   getDelivery,
@@ -10,7 +11,7 @@ import {
   listOrderAddons,
   listPages,
 } from "./db";
-import { translateOrder } from "./translation";
+import { recordTranslationFailure, translateOrder } from "./translation";
 import { toCustomerOrder, type CustomerOrder } from "./view";
 import { serviceDb, type Db } from "./storage";
 import type { OrderRecord } from "./types";
@@ -50,7 +51,12 @@ export async function processOrder(orderId: string, token: string | null = null)
     return;
   }
 
-  if (order.service) return;
+  if (order.service) {
+    if (shouldPrepareEvaluationReport(order) && order.sourceLanguage) {
+      await retryEvaluation(db, order, order.sourceLanguage);
+    }
+    return;
+  }
 
   if (
     order.status === "confirmed" ||
@@ -61,5 +67,19 @@ export async function processOrder(orderId: string, token: string | null = null)
     (order.status === "paid" && !order.finalTranslationPath)
   ) {
     await translateOrder(db, order.id, token);
+  }
+}
+
+/** `after()` work. A thrown translation still leaves status and review_reason. */
+export async function processOrderInBackground(orderId: string, token: string | null): Promise<void> {
+  try {
+    await processOrder(orderId, token);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "order processing failed");
+    try {
+      await recordTranslationFailure(serviceDb(), orderId, error);
+    } catch (settleError) {
+      console.error(settleError instanceof Error ? settleError.message : "could not record translation failure");
+    }
   }
 }

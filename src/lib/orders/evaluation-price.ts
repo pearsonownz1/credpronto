@@ -44,6 +44,7 @@ export function parseOrderChoice(fields: {
   return { orderType: "evaluation", service: fields.service, degreeCount };
 }
 
+/** A non-English source can take an optional certified translation. It is not added unless the customer opts in. */
 export function needsBundledTranslation(sourceLanguage: string | null): boolean {
   return sourceLanguage != null && sourceLanguage !== "en";
 }
@@ -53,6 +54,8 @@ export function evaluationQuote(input: {
   degreeCount: number;
   sourceLanguage: string | null;
   billablePages: number;
+  /** Charge the translation line only when the customer opted in and the source is not English. */
+  includeTranslation?: boolean;
 }): {
   evaluationCents: number;
   translationCents: number;
@@ -61,9 +64,10 @@ export function evaluationQuote(input: {
 } {
   const unitAmountCents = evaluationUnitCents(input.service);
   const evaluationCents = evaluationFeeCents(input.service, input.degreeCount);
-  const translationCents = needsBundledTranslation(input.sourceLanguage)
-    ? input.billablePages * UNIT_PRICE_CENTS
-    : 0;
+  const translationCents =
+    input.includeTranslation && needsBundledTranslation(input.sourceLanguage)
+      ? input.billablePages * UNIT_PRICE_CENTS
+      : 0;
   const lineItems: EvaluationLine[] = [
     {
       kind: "evaluation",
@@ -88,6 +92,43 @@ export function evaluationQuote(input: {
     totalCents: evaluationCents + translationCents,
     lineItems,
   };
+}
+
+/** The amount checkout charges for the evaluation, before add-ons. Translation is included only after opt-in. */
+export function evaluationCheckoutTotal(input: {
+  service: EvaluationService;
+  degreeCount: number;
+  sourceLanguage: string | null;
+  billablePages: number;
+  includeTranslation: boolean;
+  addonCents?: number;
+}): {
+  evaluationCents: number;
+  translationCents: number;
+  includeTranslation: boolean;
+  totalCents: number;
+} {
+  const includeTranslation = input.includeTranslation && needsBundledTranslation(input.sourceLanguage);
+  const quote = evaluationQuote({ ...input, includeTranslation });
+  return {
+    evaluationCents: quote.evaluationCents,
+    translationCents: quote.translationCents,
+    includeTranslation,
+    totalCents: quote.totalCents + (input.addonCents ?? 0),
+  };
+}
+
+/** Page price offered on the quote. Null when this order cannot add a translation. */
+export function translationOfferCents(input: {
+  service: EvaluationService | null;
+  sourceLanguage: string | null;
+  billablePages: number | null;
+  unitPriceCents: number;
+}): number | null {
+  if (!input.service || !needsBundledTranslation(input.sourceLanguage)) return null;
+  const pages = input.billablePages ?? 0;
+  if (pages < 1) return null;
+  return pages * input.unitPriceCents;
 }
 
 export function lineItemsForOrder(input: {

@@ -18,7 +18,8 @@ import {
 } from "./db";
 import { sendPreviewReady } from "./email";
 import { AiUnavailableError, HttpError } from "./errors";
-import { evaluationQuote, needsBundledTranslation } from "./evaluation-price";
+import { evaluationCheckoutTotal, needsBundledTranslation } from "./evaluation-price";
+import { etaFromNow } from "./quote";
 import {
   EQUIVALENCY_QA_RESEARCH,
   EQUIVALENCY_QA_REVIEW,
@@ -633,11 +634,13 @@ export async function completeEvaluation(
 
   const quoteFor = (source: string | null) =>
     source
-      ? evaluationQuote({
+      ? evaluationCheckoutTotal({
           service,
           degreeCount,
           sourceLanguage: source,
           billablePages: input.billablePages,
+          includeTranslation: order.includeTranslation,
+          addonCents: order.addonCents,
         })
       : null;
 
@@ -654,6 +657,7 @@ export async function completeEvaluation(
       page_order: input.pageOrder,
       evaluation_cents: quote?.evaluationCents ?? null,
       translation_cents: quote?.translationCents ?? null,
+      ...(quote ? { include_translation: quote.includeTranslation } : {}),
       total_cents: quote?.totalCents ?? null,
     });
   };
@@ -713,13 +717,14 @@ export async function completeEvaluation(
       page_order: input.pageOrder,
       evaluation_cents: quote?.evaluationCents ?? null,
       translation_cents: quote?.translationCents ?? null,
+      ...(quote ? { include_translation: quote.includeTranslation } : {}),
       total_cents: quote?.totalCents ?? null,
       evaluation_result: stored,
       edge_credential_id: built.edgeCredentialId,
       edge_grading_scale_id: built.edgeGradingScaleId,
     });
     await markPreview(db, order.id, version, "ready");
-    await storeTranslationPreview(db, order, version, language);
+    if (order.includeTranslation) await storeTranslationPreview(db, order, version, language);
     await insertEvent(db, order.id, "preview_ready", { version, pageCount: files.pageCount });
     const { notifyLifecycle } = await import("./webhook-delivery");
     await notifyLifecycle(db, order.id, "order.preview_ready");
@@ -745,6 +750,57 @@ export async function completeEvaluation(
     const message = error instanceof Error ? error.message : READ_REASON;
     await hold(message, language);
   }
+}
+
+/** Quote and confirm come before the report. Analysis stops here; confirm starts the report. */
+export function shouldPrepareEvaluationReport(order: {
+  service: OrderRecord["service"];
+  status: string;
+  languageConfirmed: boolean;
+}): boolean {
+  if (!order.service) return false;
+  if (order.status === "confirmed" || order.status === "processing") return true;
+  return order.status === "failed" && order.languageConfirmed;
+}
+
+/**
+ * Price an evaluation and leave it quoted. The report is rendered after confirm.
+ * Translation cents stay 0 unless the customer already opted in.
+ */
+export async function startEvaluationQuote(
+  db: Db,
+  order: OrderRecord,
+  input: EvaluationContext,
+): Promise<{ status: "quoted" | "needs_review"; totalCents: number | null; billablePages: number }> {
+  if (!order.service || order.degreeCount == null) {
+    return { status: "needs_review", totalCents: null, billablePages: input.billablePages };
+  }
+  const language = input.languagesDisagree ? null : input.sourceLanguage;
+  const ready = !input.imageQuality && languageConfirmed(input, language);
+  const priced = evaluationCheckoutTotal({
+    service: order.service,
+    degreeCount: order.degreeCount,
+    sourceLanguage: language,
+    billablePages: input.billablePages,
+    includeTranslation: order.includeTranslation,
+    addonCents: order.addonCents,
+  });
+  const status = ready ? "quoted" : "needs_review";
+  await updateOrder(db, order.id, {
+    status,
+    review_reason: input.imageQuality ? IMAGE_QUALITY_REASON : ready ? null : LANGUAGE_REASON,
+    eta_at: status === "quoted" ? etaFromNow(1) : null,
+    source_language: language,
+    billable_pages: input.billablePages,
+    combined_original_path: input.combinedPath,
+    page_order_basis: input.pageOrderBasis,
+    page_order: input.pageOrder,
+    evaluation_cents: priced.evaluationCents,
+    translation_cents: priced.translationCents,
+    include_translation: priced.includeTranslation,
+    total_cents: priced.totalCents,
+  });
+  return { status, totalCents: priced.totalCents, billablePages: input.billablePages };
 }
 
 export async function retryEvaluation(db: Db, order: OrderRecord, sourceLanguage: string): Promise<void> {

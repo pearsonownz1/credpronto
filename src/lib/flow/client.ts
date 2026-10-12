@@ -1,4 +1,4 @@
-import { evaluationQuote } from "@/lib/orders/evaluation-price";
+import { evaluationQuote, lineItemsForOrder, translationOfferCents } from "@/lib/orders/evaluation-price";
 import { languagesEqual } from "@/lib/orders/languages";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import { appendOrderChoice, type UploadChoice } from "./order-choice";
@@ -45,7 +45,12 @@ export type CheckoutResult =
   | { mode: "paid_test"; paymentStatus: "paid_test"; orderStatus: "paid" };
 
 export type FlowClient = {
-  upload(input: { email: string; files: File[]; choice?: UploadChoice }): Promise<{
+  upload(input: {
+    email: string;
+    files: File[];
+    choice?: UploadChoice;
+    onProgress?: (ratio: number) => void;
+  }): Promise<{
     orderToken: string;
     orderId: string;
   }>;
@@ -74,13 +79,13 @@ export type FlowClient = {
   ): Promise<CheckoutResult>;
   download(
     token: string,
-    file: "translation" | "certification",
+    file: "translation" | "certification" | "evaluation",
   ): Promise<{ url: string; expiresInSeconds: number }>;
   replaceDocument(token: string, documentId: string, file: File): Promise<CustomerOrder>;
   updateTargetLanguage(token: string, targetLanguage: string): Promise<CustomerOrder>;
   updateQuote(
     token: string,
-    body: { skipPages: number[]; targetLanguage?: string },
+    body: { skipPages?: number[]; targetLanguage?: string; includeTranslation?: boolean },
   ): Promise<CustomerOrder>;
   /** Mock walk-through moves a quoted order to preview_ready before checkout. */
   markPreviewReady(token: string): Promise<void>;
@@ -114,13 +119,46 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+function postForm<T>(path: string, form: FormData, onProgress?: (ratio: number) => void): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", path);
+    xhr.upload.onprogress = (event) => {
+      if (!onProgress || !event.lengthComputable || event.total <= 0) return;
+      onProgress(event.loaded / event.total);
+    };
+    xhr.onerror = () => reject(new FlowApiError("Request failed", 0));
+    xhr.onload = () => {
+      const text = xhr.responseText;
+      let body: { error?: unknown } = {};
+      if (text) {
+        try {
+          body = JSON.parse(text) as { error?: unknown };
+        } catch {
+          body = {};
+        }
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        const message = typeof body.error === "string" ? body.error : "Request failed";
+        reject(new FlowApiError(message, xhr.status));
+        return;
+      }
+      resolve(body as T);
+    };
+    xhr.send(form);
+  });
+}
+
 const liveClient: FlowClient = {
-  upload({ email, files, choice = { orderType: "translation" } }) {
+  upload({ email, files, choice = { orderType: "translation" }, onProgress }) {
     const form = new FormData();
     form.set("email", email);
     appendOrderChoice(form, choice);
     for (const file of dedupeUploads(files)) form.append("files", file);
-    return request("/api/orders", { method: "POST", body: form });
+    if (typeof XMLHttpRequest === "undefined") {
+      return request("/api/orders", { method: "POST", body: form });
+    }
+    return postForm("/api/orders", form, onProgress);
   },
   getOrder(token) {
     return request(`/api/orders/${encodeURIComponent(token)}`);
@@ -222,6 +260,7 @@ function withEvaluationChoice(
     degreeCount: choice.degreeCount,
     sourceLanguage: base.sourceLanguage,
     billablePages,
+    includeTranslation: false,
   });
   return {
     ...base,
@@ -230,13 +269,39 @@ function withEvaluationChoice(
     degreeCount: choice.degreeCount,
     evaluationCents: quote.evaluationCents,
     translationCents: quote.translationCents,
+    includeTranslation: false,
+    translationOfferCents: translationOfferCents({
+      service: choice.service,
+      sourceLanguage: base.sourceLanguage,
+      billablePages,
+      unitPriceCents: base.unitPriceCents,
+    }),
     totalCents: quote.totalCents,
     lineItems: quote.lineItems,
   };
 }
 
+const MOCK_UPLOAD_HOLD_KEY = "credpronto-mock-upload-ms";
+
+async function holdMockUpload(onProgress?: (ratio: number) => void) {
+  if (typeof window === "undefined") return;
+  const ms = Number(sessionStorage.getItem(MOCK_UPLOAD_HOLD_KEY));
+  if (!Number.isFinite(ms) || ms <= 0) return;
+  const started = Date.now();
+  await new Promise<void>((resolve) => {
+    const tick = () => {
+      const elapsed = Date.now() - started;
+      onProgress?.(Math.min(1, elapsed / ms));
+      if (elapsed >= ms) resolve();
+      else window.setTimeout(tick, 40);
+    };
+    tick();
+  });
+}
+
 const mockClient: FlowClient = {
-  async upload({ email, choice = { orderType: "translation" } }) {
+  async upload({ email, choice = { orderType: "translation" }, onProgress }) {
+    await holdMockUpload(onProgress);
     const order =
       choice.orderType === "evaluation"
         ? withEvaluationChoice(sampleCustomerOrder(), choice)
@@ -256,6 +321,7 @@ const mockClient: FlowClient = {
       status: "processing",
       sourceLanguage: body.sourceLanguage,
       languageConfirmed: true,
+      progress: { ...current.progress, step: "translating" },
       confirmations: current.confirmations.map((field) => {
         const document = body.documents.find((item) => item.documentId === field.documentId);
         if (!document) return field;
@@ -404,21 +470,41 @@ const mockClient: FlowClient = {
       ...(body.targetLanguage ? { targetLanguage: body.targetLanguage } : {}),
     };
     const billablePages = quoteCounts(next).billable;
-    const translationCents =
-      next.orderType === "evaluation"
-        ? next.sourceLanguage === "en"
-          ? 0
-          : billablePages * next.unitPriceCents
-        : null;
+    const evaluationOrder = next.orderType === "evaluation" || next.service != null;
+    const wantsTranslation = body.includeTranslation ?? next.includeTranslation;
+    const translationCents = evaluationOrder
+      ? wantsTranslation && next.sourceLanguage && next.sourceLanguage !== "en"
+        ? billablePages * next.unitPriceCents
+        : 0
+      : null;
+    const includeTranslation = evaluationOrder ? (translationCents ?? 0) > 0 : next.includeTranslation;
     const totalCents =
-      next.orderType === "evaluation" && next.evaluationCents != null
+      evaluationOrder && next.evaluationCents != null
         ? next.evaluationCents + (translationCents ?? 0)
         : billablePages * next.unitPriceCents;
     const saved: CustomerOrder = {
       ...next,
       billablePages,
       totalCents,
+      includeTranslation,
+      translationOfferCents: translationOfferCents({
+        service: next.service,
+        sourceLanguage: next.sourceLanguage,
+        billablePages,
+        unitPriceCents: next.unitPriceCents,
+      }),
       ...(translationCents != null ? { translationCents } : {}),
+      ...(evaluationOrder && next.service && next.degreeCount != null && next.evaluationCents != null
+        ? {
+            lineItems: lineItemsForOrder({
+              service: next.service,
+              degreeCount: next.degreeCount,
+              evaluationCents: next.evaluationCents,
+              translationCents,
+              billablePages,
+            }),
+          }
+        : {}),
     };
     writeMockOrder(saved);
     return saved;

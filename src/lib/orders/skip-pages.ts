@@ -1,4 +1,4 @@
-import { needsBundledTranslation } from "./evaluation-price";
+import { evaluationCheckoutTotal } from "./evaluation-price";
 import { HttpError } from "./errors";
 import type { EvaluationService } from "./types";
 
@@ -22,6 +22,8 @@ export type QuotePatch = {
   /** Indexes into the order's pages, in the same order the quote returns them. */
   skipPages?: number[];
   targetLanguage?: string;
+  /** Evaluation orders only. Certified translation is charged only when this is true. */
+  includeTranslation?: boolean;
 };
 
 export function parseQuotePatch(body: unknown): QuotePatch {
@@ -49,7 +51,13 @@ export function parseQuotePatch(body: unknown): QuotePatch {
     }
     patch.targetLanguage = row.targetLanguage;
   }
-  if (patch.skipPages == null && patch.targetLanguage == null) {
+  if ("includeTranslation" in row) {
+    if (typeof row.includeTranslation !== "boolean") {
+      throw new HttpError("includeTranslation must be true or false.", 400);
+    }
+    patch.includeTranslation = row.includeTranslation;
+  }
+  if (patch.skipPages == null && patch.targetLanguage == null && patch.includeTranslation == null) {
     throw new HttpError("Nothing to update.", 400);
   }
   return patch;
@@ -58,26 +66,43 @@ export function parseQuotePatch(body: unknown): QuotePatch {
 export function quotePriceAfterSkip(
   order: {
     service: EvaluationService | null;
+    degreeCount?: number | null;
     sourceLanguage: string | null;
     unitPriceCents: number;
     evaluationCents: number | null;
     addonCents: number;
+    includeTranslation?: boolean;
   },
   billablePages: number,
-): { billablePages: number; translationCents: number | null; totalCents: number } {
-  if (order.service) {
-    const translationCents = needsBundledTranslation(order.sourceLanguage)
-      ? billablePages * order.unitPriceCents
-      : 0;
+): { billablePages: number; translationCents: number | null; totalCents: number; includeTranslation: boolean } {
+  if (order.service && order.degreeCount != null) {
+    const priced = evaluationCheckoutTotal({
+      service: order.service,
+      degreeCount: order.degreeCount,
+      sourceLanguage: order.sourceLanguage,
+      billablePages,
+      includeTranslation: order.includeTranslation === true,
+      addonCents: order.addonCents,
+    });
     return {
       billablePages,
-      translationCents,
-      totalCents: (order.evaluationCents ?? 0) + translationCents + order.addonCents,
+      translationCents: priced.translationCents,
+      totalCents: priced.totalCents,
+      includeTranslation: priced.includeTranslation,
+    };
+  }
+  if (order.service) {
+    return {
+      billablePages,
+      translationCents: 0,
+      includeTranslation: false,
+      totalCents: (order.evaluationCents ?? 0) + order.addonCents,
     };
   }
   return {
     billablePages,
     translationCents: null,
+    includeTranslation: false,
     totalCents: billablePages * order.unitPriceCents + order.addonCents,
   };
 }

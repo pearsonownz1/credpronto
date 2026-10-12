@@ -64,7 +64,7 @@ Those caps cover the notary's act only. Translation companies that offer notariz
 
 ## Start with an accurate certified translation
 
-Whatever the office asks for, everything rests on a translation that's complete and correct. At CredPronto, you upload your document and get a free, watermarked side-by-side preview in about 10 minutes. Check every name and date, then pay $9.95 a page to unlock the certified PDF.
+Whatever the office asks for, everything rests on a translation that's complete and correct. At CredPronto, you upload your document and get a free, watermarked side-by-side preview in a few minutes. Check every name and date, then pay $9.95 a page to unlock the certified PDF.
 
 Every CredPronto order includes a signed certification cover page. If the office receiving your document asks for notarization, you can add it at checkout for $17.95. A mailed hard copy is $12.95. We don't provide apostilles, so if you need one, ask the Secretary of State in the state where the document was notarized.
 

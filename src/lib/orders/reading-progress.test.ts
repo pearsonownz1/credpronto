@@ -5,6 +5,8 @@ import {
   liveReadingPercent,
   readingPresentation,
   readOrderProgress,
+  uploadFallbackPercent,
+  uploadReadingPresentation,
 } from "./reading-progress";
 
 describe("live reading progress", () => {
@@ -146,5 +148,42 @@ describe("reading presentation", () => {
     });
     expect(view.displayPercent).toBe(0);
     expect(view.label).toBe("Uploaded");
+  });
+});
+
+describe("upload reading progress", () => {
+  it("keeps step 1 on Uploading and eases toward 5% without byte progress", () => {
+    const start = uploadReadingPresentation({ ratio: null, elapsedMs: 0 });
+    expect(start.percent).toBe(0);
+    expect(start.displayPercent).toBe(0);
+    expect(start.label).toBe("Uploading");
+    expect(start.steps.map((step) => [step.id, step.label, step.state])).toEqual([
+      ["uploaded", "Uploading", "current"],
+      ["reading", "Reading pages", "pending"],
+      ["language", "Detecting language", "pending"],
+      ["counting", "Counting translatable text", "pending"],
+      ["quoting", "Building your quote", "pending"],
+    ]);
+
+    const later = uploadReadingPresentation({ ratio: null, elapsedMs: 60_000 });
+    expect(later.percent).toBeGreaterThan(4);
+    expect(later.percent).toBeLessThan(5);
+    expect(later.displayPercent).toBeLessThanOrEqual(4);
+    expect(later.label).toBe("Uploading");
+    expect(later.steps[0]?.state).toBe("current");
+    expect(uploadFallbackPercent(60_000)).toBeCloseTo(later.percent);
+  });
+
+  it("maps byte progress onto the 0–5% stage", () => {
+    expect(uploadReadingPresentation({ ratio: 0, elapsedMs: 30_000 }).percent).toBe(0);
+    const half = uploadReadingPresentation({ ratio: 0.5, elapsedMs: 0 });
+    expect(half.percent).toBe(2.5);
+    expect(half.displayPercent).toBe(3);
+    expect(half.label).toBe("Uploading");
+    const done = uploadReadingPresentation({ ratio: 1, elapsedMs: 0 });
+    expect(done.percent).toBe(5);
+    expect(done.displayPercent).toBe(5);
+    expect(done.steps[0]?.state).toBe("current");
+    expect(uploadReadingPresentation({ ratio: 4, elapsedMs: 0 }).percent).toBe(5);
   });
 });

@@ -17,6 +17,11 @@ import { renderCertificationPdf, replaceCoverPage } from "./pdf/render";
 import { downloadObject, uploadObject } from "./storage";
 import type { OrderRecord } from "./types";
 
+/** Evaluations keep the credential report. Approval does not swap in a translation certificate. */
+export function keepsEvaluationReport(order: { service: string | null }): boolean {
+  return order.service != null;
+}
+
 export async function approverDisplayName(db: Db, userId: string): Promise<string | null> {
   try {
     const { data, error } = await db.auth.admin.getUserById(userId);
@@ -33,6 +38,7 @@ export async function approverDisplayName(db: Db, userId: string): Promise<strin
 
 /** Rewrite the cover. The signer line stays CredPronto Certification Team. The translated pages stay. */
 export async function stampApprovedCover(db: Db, order: OrderRecord, approverName: string | null): Promise<void> {
+  if (keepsEvaluationReport(order)) return;
   if (!order.finalTranslationPath || !order.certificationPath || !order.sourceLanguage) return;
   const documents = await listDocuments(db, order.id);
   const pages = await listPages(db, documents.map((document) => document.id));

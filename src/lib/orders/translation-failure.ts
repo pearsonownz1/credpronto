@@ -1,8 +1,16 @@
 import { AiUnavailableError } from "./errors";
+import { humanReviewReason } from "./review-reason";
 
 export const TRANSLATION_TIMEOUT_REASON = "translation_timeout";
+/** Route segment `maxDuration` in seconds for the translation routes. */
+export const TRANSLATION_MAX_DURATION_SEC = 300;
+/**
+ * Reserved after the model abort so status and review_reason are written
+ * before the platform kills the isolate at maxDuration.
+ */
+export const TRANSLATION_SHUTDOWN_MS = 45_000;
 /** One translateDocument call, including its single retry, stays under this. */
-export const TRANSLATION_DEADLINE_MS = 300_000;
+export const TRANSLATION_DEADLINE_MS = TRANSLATION_MAX_DURATION_SEC * 1000 - TRANSLATION_SHUTDOWN_MS;
 
 export function isTemporaryTranslationError(error: unknown): boolean {
   if (error instanceof AiUnavailableError) return true;
@@ -33,9 +41,41 @@ export function decideTranslationFailure(input: {
       notifyFailed: false,
     };
   }
-  const reviewReason = input.error instanceof Error ? input.error.message : "Translation failed.";
+  const raw = input.error instanceof Error ? input.error.message : "Translation failed.";
+  const reviewReason = humanReviewReason(raw) ?? "Translation failed.";
   if (input.readyPreview && input.openCorrections) {
     return { status: "preview_ready", reviewReason, notifyFailed: false };
   }
   return { status: "failed", reviewReason, notifyFailed: true };
+}
+
+function deadlineRejection(deadline: AbortSignal): Promise<never> {
+  if (deadline.aborted) return Promise.reject(new AiUnavailableError("translation_timeout"));
+  return new Promise((_, reject) => {
+    deadline.addEventListener("abort", () => reject(new AiUnavailableError("translation_timeout")), { once: true });
+  });
+}
+
+/**
+ * First of the translation work or the deadline. The loser is ignored so a
+ * layout pass that keeps running cannot become an unhandled rejection, and
+ * the caller can still write status and review_reason.
+ */
+export function raceWorkAgainstDeadline<T>(work: Promise<T>, deadline: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (settle: () => void) => {
+      if (settled) return;
+      settled = true;
+      settle();
+    };
+    work.then(
+      (value) => finish(() => resolve(value)),
+      (error) => finish(() => reject(error)),
+    );
+    deadlineRejection(deadline).then(
+      () => finish(() => reject(new AiUnavailableError("translation_timeout"))),
+      (error) => finish(() => reject(error)),
+    );
+  });
 }

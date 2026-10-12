@@ -14,7 +14,7 @@ describe("approved marketing pages", () => {
       "Certified Translation from $9.95/Page, Preview Free | CredPronto",
     );
     expect(homePage.description).toBe(
-      "Certified translations accepted by USCIS from $9.95 a page. Upload your document, see the full translation side by side in about 10 minutes, and pay only if it's right.",
+      "Certified translations accepted by USCIS from $9.95 a page. Upload your document, see the full translation side by side in a few minutes, and pay only if it's right.",
     );
     expect(homePage.canonical).toBe("https://www.credpronto.com/");
     expect(homePage.body).toContain("Certified translations accepted by USCIS, and you see them first");

@@ -84,6 +84,7 @@ function mapOrder(row: Row): OrderRecord {
     degreeCount: num(row.degree_count),
     evaluationCents: num(row.evaluation_cents),
     translationCents: num(row.translation_cents),
+    includeTranslation: row.include_translation === true,
     evaluationResult: parseEvaluationResult(row.evaluation_result),
     addonCents: num(row.addon_cents) ?? 0,
     expedited: row.expedited === true,
@@ -1041,13 +1042,16 @@ export async function insertQaRun(
   db: Db,
   input: { orderId: string; attempt: number; status: QaStatus; score: number; issues: QaIssue[] },
 ): Promise<void> {
-  const { error } = await db.from("order_qa_runs").insert({
-    order_id: input.orderId,
-    attempt: input.attempt,
-    status: input.status,
-    score: input.score,
-    issues: input.issues,
-  });
+  const { error } = await db.from("order_qa_runs").upsert(
+    {
+      order_id: input.orderId,
+      attempt: input.attempt,
+      status: input.status,
+      score: input.score,
+      issues: input.issues,
+    },
+    { onConflict: "order_id,attempt" },
+  );
   fail(error);
 }
 

@@ -34,7 +34,7 @@ describe("evaluation prices", () => {
     expect(UNIT_PRICE_CENTS).toBe(995);
     expect(TRANSLATION_PAGE_LABEL).toBe("$9.95/page");
     expect(TRANSLATION_ADDON).toBe(
-      "Non-English documents add certified translation at $9.95/page on one invoice.",
+      "You can add a certified translation at $9.95/page. It is charged only if you choose it, on the same invoice.",
     );
   });
 

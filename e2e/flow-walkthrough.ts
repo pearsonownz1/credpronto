@@ -52,7 +52,7 @@ export async function walkCustomerFlow(
   await expect(shown(page, "file-list")).toContainText("acta-nacimiento.pdf");
   await expect(shown(page, "file-list")).toContainText("IMG_4021.HEIC");
   await expect(shown(page, "file-list")).toContainText("1 billable page");
-  await expect(shown(page, "file-turnaround").first()).toContainText("Ready in about 10 minutes");
+  await expect(shown(page, "file-turnaround").first()).toContainText("Ready in a few minutes");
   await expect(page.getByTestId("quote-counts")).toHaveCount(0);
   await expect(shown(page, "quote-total")).toContainText("$19.90");
   await expect(page.getByText("2 pages × $9.95").filter({ visible: true })).toBeVisible();
@@ -85,17 +85,33 @@ export async function walkCustomerFlow(
 
   await shown(page, "start-preview").click();
   await expect(page).toHaveURL(/\/processing$/);
+  await expect(page.getByRole("heading", { name: "Translating your document" }).filter({ visible: true })).toBeVisible();
   await expect(shown(page, "progress-bar")).toBeVisible();
-  await expect(page.getByText("Files received").filter({ visible: true })).toBeVisible();
-  await expect(page.getByText("278 words").filter({ visible: true })).toBeVisible();
-  await expect(page.getByText("~4 min left").filter({ visible: true })).toBeVisible();
+  await expect(shown(page, "preview-step-translating")).toHaveAttribute("data-state", "current");
+  await expect(shown(page, "preview-step-ready")).toHaveAttribute("data-state", "pending");
+  const progress = Number(await shown(page, "progress-bar").getAttribute("aria-valuenow"));
+  expect(progress).toBeGreaterThan(0);
+  expect(progress).toBeLessThan(100);
+  await expect(shown(page, "view-preview")).toHaveCount(0);
   await expect(shown(page, "add-documents")).toBeVisible();
   await expect(shown(page, "flow-stepper").locator("[data-state=current]")).toContainText(
     "Preview",
   );
   await check();
 
-  await shown(page, "preview-ready").click();
+  await page.evaluate(() => {
+    const key = "credpronto-mock-order";
+    const order = JSON.parse(sessionStorage.getItem(key) || "{}");
+    order.status = "preview_ready";
+    sessionStorage.setItem(key, JSON.stringify(order));
+  });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Your preview is ready" }).filter({ visible: true })).toBeVisible();
+  await expect(shown(page, "preview-steps")).toHaveCount(0);
+  await expect(shown(page, "view-preview")).toBeVisible();
+  await check();
+
+  await shown(page, "view-preview").click();
   await expect(page).toHaveURL(/\/checkout$/);
   await expect(shown(page, "email")).toHaveValue("maria.ruiz@email.com");
   await expect(shown(page, "order-total")).toContainText("$19.90");

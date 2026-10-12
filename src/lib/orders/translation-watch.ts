@@ -116,8 +116,10 @@ export function isPreviewDelayed(input: {
   updatedAt: string;
   progress: unknown;
   now: number;
+  reviewReason?: string | null;
 }): boolean {
   if (input.previewVersion != null) return false;
+  if (input.status === "needs_review" && input.reviewReason === TRANSLATION_TIMEOUT_REASON) return true;
   if (!WAITING_FOR_PREVIEW.has(input.status)) return false;
   if (progressRetries(input.progress) >= 1) return true;
   return updatedMoreThan(input.updatedAt, input.now, TRANSLATION_STALE_MS);

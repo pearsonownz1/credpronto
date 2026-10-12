@@ -13,6 +13,7 @@ import {
   canSetSourceLanguage,
   checkoutFailureMessage,
   displayedPageRule,
+  downloadReadyCopy,
   documentIdForPage,
   downloadPhase,
   joinParents,
@@ -80,6 +81,8 @@ function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
     degreeCount: null,
     evaluationCents: null,
     translationCents: null,
+    includeTranslation: false,
+    translationOfferCents: null,
     lineItems: [],
     evaluation: null,
     progress: { step: "done", pagesRead: 3, pagesTotal: 3 },
@@ -633,16 +636,39 @@ describe("evaluation prices", () => {
   });
 });
 
+describe("download copy", () => {
+  it("names an evaluation report and keeps a translation's certificate", () => {
+    expect(downloadReadyCopy({ orderType: "evaluation", service: "diploma" })).toEqual({
+      title: "Your credential evaluation is ready.",
+      primaryTitle: "Evaluation report",
+      primaryFile: "evaluation",
+      secondary: null,
+      again: "Need another credential evaluated?",
+    });
+    expect(downloadReadyCopy({ orderType: "translation", service: null })).toEqual({
+      title: "Your certified translation is ready.",
+      primaryTitle: "Certified translation",
+      primaryFile: "translation",
+      secondary: { title: "Certification page", file: "certification" },
+      again: "Need another document translated?",
+    });
+  });
+});
+
 describe("order hub", () => {
   it("follows the checkout return and otherwise the current step", () => {
     expect(orderHubStep("success", "preview_ready")).toBe("download");
     expect(orderHubStep("cancel", "preview_ready")).toBe("cancel");
     expect(orderHubStep(null, "quoted")).toBe("quote");
     expect(orderHubStep(null, "needs_review")).toBe("quote");
+    expect(orderHubStep(null, "needs_review", { delayed: true, reviewReason: "translation_timeout" })).toBe(
+      "processing",
+    );
+    expect(orderHubStep(null, "needs_review", { reviewReason: "image_quality" })).toBe("quote");
     expect(orderHubStep(null, "draft")).toBe("quote");
     expect(orderHubStep(null, "processing")).toBe("processing");
     expect(orderHubStep(null, "correction_requested")).toBe("processing");
-    expect(orderHubStep(null, "preview_ready")).toBe("preview");
+    expect(orderHubStep(null, "preview_ready")).toBe("processing");
     expect(orderHubStep(null, "paid")).toBe("download");
     expect(orderHubStep(null, "approved")).toBe("download");
     expect(orderHubStep(undefined, undefined)).toBe("processing");

@@ -17,9 +17,9 @@ export const DIPLOMA_DETAIL = "U.S. equivalency of the degree";
 export const COURSE_BY_COURSE_DETAIL =
   "Each course converted to U.S. semester hours and grade, plus GPA.";
 
-/** Non-English documents add certified translation at $9.95/page on one invoice. */
+/** Certified translation is optional and is charged only after the customer opts in. */
 export const TRANSLATION_ADDON =
-  `Non-English documents add certified translation at ${TRANSLATION_PAGE_LABEL} on one invoice.`;
+  `You can add a certified translation at ${TRANSLATION_PAGE_LABEL}. It is charged only if you choose it, on the same invoice.`;
 
 export const DIPLOMA_OFFER = `Diploma evaluation is ${DIPLOMA_PRICE_LABEL} (${DIPLOMA_DETAIL}).`;
 
