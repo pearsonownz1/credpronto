@@ -109,4 +109,19 @@ describe("auth migrations", () => {
       expect(sql.includes("staff_notified")).toBe(false);
     }
   });
+
+  it("stores evaluation translation as an opt-in flag", () => {
+    const sql = readFileSync(
+      path.join(migrationsDir, "20261012150000_evaluation_translation_opt_in.sql"),
+      "utf8",
+    );
+    expect(sql).toMatch(/add column include_translation boolean not null default false/);
+    expect(sql).toMatch(/set include_translation = true/);
+    expect(sql).toMatch(/where coalesce\(translation_cents, 0\) > 0/);
+    expect(sql).toMatch(/translation_cents = 0/);
+    expect(sql).toMatch(/include_translation = true/);
+    expect(sql).toMatch(/translation_cents = billable_pages \* unit_price_cents/);
+    expect(sql.toLowerCase()).not.toMatch(/create type/);
+    expect(sql.toLowerCase()).not.toMatch(/add value/);
+  });
 });

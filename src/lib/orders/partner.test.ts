@@ -32,6 +32,7 @@ function order(patch: Partial<OrderRecord> = {}): OrderRecord {
     degreeCount: null,
     evaluationCents: null,
     translationCents: null,
+    includeTranslation: false,
     evaluationResult: null,
     addonCents: 0,
     expedited: false,

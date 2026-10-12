@@ -82,6 +82,7 @@ function mapOrder(row: Row): OrderRecord {
     degreeCount: num(row.degree_count),
     evaluationCents: num(row.evaluation_cents),
     translationCents: num(row.translation_cents),
+    includeTranslation: row.include_translation === true,
     evaluationResult: parseEvaluationResult(row.evaluation_result),
     addonCents: num(row.addon_cents) ?? 0,
     expedited: row.expedited === true,

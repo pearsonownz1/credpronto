@@ -65,6 +65,8 @@ export function sampleCustomerOrder(): CustomerOrder {
     degreeCount: null,
     evaluationCents: null,
     translationCents: null,
+    includeTranslation: false,
+    translationOfferCents: null,
     lineItems: [],
     evaluation: null,
     progress: { step: "done", pagesRead: 2, pagesTotal: 2 },

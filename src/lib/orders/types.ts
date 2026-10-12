@@ -150,6 +150,8 @@ export type OrderRecord = {
   degreeCount: number | null;
   evaluationCents: number | null;
   translationCents: number | null;
+  /** True when the customer chose certified translation on an evaluation. */
+  includeTranslation: boolean;
   evaluationResult: EvaluationResult | null;
   addonCents: number;
   expedited: boolean;

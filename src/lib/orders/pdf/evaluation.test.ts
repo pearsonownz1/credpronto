@@ -3,7 +3,7 @@ import { extractText, getDocumentProxy } from "unpdf";
 import { describe, expect, it } from "vitest";
 import { PREVIEW_WATERMARK } from "../constants";
 import type { EvaluationResult } from "../types";
-import { evaluationReportId, renderEvaluationPdfs } from "./evaluation";
+import { evaluationReportId, publicEvaluationReport, renderEvaluationPdfs } from "./evaluation";
 
 function pdfOperators(bytes: Uint8Array): string {
   const raw = Buffer.from(bytes);
@@ -143,6 +143,54 @@ describe("evaluation PDFs", () => {
     const pending = clean.indexOf("Pending staff review");
     expect(label).toBeGreaterThanOrEqual(0);
     expect(pending).toBeGreaterThan(label);
+  });
+
+  it("prints the credential, country, and confirmed equivalency without a reference name or confidence label", async () => {
+    const withBasis = {
+      ...diploma,
+      credentials: diploma.credentials.map((credential) => ({
+        ...credential,
+        equivalencyBasis: "Matched from EDGE at confidence high",
+      })),
+    };
+    const files = await renderEvaluationPdfs(withBasis);
+    const clean = await textOf(files.clean);
+    expect(clean).toContain("Licence");
+    expect(clean).toContain("France");
+    expect(clean).toContain("Bachelor's degree");
+    expect(clean).toContain("CredPronto Certification Team");
+    expect(clean).toContain("2520 Venture Oaks Way, Suite 120, Sacramento, CA 95833");
+    expect(clean).not.toMatch(/\bEDGE\b/);
+    expect(clean).not.toMatch(/\bconfidence\b/i);
+    expect(clean).not.toMatch(/\bhigh\b/i);
+
+    const hidden = publicEvaluationReport({
+      ...diploma,
+      credentials: diploma.credentials.map((credential) => ({
+        ...credential,
+        country: "EDGE",
+        usEquivalency: "high",
+      })),
+    });
+    expect(hidden.kind).toBe("diploma");
+    if (hidden.kind !== "diploma") return;
+    expect(hidden.credentials[0]).toMatchObject({
+      credential: "Licence",
+      country: "Pending staff review",
+      usEquivalency: "Pending staff review",
+    });
+    expect(hidden.credentials[0]).not.toHaveProperty("equivalencyBasis");
+
+    const scale = publicEvaluationReport({
+      ...courses,
+      gradeScale: "EDGE confidence medium",
+      usEquivalency: "low",
+    });
+    expect(scale.kind).toBe("course_by_course");
+    if (scale.kind !== "course_by_course") return;
+    expect(scale.gradeScale).toBe("Grades use the printed scale.");
+    expect(scale.usEquivalency).toBe("Pending staff review");
+    expect(scale).not.toHaveProperty("equivalencyBasis");
   });
 
   it("builds a stable report id from the order id", () => {

@@ -3,7 +3,7 @@ import { lineItemForStoredPage, pageRuleForLanguages, type PageLineItem } from "
 import { asOrderProgress, UPLOADED_PROGRESS, type OrderProgress } from "./reading-progress";
 import { isPreviewDelayed } from "./translation-watch";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
-import { lineItemsForOrder } from "./evaluation-price";
+import { lineItemsForOrder, translationOfferCents } from "./evaluation-price";
 import { compareCombinedPages } from "./page-order";
 import type {
   AddonId,
@@ -90,6 +90,10 @@ export type CustomerOrder = {
   degreeCount: number | null;
   evaluationCents: number | null;
   translationCents: number | null;
+  /** True when this evaluation includes certified translation. */
+  includeTranslation: boolean;
+  /** Cents to add if the customer opts in. Null when a translation cannot be added. */
+  translationOfferCents: number | null;
   lineItems: EvaluationLine[];
   evaluation: EvaluationResult | null;
   progress: OrderProgress;
@@ -204,6 +208,8 @@ export function toCustomerOrder(input: {
     degreeCount: input.order.degreeCount,
     evaluationCents: input.order.evaluationCents,
     translationCents: input.order.translationCents,
+    includeTranslation: input.order.includeTranslation,
+    translationOfferCents: translationOfferCents(input.order),
     lineItems: lineItemsForOrder(input.order),
     evaluation: publicEvaluation(input.order.evaluationResult),
     progress: publicProgress(asOrderProgress(input.order.progress) ?? UPLOADED_PROGRESS),
