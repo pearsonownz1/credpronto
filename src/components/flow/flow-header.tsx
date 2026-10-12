@@ -4,7 +4,7 @@ import { Logo } from "./mark";
 import { Stepper } from "./stepper";
 import { buttonClasses } from "./ui";
 
-const SECTIONS = ["Translations", "Evaluations", "Expert letters", "Pricing"];
+const SECTIONS = ["Translations", "Evaluations", "Pricing"];
 
 export function MarketingHeader() {
   return (
