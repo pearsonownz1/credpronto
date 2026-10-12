@@ -33,6 +33,19 @@ describe("markdown body", () => {
     expect(html).toContain("bg-primary");
   });
 
+  it("renders the about and contact actions as buttons", () => {
+    const about = render("[Upload your document](/translate)");
+    expect(about).toContain('href="/translate"');
+    expect(about).toContain("Upload your document");
+    expect(about).toContain("bg-primary");
+
+    const contact = render("[Send message](mailto:support@credpronto.com)");
+    expect(contact).toContain('href="mailto:support@credpronto.com"');
+    expect(contact).toContain("Send message");
+    expect(contact).toContain("bg-primary");
+    expect(contact).not.toContain("<form");
+  });
+
   it("keeps bracketed certification text and parenthetical source links", () => {
     const uscis = matter(
       fs.readFileSync(
