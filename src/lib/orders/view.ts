@@ -99,7 +99,7 @@ export type CustomerOrder = {
   lineItems: EvaluationLine[];
   evaluation: EvaluationResult | null;
   progress: OrderProgress;
-  /** True after 15 minutes with no preview, including a translation timeout in review. */
+  /** True after 4 minutes with no preview, including a translation timeout in review. */
   delayed: boolean;
   /** When checkout settled. Null until the order is paid. */
   paidAt: string | null;

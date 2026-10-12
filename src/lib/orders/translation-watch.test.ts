@@ -165,7 +165,7 @@ describe("translation watchdog", () => {
     expect(progressRetries({ retries: 1.5 })).toBe(0);
   });
 
-  it("marks a preview delayed only after 15 minutes without one", () => {
+  it("marks a preview delayed only after 4 minutes without one", () => {
     const waiting = {
       status: "processing",
       previewVersion: null,

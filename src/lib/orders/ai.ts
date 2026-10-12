@@ -18,19 +18,25 @@ function attemptSignal(parent: AbortSignal | undefined): AbortSignal {
   return parent ? AbortSignal.any([parent, attempt]) : attempt;
 }
 
+export function translationFallbackModelId(): string | null {
+  const configured = process.env.TRANSLATION_FALLBACK_MODEL?.trim();
+  return configured || null;
+}
+
 export async function generateObject<T>(
   schema: ZodType<T>,
   messages: ModelMessage[],
   signal?: AbortSignal,
-  options?: { maxRetries?: number },
+  options?: { maxRetries?: number; model?: string },
 ): Promise<T> {
   const maxRetries = options?.maxRetries ?? AI_MAX_RETRIES;
+  const model = options?.model?.trim() || translationModelId();
   let last: unknown;
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     if (signal?.aborted) break;
     try {
       const result = await generateText({
-        model: translationModelId(),
+        model,
         output: Output.object({ schema }),
         messages,
         maxOutputTokens: 16000,
@@ -43,7 +49,7 @@ export async function generateObject<T>(
       const message = error instanceof Error ? error.message : "The model did not respond";
       const cause =
         error instanceof Error && error.cause instanceof Error ? ` (cause: ${error.cause.message})` : "";
-      console.error(`AI model ${translationModelId()} failed: ${message}${cause}`, error);
+      console.error(`AI model ${model} failed: ${message}${cause}`, error);
       if (signal?.aborted || attempt === maxRetries) break;
     }
   }

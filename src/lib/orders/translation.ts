@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { generateObject, translationModelId } from "./ai";
+import { generateObject, translationFallbackModelId, translationModelId } from "./ai";
 import { inReadingOrder } from "./page-order";
 import { CONFIRMATION_FIELD_KEYS } from "./fields";
 import type { RenderBlock, RenderPage } from "./pdf/layout";
@@ -7,6 +7,8 @@ import { coverClientName, coverDocuments, coverSignature, coverTranslatorName, l
 import { renderOrderPdfs } from "./pdf/render";
 import { blocksFromModel, blocksToParagraphs, type ModelBlock } from "./pdf/structure";
 import {
+  claimOrderColumn,
+  clearOrderColumn,
   customerEmail,
   getOrderById,
   insertEvent,
@@ -23,15 +25,18 @@ import {
   withCombinedNumbers,
   type Db,
 } from "./db";
-import { sendPreviewReady } from "./email";
+import { adminStudioLink, sendPreviewReady, sendStaffOrderAlert } from "./email";
 import { AiUnavailableError, HttpError } from "./errors";
+import { humanReviewReason } from "./review-reason";
 import { QA_REVIEW_REASON, assessTranslation, qaAttemptForRound, qaStatusForRun, qaWillRetry, type QaIssue } from "./qa";
 import {
   TRANSLATION_DEADLINE_MS,
   TRANSLATION_PAGE_DEADLINE_MS,
   canRetryFailedTranslation,
+  TRANSLATION_TIMEOUT_REASON,
   decideTranslationFailure,
   isTemporaryTranslationError,
+  isUnreadableModelOutput,
   raceWorkAgainstDeadline,
 } from "./translation-failure";
 import { checkedProgress } from "./translation-watch";
@@ -52,7 +57,8 @@ import {
   resumeTranslation,
   type PageJobOutput,
 } from "./translation-jobs";
-import { isSkippedTranslationPage, passThroughBlocks } from "./translation-pages";
+import { isSkippedTranslationPage, pageAttemptResult, passThroughBlocks } from "./translation-pages";
+import { staffAlertRecipients } from "./release-decision";
 import { uploadObject } from "./storage";
 import type { ConfirmationRecord, CorrectionRecord, PageRecord } from "./types";
 
@@ -202,15 +208,19 @@ ${pageText}`;
   throw new HttpError("The translation did not return every page.", 502);
 }
 
-/** One billable page. The caller retries the invocation once; this call does not. */
-async function translateOnePage(input: {
-  filename: string;
-  sourceLanguage: string;
-  fields: ConfirmationRecord[];
-  page: PageRecord & { number: number };
-  corrections: CorrectionRecord[];
-  qaIssues: QaIssue[];
-}): Promise<RenderBlock[]> {
+const STRICT_PAGE_RULES = `Retry rules: Do not repeat text inside seals or stamps. One short description per seal. Keep every block concise. Return valid JSON only.`;
+
+function pagePrompt(
+  input: {
+    filename: string;
+    sourceLanguage: string;
+    fields: ConfirmationRecord[];
+    page: PageRecord & { number: number };
+    corrections: CorrectionRecord[];
+    qaIssues: QaIssue[];
+  },
+  strict: boolean,
+): string {
   const notes = input.corrections
     .filter((correction) => correction.pageNumber === input.page.number)
     .map((correction) => {
@@ -220,7 +230,7 @@ async function translateOnePage(input: {
   const qaNotes = input.qaIssues
     .map((item) => `Page ${item.page ?? "all"} (${item.type}): ${item.note} Original: ${item.original}`)
     .join("\n");
-  const prompt = `Translate this document into English, one original page to one translated page.
+  return `Translate this document into English, one original page to one translated page.
 Source language: ${input.sourceLanguage}.
 File: ${input.filename}.
 
@@ -247,24 +257,47 @@ For a handwritten signature, use type "signature" with electronic false.
 For an electronic signature, firma electrónica, or a long unbroken signature token, use type "signature" with electronic true. Do not copy the signature string.
 
 For a section title, use type "heading".
-Page ${input.page.number}:
+${strict ? `${STRICT_PAGE_RULES}\n` : ""}Page ${input.page.number}:
 ${(input.page.ocrText ?? "").slice(0, 6000)}`;
+}
 
+/** One billable page. Unreadable JSON is retried once with a stricter prompt. */
+async function translateOnePage(input: {
+  filename: string;
+  sourceLanguage: string;
+  fields: ConfirmationRecord[];
+  page: PageRecord & { number: number };
+  corrections: CorrectionRecord[];
+  qaIssues: QaIssue[];
+}): Promise<RenderBlock[]> {
   const deadline = AbortSignal.timeout(TRANSLATION_PAGE_DEADLINE_MS);
-  const result = await raceWorkAgainstDeadline(
-    generateObject(
-      z.union([modelPageSchema, z.object({ pages: z.array(modelPageSchema).min(1) })]),
-      [{ role: "user", content: [{ type: "text", text: prompt }] }],
-      deadline,
-      { maxRetries: 0 },
-    ),
-    deadline,
-  );
-  const page = "pages" in result ? result.pages[0] : result;
-  if (!page) throw new HttpError("The translation did not return the page.", 502);
-  const aligned = alignPages([input.page.number], [page]);
-  if (!aligned?.[0]) throw new HttpError("The translation did not return the page.", 502);
-  return aligned[0].blocks;
+  const schema = z.union([modelPageSchema, z.object({ pages: z.array(modelPageSchema).min(1) })]);
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (deadline.aborted) throw new AiUnavailableError("translation_timeout");
+    const strict = attempt === 1;
+    const fallback = strict ? translationFallbackModelId() : null;
+    try {
+      const result = await raceWorkAgainstDeadline(
+        generateObject(
+          schema,
+          [{ role: "user", content: [{ type: "text", text: pagePrompt(input, strict) }] }],
+          deadline,
+          { maxRetries: 0, ...(fallback ? { model: fallback } : {}) },
+        ),
+        deadline,
+      );
+      const page = "pages" in result ? result.pages[0] : result;
+      if (!page) throw new HttpError("The translation did not return the page.", 502);
+      const aligned = alignPages([input.page.number], [page]);
+      if (!aligned?.[0]) throw new HttpError("The translation did not return the page.", 502);
+      return aligned[0].blocks;
+    } catch (error) {
+      lastError = error;
+      if (!isUnreadableModelOutput(error) || strict || deadline.aborted) throw error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new HttpError("The translation did not return the page.", 502);
 }
 
 /** Write a terminal status when a translation is still Processing or waiting on the first preview. */
@@ -360,6 +393,64 @@ export async function runTranslationPage(
     await completePageJob(db, claimed, output);
   } catch (error) {
     await failPageJob(db, claimed, error);
+    if (pageAttemptResult(claimed.attempts, false) === "fail") {
+      await ensurePageFailureReviewed(db, claimed.orderId, error);
+    }
+  }
+}
+
+/** A finished page job must not leave the order in processing. Staff are told at once. */
+async function ensurePageFailureReviewed(db: Db, orderId: string, error: unknown): Promise<void> {
+  const order = await getOrderById(db, orderId);
+  if (!order) return;
+  if (
+    order.status === "preview_ready" ||
+    order.status === "approved" ||
+    order.status === "delivered" ||
+    order.status === "cancelled"
+  ) {
+    return;
+  }
+  const raw = error instanceof Error ? error.message : "Translation failed.";
+  const reviewReason = isTemporaryTranslationError(error)
+    ? TRANSLATION_TIMEOUT_REASON
+    : (humanReviewReason(raw) ?? "Translation failed.");
+  if (order.status !== "needs_review" || order.reviewReason !== reviewReason) {
+    await updateOrder(db, orderId, {
+      status: "needs_review",
+      review_reason: reviewReason,
+      progress: checkedProgress(order.progress, { step: "done" }),
+    });
+  }
+  await alertStaffForHeldTranslation(db, orderId);
+}
+
+async function alertStaffForHeldTranslation(db: Db, orderId: string): Promise<void> {
+  const order = await getOrderById(db, orderId);
+  if (!order || order.staffAlertSentAt) return;
+  const at = new Date().toISOString();
+  const claimed = await claimOrderColumn(db, order.id, "staff_alert_sent_at", at);
+  if (!claimed) return;
+  try {
+    const recipients = staffAlertRecipients();
+    if (recipients.length === 0) {
+      await clearOrderColumn(db, order.id, "staff_alert_sent_at", at);
+      return;
+    }
+    const result = await sendStaffOrderAlert(recipients, {
+      urgent: false,
+      orderId: order.id,
+      sourceLanguage: order.sourceLanguage,
+      targetLanguage: order.targetLanguage,
+      serviceType: order.serviceType,
+      billablePages: order.billablePages,
+      totalCents: order.totalCents,
+      studioUrl: adminStudioLink(order.id),
+    });
+    if (!result.sent) await clearOrderColumn(db, order.id, "staff_alert_sent_at", at);
+  } catch (error) {
+    await clearOrderColumn(db, order.id, "staff_alert_sent_at", at);
+    console.error(error instanceof Error ? error.message : "staff alert failed");
   }
 }
 

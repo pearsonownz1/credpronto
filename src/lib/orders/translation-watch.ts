@@ -1,7 +1,7 @@
 import { TRANSLATION_TIMEOUT_REASON } from "./translation-failure";
 
 /** A translation with no preview is stale once `updated_at` is older than this. */
-export const TRANSLATION_STALE_MS = 15 * 60 * 1000;
+export const TRANSLATION_STALE_MS = 4 * 60 * 1000;
 
 /** Statuses that are still waiting on the first preview. */
 const PRE_PREVIEW = new Set(["confirmed", "processing"]);
@@ -128,7 +128,7 @@ export function translationWatchAction(order: WatchOrder, now: number): WatchAct
   return progressRetries(order.progress) >= 1 ? "flag" : "retry";
 }
 
-/** True once a preview has been missing for more than 15 minutes. */
+/** True once a preview has been missing for more than 4 minutes. */
 export function isPreviewDelayed(input: {
   status: string;
   previewVersion: number | null;

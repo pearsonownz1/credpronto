@@ -9,8 +9,34 @@ import {
   TRANSLATION_TIMEOUT_REASON,
   canRetryFailedTranslation,
   decideTranslationFailure,
+  isTemporaryTranslationError,
+  isUnreadableModelOutput,
   raceWorkAgainstDeadline,
 } from "./translation-failure";
+
+describe("unreadable model output", () => {
+  const jsonFailure = "No object generated: could not parse the response (JSON parsing failed)";
+
+  it("treats a JSON parse failure as temporary", () => {
+    const parsed = new Error(jsonFailure);
+    expect(isUnreadableModelOutput(parsed)).toBe(true);
+    expect(isTemporaryTranslationError(parsed)).toBe(true);
+    const named = new Error("model failed");
+    named.name = "NoObjectGeneratedError";
+    expect(isTemporaryTranslationError(named)).toBe(true);
+    const wrapped = new Error("wrapper");
+    wrapped.cause = new Error("JSON parsing failed");
+    expect(isTemporaryTranslationError(wrapped)).toBe(true);
+    expect(
+      decideTranslationFailure({ error: parsed, readyPreview: false, openCorrections: false }),
+    ).toEqual({
+      status: "needs_review",
+      reviewReason: TRANSLATION_TIMEOUT_REASON,
+      notifyFailed: false,
+    });
+    expect(isTemporaryTranslationError(new Error("schema mismatch"))).toBe(false);
+  });
+});
 
 describe("translation failure", () => {
   it("aborts the model before maxDuration so the failure can be written", () => {
