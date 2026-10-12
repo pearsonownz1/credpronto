@@ -31,7 +31,7 @@ describe("source file URL", () => {
 describe("order upload", () => {
   it("reports computable XHR upload progress", async () => {
     const progress: number[] = [];
-    let sent: FormData | null = null;
+    const sent: { body: FormData | null } = { body: null };
 
     class FakeXHR {
       upload: { onprogress: ((event: ProgressEvent) => void) | null } = { onprogress: null };
@@ -41,7 +41,7 @@ describe("order upload", () => {
       onerror: (() => void) | null = null;
       open() {}
       send(body: FormData) {
-        sent = body;
+        sent.body = body;
         this.upload.onprogress?.({ lengthComputable: true, loaded: 5, total: 10 } as ProgressEvent);
         this.onload?.();
       }
@@ -57,8 +57,8 @@ describe("order upload", () => {
 
     expect(result).toEqual({ orderToken: "tok", orderId: "ord_1" });
     expect(progress).toEqual([0.5]);
-    expect(sent?.get("email")).toBe("a@credpronto.com");
-    expect(sent?.get("files")).toBeInstanceOf(File);
+    expect(sent.body?.get("email")).toBe("a@credpronto.com");
+    expect(sent.body?.get("files")).toBeInstanceOf(File);
   });
 
   it("leaves progress alone when the browser cannot report a total", async () => {
