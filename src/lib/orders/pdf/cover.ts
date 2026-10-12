@@ -243,7 +243,7 @@ export async function drawCertificationPage(doc: PDFDocument, input: RenderInput
   y = drawTable(page, faces, cover, y, tableFloor);
   y = drawStatements(page, faces, measured, y);
   drawSignature(page, faces, cover, signature, y - statementGap);
-  drawCoverFooter(page, faces);
+  drawCoverFooter(page, faces, cover);
 }
 
 async function embedFaces(doc: PDFDocument, sample: string): Promise<Faces> {
@@ -385,6 +385,12 @@ function drawHeader(page: PDFPage, faces: Faces, cover: ResolvedCover, brand: PD
     height: brandHeight,
   });
 
+  let addressY = contentTop - brandHeight - 14;
+  for (const line of COVER_ADDRESS_LINES) {
+    drawText(page, line, MARGIN_X, addressY, 8, MUTED, false, faces);
+    addressY -= 11;
+  }
+
   const right = PAGE_W - MARGIN_X;
   const ataHeight = 24;
   const ataWidth = ataHeight * (ata.width / ata.height);
@@ -399,7 +405,7 @@ function drawHeader(page: PDFPage, faces: Faces, cover: ResolvedCover, brand: PD
     drawText(page, line, right - width, y, size, MUTED, false, faces);
     y -= 11;
   }
-  const ruleY = Math.min(contentTop - brandHeight - 10, y + 4);
+  const ruleY = Math.min(addressY + 4, y + 4);
   page.drawLine({
     start: { x: MARGIN_X, y: ruleY },
     end: { x: right, y: ruleY },
@@ -409,7 +415,7 @@ function drawHeader(page: PDFPage, faces: Faces, cover: ResolvedCover, brand: PD
   return ruleY - 22;
 }
 
-function drawCoverFooter(page: PDFPage, faces: Faces): void {
+function drawCoverFooter(page: PDFPage, faces: Faces, cover: ResolvedCover): void {
   const y = 28;
   page.drawLine({
     start: { x: MARGIN_X, y: y + 14 },
@@ -417,14 +423,18 @@ function drawCoverFooter(page: PDFPage, faces: Faces): void {
     thickness: 0.6,
     color: LINE,
   });
-  let size = 8;
-  let width = textWidth(COVER_FOOTER, size, false, faces);
-  while (width > CONTENT_W && size > 6) {
+  const pageLabel = `Order ${cover.orderId} · Page 1 of ${cover.pageCount}`;
+  const gap = 16;
+  let size = 7.5;
+  let brandWidth = textWidth(COVER_FOOTER, size, false, faces);
+  let pageWidth = textWidth(pageLabel, size, false, faces);
+  while (brandWidth + gap + pageWidth > CONTENT_W && size > 6) {
     size -= 0.25;
-    width = textWidth(COVER_FOOTER, size, false, faces);
+    brandWidth = textWidth(COVER_FOOTER, size, false, faces);
+    pageWidth = textWidth(pageLabel, size, false, faces);
   }
-  const x = MARGIN_X + Math.max(0, (CONTENT_W - width) / 2);
-  drawText(page, COVER_FOOTER, x, y, size, MUTED, false, faces);
+  drawText(page, COVER_FOOTER, MARGIN_X, y, size, MUTED, false, faces);
+  drawText(page, pageLabel, PAGE_W - MARGIN_X - pageWidth, y, size, MUTED, false, faces);
 }
 
 function drawTitle(page: PDFPage, faces: Faces, cover: ResolvedCover, y: number): number {

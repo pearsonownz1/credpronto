@@ -90,7 +90,8 @@ describe("translated pdf renders", () => {
     expect(certificationText).not.toContain("Intended use");
     expect(certificationText).not.toContain("Certified Translator");
     expect(certification.text).toContain("order-1");
-    expect(certification.text).not.toContain("Page 1 of 2");
+    expect(certification.text).toContain("Page 1 of 2");
+    expect(certification.text).toContain("Order order-1 · Page 1 of 2");
   });
 });
 
