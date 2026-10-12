@@ -40,4 +40,18 @@ describe("quote file preview", () => {
     expect(html).toContain("md:w-[420px]");
     expect(html).toContain("opacity-40");
   });
+
+  it("does not render a viewer box for a file it cannot preview", () => {
+    const html = renderToStaticMarkup(
+      createElement(FilePreview, {
+        token: "tok",
+        fileId: "file",
+        filename: "notes.docx",
+        renderThumb: () => null,
+      }),
+    );
+    expect(html).not.toContain('data-testid="page-viewer"');
+    expect(html).not.toContain('data-testid="file-thumb-fallback"');
+    expect(html).not.toContain('data-testid="file-thumb-skeleton"');
+  });
 });

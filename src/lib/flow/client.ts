@@ -424,6 +424,9 @@ const mockClient: FlowClient = {
     return saved;
   },
   async sourceFile(_token, fileId) {
+    if (typeof sessionStorage !== "undefined" && sessionStorage.getItem("credpronto-mock-source-missing") === "1") {
+      throw new FlowApiError("Not found", 404);
+    }
     const name =
       readMockOrder().documents.find((document) => document.id === fileId)?.filename.toLowerCase() ?? "";
     const url = name.endsWith(".pdf") || !name

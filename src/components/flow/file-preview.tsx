@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom";
 import { getFlowClient } from "@/lib/flow/client";
 import { openPdfDocument, renderPdfPage } from "@/lib/flow/pdf-preview";
+import { resolvePreviewSource } from "@/lib/flow/preview-source";
+import { uploadBlobFor } from "@/lib/flow/upload-blobs";
 import { pageStatusTag } from "@/lib/orders/skip-pages";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 
@@ -57,7 +59,7 @@ export function FilePreview({
   const kind = previewKind(filename);
   const requestKey = `${token}\n${fileId}\n${sourceUrl ?? ""}\n${kind}`;
   const [request, setRequest] = useState(requestKey);
-  const [phase, setPhase] = useState<"loading" | "ready" | "error">(kind === "file" ? "error" : "loading");
+  const [phase, setPhase] = useState<"loading" | "ready" | "hidden">(kind === "file" ? "hidden" : "loading");
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [urls, setUrls] = useState<string[]>([]);
   const [pageCount, setPageCount] = useState(0);
@@ -65,7 +67,7 @@ export function FilePreview({
   const [open, setOpen] = useState(false);
   if (request !== requestKey) {
     setRequest(requestKey);
-    setPhase(kind === "file" ? "error" : "loading");
+    setPhase(kind === "file" ? "hidden" : "loading");
     setImageUrl(null);
     setUrls([]);
     setPageCount(0);
@@ -77,6 +79,7 @@ export function FilePreview({
   const blobs = useRef<string[]>([]);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const sourceObjectUrl = useRef<string | null>(null);
 
   const revokeTracked = useCallback(() => {
     for (const url of blobs.current) URL.revokeObjectURL(url);
@@ -102,14 +105,26 @@ export function FilePreview({
     let pdf: PDFDocumentProxy | null = null;
 
     async function load() {
-      const inline = sourceUrl?.trim();
-      const fileUrl = inline || (await getFlowClient().sourceFile(token, fileId)).url;
+      const source = await resolvePreviewSource({
+        blob: uploadBlobFor(token, fileId, filename),
+        sourceUrl,
+        loadSigned: () => getFlowClient().sourceFile(token, fileId),
+      });
       if (cancelled) return;
-      if (kind === "image") {
-        setImageUrl(fileUrl);
+      if (!source) {
+        setPhase("hidden");
         return;
       }
-      pdf = await openPdfDocument(fileUrl);
+      if (kind === "image") {
+        const href = source.kind === "blob" ? URL.createObjectURL(source.blob) : source.url;
+        if (source.kind === "blob") sourceObjectUrl.current = href;
+        setImageUrl(href);
+        return;
+      }
+      pdf =
+        source.kind === "blob"
+          ? await openPdfDocument({ data: new Uint8Array(await source.blob.arrayBuffer()) })
+          : await openPdfDocument({ url: source.url });
       if (cancelled) {
         await pdf.loadingTask.destroy();
         pdf = null;
@@ -127,16 +142,20 @@ export function FilePreview({
     }
 
     void load().catch(() => {
-      if (!cancelled) setPhase("error");
+      if (!cancelled) setPhase("hidden");
     });
 
     return () => {
       cancelled = true;
       if (docRef.current === pdf) docRef.current = null;
       void pdf?.loadingTask.destroy();
+      if (sourceObjectUrl.current) {
+        URL.revokeObjectURL(sourceObjectUrl.current);
+        sourceObjectUrl.current = null;
+      }
       revokeTracked();
     };
-  }, [token, fileId, kind, sourceUrl, storePage, revokeTracked]);
+  }, [token, fileId, filename, kind, sourceUrl, storePage, revokeTracked]);
 
   useEffect(() => {
     if (kind !== "pdf" || phase !== "ready" || urlsRef.current[index]) return;
@@ -178,24 +197,24 @@ export function FilePreview({
   const safeIndex = Math.min(index, Math.max(total - 1, 0));
   const freeLabel = freePageLabel(pageMeta[safeIndex]);
   const currentSrc = kind === "image" ? imageUrl : (urls[safeIndex] ?? null);
-  const showViewer = kind !== "file";
+  const showViewer = phase !== "hidden";
 
   function openFrom(button: HTMLButtonElement) {
     triggerRef.current = button;
     setOpen(true);
   }
 
-  const thumb = (
-    <FileThumb
-      kind={kind}
-      phase={phase}
-      filename={filename}
-      src={kind === "image" ? imageUrl : (urls[0] ?? null)}
-      onOpen={openFrom}
-      onReady={() => setPhase("ready")}
-      onFail={() => setPhase("error")}
-    />
-  );
+  const thumb =
+    phase === "hidden" ? null : (
+      <FileThumb
+        kind={kind}
+        filename={filename}
+        src={kind === "image" ? imageUrl : (urls[0] ?? null)}
+        onOpen={openFrom}
+        onReady={() => setPhase("ready")}
+        onFail={() => setPhase("hidden")}
+      />
+    );
 
   const dialog =
     open && typeof document !== "undefined"
@@ -267,7 +286,7 @@ export function FilePreview({
               onClick={(event) => openFrom(event.currentTarget)}
               className="block w-full overflow-hidden border border-line bg-white p-0 shadow-[0_12px_28px_-12px_rgba(18,18,18,0.38)]"
             >
-              {currentSrc && phase !== "error" ? (
+              {currentSrc ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   alt=""
@@ -278,17 +297,9 @@ export function FilePreview({
                   onLoad={() => {
                     if (kind === "image") setPhase("ready");
                   }}
-                  onError={() => {
-                    if (kind === "image") setPhase("error");
-                  }}
+                  onError={() => setPhase("hidden")}
                   className={`block w-full ${freeLabel ? "opacity-40" : ""}`}
                 />
-              ) : phase === "error" ? (
-                <div
-                  className={`flex aspect-[8.5/11] items-center justify-center bg-bg-muted text-ink-muted ${freeLabel ? "opacity-40" : ""}`}
-                >
-                  <FileIcon />
-                </div>
               ) : (
                 <div
                   data-testid="page-viewer-skeleton"
@@ -335,7 +346,6 @@ export function FilePreview({
 
 function FileThumb({
   kind,
-  phase,
   filename,
   src,
   onOpen,
@@ -343,7 +353,6 @@ function FileThumb({
   onFail,
 }: {
   kind: "pdf" | "image" | "file";
-  phase: "loading" | "ready" | "error";
   filename: string;
   src: string | null;
   onOpen: (button: HTMLButtonElement) => void;
@@ -351,17 +360,6 @@ function FileThumb({
   onFail: () => void;
 }) {
   const thumbClass = "h-24 w-[72px] shrink-0 border border-line";
-  if (phase === "error" || kind === "file") {
-    return (
-      <div
-        data-testid="file-thumb-fallback"
-        className={`${thumbClass} flex items-center justify-center bg-bg-muted text-ink-muted`}
-        aria-hidden
-      >
-        <FileIcon />
-      </div>
-    );
-  }
   if (!src) {
     return <div data-testid="file-thumb-skeleton" className={`${thumbClass} animate-pulse bg-bg-muted`} aria-hidden />;
   }
@@ -422,11 +420,3 @@ function ViewerArrow({
   );
 }
 
-function FileIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path d="M7 3.5h7.2L19 8.2V20.5H7V3.5Z" stroke="currentColor" strokeWidth="1.4" />
-      <path d="M14 3.8V8.2H18.6" stroke="currentColor" strokeWidth="1.4" />
-    </svg>
-  );
-}

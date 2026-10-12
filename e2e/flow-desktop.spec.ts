@@ -57,6 +57,20 @@ test("a quote file shows a large page viewer and opens it full size", async ({ p
   await expect(preview).toBeHidden();
 });
 
+test("a missing source file hides the page viewer", async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem("credpronto-mock-source-missing", "1");
+  });
+  await page.goto("/order/mock-token");
+  await expect(page.getByRole("heading", { name: /exact price/ }).filter({ visible: true })).toBeVisible();
+  await expect(page.getByTestId("page-viewer")).toHaveCount(0);
+  await expect(page.getByTestId("file-thumb-fallback")).toHaveCount(0);
+  await expect(page.getByTestId("file-thumb-skeleton")).toHaveCount(0);
+  await expect(page.getByTestId("file-turnaround").filter({ visible: true }).first()).toContainText(
+    "Ready in about 10 minutes",
+  );
+});
+
 test("a loaded quote replaces the loading announcement", async ({ page }) => {
   await page.goto("/order/mock-token");
   await expect(page.getByRole("heading", { name: /exact price/ }).filter({ visible: true })).toBeVisible();
