@@ -7,6 +7,7 @@ import {
   insertPreview,
   listDocuments,
   listEdgeCredentialsForCountry,
+  listEdgeEquivalenciesForCredential,
   listEdgeGradingScalesForCountry,
   resolveEdgeCountrySlug,
   listPages,
@@ -18,16 +19,28 @@ import {
 import { sendPreviewReady } from "./email";
 import { AiUnavailableError, HttpError } from "./errors";
 import { evaluationQuote, needsBundledTranslation } from "./evaluation-price";
-import { EQUIVALENCY_UNMAPPED, PENDING_EQUIVALENCY, diplomaEquivalencyPending } from "./equivalency";
+import {
+  EQUIVALENCY_QA_RESEARCH,
+  EQUIVALENCY_QA_REVIEW,
+  PENDING_EQUIVALENCY,
+  awaitingEquivalencyPublish,
+} from "./equivalency";
 import {
   chooseEquivalency,
+  combineEquivalencyRoutes,
   countrySlug,
+  draftEquivalency,
   edgeContentExcerpt,
   edgeEquivalencyPrompt,
+  equivalencyCredentialId,
   matchEdgeCredential,
   matchEdgeGradingScale,
+  pickEdgeEquivalency,
   type EdgeCredentialRecord,
+  type EdgeEquivalencyRecord,
   type EdgeGradingScaleRecord,
+  type EquivalencyDraft,
+  type EquivalencyRoute,
 } from "./edge";
 import { EDGE_GRADE_SCALE_TEXT, gradeScaleText, scoreCourses, usEquivalency, type RawCourse } from "./grades";
 import { IMAGE_QUALITY_REASON } from "./image-quality";
@@ -143,6 +156,7 @@ export function assembleDiploma(input: {
   degreeCount: number;
   documentsReviewed: string[];
   equivalencies?: Array<string | null | undefined>;
+  bases?: Array<string | null | undefined>;
 }): EvaluationResult | null {
   if (input.extracted.credentials.length !== input.degreeCount) return null;
   if (input.documentsReviewed.length === 0) return null;
@@ -160,6 +174,7 @@ export function assembleDiploma(input: {
       field: orPending(item.field, subjectFromTitle(credential) ?? ""),
       dates: orPending(item.dates),
       usEquivalency: input.equivalencies?.[index] ?? usEquivalency(credential) ?? PENDING_EQUIVALENCY,
+      ...(input.bases?.[index]?.trim() ? { equivalencyBasis: input.bases[index]?.trim() } : {}),
       documentsReviewed: input.documentsReviewed,
     });
   }
@@ -200,7 +215,7 @@ export async function publishDiplomaEquivalency(
   extras?: { countries?: string[]; fields?: string[]; dates?: string[] },
 ): Promise<void> {
   const current = order.evaluationResult;
-  if (order.reviewReason !== EQUIVALENCY_UNMAPPED || !current || current.kind !== "diploma") {
+  if (!awaitingEquivalencyPublish(order.reviewReason) || !current || current.kind !== "diploma") {
     throw new HttpError("This order is not waiting for an equivalency", 409);
   }
   const next = applyDiplomaEquivalency(current, equivalencies, extras);
@@ -229,7 +244,7 @@ export async function publishDiplomaEquivalency(
 
 export async function publishCourseEquivalency(db: Db, order: OrderRecord, equivalency: string): Promise<void> {
   const current = order.evaluationResult;
-  if (order.reviewReason !== EQUIVALENCY_UNMAPPED || !current || current.kind !== "course_by_course") {
+  if (!awaitingEquivalencyPublish(order.reviewReason) || !current || current.kind !== "course_by_course") {
     throw new HttpError("This order is not waiting for an equivalency", 409);
   }
   const nextValue = equivalency.trim();
@@ -260,7 +275,11 @@ export async function publishCourseEquivalency(db: Db, order: OrderRecord, equiv
 
 export function assembleCourse(
   extracted: CourseExtract,
-  options?: { edgeRows?: Array<{ indigenousGrade: string; usEquivalent: string }>; usEquivalency?: string },
+  options?: {
+    edgeRows?: Array<{ indigenousGrade: string; usEquivalent: string }>;
+    usEquivalency?: string;
+    equivalencyBasis?: string | null;
+  },
 ): EvaluationResult | null {
   const applicant = filled(extracted.applicant);
   const institution = filled(extracted.institution);
@@ -303,6 +322,7 @@ export function assembleCourse(
     gpa: scored.gpa,
     gradeScale: scored.usedEdge ? EDGE_GRADE_SCALE_TEXT : gradeScaleText(extracted.scale),
     ...(options?.usEquivalency ? { usEquivalency: options.usEquivalency } : {}),
+    ...(options?.equivalencyBasis ? { equivalencyBasis: options.equivalencyBasis } : {}),
   };
 }
 
@@ -489,13 +509,55 @@ async function proposeEquivalency(printed: string, hit: EdgeHit): Promise<string
   });
 }
 
+async function suggestionForCredential(db: Db, edgeCredentialId: string | null): Promise<EdgeEquivalencyRecord | null> {
+  if (!edgeCredentialId) return null;
+  try {
+    return pickEdgeEquivalency(await listEdgeEquivalenciesForCredential(db, edgeCredentialId));
+  } catch (error) {
+    console.error("edge equivalency lookup failed", error);
+    return null;
+  }
+}
+
+async function draftForCredential(
+  db: Db,
+  printed: string,
+  hit: EdgeHit,
+  storedCredentialId: string | null,
+  singleCredential: boolean,
+): Promise<{ draft: EquivalencyDraft; edgeCredentialId: string | null }> {
+  const edgeCredentialId = equivalencyCredentialId({
+    matchedId: hit.credential?.id ?? null,
+    storedId: storedCredentialId,
+    singleCredential,
+  });
+  const suggestion = await suggestionForCredential(db, edgeCredentialId);
+  if (suggestion) {
+    return {
+      draft: draftEquivalency({ printed, suggestion, fallback: PENDING_EQUIVALENCY }),
+      edgeCredentialId,
+    };
+  }
+  const fallback = await proposeEquivalency(printed, hit);
+  return {
+    draft: draftEquivalency({ printed, suggestion: null, fallback }),
+    edgeCredentialId,
+  };
+}
+
 async function buildEvaluatedResult(
   db: Db,
   service: "diploma" | "course_by_course",
   extracted: DiplomaExtract | CourseExtract,
   degreeCount: number,
   documentsReviewed: string[],
-): Promise<{ result: EvaluationResult | null; edgeCredentialId: string | null; edgeGradingScaleId: string | null }> {
+  storedCredentialId: string | null,
+): Promise<{
+  result: EvaluationResult | null;
+  edgeCredentialId: string | null;
+  edgeGradingScaleId: string | null;
+  route: EquivalencyRoute;
+}> {
   if (service === "diploma") {
     const diploma = extracted as DiplomaExtract;
     const catalogs = new Map<string, { credentials: EdgeCredentialRecord[]; scales: EdgeGradingScaleRecord[] }>();
@@ -509,17 +571,33 @@ async function buildEvaluatedResult(
         scale: matchEdgeGradingScale(catalog.scales, { country: item.country, title: item.credential, grades: [] }),
       });
     }
-    const equivalencies: string[] = [];
+    const drafts: EquivalencyDraft[] = [];
+    const credentialIds: Array<string | null> = [];
+    const singleCredential = diploma.credentials.length === 1;
     for (let index = 0; index < diploma.credentials.length; index += 1) {
       const printed = diploma.credentials[index]?.credential ?? "";
-      equivalencies.push(await proposeEquivalency(printed, hits[index] ?? { credential: null, scale: null }));
+      const drafted = await draftForCredential(
+        db,
+        printed,
+        hits[index] ?? { credential: null, scale: null },
+        storedCredentialId,
+        singleCredential,
+      );
+      drafts.push(drafted.draft);
+      credentialIds.push(drafted.edgeCredentialId);
     }
-    const credential = hits.find((hit) => hit.credential)?.credential ?? null;
     const scale = hits.find((hit) => hit.scale)?.scale ?? null;
     return {
-      result: assembleDiploma({ extracted: diploma, degreeCount, documentsReviewed, equivalencies }),
-      edgeCredentialId: credential?.id ?? null,
+      result: assembleDiploma({
+        extracted: diploma,
+        degreeCount,
+        documentsReviewed,
+        equivalencies: drafts.map((draft) => draft.usEquivalency),
+        bases: drafts.map((draft) => draft.basis),
+      }),
+      edgeCredentialId: credentialIds.find((id) => id) ?? null,
       edgeGradingScaleId: scale?.id ?? null,
+      route: combineEquivalencyRoutes(drafts.map((draft) => draft.route)),
     };
   }
 
@@ -530,15 +608,16 @@ async function buildEvaluatedResult(
     credential: matchEdgeCredential(catalog.credentials, { country: courses.country, title: courses.credential }),
     scale: matchEdgeGradingScale(catalog.scales, { country: courses.country, title: courses.credential, grades }),
   };
-  const proposed = await proposeEquivalency(courses.credential, hit);
-  const courseEquivalency = hit.credential ? proposed : (usEquivalency(courses.credential) ?? undefined);
+  const drafted = await draftForCredential(db, courses.credential, hit, storedCredentialId, true);
   return {
     result: assembleCourse(courses, {
       edgeRows: hit.scale?.rows,
-      ...(courseEquivalency ? { usEquivalency: courseEquivalency } : {}),
+      usEquivalency: drafted.draft.usEquivalency,
+      equivalencyBasis: drafted.draft.basis,
     }),
-    edgeCredentialId: hit.credential?.id ?? null,
+    edgeCredentialId: drafted.edgeCredentialId,
     edgeGradingScaleId: hit.scale?.id ?? null,
+    route: drafted.draft.route,
   };
 }
 
@@ -596,7 +675,14 @@ export async function completeEvaluation(
   try {
     const extracted =
       service === "diploma" ? await extractDiploma(input.pageText) : await extractCourses(input.pageText);
-    const built = await buildEvaluatedResult(db, service, extracted, degreeCount, input.filenames);
+    const built = await buildEvaluatedResult(
+      db,
+      service,
+      extracted,
+      degreeCount,
+      input.filenames,
+      order.edgeCredentialId,
+    );
     const result = built.result;
     if (!result) {
       await markPreview(db, order.id, version, "failed");
@@ -608,22 +694,16 @@ export async function completeEvaluation(
       return;
     }
 
-    const pending =
-      result.kind === "diploma"
-        ? diplomaEquivalencyPending(result.credentials)
-        : result.usEquivalency === PENDING_EQUIVALENCY;
     const files = await renderEvaluationPdfs(result, {
       reportId: evaluationReportId(order.id),
       issued: evaluationIssuedLabel(order.createdAt),
     });
     const stored: EvaluationResult = { ...result, pageCount: files.pageCount };
-    const cleanPath = `${order.id}/evaluation-v${version}.pdf`;
-    if (!pending) await uploadObject(db, FINALS_BUCKET, cleanPath, files.clean, "application/pdf");
     await uploadObject(db, PREVIEWS_BUCKET, reportPath, files.preview, "application/pdf");
     const quote = quoteFor(language);
     await updateOrder(db, order.id, {
       status: "preview_ready",
-      review_reason: pending ? EQUIVALENCY_UNMAPPED : null,
+      review_reason: built.route === "qa_review" ? EQUIVALENCY_QA_REVIEW : EQUIVALENCY_QA_RESEARCH,
       eta_at: null,
       source_language: language,
       language_confirmed: true,
@@ -637,12 +717,6 @@ export async function completeEvaluation(
       evaluation_result: stored,
       edge_credential_id: built.edgeCredentialId,
       edge_grading_scale_id: built.edgeGradingScaleId,
-      ...(pending
-        ? {}
-        : {
-            final_translation_path: cleanPath,
-            certification_path: cleanPath,
-          }),
     });
     await markPreview(db, order.id, version, "ready");
     await storeTranslationPreview(db, order, version, language);

@@ -3,6 +3,7 @@ import { lineItemForStoredPage, pageRuleForLanguages, type PageLineItem } from "
 import { asOrderProgress, UPLOADED_PROGRESS, type OrderProgress } from "./reading-progress";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
 import { lineItemsForOrder } from "./evaluation-price";
+import { customerEvaluationResult, customerReviewReason } from "./equivalency";
 import { compareCombinedPages } from "./page-order";
 import type {
   AddonId,
@@ -185,7 +186,7 @@ export function toCustomerOrder(input: {
       ...input.documents.map((document) => document.detectedLanguage),
     ]),
     etaAt: input.order.etaAt,
-    reviewReason: input.order.reviewReason,
+    reviewReason: customerReviewReason(input.order.reviewReason),
     confirmations: input.confirmations.map((field) => ({
       documentId: field.documentId,
       fieldKey: field.fieldKey,
@@ -208,7 +209,7 @@ export function toCustomerOrder(input: {
 
 function publicEvaluation(result: EvaluationResult | null): EvaluationResult | null {
   if (!result) return null;
-  const copy = { ...result };
+  const copy = customerEvaluationResult(result);
   delete copy.pageCount;
   return copy;
 }

@@ -54,6 +54,27 @@ export type EdgeGradingScaleInsert = {
   rows: Array<{ indigenous_grade: string; us_equivalent: string }>;
 };
 
+export type EquivalencyConfidence = "high" | "medium" | "low";
+
+export type EdgeEquivalencyRecord = {
+  id: string;
+  edgeCredentialId: string;
+  country: string;
+  credentialTitle: string;
+  edgeLevel: string | null;
+  usEquivalency: string;
+  basis: string;
+  confidence: EquivalencyConfidence;
+};
+
+export type EquivalencyRoute = "qa_review" | "qa_research";
+
+export type EquivalencyDraft = {
+  usEquivalency: string;
+  basis: string | null;
+  route: EquivalencyRoute;
+};
+
 const EXCERPT_CHARS = 400;
 
 /** Slug used as edge_credentials.country_slug and as the source-object key. */
@@ -294,6 +315,73 @@ export function chooseEquivalency(input: {
     if (proposed) return proposed;
   }
   return canonicalUsEquivalency(input.edgeUsEquivalency) ?? PENDING_EQUIVALENCY;
+}
+
+const CONFIDENCE_RANK: Record<EquivalencyConfidence, number> = { high: 3, medium: 2, low: 1 };
+
+export function mapEdgeEquivalencyRow(row: Record<string, unknown>): EdgeEquivalencyRecord | null {
+  const id = text(row.id);
+  const edgeCredentialId = text(row.edge_credential_id);
+  const country = text(row.country);
+  const credentialTitle = text(row.credential_title);
+  const usEquivalencyValue = text(row.us_equivalency);
+  const basis = text(row.basis);
+  const confidence = text(row.confidence);
+  if (!id || !edgeCredentialId || !country || !credentialTitle || !usEquivalencyValue || !basis) return null;
+  if (confidence !== "high" && confidence !== "medium" && confidence !== "low") return null;
+  return {
+    id,
+    edgeCredentialId,
+    country,
+    credentialTitle,
+    edgeLevel: text(row.edge_level),
+    usEquivalency: usEquivalencyValue,
+    basis,
+    confidence,
+  };
+}
+
+/** Highest confidence wins. A tie keeps the first row in that band. */
+export function pickEdgeEquivalency(rows: readonly EdgeEquivalencyRecord[]): EdgeEquivalencyRecord | null {
+  const ranked = [...rows].sort((a, b) => CONFIDENCE_RANK[b.confidence] - CONFIDENCE_RANK[a.confidence]);
+  return ranked[0] ?? null;
+}
+
+/**
+ * Prefer the matched credential. A single-credential order can fall back to the
+ * id already stored on the order when this pass does not match a title.
+ */
+export function equivalencyCredentialId(input: {
+  matchedId: string | null;
+  storedId: string | null;
+  singleCredential: boolean;
+}): string | null {
+  if (input.matchedId) return input.matchedId;
+  if (input.singleCredential && input.storedId) return input.storedId;
+  return null;
+}
+
+export function draftEquivalency(input: {
+  printed: string;
+  suggestion: EdgeEquivalencyRecord | null;
+  fallback: string;
+}): EquivalencyDraft {
+  if (!input.suggestion) {
+    return { usEquivalency: input.fallback, basis: null, route: "qa_research" };
+  }
+  const label = canonicalUsEquivalency(input.suggestion.usEquivalency) ?? input.fallback;
+  const usable = label !== PENDING_EQUIVALENCY;
+  const confident = input.suggestion.confidence === "high" || input.suggestion.confidence === "medium";
+  return {
+    usEquivalency: label,
+    basis: input.suggestion.basis.trim() || null,
+    route: usable && confident ? "qa_review" : "qa_research",
+  };
+}
+
+export function combineEquivalencyRoutes(routes: readonly EquivalencyRoute[]): EquivalencyRoute {
+  if (routes.length > 0 && routes.every((route) => route === "qa_review")) return "qa_review";
+  return "qa_research";
 }
 
 export function edgeEquivalencyPrompt(input: {

@@ -18,7 +18,7 @@ import {
   shipOrder,
 } from "@/lib/api/mutations";
 import type { StaffDetail, StaffNote } from "@/lib/api/types";
-import { EQUIVALENCY_UNMAPPED, PENDING_EQUIVALENCY } from "@/lib/orders/equivalency";
+import { EQUIVALENCY_QA_REVIEW, PENDING_EQUIVALENCY, awaitingEquivalencyPublish } from "@/lib/orders/equivalency";
 import { languageLabel } from "@/lib/orders/languages";
 import type { PreviewOrder, PreviewPageSize } from "@/components/preview/preview-order";
 import { humanStatus } from "@/components/admin/orders-board";
@@ -262,7 +262,7 @@ export function OrderStudio({
         setPending={setPending}
       />
 
-      {detail.reviewReason === EQUIVALENCY_UNMAPPED ? (
+      {awaitingEquivalencyPublish(detail.reviewReason) ? (
         <form
           className="grid gap-3 rounded-[var(--cp-radius)] border border-line bg-white p-4"
           onSubmit={(event) => {
@@ -282,7 +282,9 @@ export function OrderStudio({
         >
           <p className="text-sm font-semibold">U.S. equivalency</p>
           <p className="text-sm text-ink-muted">
-            The preview says pending staff review. Set each credential before the clean report can be released.
+            {detail.reviewReason === EQUIVALENCY_QA_REVIEW
+              ? "Confirm the suggested U.S. equivalency before the clean report can be released."
+              : "Set each credential before the clean report can be released."}
           </p>
           {equivalencies.map((value, index) => {
             const credential = detail.equivalencyCredentials[index];
@@ -297,6 +299,7 @@ export function OrderStudio({
                 <legend className="text-sm">
                   {credential ? credential.credential : `Degree ${index + 1}`}
                 </legend>
+                {credential?.basis ? <p className="text-sm text-ink-muted">{credential.basis}</p> : null}
                 {(
                   [
                     ["usEquivalency", "U.S. equivalency", "Bachelor's degree"],

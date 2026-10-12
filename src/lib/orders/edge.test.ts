@@ -3,16 +3,22 @@ import { PENDING_EQUIVALENCY } from "./equivalency";
 import { resolveEdgeCountrySlug, type Db } from "./db";
 import {
   chooseEquivalency,
+  combineEquivalencyRoutes,
   countrySlug,
   countrySlugFallbackFilter,
+  draftEquivalency,
   edgeContentExcerpt,
   edgeEquivalencyPrompt,
   edgeRowsFromSource,
+  equivalencyCredentialId,
+  mapEdgeEquivalencyRow,
   matchEdgeCredential,
   matchEdgeGradingScale,
+  pickEdgeEquivalency,
   resolveStoredCountrySlug,
   staffEdgeView,
   type EdgeCredentialRecord,
+  type EdgeEquivalencyRecord,
   type EdgeGradingScaleRecord,
 } from "./edge";
 
@@ -349,6 +355,83 @@ describe("EDGE reference matching", () => {
     expect(prompt).toContain("EDGE level: number 6, First university degree");
     expect(prompt).toContain("10 = A");
     expect(prompt).toContain("confident");
+  });
+});
+
+function equivalency(patch: Partial<EdgeEquivalencyRecord> & { id: string; confidence: EdgeEquivalencyRecord["confidence"] }): EdgeEquivalencyRecord {
+  return {
+    edgeCredentialId: "cred-1",
+    country: "Mexico",
+    credentialTitle: "Example Diploma",
+    edgeLevel: "6",
+    usEquivalency: "Bachelor's degree",
+    basis: "First university degree in the fictional catalog.",
+    ...patch,
+  };
+}
+
+describe("EDGE equivalency suggestions", () => {
+  it("maps a row and prefers the higher confidence suggestion", () => {
+    expect(
+      mapEdgeEquivalencyRow({
+        id: "row-1",
+        edge_credential_id: "cred-1",
+        country: "Mexico",
+        credential_title: "Example Diploma",
+        edge_level: "6",
+        us_equivalency: "Bachelor's degree",
+        basis: "First university degree.",
+        confidence: "medium",
+      }),
+    ).toMatchObject({ id: "row-1", edgeCredentialId: "cred-1", confidence: "medium", edgeLevel: "6" });
+    expect(mapEdgeEquivalencyRow({ id: "row-1", confidence: "certain" })).toBeNull();
+    const picked = pickEdgeEquivalency([
+      equivalency({ id: "low", confidence: "low" }),
+      equivalency({ id: "high", confidence: "high" }),
+      equivalency({ id: "medium", confidence: "medium" }),
+    ]);
+    expect(picked?.id).toBe("high");
+  });
+
+  it("fills a confident suggestion and sends a weak or missing one to research", () => {
+    expect(equivalencyCredentialId({ matchedId: "matched", storedId: "stored", singleCredential: true })).toBe("matched");
+    expect(equivalencyCredentialId({ matchedId: null, storedId: "stored", singleCredential: true })).toBe("stored");
+    expect(equivalencyCredentialId({ matchedId: null, storedId: "stored", singleCredential: false })).toBeNull();
+
+    const high = draftEquivalency({
+      printed: "Example Diploma",
+      suggestion: equivalency({ id: "high", confidence: "high" }),
+      fallback: PENDING_EQUIVALENCY,
+    });
+    expect(high).toEqual({
+      usEquivalency: "Bachelor's degree",
+      basis: "First university degree in the fictional catalog.",
+      route: "qa_review",
+    });
+    expect(
+      draftEquivalency({
+        printed: "Example Diploma",
+        suggestion: equivalency({ id: "medium", confidence: "medium", usEquivalency: "Master's degree" }),
+        fallback: PENDING_EQUIVALENCY,
+      }).route,
+    ).toBe("qa_review");
+    expect(
+      draftEquivalency({
+        printed: "Licence",
+        suggestion: equivalency({ id: "low", confidence: "low" }),
+        fallback: PENDING_EQUIVALENCY,
+      }),
+    ).toMatchObject({ usEquivalency: "Bachelor's degree", route: "qa_research" });
+    expect(
+      draftEquivalency({
+        printed: "Certificado",
+        suggestion: null,
+        fallback: PENDING_EQUIVALENCY,
+      }),
+    ).toEqual({ usEquivalency: PENDING_EQUIVALENCY, basis: null, route: "qa_research" });
+    expect(combineEquivalencyRoutes(["qa_review", "qa_review"])).toBe("qa_review");
+    expect(combineEquivalencyRoutes(["qa_review", "qa_research"])).toBe("qa_research");
+    expect(combineEquivalencyRoutes([])).toBe("qa_research");
   });
 });
 

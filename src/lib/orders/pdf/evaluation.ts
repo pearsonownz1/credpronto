@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, degrees, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import { BRAND_FOOTER, BRAND_SIGNER } from "../brand";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT, PREVIEW_WATERMARK, PREVIEW_WATERMARK_OPACITY, previewWatermarkRgb } from "../constants";
+import { customerEvaluationResult } from "../equivalency";
 import { usEquivalency } from "../grades";
 import type { DiplomaCredential, EvaluationResult } from "../types";
 import { loadAtaLogo, loadBrandLogo } from "./cover";
@@ -597,8 +598,9 @@ export async function renderEvaluationPdfs(
   result: EvaluationResult,
   meta: EvaluationReportMeta = DEFAULT_META,
 ): Promise<EvaluationPdfs> {
-  const clean = result.kind === "diploma" ? await renderDiploma(result, meta, false) : await renderCourses(result, meta, false);
-  const preview = result.kind === "diploma" ? await renderDiploma(result, meta, true) : await renderCourses(result, meta, true);
+  const shown = customerEvaluationResult(result);
+  const clean = shown.kind === "diploma" ? await renderDiploma(shown, meta, false) : await renderCourses(shown, meta, false);
+  const preview = shown.kind === "diploma" ? await renderDiploma(shown, meta, true) : await renderCourses(shown, meta, true);
   const loaded = await PDFDocument.load(clean);
   return { clean, preview, pageCount: loaded.getPageCount() };
 }

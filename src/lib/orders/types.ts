@@ -83,6 +83,8 @@ export type DiplomaCredential = {
   field: string;
   dates: string;
   usEquivalency: string;
+  /** Staff-only note for the suggested equivalency. Omitted from customer output. */
+  equivalencyBasis?: string;
   documentsReviewed: string[];
 };
 
@@ -109,6 +111,8 @@ export type EvaluationResult =
       gpa: number;
       gradeScale: string;
       usEquivalency?: string;
+      /** Staff-only note for the suggested equivalency. Omitted from customer output. */
+      equivalencyBasis?: string;
       pageCount?: number;
     };
 

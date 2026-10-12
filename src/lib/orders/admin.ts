@@ -30,7 +30,7 @@ import { normalizeLanguage } from "./languages";
 import { evaluationQuote } from "./evaluation-price";
 import { publishCourseEquivalency, publishDiplomaEquivalency, retryEvaluation } from "./evaluation";
 import { staffEdgeView } from "./edge";
-import { EQUIVALENCY_UNMAPPED, approvalBlockReason } from "./equivalency";
+import { awaitingEquivalencyPublish, approvalBlockReason } from "./equivalency";
 import { etaFromNow } from "./quote";
 import { signedObjectUrl } from "./storage";
 import { ensureStaffRow, requireStaff } from "./staff";
@@ -238,7 +238,7 @@ export async function resolveReview(orderId: string, body: unknown) {
   const { db } = await requireStaff();
   const order = await getOrderById(db, orderId);
   if (!order) throw new HttpError("Order not found", 404);
-  if (order.reviewReason === EQUIVALENCY_UNMAPPED) {
+  if (awaitingEquivalencyPublish(order.reviewReason)) {
     const equivalencies = stringList(body, "equivalencies");
     if (!equivalencies) throw new HttpError("Each credential needs a U.S. equivalency", 400);
     if (order.evaluationResult?.kind === "course_by_course") {

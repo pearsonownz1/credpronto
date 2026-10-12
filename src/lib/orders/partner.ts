@@ -26,6 +26,7 @@ import {
 } from "./db";
 import { orderDownloadFilename } from "./download-name";
 import { HttpError } from "./errors";
+import { partnerReviewReason } from "./equivalency";
 import { assertUploadBudget, dedupeUploads, resolveUploadMime } from "./files";
 import { findActiveApiKey, orderByExternalRef, touchApiKeyLastUsed, type ApiKeyRow } from "./integrations-db";
 import { isSupportedSourceLanguage } from "./languages";
@@ -123,7 +124,7 @@ export function toPartnerOrder(input: {
     payment: input.paymentStatus ? { status: input.paymentStatus } : null,
   };
   if (!input.detail) return body;
-  return { ...body, reviewReason: input.order.reviewReason, qa: input.qa };
+  return { ...body, reviewReason: partnerReviewReason(input.order.reviewReason), qa: input.qa };
 }
 
 export async function requireApiKey(request: Request): Promise<ApiKeyRow> {

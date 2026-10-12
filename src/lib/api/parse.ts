@@ -155,7 +155,7 @@ function equivalencyCredentials(value: unknown): StaffDetail["equivalencyCredent
     const country = text(result.country);
     const usEquivalency = text(result.usEquivalency);
     if (!name || !country || !usEquivalency) return [];
-    return [{ credential: name, country, field: "Course-by-course", dates: "—", usEquivalency }];
+    return [{ credential: name, country, field: "Course-by-course", dates: "—", usEquivalency, basis: text(result.equivalencyBasis) }];
   }
   if (result.kind !== "diploma" || !Array.isArray(result.credentials)) return [];
   return result.credentials.flatMap((entry) => {
@@ -167,7 +167,7 @@ function equivalencyCredentials(value: unknown): StaffDetail["equivalencyCredent
     const dates = text(credential.dates);
     const usEquivalency = text(credential.usEquivalency);
     if (!name || !country || !field || !dates || !usEquivalency) return [];
-    return [{ credential: name, country, field, dates, usEquivalency }];
+    return [{ credential: name, country, field, dates, usEquivalency, basis: text(credential.equivalencyBasis) }];
   });
 }
 
