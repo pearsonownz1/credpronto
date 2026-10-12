@@ -22,9 +22,10 @@ export async function approverDisplayName(db: Db, userId: string): Promise<strin
     const { data, error } = await db.auth.admin.getUserById(userId);
     if (error || !data.user) return null;
     const meta = data.user.user_metadata ?? {};
-    const named = [meta.full_name, meta.name].find((value) => typeof value === "string" && value.trim());
-    if (typeof named === "string") return named.trim();
-    return data.user.email?.trim() || null;
+    const named = [meta.full_name, meta.display_name, meta.name].find(
+      (value) => typeof value === "string" && value.trim() && !value.includes("@"),
+    );
+    return typeof named === "string" ? named.trim() : null;
   } catch {
     return null;
   }

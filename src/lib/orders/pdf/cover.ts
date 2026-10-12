@@ -59,15 +59,18 @@ type Faces = {
   italic: ReadyFace | null;
 };
 
+export const COVER_FALLBACK_SIGNER = "CredPronto Certification Team";
+
+/** Signer shown on the cover. Never an email address. */
 export function coverTranslatorName(
   approverName: string | null | undefined,
   configuredName = process.env.CREDPRONTO_TRANSLATOR_NAME,
 ): string {
   const approver = approverName?.trim();
-  if (approver) return approver;
+  if (approver && !approver.includes("@")) return approver;
   const configured = configuredName?.trim();
-  if (configured) return configured;
-  return "CredPronto";
+  if (configured && !configured.includes("@")) return configured;
+  return COVER_FALLBACK_SIGNER;
 }
 
 /** The configured signature belongs to the configured translator, not a different approver. */
@@ -385,7 +388,7 @@ function drawHeader(page: PDFPage, faces: Faces, cover: ResolvedCover, ata: PDFI
   }
 
   const right = PAGE_W - MARGIN_X;
-  const ataHeight = 18;
+  const ataHeight = 24; // full lockup, width follows aspect ratio
   const ataWidth = ataHeight * (ata.width / ata.height);
   const ataBottom = contentTop - ataHeight;
   page.drawImage(ata, { x: right - ataWidth, y: ataBottom, width: ataWidth, height: ataHeight });
