@@ -13,10 +13,17 @@ import { buttonClasses } from "./ui";
 
 const MOCK_HREF = "/samples/birth-certificate-en.pdf";
 
-export function DownloadStates({ token: pathToken }: { token?: string }) {
+export function DownloadStates({
+  token: pathToken,
+  pendingPayment = false,
+}: {
+  token?: string;
+  /** Stripe success return. Keep checking until the webhook records the order. */
+  pendingPayment?: boolean;
+}) {
   const token = useStoredToken(pathToken);
   const email = useStoredEmail();
-  const { order, error, loading } = useCustomerOrder(token, "until-download");
+  const { order, error, loading } = useCustomerOrder(token, pendingPayment ? "checkout" : "until-download");
   const phase = order ? downloadPhase(order) : "confirming";
 
   return (
