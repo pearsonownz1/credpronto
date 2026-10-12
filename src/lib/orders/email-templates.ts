@@ -1,6 +1,6 @@
 import { ADDON_CATALOG } from "./addons";
 import { BRAND_ADDRESS, BRAND_FOOTER } from "./brand";
-import { lineItemsForOrder } from "./evaluation-price";
+import { evaluationPrice, evaluationServiceDescription, lineItemsForOrder } from "./evaluation-price";
 import { languageLabel } from "./languages";
 import type { AddonId, EvaluationService } from "./types";
 
@@ -116,16 +116,31 @@ export function receiptLineItems(input: {
   addons: readonly ReceiptAddon[];
 }): ReceiptLine[] {
   const lines: ReceiptLine[] = [];
-  const priced = lineItemsForOrder(input);
-  if (priced.length > 0) {
-    for (const item of priced) {
-      lines.push({ label: lineLabel(item.description, item.kind === "translation", item.quantity, item.unitAmountCents), amountCents: item.amountCents });
-    }
-  } else if (input.billablePages != null && input.billablePages > 0) {
+  const flat = evaluationPrice({
+    service: input.service,
+    degreeCount: input.degreeCount,
+    addonCents: 0,
+  });
+  if (flat && input.service && input.degreeCount != null) {
     lines.push({
-      label: lineLabel("Certified translation", true, input.billablePages, input.unitPriceCents),
-      amountCents: input.billablePages * input.unitPriceCents,
+      label: lineLabel(evaluationServiceDescription(input.service), false, input.degreeCount, flat.unitPriceCents),
+      amountCents: flat.evaluationCents,
     });
+  } else {
+    const priced = lineItemsForOrder(input);
+    if (priced.length > 0) {
+      for (const item of priced) {
+        lines.push({
+          label: lineLabel(item.description, item.kind === "translation", item.quantity, item.unitAmountCents),
+          amountCents: item.amountCents,
+        });
+      }
+    } else if (input.billablePages != null && input.billablePages > 0) {
+      lines.push({
+        label: lineLabel("Certified translation", true, input.billablePages, input.unitPriceCents),
+        amountCents: input.billablePages * input.unitPriceCents,
+      });
+    }
   }
 
   for (const addon of input.addons) {

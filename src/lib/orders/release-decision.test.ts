@@ -49,6 +49,7 @@ describe("auto release", () => {
     expect(releaseAction(input({ openCorrections: true }))).toBe("staff");
     expect(releaseAction(input({ enabled: false }))).toBe("staff");
     expect(releaseAction(input({ finalsReady: false, qa: null }))).toBe("wait");
+    expect(releaseAction(input({ manualEvaluation: true, finalsReady: false, qa: null }))).toBe("staff");
     expect(releaseAction(input({ status: "needs_review", reviewReason: "QA found issues" }))).toBe("staff");
     expect(releaseAction(input({ status: "delivered" }))).toBe("release");
   });

@@ -159,6 +159,46 @@ describe("settlePaidOrder", () => {
     expect(certification.stampApprovedCover).not.toHaveBeenCalled();
   });
 
+  it("queues a paid evaluation and emails staff without waiting for a generated file", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue(
+      order({
+        serviceType: "evaluation",
+        orderType: "evaluation",
+        service: "diploma",
+        degreeCount: 1,
+        evaluationCents: 1995,
+        translationCents: 0,
+        unitPriceCents: 1995,
+        totalCents: 1995,
+        billablePages: null,
+        finalTranslationPath: null,
+        certificationPath: null,
+        languageConfirmed: false,
+      }),
+    );
+    vi.spyOn(db, "listQaRuns").mockResolvedValue([]);
+
+    const result = await settlePaidOrder(dbHandle, orderId, { scheduleUrgent: false });
+
+    expect(result.fulfillment).toBe("awaiting_review");
+    expect(email.sendStaffOrderAlert).toHaveBeenCalledTimes(1);
+    expect(email.sendStaffOrderAlert).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        urgent: false,
+        orderId,
+        serviceType: "evaluation",
+        totalCents: 1995,
+        studioUrl: expect.stringContaining(`/admin/orders/${orderId}`),
+      }),
+    );
+    expect(db.updateOrder).toHaveBeenCalledWith(dbHandle, orderId, {
+      review_reason: "Credential evaluation is reviewed by staff.",
+    });
+    expect(certification.stampApprovedCover).not.toHaveBeenCalled();
+    expect(email.sendDeliveryReady).not.toHaveBeenCalled();
+  });
+
   it("waits without an alert when the certified file is not stored yet", async () => {
     vi.spyOn(db, "getOrderById").mockResolvedValue(
       order({ finalTranslationPath: null, certificationPath: null }),

@@ -31,6 +31,7 @@ import {
 import { orderDownloadFilename } from "./download-name";
 import { HttpError } from "./errors";
 import { partnerReviewReason } from "./equivalency";
+import { EVALUATION_REVIEW_REASON } from "./evaluation-price";
 import { assertUploadBudget, dedupeUploads, resolveUploadMime } from "./files";
 import { findActiveApiKey, orderByExternalRef, touchApiKeyLastUsed, type ApiKeyRow } from "./integrations-db";
 import { isSupportedSourceLanguage } from "./languages";
@@ -46,7 +47,7 @@ import { downloadGate } from "./access";
 import { fulfillmentState, type FulfillmentState } from "./release-decision";
 import { isPreviewDelayed } from "./translation-watch";
 
-export const EVALUATION_REVIEW_REASON = "Credential evaluation is reviewed by staff.";
+export { EVALUATION_REVIEW_REASON };
 
 export type PartnerService = "translation" | "evaluation";
 

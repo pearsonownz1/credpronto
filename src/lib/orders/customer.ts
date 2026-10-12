@@ -5,7 +5,7 @@ import { checkoutBlockReason } from "./equivalency";
 import { downloadGate } from "./access";
 import { checkoutPreviewImageUrl } from "./checkout-image";
 import { checkoutLineProduct, checkoutProductDescription } from "./checkout-preview";
-import { checkoutPriceLines, evaluationCheckoutTotal } from "./evaluation-price";
+import { checkoutPriceLines, evaluationCheckoutTotal, evaluationPrice } from "./evaluation-price";
 import { deliveryFileTarget } from "./delivery-file";
 import {
   DOWNLOAD_URL_SECONDS,
@@ -417,9 +417,22 @@ export async function startCheckout(token: string, body: unknown = {}) {
   if (blocked) throw new HttpError(blocked, 409);
   if (await settledPayment(db, order.id)) throw new HttpError("This order is already paid", 409);
   const selection = parseCheckoutBody(body, order.billablePages, order);
-  const base = serviceCents(order);
+  const flat = evaluationPrice({ ...order, addonCents: 0 });
+  const base = flat?.evaluationCents ?? serviceCents(order);
   if (base == null) throw new HttpError("This order is not ready to pay", 409);
   const total = base + selection.addonCents;
+  if (flat) {
+    await updateOrder(db, order.id, {
+      unit_price_cents: flat.unitPriceCents,
+      evaluation_cents: flat.evaluationCents,
+      translation_cents: 0,
+      total_cents: flat.evaluationCents + order.addonCents,
+    });
+    order.unitPriceCents = flat.unitPriceCents;
+    order.evaluationCents = flat.evaluationCents;
+    order.translationCents = 0;
+    order.totalCents = total;
+  }
   await replaceOrderAddons(db, order.id, {
     addons: selection.addons,
     shippingAddress: selection.shippingAddress,

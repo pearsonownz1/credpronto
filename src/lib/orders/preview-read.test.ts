@@ -38,6 +38,8 @@ function previewOrder(patch: Partial<PreviewOrderRow> = {}): PreviewOrderRow {
     service: null,
     evaluationPageCount: null,
     ...patch,
+    degreeCount: patch.degreeCount ?? null,
+    addonCents: patch.addonCents ?? 0,
   };
 }
 

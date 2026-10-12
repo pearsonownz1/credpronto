@@ -1,5 +1,4 @@
 import { analyzeOrder } from "./analysis";
-import { retryEvaluation, shouldPrepareEvaluationReport } from "./evaluation";
 import {
   customerEmail,
   getDelivery,
@@ -46,15 +45,11 @@ export async function processOrder(orderId: string, token: string | null = null)
   const order = await getOrderById(db, orderId);
   if (!order) return;
 
+  // Staff reviews a credential evaluation after payment. Do not extract or build a preview.
+  if (order.service) return;
+
   if (order.status === "draft" || (order.status === "failed" && !order.languageConfirmed)) {
     await analyzeOrder(db, order.id, token);
-    return;
-  }
-
-  if (order.service) {
-    if (shouldPrepareEvaluationReport(order) && order.sourceLanguage) {
-      await retryEvaluation(db, order, order.sourceLanguage);
-    }
     return;
   }
 

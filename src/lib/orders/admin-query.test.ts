@@ -6,6 +6,7 @@ describe("admin order list query", () => {
     expect(parseAdminListQuery(new URLSearchParams("status=paid"))).toEqual({
       status: "paid",
       reviewReason: null,
+      queue: null,
       limit: 50,
       offset: 0,
     });
@@ -15,6 +16,7 @@ describe("admin order list query", () => {
     expect(parseAdminListQuery(new URLSearchParams("limit=20&offset=40"))).toEqual({
       status: null,
       reviewReason: null,
+      queue: null,
       limit: 20,
       offset: 40,
     });
@@ -22,5 +24,12 @@ describe("admin order list query", () => {
 
   it("rejects a limit above 100", () => {
     expect(() => parseAdminListQuery(new URLSearchParams("limit=101"))).toThrow(/limit/);
+  });
+
+  it("accepts the evaluation queue and rejects any other queue", () => {
+    expect(parseAdminListQuery(new URLSearchParams("queue=evaluation"))).toMatchObject({
+      queue: "evaluation",
+    });
+    expect(() => parseAdminListQuery(new URLSearchParams("queue=translation"))).toThrow(/queue/);
   });
 });

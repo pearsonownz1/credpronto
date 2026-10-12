@@ -169,10 +169,9 @@ describe("email templates", () => {
       unitPriceCents: UNIT_PRICE_CENTS,
       addons: [],
     });
-    expect(evaluation.map((line) => line.label)).toEqual([
-      "Diploma evaluation · 2 × $19.95",
-      "Certified translation · 2 pages × $9.95",
-    ]);
+    expect(evaluation.map((line) => line.label)).toEqual(["Diploma evaluation · 2 × $19.95"]);
+    expect(evaluation.map((line) => line.amountCents)).toEqual([3990]);
+    expect(evaluation.some((line) => line.label.includes("$9.95"))).toBe(false);
     expect(
       receiptLineItems({
         service: null,

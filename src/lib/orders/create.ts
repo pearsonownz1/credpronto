@@ -11,7 +11,7 @@ import {
 import { assertEmail, assertUploadBudget, dedupeUploads, resolveUploadMime, safeFilename } from "./files";
 import { serviceDb, uploadObject } from "./storage";
 import { generateOrderToken, hashOrderToken } from "./token";
-import { evaluationFeeCents, parseOrderChoice } from "./evaluation-price";
+import { evaluationFeeCents, evaluationUnitCents, parseOrderChoice } from "./evaluation-price";
 import { HttpError } from "./errors";
 
 /**
@@ -80,6 +80,10 @@ export async function createOrder(request: Request): Promise<{
   const db = serviceDb();
   const customer = await upsertCustomer(db, email);
   const orderToken = generateOrderToken();
+  const evaluationCents =
+    choice.service && choice.degreeCount != null
+      ? evaluationFeeCents(choice.service, choice.degreeCount)
+      : null;
   const order = await insertOrder(db, {
     tokenHash: hashOrderToken(orderToken),
     customerId: customer.id,
@@ -88,10 +92,10 @@ export async function createOrder(request: Request): Promise<{
     service: choice.service,
     degreeCount: choice.degreeCount,
     includeTranslation: choice.includeTranslation,
-    evaluationCents:
-      choice.service && choice.degreeCount != null
-        ? evaluationFeeCents(choice.service, choice.degreeCount)
-        : null,
+    evaluationCents,
+    translationCents: evaluationCents == null ? null : 0,
+    totalCents: evaluationCents,
+    unitPriceCents: choice.service ? evaluationUnitCents(choice.service) : null,
     utmSource: textField(form, "utm_source"),
     utmMedium: textField(form, "utm_medium"),
     utmCampaign: textField(form, "utm_campaign"),

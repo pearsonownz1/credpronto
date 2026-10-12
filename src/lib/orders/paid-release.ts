@@ -1,4 +1,5 @@
 import { approvalBlockReason } from "./equivalency";
+import { EVALUATION_REVIEW_REASON } from "./evaluation-price";
 import { stampApprovedCover } from "./certification";
 import {
   claimOrderColumn,
@@ -63,6 +64,11 @@ export async function settlePaidOrder(
   const paidAt = order.paidAt ?? payment?.paidAt ?? new Date().toISOString();
   if (!order.paidAt) await markOrderPaidAt(db, order.id, paidAt);
   const stamped = { ...order, paidAt };
+
+  if (stamped.service && !stamped.reviewReason) {
+    await updateOrder(db, stamped.id, { review_reason: EVALUATION_REVIEW_REASON });
+    stamped.reviewReason = EVALUATION_REVIEW_REASON;
+  }
 
   const signals = await releaseSignals(db, stamped);
   const action = releaseAction(signals);
@@ -132,6 +138,7 @@ async function releaseSignals(db: Db, order: OrderRecord): Promise<ReleaseInput>
     openCorrections: corrections.some((correction) => correction.status === "open"),
     finalsReady: Boolean(order.finalTranslationPath && order.certificationPath),
     enabled: autoReleaseEnabled(),
+    manualEvaluation: order.service != null,
   };
 }
 
