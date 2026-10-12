@@ -36,7 +36,7 @@ export function orderLiveMessage(input: {
     order.status === "correction_requested"
   ) {
     if (order.delayed) return "Taking longer than usual, we're on it.";
-    return "Translating your documents…";
+    return "Translating your document.";
   }
   return "";
 }

@@ -456,7 +456,7 @@ export function orderHubStep(
   ) {
     return "download";
   }
-  if (status === "preview_ready") return "preview";
+  if (status === "preview_ready") return "processing";
   if (
     status === "quoted" ||
     status === "needs_review" ||

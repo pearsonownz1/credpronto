@@ -31,8 +31,9 @@ export function OrderHub() {
   const view = orderHubStep(checkout, (latest ?? order)?.status);
 
   const reportPreviewReady = useCallback((next: CustomerOrder) => {
+    setLatest(next);
     trackPreviewReady(next);
-  }, []);
+  }, [setLatest]);
 
   useEffect(() => {
     if (token) writeToken(token);
