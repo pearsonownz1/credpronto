@@ -156,7 +156,7 @@ export function presentOrder(order: CustomerOrder, now = Date.now()): OrderPrese
         chip: { label: "Preview ready", tone: "blue" },
         action: {
           kind: "review",
-          label: "Review & buy",
+          label: "Buy now",
           emphasis: "primary",
           href: rowHref,
         },

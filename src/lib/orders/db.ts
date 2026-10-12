@@ -313,6 +313,59 @@ export async function insertOrder(
   return mapOrder(data as Row);
 }
 
+export async function getPreviewOrderById(db: Db, orderId: string): Promise<PreviewOrderRow | null> {
+  const { data, error } = await db.from("orders").select(PREVIEW_ORDER_COLUMNS).eq("id", orderId).maybeSingle();
+  fail(error);
+  return data ? mapPreviewOrder(data as Row) : null;
+}
+
+export async function requirePreviewOrderByHash(db: Db, tokenHash: string): Promise<PreviewOrderRow> {
+  const { data, error } = await db
+    .from("orders")
+    .select(PREVIEW_ORDER_COLUMNS)
+    .eq("public_token_hash", tokenHash)
+    .maybeSingle();
+  fail(error);
+  if (!data) throw new HttpError("Order not found", 404);
+  return mapPreviewOrder(data as Row);
+}
+
+export async function listPreviewFrames(
+  db: Db,
+  orderId: string,
+): Promise<{ documents: PreviewDocumentFrame[]; pages: PageRecord[] }> {
+  const { data, error } = await db.from("documents").select(PREVIEW_DOCUMENT_COLUMNS).eq("order_id", orderId);
+  fail(error);
+  const documents = ((data ?? []) as Row[])
+    .map((row) => ({
+      id: String(row.id),
+      filename: String(row.filename),
+      position: num(row.position) ?? 0,
+      appliedPosition: num(row.applied_position),
+      pages: nestedRows(row.document_pages),
+    }))
+    .sort((a, b) => a.position - b.position || a.filename.localeCompare(b.filename));
+  return {
+    documents: documents.map((document) => ({
+      id: document.id,
+      filename: document.filename,
+      position: document.position,
+      appliedPosition: document.appliedPosition,
+    })),
+    pages: documents.flatMap((document) => document.pages.map(mapPage)),
+  };
+}
+
+export async function listPreviewCorrections(db: Db, orderId: string): Promise<CorrectionRecord[]> {
+  const { data, error } = await db
+    .from("corrections")
+    .select(PREVIEW_CORRECTION_COLUMNS)
+    .eq("order_id", orderId)
+    .order("created_at", { ascending: true });
+  fail(error);
+  return ((data ?? []) as Row[]).map(mapCorrection);
+}
+
 export async function getOrderById(db: Db, orderId: string): Promise<OrderRecord | null> {
   const { data, error } = await db.from("orders").select("*").eq("id", orderId).maybeSingle();
   fail(error);
@@ -605,6 +658,62 @@ export async function listPages(db: Db, documentIds: string[]): Promise<PageReco
 export const PAGE_FRAME_COLUMNS =
   "id, document_id, page_number, width_pt, height_pt, upload_page, logical_page, order_hint";
 
+/** Order columns the preview response and its auth check actually read. */
+export const PREVIEW_ORDER_COLUMNS =
+  "id, user_id, status, total_cents, unit_price_cents, billable_pages, combined_original_path, service, degree_count, addon_cents, evaluation_result";
+
+/** Documents and their page frames in one query. Nested pages reuse PAGE_FRAME_COLUMNS. */
+export const PREVIEW_DOCUMENT_COLUMNS =
+  `id, filename, position, applied_position, document_pages(${PAGE_FRAME_COLUMNS})`;
+
+export const PREVIEW_CORRECTION_COLUMNS =
+  "id, document_id, page_number, passage, note, status, created_at";
+
+export const PREVIEW_ROW_COLUMNS = "id, version, preview_path, status";
+
+export type PreviewOrderRow = {
+  id: string;
+  userId: string | null;
+  status: string;
+  totalCents: number | null;
+  unitPriceCents: number;
+  billablePages: number | null;
+  combinedOriginalPath: string | null;
+  service: "diploma" | "course_by_course" | null;
+  degreeCount: number | null;
+  addonCents: number;
+  evaluationPageCount: number | null;
+};
+
+export type PreviewDocumentFrame = {
+  id: string;
+  filename: string;
+  position: number;
+  appliedPosition: number | null;
+};
+
+function mapPreviewOrder(row: Row): PreviewOrderRow {
+  const service = row.service === "diploma" || row.service === "course_by_course" ? row.service : null;
+  return {
+    id: String(row.id),
+    userId: str(row.user_id),
+    status: String(row.status),
+    totalCents: num(row.total_cents),
+    unitPriceCents: num(row.unit_price_cents) ?? 995,
+    billablePages: num(row.billable_pages),
+    combinedOriginalPath: str(row.combined_original_path),
+    service,
+    degreeCount: num(row.degree_count),
+    addonCents: num(row.addon_cents) ?? 0,
+    evaluationPageCount: parseEvaluationResult(row.evaluation_result)?.pageCount ?? null,
+  };
+}
+
+function nestedRows(value: unknown): Row[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is Row => item != null && typeof item === "object");
+}
+
 export async function listPageFrames(db: Db, documentIds: string[]): Promise<PageRecord[]> {
   if (documentIds.length === 0) return [];
   const { data, error } = await db.from("document_pages").select(PAGE_FRAME_COLUMNS).in("document_id", documentIds);
@@ -612,7 +721,10 @@ export async function listPageFrames(db: Db, documentIds: string[]): Promise<Pag
   return ((data ?? []) as Row[]).map(mapPage);
 }
 
-export function withCombinedNumbers(documents: DocumentRecord[], pages: PageRecord[]) {
+export function withCombinedNumbers(
+  documents: Array<{ id: string; position: number; appliedPosition: number | null }>,
+  pages: PageRecord[],
+) {
   const sorted = [...pages].sort((a, b) => compareCombinedPages(documents, a, b));
   return sorted.map((page, index) => ({ ...page, number: index + 1 }));
 }
@@ -735,7 +847,7 @@ export async function dismissCorrections(db: Db, ids: string[]): Promise<void> {
 export async function latestReadyPreview(db: Db, orderId: string): Promise<PreviewRecord | null> {
   const { data, error } = await db
     .from("previews")
-    .select("*")
+    .select(PREVIEW_ROW_COLUMNS)
     .eq("order_id", orderId)
     .eq("status", "ready")
     .order("version", { ascending: false })
