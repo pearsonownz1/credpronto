@@ -10,6 +10,7 @@ import {
 import { assertEmail, assertUploadBudget, resolveUploadMime, safeFilename } from "./files";
 import { serviceDb, uploadObject } from "./storage";
 import { generateOrderToken, hashOrderToken } from "./token";
+import { parseOrderChoice } from "./evaluation-price";
 import { HttpError } from "./errors";
 
 function textField(form: FormData, key: string): string | null {
@@ -41,12 +42,22 @@ export async function createOrder(request: Request): Promise<{
   }
   assertUploadBudget(prepared.map((file) => ({ size: file.bytes.byteLength })));
 
+  const choice = parseOrderChoice({
+    orderType: textField(form, "orderType"),
+    service: textField(form, "service"),
+    degreeCount: textField(form, "degreeCount"),
+  });
+
   const db = serviceDb();
   const customer = await upsertCustomer(db, email);
   const orderToken = generateOrderToken();
   const order = await insertOrder(db, {
     tokenHash: hashOrderToken(orderToken),
     customerId: customer.id,
+    orderType: choice.orderType,
+    serviceType: choice.orderType === "evaluation" ? "evaluation" : "translation",
+    service: choice.service,
+    degreeCount: choice.degreeCount,
     utmSource: textField(form, "utm_source"),
     utmMedium: textField(form, "utm_medium"),
     utmCampaign: textField(form, "utm_campaign"),
@@ -57,11 +68,12 @@ export async function createOrder(request: Request): Promise<{
   await insertEvent(db, order.id, "upload_started", { fileCount: prepared.length });
   await storeFiles(db, order.id, prepared);
   await insertEvent(db, order.id, "upload_done", { fileCount: prepared.length });
+  await insertEvent(db, order.id, "staff_notified", { channel: "event" });
 
   return { orderToken, orderId: order.id, email };
 }
 
-async function storeFiles(
+export async function storeFiles(
   db: Db,
   orderId: string,
   files: Array<{ filename: string; mime: string; bytes: Uint8Array }>,

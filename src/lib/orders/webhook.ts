@@ -1,5 +1,5 @@
 export type PaymentSnapshot = {
-  status: "pending" | "paid" | "paid_test" | "failed" | "canceled" | "refunded";
+  status: "pending" | "paid" | "paid_test" | "failed" | "canceled" | "expired" | "refunded";
   amountCents: number;
   orderId: string;
 };
@@ -27,7 +27,18 @@ export type WebhookDecision =
   | { action: "ignore"; reason: string }
   | { action: "fail"; reason: string }
   | { action: "mark_paid"; paymentIntentId: string | null }
-  | { action: "mark_refunded" };
+  | { action: "mark_refunded" }
+  | { action: "expire"; reopenOrder: boolean };
+
+export type CheckoutExpiredOrder = {
+  status: string;
+  /** A paid or paid_test payment already exists on the order. */
+  settled: boolean;
+  /** This checkout session is the newest payment row on the order. */
+  isLatestPayment: boolean;
+};
+
+const PAID_ORDER = new Set(["paid", "approved", "delivered"]);
 
 const SETTLED = new Set(["paid", "paid_test", "refunded"]);
 
@@ -102,4 +113,28 @@ export function decideChargeRefunded(
   }
 
   return { action: "mark_refunded" };
+}
+
+/**
+ * Pure decision for checkout.session.expired.
+ * A pending payment for that session becomes expired. When the order is still
+ * waiting on that session and has not been paid, it goes back to preview_ready.
+ * A second delivery is a no-op. Unknown sessions are ignored.
+ */
+export function decideCheckoutExpired(
+  payment: PaymentSnapshot | null,
+  order: CheckoutExpiredOrder | null,
+): WebhookDecision {
+  if (!payment) return { action: "ignore", reason: "unknown_session" };
+  if (payment.status === "expired") return { action: "duplicate" };
+  if (payment.status !== "pending") return { action: "ignore", reason: "not_pending" };
+
+  const awaitingThisSession =
+    order != null &&
+    order.status === "preview_ready" &&
+    order.isLatestPayment &&
+    !order.settled &&
+    !PAID_ORDER.has(order.status);
+
+  return { action: "expire", reopenOrder: awaitingThisSession };
 }

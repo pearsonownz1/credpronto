@@ -18,6 +18,7 @@ const TYPE_LABEL: Record<QaIssueType, string> = {
   number: "Number",
   missing_text: "Missing text",
   layout: "Layout",
+  other: "Other",
 };
 
 export function QaPanel({
@@ -41,6 +42,12 @@ export function QaPanel({
           Score <span data-testid="qa-score" className="font-semibold text-ink">{formatScore(qa.score)}</span>
           {" · "}
           Attempts <span data-testid="qa-attempts" className="font-semibold text-ink">{qa.attempts}</span>
+          {qa.checkedAt ? (
+            <>
+              {" · "}
+              Checked <span data-testid="qa-checked-at" className="font-semibold text-ink">{qa.checkedAt}</span>
+            </>
+          ) : null}
         </p>
       </div>
       {qa.issues.length === 0 ? (
@@ -64,14 +71,18 @@ export function QaPanel({
                   <td className="py-2 pr-3">{TYPE_LABEL[issue.type]}</td>
                   <td className="py-2 pr-3">{issue.severity}</td>
                   <td className="py-2 pr-3">
-                    <button
-                      type="button"
-                      data-testid={`qa-issue-${index}`}
-                      onClick={() => onJump(issue.page)}
-                      className="font-semibold text-primary"
-                    >
-                      Page {issue.page}
-                    </button>
+                    {issue.page == null ? (
+                      <span data-testid={`qa-issue-${index}`}>Order</span>
+                    ) : (
+                      <button
+                        type="button"
+                        data-testid={`qa-issue-${index}`}
+                        onClick={() => onJump(issue.page as number)}
+                        className="font-semibold text-primary"
+                      >
+                        Page {issue.page}
+                      </button>
+                    )}
                   </td>
                   <td className="py-2 pr-3">{issue.original || "—"}</td>
                   <td className="py-2 pr-3">{issue.translated || "—"}</td>

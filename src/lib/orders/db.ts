@@ -1,3 +1,5 @@
+import { parseEvaluationResult } from "./evaluation-price";
+import { parseStoredPageOrder, compareCombinedPages } from "./page-order";
 import type { Db } from "./storage";
 
 export type { Db };
@@ -19,6 +21,7 @@ import type {
   PreviewRecord,
   TranslationRecord,
 } from "./types";
+import { type QaIssue, type QaRunRecord, type QaStatus } from "./qa";
 
 type Row = Record<string, unknown>;
 
@@ -44,6 +47,7 @@ function mapOrder(row: Row): OrderRecord {
     id: String(row.id),
     customerId: String(row.customer_id),
     userId: str(row.user_id),
+    serviceType: str(row.service_type) ?? "translation",
     status: String(row.status) as OrderStatus,
     sourceLanguage: str(row.source_language),
     targetLanguage: str(row.target_language) ?? "en",
@@ -57,6 +61,16 @@ function mapOrder(row: Row): OrderRecord {
     combinedOriginalPath: str(row.combined_original_path),
     finalTranslationPath: str(row.final_translation_path),
     certificationPath: str(row.certification_path),
+    pageOrderBasis: row.page_order_basis === "logical" || row.page_order_basis === "upload" ? row.page_order_basis : null,
+    pageOrder: parseStoredPageOrder(row.page_order),
+    externalRef: str(row.external_ref),
+    orderType:
+      row.order_type === "evaluation" || row.order_type === "expert_letter" ? row.order_type : "translation",
+    service: row.service === "diploma" || row.service === "course_by_course" ? row.service : null,
+    degreeCount: num(row.degree_count),
+    evaluationCents: num(row.evaluation_cents),
+    translationCents: num(row.translation_cents),
+    evaluationResult: parseEvaluationResult(row.evaluation_result),
     createdAt: str(row.created_at) ?? new Date().toISOString(),
   };
 }
@@ -74,7 +88,13 @@ function mapDocument(row: Row): DocumentRecord {
     detectedLanguage: str(row.detected_language),
     confidence: num(row.confidence),
     position: num(row.position) ?? 0,
+    appliedPosition: num(row.applied_position),
   };
+}
+
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
 }
 
 function mapPage(row: Row): PageRecord {
@@ -89,6 +109,12 @@ function mapPage(row: Row): PageRecord {
     needsReview: Boolean(row.needs_review),
     widthPt: num(row.width_pt),
     heightPt: num(row.height_pt),
+    uploadPage: num(row.upload_page),
+    logicalPage: num(row.logical_page),
+    orderHint: str(row.order_hint),
+    qualityScore: num(row.quality_score),
+    qualityFlags: stringList(row.quality_flags),
+    qualityMessage: str(row.quality_message),
   };
 }
 
@@ -183,6 +209,15 @@ export async function insertOrder(
     utmCampaign: string | null;
     gclid: string | null;
     landingPath: string | null;
+    userId?: string | null;
+    serviceType?: "translation" | "evaluation" | "expert_letter";
+    orderType?: "translation" | "evaluation" | "expert_letter";
+    service?: "diploma" | "course_by_course" | null;
+    degreeCount?: number | null;
+    externalRef?: string | null;
+    sourceLanguage?: string | null;
+    targetLanguage?: string | null;
+    languageConfirmed?: boolean;
   },
 ): Promise<OrderRecord> {
   const { data, error } = await db
@@ -190,13 +225,22 @@ export async function insertOrder(
     .insert({
       public_token_hash: input.tokenHash,
       customer_id: input.customerId,
-      service_type: "translation",
+      service_type: input.serviceType ?? (input.orderType === "evaluation" ? "evaluation" : "translation"),
+      order_type: input.orderType ?? "translation",
+      service: input.service ?? null,
+      degree_count: input.degreeCount ?? null,
       status: "draft",
       utm_source: input.utmSource,
       utm_medium: input.utmMedium,
       utm_campaign: input.utmCampaign,
       gclid: input.gclid,
       landing_path: input.landingPath,
+      ...(input.userId ? { user_id: input.userId } : {}),
+      ...(input.serviceType ? { service_type: input.serviceType, order_type: input.orderType ?? input.serviceType } : {}),
+      ...(input.externalRef ? { external_ref: input.externalRef } : {}),
+      ...(input.sourceLanguage ? { source_language: input.sourceLanguage } : {}),
+      ...(input.targetLanguage ? { target_language: input.targetLanguage } : {}),
+      ...(input.languageConfirmed ? { language_confirmed: true } : {}),
     })
     .select("*")
     .single();
@@ -311,6 +355,12 @@ export async function replacePages(
     needsReview: boolean;
     widthPt: number;
     heightPt: number;
+    uploadPage: number;
+    logicalPage: number | null;
+    orderHint: string | null;
+    qualityScore: number | null;
+    qualityFlags: string[];
+    qualityMessage: string | null;
   }>,
 ): Promise<void> {
   const deleted = await db.from("document_pages").delete().eq("document_id", documentId);
@@ -327,6 +377,12 @@ export async function replacePages(
       needs_review: page.needsReview,
       width_pt: page.widthPt,
       height_pt: page.heightPt,
+      upload_page: page.uploadPage,
+      logical_page: page.logicalPage,
+      order_hint: page.orderHint,
+      quality_score: page.qualityScore,
+      quality_flags: page.qualityFlags,
+      quality_message: page.qualityMessage,
     })),
   );
   fail(error);
@@ -340,12 +396,7 @@ export async function listPages(db: Db, documentIds: string[]): Promise<PageReco
 }
 
 export function withCombinedNumbers(documents: DocumentRecord[], pages: PageRecord[]) {
-  const position = new Map(documents.map((document) => [document.id, document.position]));
-  const sorted = [...pages].sort((a, b) => {
-    const docDelta = (position.get(a.documentId) ?? 0) - (position.get(b.documentId) ?? 0);
-    if (docDelta !== 0) return docDelta;
-    return a.pageNumber - b.pageNumber;
-  });
+  const sorted = [...pages].sort((a, b) => compareCombinedPages(documents, a, b));
   return sorted.map((page, index) => ({ ...page, number: index + 1 }));
 }
 
@@ -656,6 +707,25 @@ export async function markPaymentFailed(db: Db, paymentId: string): Promise<void
   fail(error);
 }
 
+export async function markPaymentExpired(db: Db, paymentId: string): Promise<void> {
+  const { error } = await db
+    .from("payments")
+    .update({ status: "expired" })
+    .eq("id", paymentId)
+    .eq("status", "pending");
+  fail(error);
+}
+
+/** Sets an order that is still on the preview step back to preview_ready. A later status is left alone. */
+export async function restorePreviewReadyOrder(db: Db, orderId: string): Promise<void> {
+  const { error } = await db
+    .from("orders")
+    .update({ status: "preview_ready" })
+    .eq("id", orderId)
+    .eq("status", "preview_ready");
+  fail(error);
+}
+
 export async function getDelivery(db: Db, orderId: string): Promise<DeliveryRecord | null> {
   const { data, error } = await db.from("deliveries").select("*").eq("order_id", orderId).maybeSingle();
   fail(error);
@@ -676,6 +746,46 @@ export async function updateDelivery(
   patch: Record<string, unknown>,
 ): Promise<void> {
   const { error } = await db.from("deliveries").update(patch).eq("order_id", orderId);
+  fail(error);
+}
+
+export type { QaIssue, QaRunRecord, QaStatus } from "./qa";
+
+function mapQaRun(row: Row): QaRunRecord {
+  const issues = Array.isArray(row.issues) ? (row.issues as QaIssue[]) : [];
+  const status = row.status === "pass" || row.status === "fail" || row.status === "retranslated" ? row.status : "fail";
+  return {
+    id: String(row.id),
+    orderId: String(row.order_id),
+    attempt: num(row.attempt) ?? 1,
+    status,
+    score: num(row.score) ?? 0,
+    issues,
+    createdAt: str(row.created_at) ?? new Date().toISOString(),
+  };
+}
+
+export async function listQaRuns(db: Db, orderId: string): Promise<QaRunRecord[]> {
+  const { data, error } = await db
+    .from("order_qa_runs")
+    .select("*")
+    .eq("order_id", orderId)
+    .order("attempt", { ascending: true });
+  fail(error);
+  return ((data ?? []) as Row[]).map(mapQaRun);
+}
+
+export async function insertQaRun(
+  db: Db,
+  input: { orderId: string; attempt: number; status: QaStatus; score: number; issues: QaIssue[] },
+): Promise<void> {
+  const { error } = await db.from("order_qa_runs").insert({
+    order_id: input.orderId,
+    attempt: input.attempt,
+    status: input.status,
+    score: input.score,
+    issues: input.issues,
+  });
   fail(error);
 }
 

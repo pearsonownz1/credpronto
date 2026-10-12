@@ -47,4 +47,38 @@ describe("auth migrations", () => {
     expect(orders).toMatch(/customer_select_own_payments/);
     expect(notes).toMatch(/create table public\.order_notes/);
   });
+
+  it("keeps staff_notified and the QA status enum out of the table that uses them", () => {
+    const notified = readFileSync(path.join(migrationsDir, "20261012060000_staff_notified_event.sql"), "utf8");
+    const status = readFileSync(path.join(migrationsDir, "20261012060100_qa_status.sql"), "utf8");
+    const runs = readFileSync(path.join(migrationsDir, "20261012060200_order_qa_runs.sql"), "utf8");
+    expect(notified).toMatch(/add value if not exists 'staff_notified'/);
+    expect(notified.toLowerCase()).not.toMatch(/insert into/);
+    expect(status).toMatch(/create type public\.qa_status/);
+    expect(status).not.toMatch(/order_qa_runs/);
+    expect(runs).toMatch(/create table public\.order_qa_runs/);
+    expect(runs.toLowerCase()).not.toMatch(/add value/);
+    expect(runs.toLowerCase()).not.toMatch(/create type/);
+    const apiKeys = readFileSync(path.join(migrationsDir, "20261012070000_api_keys.sql"), "utf8");
+    const endpoints = readFileSync(path.join(migrationsDir, "20261012070100_webhook_endpoints.sql"), "utf8");
+    const deliveries = readFileSync(path.join(migrationsDir, "20261012070200_webhook_deliveries.sql"), "utf8");
+    const externalRef = readFileSync(path.join(migrationsDir, "20261012070300_orders_external_ref.sql"), "utf8");
+    const billing = readFileSync(path.join(migrationsDir, "20261012070400_billing_customers.sql"), "utf8");
+    expect(apiKeys).toMatch(/create table public\.api_keys/);
+    expect(endpoints).toMatch(/create table public\.webhook_endpoints/);
+    expect(deliveries).toMatch(/create table public\.webhook_deliveries/);
+    expect(externalRef).toMatch(/external_ref text/);
+    expect(billing).toMatch(/create table public\.billing_customers/);
+    expect(billing).toMatch(/stripe_customer_id text not null/);
+    expect(billing).not.toMatch(/card_number/);
+    for (const sql of [apiKeys, endpoints, deliveries, externalRef, billing]) {
+      expect(sql.toLowerCase()).not.toMatch(/create type/);
+      expect(sql.toLowerCase()).not.toMatch(/add value/);
+    }
+    for (const file of files) {
+      if (file === "20261012060000_staff_notified_event.sql") continue;
+      const sql = readFileSync(path.join(migrationsDir, file), "utf8");
+      expect(sql.includes("staff_notified")).toBe(false);
+    }
+  });
 });

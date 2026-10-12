@@ -1,5 +1,6 @@
 import { LOW_LANGUAGE_CONFIDENCE, UNIT_PRICE_CENTS } from "./constants";
 import { totalCents } from "./billing";
+import { IMAGE_QUALITY_REASON } from "./image-quality";
 import { isSupportedSourceLanguage } from "./languages";
 
 export type QuoteDecision = {
@@ -18,10 +19,20 @@ export function decideQuote(input: {
   detectionAvailable: boolean;
   languagesDisagree: boolean;
   unitPriceCents?: number;
+  imageQuality?: boolean;
 }): QuoteDecision {
   const unit = input.unitPriceCents ?? UNIT_PRICE_CENTS;
   const billablePages = input.billableUnits.reduce((sum, pages) => sum + pages, 0);
   const price = totalCents(billablePages, unit);
+  if (input.imageQuality) {
+    return {
+      status: "needs_review",
+      reviewReason: IMAGE_QUALITY_REASON,
+      billablePages,
+      totalCents: price,
+      etaHours: 24,
+    };
+  }
   const reasons: string[] = [];
 
   if (input.billableUnits.length === 0) {

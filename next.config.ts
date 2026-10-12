@@ -14,9 +14,12 @@ const nextConfig: NextConfig = {
   },
   cacheComponents: true,
   partialPrefetching: true,
-  serverExternalPackages: ["sharp", "unpdf", "heic-convert"],
+  serverExternalPackages: ["sharp", "unpdf", "heic-convert", "@embedpdf/pdfium"],
   outputFileTracingIncludes: {
-    "/api/**": ["./src/lib/orders/pdf/NotoSans-Regular.ttf"],
+    "/api/**": [
+      "./src/lib/orders/pdf/NotoSans-Regular.ttf",
+      "./node_modules/@embedpdf/pdfium/dist/pdfium.wasm",
+    ],
   },
   experimental: {
     proxyClientMaxBodySize: "100mb",

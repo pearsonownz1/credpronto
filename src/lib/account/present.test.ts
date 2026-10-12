@@ -154,6 +154,7 @@ describe("customer order presentation", () => {
       qa: {
         status: "fail",
         score: 72,
+        checkedAt: "2026-10-12T00:00:00.000Z",
         attempts: 2,
         issues: [
           {
@@ -164,13 +165,16 @@ describe("customer order presentation", () => {
             translated: "March 14, 1994",
             note: "Confirm the day-first date.",
           },
+          { type: "layout", severity: "high", page: null, original: "2 pages", translated: "1 pages", note: "count" },
           { type: "other", severity: "low", page: 1 },
+          { type: "date", severity: "high", page: 0 },
         ],
       },
     });
     expect(detail?.qa).toEqual({
       status: "fail",
       score: 72,
+      checkedAt: "2026-10-12T00:00:00.000Z",
       attempts: 2,
       issues: [
         {
@@ -180,6 +184,22 @@ describe("customer order presentation", () => {
           original: "14 de marzo de 1994",
           translated: "March 14, 1994",
           note: "Confirm the day-first date.",
+        },
+        {
+          type: "layout",
+          severity: "high",
+          page: null,
+          original: "2 pages",
+          translated: "1 pages",
+          note: "count",
+        },
+        {
+          type: "other",
+          severity: "low",
+          page: 1,
+          original: "",
+          translated: "",
+          note: "",
         },
       ],
     });

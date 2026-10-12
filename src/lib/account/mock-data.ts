@@ -222,6 +222,7 @@ export function mockStaffDetail(id: string): StaffDetail | null {
         ? {
             status: "fail",
             score: 72,
+            checkedAt: "2026-10-12T00:00:00.000Z",
             attempts: 2,
             issues: [
               {

@@ -10,7 +10,14 @@ export async function run(fn: () => Promise<Response>): Promise<Response> {
     return await fn();
   } catch (error) {
     if (error instanceof HttpError) {
-      return json({ error: error.message }, error.status);
+      return json(
+        {
+          error: error.message,
+          ...(error.code ? { code: error.code } : {}),
+          ...error.details,
+        },
+        error.status,
+      );
     }
     const message = error instanceof Error ? error.message : "request failed";
     console.error(message);

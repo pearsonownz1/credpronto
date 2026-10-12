@@ -66,12 +66,12 @@ export type StaffNote = {
 
 export type QaStatus = "pass" | "fail" | "retranslated";
 
-export type QaIssueType = "name" | "date" | "number" | "missing_text" | "layout";
+export type QaIssueType = "name" | "date" | "number" | "missing_text" | "layout" | "other";
 
 export type QaIssue = {
   type: QaIssueType;
   severity: string;
-  page: number;
+  page: number | null;
   original: string;
   translated: string;
   note: string;
@@ -80,6 +80,7 @@ export type QaIssue = {
 export type QaReport = {
   status: QaStatus;
   score: number;
+  checkedAt: string | null;
   attempts: number;
   issues: QaIssue[];
 };

@@ -13,7 +13,7 @@ import type {
 } from "./types";
 
 const QA_STATUS = new Set<QaStatus>(["pass", "fail", "retranslated"]);
-const QA_ISSUE_TYPE = new Set<QaIssueType>(["name", "date", "number", "missing_text", "layout"]);
+const QA_ISSUE_TYPE = new Set<QaIssueType>(["name", "date", "number", "missing_text", "layout", "other"]);
 
 function text(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value : null;
@@ -116,10 +116,8 @@ function parseQa(value: unknown): QaReport | null {
     const issue = entry as Record<string, unknown>;
     const type = text(issue.type);
     const severity = text(issue.severity);
-    const page = amount(issue.page);
-    if (!type || !QA_ISSUE_TYPE.has(type as QaIssueType) || !severity || page == null || !Number.isInteger(page) || page < 1) {
-      return [];
-    }
+    const page = parseIssuePage(issue.page);
+    if (!type || !QA_ISSUE_TYPE.has(type as QaIssueType) || !severity || page === undefined) return [];
     return [
       {
         type: type as QaIssueType,
@@ -131,7 +129,14 @@ function parseQa(value: unknown): QaReport | null {
       },
     ];
   });
-  return { status: status as QaStatus, score, attempts, issues };
+  return { status: status as QaStatus, score, checkedAt: text(row.checkedAt), attempts, issues };
+}
+
+function parseIssuePage(value: unknown): number | null | undefined {
+  if (value == null) return null;
+  const page = amount(value);
+  if (page == null || !Number.isInteger(page) || page < 1) return undefined;
+  return page;
 }
 
 function paragraphsOf(value: unknown): string[] {
