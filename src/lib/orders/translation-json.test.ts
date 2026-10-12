@@ -92,6 +92,7 @@ describe("runTranslationPage JSON parse", () => {
     vi.spyOn(db, "claimOrderColumn").mockResolvedValue(true);
     vi.spyOn(db, "clearOrderColumn").mockResolvedValue(undefined);
     vi.spyOn(email, "sendStaffOrderAlert").mockResolvedValue({ sent: true, skipped: false });
+    vi.spyOn(email, "sendTranslationFailureAlert").mockResolvedValue({ sent: true, skipped: false });
   });
 
   afterEach(() => {
@@ -147,6 +148,7 @@ describe("runTranslationPage JSON parse", () => {
     expect(jobs.failPageJob).toHaveBeenCalledTimes(1);
     expect(db.updateOrder).not.toHaveBeenCalled();
     expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
+    expect(email.sendTranslationFailureAlert).not.toHaveBeenCalled();
   });
 
   it("moves a finished page failure to needs_review and alerts staff", async () => {
@@ -178,14 +180,14 @@ describe("runTranslationPage JSON parse", () => {
         progress: expect.objectContaining({ step: "done" }),
       }),
     );
-    expect(email.sendStaffOrderAlert).toHaveBeenCalledWith(
+    expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
+    expect(email.sendTranslationFailureAlert).toHaveBeenCalledWith(
       expect.arrayContaining([expect.stringContaining("@")]),
-      expect.objectContaining({
-        urgent: false,
+      {
         orderId,
-        sourceLanguage: "es-mx",
+        reason: "Translation timed out before it could finish.",
         studioUrl: expect.stringContaining(orderId),
-      }),
+      },
     );
   });
 });

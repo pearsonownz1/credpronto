@@ -24,7 +24,7 @@ import {
   withCombinedNumbers,
   type Db,
 } from "./db";
-import { adminStudioLink, sendPreviewReady, sendStaffOrderAlert } from "./email";
+import { adminStudioLink, sendPreviewReady, sendTranslationFailureAlert } from "./email";
 import { AiUnavailableError, HttpError } from "./errors";
 import { humanReviewReason } from "./review-reason";
 import { QA_REVIEW_REASON, assessTranslation, qaAttemptForRound, qaStatusForRun, qaWillRetry, type QaIssue } from "./qa";
@@ -381,10 +381,10 @@ async function ensurePageFailureReviewed(db: Db, orderId: string, error: unknown
       progress: checkedProgress(order.progress, { step: "done" }),
     });
   }
-  await alertStaffForHeldTranslation(db, orderId);
+  await alertStaffForHeldTranslation(db, orderId, reviewReason);
 }
 
-async function alertStaffForHeldTranslation(db: Db, orderId: string): Promise<void> {
+async function alertStaffForHeldTranslation(db: Db, orderId: string, reviewReason: string): Promise<void> {
   const order = await getOrderById(db, orderId);
   if (!order || order.staffAlertSentAt) return;
   const at = new Date().toISOString();
@@ -396,14 +396,9 @@ async function alertStaffForHeldTranslation(db: Db, orderId: string): Promise<vo
       await clearOrderColumn(db, order.id, "staff_alert_sent_at", at);
       return;
     }
-    const result = await sendStaffOrderAlert(recipients, {
-      urgent: false,
+    const result = await sendTranslationFailureAlert(recipients, {
       orderId: order.id,
-      sourceLanguage: order.sourceLanguage,
-      targetLanguage: order.targetLanguage,
-      serviceType: order.serviceType,
-      billablePages: order.billablePages,
-      totalCents: order.totalCents,
+      reason: humanReviewReason(reviewReason) ?? "Translation failed.",
       studioUrl: adminStudioLink(order.id),
     });
     if (!result.sent) await clearOrderColumn(db, order.id, "staff_alert_sent_at", at);

@@ -327,6 +327,47 @@ ${button("Open in the studio", input.studioUrl)}`,
   return { subject, text, html };
 }
 
+export type TranslationFailureAlertEmail = {
+  orderId: string;
+  reason: string;
+  studioUrl: string;
+};
+
+/** First id group, capped at 8 characters, for the staff subject line. */
+export function staffOrderShortId(orderId: string): string {
+  const trimmed = orderId.trim();
+  const group = trimmed.split("-")[0] ?? "";
+  return (group || trimmed).slice(0, 8);
+}
+
+export function renderTranslationFailureAlertEmail(input: TranslationFailureAlertEmail): RenderedEmail {
+  const reason = input.reason.trim() || "Translation failed.";
+  const subject = `Translation failed, needs review — order ${staffOrderShortId(input.orderId)}`;
+  const heading = "Translation failed and needs review.";
+  const html = layout({
+    preheader: subject,
+    body: `${badge("Needs review", "#FDECEC", "#9B1C1C")}
+<h1 style="margin:14px 0 8px;font-size:24px;letter-spacing:-.4px;line-height:1.25">${escapeHtml(heading)}</h1>
+<p style="margin:0;color:#5B6575">A person needs to look at this translation before it can continue.</p>
+${detailTable([
+  ["Order", input.orderId, true],
+  ["Reason", reason, false],
+])}
+${button("Open in the studio", input.studioUrl)}`,
+  });
+  const text = [
+    heading,
+    "",
+    `Order: ${input.orderId}`,
+    `Reason: ${reason}`,
+    "",
+    `Open in the studio: ${input.studioUrl}`,
+    "",
+    BRAND_FOOTER,
+  ].join("\n");
+  return { subject, text, html };
+}
+
 function lineLabel(description: string, pages: boolean, quantity: number, unitCents: number): string {
   if (pages && quantity > 0) {
     const noun = quantity === 1 ? "page" : "pages";
