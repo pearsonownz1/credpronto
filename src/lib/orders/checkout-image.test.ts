@@ -40,7 +40,11 @@ describe("checkout preview image url", () => {
     });
 
     await expect(checkoutPreviewImageUrl(db, "order-1", "order-1/translation-v1.pdf")).resolves.toBeNull();
-    expect(error).toHaveBeenCalledWith(expect.stringContaining("watermarked preview"));
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining("checkout preview image failed for order-1"),
+      expect.any(Error),
+    );
+    expect(String(error.mock.calls[0]?.[0])).toContain("watermarked preview");
     error.mockRestore();
   });
 
@@ -51,7 +55,10 @@ describe("checkout preview image url", () => {
     });
 
     await expect(checkoutPreviewImageUrl(db, "order-1", "order-1/preview-v1.pdf")).resolves.toBeNull();
-    expect(error).toHaveBeenCalledWith(expect.stringContaining("storage down"));
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining("checkout preview image failed for order-1: storage down"),
+      expect.any(Error),
+    );
     error.mockRestore();
   });
 });
