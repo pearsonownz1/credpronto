@@ -31,7 +31,13 @@ body {
   --cp-line: #e4e7ec;
   --cp-radius: 4px;
   --cp-ok: #12805c;
+  --cp-warn: #b45309;
+  --cp-blue-l: #eaf0ff;
   font-family: var(--font-geist-sans), Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.preview-theme :where(input, textarea, select, button) {
+  font-family: inherit;
 }
 
 .preview-kicker {
@@ -40,6 +46,18 @@ body {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--cp-ink-muted);
+}
+
+.preview-kicker.blue {
+  color: var(--cp-primary);
+}
+
+.flow-card-shadow {
+  box-shadow: 0 24px 48px -28px rgba(11, 18, 32, 0.35);
+}
+
+.flow-lines {
+  background: repeating-linear-gradient(var(--cp-line) 0 2px, transparent 2px 7px);
 }
 
 .toolbar-button {
