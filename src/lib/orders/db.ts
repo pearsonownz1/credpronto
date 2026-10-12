@@ -1,4 +1,5 @@
 import { ADDON_CATALOG, expeditedFlagForAddons, type PricedAddon } from "./addons";
+import { fulfillmentState } from "./release-decision";
 import {
   countrySlugFallbackFilter,
   mapEdgeCredentialRow,
@@ -99,6 +100,9 @@ function mapOrder(row: Row): OrderRecord {
       row.edge_match_method === "base" || row.edge_match_method === "fuzzy" ? row.edge_match_method : null,
     createdAt: str(row.created_at) ?? new Date().toISOString(),
     updatedAt: str(row.updated_at) ?? str(row.created_at) ?? new Date().toISOString(),
+    paidAt: str(row.paid_at),
+    staffAlertSentAt: str(row.staff_alert_sent_at),
+    staffUrgentAlertSentAt: str(row.staff_urgent_alert_sent_at),
     progress: asOrderProgress(row.progress) ?? { step: "uploaded", pagesRead: 0, pagesTotal: 0 },
   };
 }
@@ -332,6 +336,58 @@ export async function updateOrder(
 ): Promise<void> {
   const { error } = await db.from("orders").update(patch).eq("id", orderId);
   fail(error);
+}
+
+/** Sets paid_at once. A later call leaves the original timestamp. */
+export async function markOrderPaidAt(db: Db, orderId: string, paidAt: string): Promise<void> {
+  const { error } = await db.from("orders").update({ paid_at: paidAt }).eq("id", orderId).is("paid_at", null);
+  fail(error);
+}
+
+/** Moves status only when it is still `from`. False means another worker won. */
+export async function claimOrderStatus(db: Db, orderId: string, from: string, to: string): Promise<boolean> {
+  const { data, error } = await db.from("orders").update({ status: to }).eq("id", orderId).eq("status", from).select("id");
+  fail(error);
+  return ((data ?? []) as { id?: string }[]).length > 0;
+}
+
+export async function claimOrderColumn(
+  db: Db,
+  orderId: string,
+  column: "staff_alert_sent_at" | "staff_urgent_alert_sent_at",
+  at: string,
+  statuses?: string[],
+): Promise<boolean> {
+  let query = db.from("orders").update({ [column]: at }).eq("id", orderId).is(column, null);
+  if (statuses && statuses.length > 0) query = query.in("status", statuses);
+  const { data, error } = await query.select("id");
+  fail(error);
+  return ((data ?? []) as { id?: string }[]).length > 0;
+}
+
+export async function clearOrderColumn(
+  db: Db,
+  orderId: string,
+  column: "staff_alert_sent_at" | "staff_urgent_alert_sent_at",
+  at: string,
+): Promise<void> {
+  const { error } = await db.from("orders").update({ [column]: null }).eq("id", orderId).eq(column, at);
+  fail(error);
+}
+
+/** Paid orders still waiting on a person, old enough for the urgent backstop. */
+export async function listStaffAlertCandidates(db: Db, paidBefore: string): Promise<OrderRecord[]> {
+  const { data, error } = await db
+    .from("orders")
+    .select("*")
+    .in("status", ["paid", "needs_review", "correction_requested"])
+    .not("paid_at", "is", null)
+    .lte("paid_at", paidBefore)
+    .is("staff_urgent_alert_sent_at", null)
+    .order("paid_at", { ascending: true })
+    .limit(40);
+  fail(error);
+  return ((data ?? []) as Row[]).map(mapOrder);
 }
 
 /** One column. The quote pipeline calls this once per extracted page and once per later step. */
@@ -1118,9 +1174,10 @@ export async function listOrders(
   let query = db
     .from("orders")
     .select(
-      "id, status, service_type, source_language, billable_pages, total_cents, currency, created_at, review_reason, expedited, customer_id, customers(email)",
+      "id, status, service_type, source_language, billable_pages, total_cents, currency, created_at, paid_at, review_reason, expedited, customer_id, customers(email)",
       { count: "exact" },
     )
+    .order("paid_at", { ascending: true, nullsFirst: false })
     .order("expedited", { ascending: false })
     .order("created_at", { ascending: false })
     .range(page.offset, page.offset + page.limit - 1);
@@ -1140,9 +1197,11 @@ export async function listOrders(
       totalCents: num(row.total_cents),
       currency: str(row.currency),
       createdAt: str(row.created_at),
+      paidAt: str(row.paid_at),
       reviewReason: str(row.review_reason),
       expedited: row.expedited === true,
       email: email ?? null,
+      fulfillment: fulfillmentState({ status: String(row.status), paidAt: str(row.paid_at) }),
     };
   });
   return { orders, total: count ?? orders.length };

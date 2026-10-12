@@ -99,6 +99,8 @@ function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
     }),
     shippingAddress: null,
     ...patch,
+    paidAt: patch.paidAt ?? null,
+    fulfillment: patch.fulfillment ?? null,
   };
 }
 

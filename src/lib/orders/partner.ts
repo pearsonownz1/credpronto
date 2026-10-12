@@ -43,6 +43,7 @@ import { signedObjectUrl, serviceDb } from "./storage";
 import { generateOrderToken, hashOrderToken } from "./token";
 import type { OrderRecord } from "./types";
 import { downloadGate } from "./access";
+import { fulfillmentState, type FulfillmentState } from "./release-decision";
 import { isPreviewDelayed } from "./translation-watch";
 
 export const EVALUATION_REVIEW_REASON = "Credential evaluation is reviewed by staff.";
@@ -63,6 +64,8 @@ export type PartnerOrderBody = {
   payment: { status: string } | null;
   progress: Omit<OrderProgress, "retries">;
   delayed: boolean;
+  paidAt: string | null;
+  fulfillment: FulfillmentState | null;
   reviewReason?: string | null;
   qa?: ReturnType<typeof qaSummary>;
 };
@@ -134,6 +137,8 @@ export function toPartnerOrder(input: {
     currency: input.order.currency,
     payment: input.paymentStatus ? { status: input.paymentStatus } : null,
     progress,
+    paidAt: input.order.paidAt,
+    fulfillment: fulfillmentState(input.order),
     delayed: isPreviewDelayed({
       status: input.order.status,
       previewVersion: input.previewVersion ?? null,
@@ -448,6 +453,8 @@ async function finishPartnerOrder(
       review_reason: EVALUATION_REVIEW_REASON,
     });
     await notifyLifecycle(db, order.id, "order.paid");
+    const { settlePaidOrder } = await import("./paid-release");
+    await settlePaidOrder(db, order.id);
     const reviewed = await ownedOrder(db, order.userId ?? "", order.id);
     return { body: await present(db, reviewed, false), orderId: order.id, startTranslation: false };
   }
@@ -458,8 +465,14 @@ async function finishPartnerOrder(
   await updateOrder(db, order.id, { status: "paid" });
   await notifyLifecycle(db, order.id, "order.paid");
   await ensurePendingDelivery(db, order.id);
+  const { settlePaidOrder } = await import("./paid-release");
+  await settlePaidOrder(db, order.id);
   const paid = await ownedOrder(db, order.userId ?? "", order.id);
-  return { body: await present(db, paid, false), orderId: order.id, startTranslation: true };
+  return {
+    body: await present(db, paid, false),
+    orderId: order.id,
+    startTranslation: paid.serviceType === "translation" && paid.status === "paid" && !paid.finalTranslationPath,
+  };
 }
 
 async function present(db: Db, order: OrderRecord, detail: boolean): Promise<PartnerOrderBody> {

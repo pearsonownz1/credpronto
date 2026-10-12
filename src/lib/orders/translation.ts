@@ -476,6 +476,8 @@ export async function runTranslationAssemble(
           score: assessment.score,
           issues: assessment.pass ? [] : assessment.issues,
         });
+        const current = await getOrderById(db, input.orderId);
+        const keepPaid = current?.status === "paid";
         if (!assessment.pass) {
           await markPreview(db, input.orderId, input.version, "failed");
           await markRunFailed(db, input.orderId, input.version);
@@ -492,6 +494,10 @@ export async function runTranslationAssemble(
             review_reason: QA_REVIEW_REASON,
             progress: checkedProgress(order.progress, { step: "done" }),
           });
+          if (keepPaid || current?.paidAt) {
+            const { settlePaidOrder } = await import("./paid-release");
+            await settlePaidOrder(db, input.orderId);
+          }
           return;
         }
 
@@ -527,13 +533,23 @@ export async function runTranslationAssemble(
         });
         if (deadline.aborted) throw new AiUnavailableError("translation_timeout");
         if (stillOpen.length === 0) {
-          await updateOrder(db, input.orderId, { status: "preview_ready", review_reason: null, progress: settled });
+          await updateOrder(db, input.orderId, {
+            ...(keepPaid ? {} : { status: "preview_ready" }),
+            review_reason: null,
+            progress: settled,
+          });
+        } else if (keepPaid) {
+          await updateOrder(db, input.orderId, { progress: settled });
         } else {
           await updateOrder(db, input.orderId, { status: "correction_requested", progress: settled });
         }
         await markRunReady(db, input.orderId, input.version);
         const { notifyLifecycle } = await import("./webhook-delivery");
         await notifyLifecycle(db, input.orderId, "order.preview_ready");
+        if (keepPaid || current?.paidAt) {
+          const { settlePaidOrder } = await import("./paid-release");
+          await settlePaidOrder(db, input.orderId);
+        }
       })(),
       deadline,
     );

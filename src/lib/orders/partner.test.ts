@@ -53,6 +53,9 @@ function order(patch: Partial<OrderRecord> = {}): OrderRecord {
     edgeMatchMethod: null,
     createdAt: "2026-10-12T00:00:00.000Z",
     updatedAt: "2026-10-12T00:00:00.000Z",
+    paidAt: null,
+    staffAlertSentAt: null,
+    staffUrgentAlertSentAt: null,
     progress: { step: "done", pagesRead: 3, pagesTotal: 3 },
     ...patch,
   };
@@ -131,6 +134,8 @@ describe("partner orders", () => {
       currency: "usd",
       payment: { status: "paid" },
       progress: { step: "done", pagesRead: 3, pagesTotal: 3 },
+      paidAt: null,
+      fulfillment: null,
       delayed: false,
     });
     expect(body.totalCents).toBe(body.billablePages! * body.unitPriceCents);

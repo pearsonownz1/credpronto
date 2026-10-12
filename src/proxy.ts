@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { safeNextPath } from "@/lib/auth/redirect";
+import { waitsForCheckoutOrder } from "@/lib/orders/checkout-return";
 import { publicOrderSegment } from "@/lib/orders/public-order";
 import { publicOrderExists } from "@/lib/orders/public-order-server";
+import { isOrderToken } from "@/lib/orders/token";
 import { ROBOTS_NOINDEX } from "@/lib/seo";
 import { updateSession } from "@/lib/supabase/proxy";
 
@@ -33,17 +35,22 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const token = publicOrderSegment(pathname);
   if (token != null) {
-    try {
-      if (!(await publicOrderExists(token))) {
-        // Cache Components streams a shell before notFound(), which would stay
-        // 200. Rewrite to the static notFound() page before that shell starts.
-        const url = request.nextUrl.clone();
-        url.pathname = "/missing";
-        url.search = "";
-        return withPrivateRobots(NextResponse.rewrite(url), pathname);
+    const checkout = request.nextUrl.searchParams.get("checkout");
+    // A checkout return can beat the webhook. Leave the token in the URL and let the page retry.
+    const waitForOrder = isOrderToken(token) && waitsForCheckoutOrder(checkout);
+    if (!waitForOrder) {
+      try {
+        if (!isOrderToken(token) || !(await publicOrderExists(token))) {
+          // Cache Components streams a shell before notFound(), which would stay
+          // 200. Rewrite to the static notFound() page before that shell starts.
+          const url = request.nextUrl.clone();
+          url.pathname = "/missing";
+          url.search = "";
+          return withPrivateRobots(NextResponse.rewrite(url), pathname);
+        }
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : "order lookup failed");
       }
-    } catch (error) {
-      console.error(error instanceof Error ? error.message : "order lookup failed");
     }
   }
 

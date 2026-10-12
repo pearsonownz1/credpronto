@@ -1,5 +1,6 @@
 "use client";
 
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { parseEvaluationService } from "@/lib/flow/order-choice";
 import { FlowHeader } from "./flow-header";
 import { UploadCard } from "./upload-card";
@@ -14,6 +15,50 @@ export function UploadPageFallback() {
         <p className="mt-2 text-[15px] text-ink-muted">Loading the upload form…</p>
       </main>
     </div>
+  );
+}
+
+type UploadSeedValue = { service: string | null; email: string | null };
+
+const UploadSeedContext = createContext<(seed: UploadSeedValue) => void>(() => {});
+
+/** Reports the URL service and signed-in email without remounting the form. */
+export function UploadSeed({
+  initialService,
+  sessionEmail,
+}: {
+  initialService?: string | null;
+  sessionEmail?: string | null;
+}) {
+  const report = useContext(UploadSeedContext);
+  useEffect(() => {
+    report({ service: initialService ?? null, email: sessionEmail ?? null });
+  }, [report, initialService, sessionEmail]);
+  return null;
+}
+
+/**
+ * The form stays mounted across `?service=` changes. The seed resolves inside
+ * Suspense, so that wait can no longer replace the inputs the customer already filled.
+ */
+export function UploadExperience({ seed }: { seed: ReactNode }) {
+  const [reported, setReported] = useState<UploadSeedValue | null>(null);
+  const report = useCallback((next: UploadSeedValue) => {
+    setReported((current) => {
+      if (current && current.service === next.service && current.email === next.email) return current;
+      return next;
+    });
+  }, []);
+
+  return (
+    <UploadSeedContext.Provider value={report}>
+      {seed}
+      {reported ? (
+        <UploadView initialService={reported.service} sessionEmail={reported.email} />
+      ) : (
+        <UploadPageFallback />
+      )}
+    </UploadSeedContext.Provider>
   );
 }
 

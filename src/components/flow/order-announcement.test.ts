@@ -8,6 +8,19 @@ const order = {
 };
 
 describe("order live message", () => {
+  it("says payment is being confirmed instead of calling a checkout return missing", () => {
+    expect(orderLiveMessage({ loading: true, confirming: true, checkout: "success", order: null })).toBe(
+      "Confirming payment.",
+    );
+    expect(orderLiveMessage({ loading: false, confirming: true, checkout: "success", order })).toBe(
+      "Confirming payment.",
+    );
+    expect(orderLiveMessage({ loading: false, checkout: "cancel", order: null })).toBe("Payment canceled.");
+    expect(
+      orderLiveMessage({ loading: false, error: "Order not found", checkout: "success", order: null }),
+    ).toBe("We couldn't load this order.");
+  });
+
   it("says the order is loading until a status arrives", () => {
     expect(orderLiveMessage({ loading: true, order: null })).toBe("Loading your order…");
     expect(orderLiveMessage({ loading: false, error: "Missing", order: null })).toBe(

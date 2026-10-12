@@ -34,6 +34,8 @@ export type AdminOrder = {
   reviewReason: string | null;
   email: string | null;
   expedited: boolean;
+  paidAt: string | null;
+  fulfillment: "released" | "awaiting_review" | null;
 };
 
 export type AdminList = {

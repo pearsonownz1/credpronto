@@ -5,9 +5,11 @@ import {
   renderOrderReceivedEmail,
   renderPaymentReceiptEmail,
   renderPreviewReadyEmail,
+  renderStaffAlertEmail,
   type OrderReceivedEmail,
   type PaymentReceiptEmail,
   type PreviewReadyEmail,
+  type StaffAlertEmail,
 } from "./email-templates";
 
 export function appOrigin(): string {
@@ -17,6 +19,10 @@ export function appOrigin(): string {
 
 export function orderLink(token: string): string {
   return `${appOrigin()}/order/${token}`;
+}
+
+export function adminStudioLink(orderId: string): string {
+  return `${appOrigin()}/admin/orders/${encodeURIComponent(orderId)}`;
 }
 
 type SendResult = { sent: boolean; skipped: boolean; detail?: string };
@@ -40,12 +46,12 @@ function mailer(): { from: string; resend: Resend } | null {
   return { from: emailFromHeader(configured), resend: new Resend(apiKey) };
 }
 
-async function send(to: string, subject: string, text: string, html?: string): Promise<SendResult> {
+async function send(to: string | readonly string[], subject: string, text: string, html?: string): Promise<SendResult> {
   const client = mailer();
   if (!client) return { sent: false, skipped: true };
   const { error } = await client.resend.emails.send({
     from: client.from,
-    to,
+    to: typeof to === "string" ? to : [...to],
     subject,
     text,
     ...(html ? { html } : {}),
@@ -118,6 +124,14 @@ export function sendPreviewReady(
 
 export function sendPaymentReceipt(to: string, input: PaymentReceiptEmail): Promise<SendResult> {
   const rendered = renderPaymentReceiptEmail(input);
+  return send(to, rendered.subject, rendered.text, rendered.html);
+}
+
+export function sendStaffOrderAlert(
+  to: readonly string[],
+  input: StaffAlertEmail,
+): Promise<SendResult> {
+  const rendered = renderStaffAlertEmail(input);
   return send(to, rendered.subject, rendered.text, rendered.html);
 }
 

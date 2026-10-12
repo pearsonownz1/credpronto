@@ -90,6 +90,10 @@ export function safeOrderLink(value: string | null): string | null {
   return null;
 }
 
+/** Scrolls inside the card and wraps long lines on a narrow screen. */
+export const QUICK_START_CODE_CLASS =
+  "block w-full min-w-0 max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-[var(--cp-radius)] bg-[#0b1220] p-4 font-mono text-[11.5px] leading-[1.6] text-[#d6e0ff]";
+
 export function quickStartCurl(secret: string | null): string {
   const key = secret && secret.trim() !== "" ? secret.replace(/\\/g, "\\\\").replace(/"/g, '\\"') : "<key>";
   return [

@@ -173,9 +173,13 @@ Idempotent retry of analysis or translation. Safe to call more than once. Return
   "payment": null,
   "delivery": null,
   "progress": { "step": "done", "pagesRead": 3, "pagesTotal": 3 },
-  "delayed": false
+  "delayed": false,
+  "paidAt": null,
+  "fulfillment": null
 }
 ```
+
+`paidAt` is when checkout settled, or null before that. `fulfillment` is `released` after the certified PDF is approved or delivered, `awaiting_review` while a paid order is still unapproved, and null before payment.
 
 `progress.step` is `uploaded`, `reading`, `language`, `counting`, `quoting`, `done`, or `translating`. `pagesRead` increases once per page while the text is extracted, and `pagesTotal` is the number of physical pages. A skipped replacement upload resets it to `uploaded` with both counts at 0. A finished quote is `done`. Translation sets `translating` until a preview is saved. `delayed` is true when that preview is still missing more than 15 minutes after the translation started. It stays true when the order moves to `needs_review` with `reviewReason` `translation_timeout`.
 
@@ -335,7 +339,7 @@ Each selected add-on is its own Stripe Checkout line item, in addition to the ex
 
 The rows are stored on the order (`order_addons`: `addon_id`, `unit_cents`, `quantity`, `total_cents`). Mail also stores the address. `orders.total_cents` becomes the inclusive total, and the payment row uses that amount. The webhook still requires `amount_total` to equal `orders.total_cents`. `CHECKOUT_PLACEHOLDER=1` stores the same selection and charges nothing.
 
-`expedited` on an evaluation, and on older translation orders that already purchased it, moves the order to the front of the staff review queue. `GET /api/admin/orders` returns `expedited: true` or `false` on each row and sorts expedited orders first, then `created_at` descending. `/admin` uses that order for the paid orders waiting on staff. New translation orders store `false`.
+`expedited` is true for an evaluation that purchased it, and for older translation orders that already did. New translation orders store `false`. `GET /api/admin/orders` returns `expedited: true` or `false` on each row. Rows are oldest `paid_at` first, with unpaid orders last. Expedited comes first only when `paid_at` ties, then `created_at` descending. `/admin` uses that order for the paid orders waiting on staff.
 
 `/admin` order detail shows fulfillment tasks for what was purchased:
 
@@ -505,7 +509,7 @@ These routes require a signed-in Supabase user who has a `staff` row or `profile
 
 | Method | Path | Body | Result |
 | --- | --- | --- | --- |
-| `GET` | `/api/admin/orders?status=&reviewReason=&limit=&offset=` | | `{ "orders": [ { id, status, serviceType, sourceLanguage, billablePages, totalCents, currency, createdAt, reviewReason, email, expedited } ], "page": { "limit", "offset", "total" } }`. `limit` defaults to 50 and cannot exceed 100. `offset` defaults to 0. `reviewReason` filters to that exact reason, including `equivalency_unmapped`. `expedited` is true when that add-on was purchased. Expedited rows come first, then `created_at` descending. |
+| `GET` | `/api/admin/orders?status=&reviewReason=&limit=&offset=` | | `{ "orders": [ { id, status, serviceType, sourceLanguage, billablePages, totalCents, currency, createdAt, paidAt, reviewReason, email, expedited, fulfillment } ], "page": { "limit", "offset", "total" } }`. `limit` defaults to 50 and cannot exceed 100. `offset` defaults to 0. `reviewReason` filters to that exact reason, including `equivalency_unmapped`. `expedited` is true when that add-on was purchased. `paidAt` is the checkout timestamp or null. `fulfillment` is `released`, `awaiting_review`, or null. Rows are oldest `paid_at` first (nulls last). Expedited comes first only when `paid_at` ties, then `created_at` descending. |
 | `GET` | `/api/admin/orders/[id]` | | Order, documents, pages (source text and the latest ready AI translation paragraphs per page), confirmations, corrections, payment, delivery, and `fulfillment` (see Checkout add-ons). Includes storage keys for staff. |
 | `PATCH` | `/api/admin/orders/[id]` | `{ "pages": [ { "documentId", "pageNumber", "paragraphs": ["…"] } ] }` | Replaces those pages' translation text, writes a new translation version (`model` `staff-edit`), and regenerates the watermarked preview, clean translation, and certification page the same way the pipeline renders them. Other pages keep their current text. Allowed from `preview_ready`, `correction_requested`, `paid`, `approved`, and `delivered`. The order status does not move backward. An approved or delivered row's file keys are updated. Records `translation_edited`. |
 | `POST` | `/api/admin/orders/[id]/resolve-review` | `{ "sourceLanguage": "es" }` | `needs_review` → `quoted`. `sourceLanguage` optional when the order already has one. When `reviewReason` is `equivalency_unmapped`, `{ "equivalencies": ["Bachelor's degree"], "countries": ["Mexico"], "fields": ["Administración de Empresas"], "dates": ["18 de junio de 2019"] }` (one string per credential; `countries`, `fields`, and `dates` are required only for values still marked `Pending staff review`) writes those values, stores the clean report, and clears the reason. The status stays `preview_ready` or `paid`. `400` `{ "error": "Each credential needs a U.S. equivalency" }` when a value is missing or still `Pending staff review`. |
@@ -886,6 +890,8 @@ The order is owned by the key's user (`orders.user_id`). Analysis quotes it with
   "currency": "usd",
   "payment": { "status": "paid" },
   "progress": { "step": "done", "pagesRead": 3, "pagesTotal": 3 },
+  "paidAt": "2026-10-12T00:00:00.000Z",
+  "fulfillment": "awaiting_review",
   "delayed": false
 }
 ```
@@ -936,6 +942,8 @@ The create shape, plus `reviewReason` and `qa` (the same object as the admin ord
     "pagesDone": 1,
     "pagesTranslateTotal": 3
   },
+  "paidAt": "2026-10-12T00:00:00.000Z",
+  "fulfillment": "awaiting_review",
   "delayed": false,
   "reviewReason": null,
   "qa": null

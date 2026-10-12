@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { ApiOrder } from "./client";
-import { apiOrdersCsv, formatCharged, formatKeyPrefix, formatLastUsed, quickStartCurl, safeOrderLink } from "./present";
+import {
+  QUICK_START_CODE_CLASS,
+  apiOrdersCsv,
+  formatCharged,
+  formatKeyPrefix,
+  formatLastUsed,
+  quickStartCurl,
+  safeOrderLink,
+} from "./present";
 
 const order: ApiOrder = {
   id: "ord_1",
@@ -36,6 +44,11 @@ describe("integrations presentation", () => {
     expect(placeholder).toContain("curl https://www.credpronto.com/api/v1/orders");
     expect(placeholder).not.toMatch(/\$\d/);
     expect(quickStartCurl("cp_test_secret")).toContain('Authorization: Bearer cp_test_secret');
+    expect(QUICK_START_CODE_CLASS).toContain("overflow-x-auto");
+    expect(QUICK_START_CODE_CLASS).toContain("whitespace-pre-wrap");
+    expect(QUICK_START_CODE_CLASS).toContain("break-words");
+    expect(QUICK_START_CODE_CLASS).toContain("min-w-0");
+    expect(QUICK_START_CODE_CLASS).toContain("max-w-full");
 
     const csv = apiOrdersCsv([order]);
     expect(csv).toContain("ord_1");

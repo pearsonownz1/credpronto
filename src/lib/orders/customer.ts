@@ -69,6 +69,7 @@ import { sourceFileBody, sourceFileTarget, type SourceFileResponse } from "./sou
 import { evaluationPreviewSources } from "./preview-documents";
 import { previewSignedTargets } from "./preview-targets";
 import { serviceDb, signedObjectUrl, uploadObject, type Db } from "./storage";
+import { checkoutReturnUrl, orderTokenFromReturnUrl } from "./checkout-return";
 import { assertOrderTokenShape, hashOrderToken } from "./token";
 import { parseCorrectionBody } from "./corrections";
 import { decideChargeRefunded, decideCheckoutCompleted, decideCheckoutExpired } from "./webhook";
@@ -547,6 +548,8 @@ export async function startCheckout(token: string, body: unknown = {}) {
       paymentLabel: "Test checkout",
       addons: selection.addons,
     });
+    const { settlePaidOrder } = await import("./paid-release");
+    await settlePaidOrder(db, order.id);
     return { mode: "paid_test" as const, paymentStatus: "paid_test" as const, orderStatus: "paid" as const };
   }
 
@@ -586,8 +589,8 @@ export async function startCheckout(token: string, body: unknown = {}) {
         },
       })),
     ],
-    success_url: `${appOrigin()}/order/${token}?checkout=success`,
-    cancel_url: `${appOrigin()}/order/${token}?checkout=cancel`,
+    success_url: checkoutReturnUrl(appOrigin(), token, "success"),
+    cancel_url: checkoutReturnUrl(appOrigin(), token, "cancel"),
   });
   if (!session.url) throw new HttpError("Stripe did not return a checkout URL", 502);
   const paymentIntent = typeof session.payment_intent === "string" ? session.payment_intent : null;
@@ -647,6 +650,10 @@ export async function handleStripeWebhook(request: Request) {
   );
 
   if (decision.action === "duplicate" || decision.action === "ignore") {
+    if (decision.action === "duplicate" && payment) {
+      const { settlePaidOrder } = await import("./paid-release");
+      await settlePaidOrder(db, payment.orderId);
+    }
     return { received: true, duplicate: decision.action === "duplicate" };
   }
   if (decision.action === "fail") {
@@ -677,25 +684,16 @@ export async function handleStripeWebhook(request: Request) {
     const paidAt = new Date().toISOString();
     await emailPaymentReceipt(db, {
       order: receiptOrder,
-      token: session.metadata?.order_token ?? orderTokenFromSuccessUrl(session.success_url),
+      token: session.metadata?.order_token ?? orderTokenFromReturnUrl(session.success_url),
       receiptNumber: payment.id,
       paidAt,
       totalCents: payment.amountCents,
       paymentLabel: await stripePaymentLabel(stripe, decision.paymentIntentId),
     });
   }
+  const { settlePaidOrder } = await import("./paid-release");
+  await settlePaidOrder(db, payment.orderId);
   return { received: true };
-}
-
-function orderTokenFromSuccessUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  try {
-    const parsed = new URL(url);
-    const match = /^\/order\/([^/]+)$/.exec(parsed.pathname);
-    return match?.[1] ? decodeURIComponent(match[1]) : null;
-  } catch {
-    return null;
-  }
 }
 
 async function stripePaymentLabel(stripe: Stripe, paymentIntentId: string | null): Promise<string | null> {
