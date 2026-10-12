@@ -1,10 +1,26 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import path from "node:path";
 import sharp from "sharp";
 import type { WrappedPdfiumModule } from "@embedpdf/pdfium";
 import { CHECKOUT_PREVIEW_EDGE_PX } from "../checkout-preview";
 
 const require = createRequire(import.meta.url);
+
+const PDFIUM = "@embedpdf/pdfium";
+
+/**
+ * Read the wasm from the package directory. A direct `.wasm` import makes
+ * Turbopack compile the module, which fails on the PDFium WASI imports.
+ */
+function readPdfiumWasm(): Buffer {
+  const entry = require.resolve(
+    /* turbopackIgnore: true */
+    /* webpackIgnore: true */
+    PDFIUM,
+  );
+  return readFileSync(path.join(path.dirname(entry), "pdfium.wasm"));
+}
 
 type PdfiumHeap = WrappedPdfiumModule["pdfium"] & {
   HEAPU8: Uint8Array;
@@ -18,9 +34,12 @@ let pdfiumReady: Promise<WrappedPdfiumModule> | null = null;
 async function loadPdfium(): Promise<WrappedPdfiumModule> {
   if (!pdfiumReady) {
     pdfiumReady = (async () => {
-      const { init } = await import("@embedpdf/pdfium");
-      const wasmBinary = readFileSync(require.resolve("@embedpdf/pdfium/pdfium.wasm"));
-      const pdfium = await init({ wasmBinary });
+      const { init } = await import(
+        /* turbopackIgnore: true */
+        /* webpackIgnore: true */
+        PDFIUM
+      );
+      const pdfium = await init({ wasmBinary: readPdfiumWasm() });
       pdfium.PDFiumExt_Init();
       return pdfium;
     })().catch((error: unknown) => {
