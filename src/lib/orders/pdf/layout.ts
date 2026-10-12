@@ -17,11 +17,25 @@ export function translationRenderPasses(): [TranslationRenderPass, TranslationRe
   ];
 }
 
+export type FieldRow = {
+  label: string;
+  value: string;
+};
+
+export type RenderBlock =
+  | { type: "heading"; text: string; level?: 1 | 2 }
+  | { type: "paragraph"; text: string }
+  | { type: "fields"; rows: FieldRow[] }
+  | { type: "seal"; text: string }
+  | { type: "signature"; electronic: boolean }
+  | { type: "note"; text: string };
+
 export type RenderPage = {
   combinedPageNumber: number;
   widthPt: number;
   heightPt: number;
   paragraphs: string[];
+  blocks?: RenderBlock[];
 };
 
 export type RenderInput = {
@@ -50,22 +64,65 @@ export function pageSize(page: { widthPt: number; heightPt: number }): {
   return { widthPt, heightPt };
 }
 
-export function wrapLines(text: string, widthOf: (line: string) => number, maxWidth: number): string[] {
-  const words = text.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return [];
-
+function breakToken(token: string, widthOf: (line: string) => number, maxWidth: number): string[] {
+  const chars = Array.from(token);
   const lines: string[] = [];
-  let current = "";
-  for (const word of words) {
-    const next = current ? `${current} ${word}` : word;
-    if (current && widthOf(next) > maxWidth) {
-      lines.push(current);
-      current = word;
-    } else {
-      current = next;
+  let start = 0;
+  while (start < chars.length) {
+    const rest = chars.slice(start).join("");
+    if (widthOf(rest) <= maxWidth) {
+      lines.push(rest);
+      break;
     }
+    let lo = start + 1;
+    let hi = chars.length - 1;
+    let best = start + 1;
+    while (lo <= hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (widthOf(chars.slice(start, mid).join("")) <= maxWidth) {
+        best = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    lines.push(chars.slice(start, best).join(""));
+    start = best;
   }
-  if (current) lines.push(current);
+  return lines;
+}
+
+/**
+ * Wrap on spaces, and break a token anywhere once it is wider than the line
+ * (the same rule as CSS overflow-wrap: anywhere). Newlines stay as line breaks.
+ */
+export function wrapLines(text: string, widthOf: (line: string) => number, maxWidth: number): string[] {
+  const lines: string[] = [];
+  for (const rawLine of text.split(/\n/)) {
+    const words = rawLine.trim().split(/[ \t]+/).filter(Boolean);
+    if (words.length === 0) continue;
+    let current = "";
+    const flush = () => {
+      if (!current) return;
+      lines.push(current);
+      current = "";
+    };
+    for (const word of words) {
+      if (widthOf(word) > maxWidth) {
+        flush();
+        lines.push(...breakToken(word, widthOf, maxWidth));
+        continue;
+      }
+      const next = current ? `${current} ${word}` : word;
+      if (current && widthOf(next) > maxWidth) {
+        flush();
+        current = word;
+      } else {
+        current = next;
+      }
+    }
+    flush();
+  }
   return lines;
 }
 

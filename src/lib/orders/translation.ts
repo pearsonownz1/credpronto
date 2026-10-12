@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { generateObject, translationModelId } from "./ai";
 import { CONFIRMATION_FIELD_KEYS } from "./fields";
-import { renderOrderPdfs, type RenderPage } from "./pdf/render";
+import type { RenderBlock, RenderPage } from "./pdf/layout";
+import { renderOrderPdfs } from "./pdf/render";
+import { blocksFromModel, blocksToParagraphs, type ModelBlock } from "./pdf/structure";
 import {
   customerEmail,
   getOrderById,
@@ -29,10 +31,38 @@ const translationSchema = z.object({
   pages: z.array(
     z.object({
       pageNumber: z.number(),
-      paragraphs: z.array(z.string()),
+      blocks: z
+        .array(
+          z.object({
+            type: z.string(),
+            text: z.string().optional(),
+            level: z.number().optional(),
+            electronic: z.boolean().optional(),
+            rows: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
+            lines: z.array(z.string()).optional(),
+          }),
+        )
+        .optional(),
+      lines: z.array(z.string()).optional(),
+      paragraphs: z.array(z.string()).optional(),
     }),
   ),
 });
+
+type ModelPage = {
+  pageNumber: number;
+  blocks?: ModelBlock[];
+  lines?: string[];
+  paragraphs?: string[];
+};
+
+function pageHasContent(blocks: RenderBlock[]): boolean {
+  return blocks.some((block) => {
+    if (block.type === "paragraph" || block.type === "note" || block.type === "heading") return block.text.trim().length > 0;
+    if (block.type === "fields") return block.rows.some((row) => row.label.trim() || row.value.trim());
+    return true;
+  });
+}
 
 function confirmedBlock(fields: ConfirmationRecord[]): string {
   return CONFIRMATION_FIELD_KEYS.map((key) => {
@@ -47,26 +77,20 @@ function dateFormatOf(fields: ConfirmationRecord[]): string {
   return format || "MM/DD/YYYY";
 }
 
-function alignPages(
-  expected: number[],
-  returned: Array<{ pageNumber: number; paragraphs: string[] }>,
-): Array<{ pageNumber: number; paragraphs: string[] }> | null {
-  const byNumber = new Map<number, string[]>();
+function alignPages(expected: number[], returned: ModelPage[]): Array<{ pageNumber: number; blocks: RenderBlock[] }> | null {
+  const byNumber = new Map<number, RenderBlock[]>();
   for (const page of returned) {
-    const paragraphs = page.paragraphs.map((paragraph) => paragraph.trim()).filter(Boolean);
-    byNumber.set(Math.round(page.pageNumber), paragraphs);
+    const blocks = blocksFromModel(page);
+    if (pageHasContent(blocks)) byNumber.set(Math.round(page.pageNumber), blocks);
   }
   if (expected.every((number) => byNumber.has(number))) {
-    return expected.map((number) => ({
-      pageNumber: number,
-      paragraphs: byNumber.get(number)?.length ? byNumber.get(number)! : [" "],
-    }));
+    return expected.map((number) => ({ pageNumber: number, blocks: byNumber.get(number) ?? [] }));
   }
-  if (returned.length === expected.length) {
-    return expected.map((number, index) => {
-      const paragraphs = returned[index]?.paragraphs.map((paragraph) => paragraph.trim()).filter(Boolean);
-      return { pageNumber: number, paragraphs: paragraphs?.length ? paragraphs : [" "] };
-    });
+  if (returned.length === expected.length && returned.every((page) => pageHasContent(blocksFromModel(page)))) {
+    return expected.map((number, index) => ({
+      pageNumber: number,
+      blocks: blocksFromModel(returned[index] ?? {}),
+    }));
   }
   return null;
 }
@@ -103,11 +127,23 @@ ${confirmedBlock(input.fields)}
 
 ${notes.length ? `The customer asked for these corrections:\n${notes.join("\n")}` : "There are no correction notes."}
 
-Return paragraphs of English for each page number listed below. Keep page numbers unchanged.
+Return one object per page number, with blocks in the original top-to-bottom order.
+Keep names, CURPs, and place spellings exactly as printed or confirmed. Do not join a label and its value into a paragraph.
+
+For a form, use type "fields" and rows of {label, value}. Translate labels into English. One row per field, in the original order. A line-broken reading (type "lines", one label or value per line) is acceptable when you cannot split a row.
+
+For prose, use type "paragraph" and preserve paragraph breaks.
+
+For a seal, stamp, coat of arms, or letter-spaced ring such as "C I V I L  R E G I S T R Y", use type "seal" and set text to a short place description such as "Civil Registry of Jalisco". Do not copy ring text, and do not letter-space it.
+
+For a handwritten signature, use type "signature" with electronic false.
+For an electronic signature, firma electrónica, or a long unbroken signature token, use type "signature" with electronic true. Do not copy the signature string.
+
+For a section title, use type "heading".
 ${pageText}`;
 
   const expected = input.pages.map((page) => page.number);
-  let last: Array<{ pageNumber: number; paragraphs: string[] }> = [];
+  let last: ModelPage[] = [];
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const result = await generateObject(translationSchema, [
       { role: "user", content: [{ type: "text", text: prompt }] },
@@ -183,7 +219,8 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
             pages: translated.map((page) => ({
               pageNumber: documentPages.find((item) => item.number === page.pageNumber)?.pageNumber ?? page.pageNumber,
               combinedPageNumber: page.pageNumber,
-              paragraphs: page.paragraphs,
+              paragraphs: blocksToParagraphs(page.blocks),
+              blocks: page.blocks,
             })),
           },
         });
@@ -193,7 +230,8 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
             combinedPageNumber: page.pageNumber,
             widthPt: source?.widthPt ?? 612,
             heightPt: source?.heightPt ?? 792,
-            paragraphs: page.paragraphs,
+            paragraphs: blocksToParagraphs(page.blocks),
+            blocks: page.blocks,
           });
         }
       }
