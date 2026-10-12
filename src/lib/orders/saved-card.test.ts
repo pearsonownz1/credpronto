@@ -30,7 +30,7 @@ describe("saved card", () => {
     expect(setupIntentCreateParams("cus_123", "user-1")).toEqual({
       customer: "cus_123",
       usage: "off_session",
-      payment_method_types: ["card"],
+      automatic_payment_methods: { enabled: true, allow_redirects: "never" },
       metadata: { user_id: "user-1" },
     });
   });
