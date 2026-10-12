@@ -1,6 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isMockMode, MOCK_COOKIE, readMockAccount } from "@/lib/account/session";
 import { readPublicSupabaseEnv } from "./env";
+
+export type SessionUpdate = {
+  response: NextResponse;
+  signedIn: boolean;
+};
 
 function continueRequest(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
@@ -11,7 +17,12 @@ function continueRequest(request: NextRequest) {
   return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
-export async function updateSession(request: NextRequest) {
+export async function updateSession(request: NextRequest): Promise<SessionUpdate> {
+  if (isMockMode()) {
+    const signedIn = readMockAccount(request.cookies.get(MOCK_COOKIE)?.value) != null;
+    return { response: continueRequest(request), signedIn };
+  }
+
   let supabaseResponse = continueRequest(request);
 
   let url: string;
@@ -19,7 +30,7 @@ export async function updateSession(request: NextRequest) {
   try {
     ({ url, key } = readPublicSupabaseEnv());
   } catch {
-    return supabaseResponse;
+    return { response: supabaseResponse, signedIn: false };
   }
 
   const supabase = createServerClient(url, key, {
@@ -44,7 +55,7 @@ export async function updateSession(request: NextRequest) {
 
   // Refreshes the auth token. Do not add logic between creating the client
   // and getClaims(). Public routes stay open; this does not gate the site.
-  await supabase.auth.getClaims();
+  const { data, error } = await supabase.auth.getClaims();
 
-  return supabaseResponse;
+  return { response: supabaseResponse, signedIn: !error && Boolean(data?.claims?.sub) };
 }
