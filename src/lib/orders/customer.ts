@@ -18,6 +18,7 @@ import {
   insertPayment,
   latestPayment,
   latestReadyPreview,
+  listReadyPreviewPaths,
   listCorrections,
   listDocuments,
   listOrderAddons,
@@ -48,6 +49,7 @@ import { normalizeLanguage } from "./languages";
 import { loadCustomerOrder } from "./pipeline";
 import { orderDownloadFilename } from "./download-name";
 import { originalDownloadResponse, originalTargets } from "./originals";
+import { evaluationPreviewSources } from "./preview-documents";
 import { previewSignedTargets } from "./preview-targets";
 import { serviceDb, signedObjectUrl, uploadObject, type Db } from "./storage";
 import { assertOrderTokenShape, hashOrderToken } from "./token";
@@ -194,6 +196,25 @@ export async function addCorrection(token: string, body: unknown) {
   };
 }
 
+/** One signature per preview object, so two links to the same path share one URL. */
+async function signPreviewPaths(
+  db: Db,
+  combinedOriginalPath: string,
+  paths: readonly string[],
+): Promise<Map<string, string>> {
+  const entries = await Promise.all(
+    paths.map(async (path) => {
+      const target = previewSignedTargets({
+        combinedOriginalPath,
+        previewPath: path,
+      }).translation;
+      const url = await signedObjectUrl(db, target.bucket, target.path, PREVIEW_URL_SECONDS);
+      return [path, url] as const;
+    }),
+  );
+  return new Map(entries);
+}
+
 export async function getPreview(token: string): Promise<PreviewResponse> {
   const { db, order } = await orderForToken(token);
   const preview = await latestReadyPreview(db, order.id);
@@ -206,14 +227,29 @@ export async function getPreview(token: string): Promise<PreviewResponse> {
     documents,
     withCombinedNumbers(documents, await listPages(db, documents.map((document) => document.id))),
   );
-  const targets = previewSignedTargets({
-    combinedOriginalPath: order.combinedOriginalPath,
+  const sources = evaluationPreviewSources({
+    service: order.service,
     previewPath: preview.previewPath,
+    previewPaths: await listReadyPreviewPaths(db, order.id),
   });
-  const [originalUrl, translationUrl] = await Promise.all([
-    signedObjectUrl(db, targets.original.bucket, targets.original.path, PREVIEW_URL_SECONDS),
-    signedObjectUrl(db, targets.translation.bucket, targets.translation.path, PREVIEW_URL_SECONDS),
+  const originalTarget = previewSignedTargets({
+    combinedOriginalPath: order.combinedOriginalPath,
+    previewPath: sources.viewerPath,
+  }).original;
+  const previewPaths = [
+    ...new Set(
+      [sources.viewerPath, sources.reportPath, sources.translationPath].filter(
+        (path): path is string => Boolean(path),
+      ),
+    ),
+  ];
+  const [originalUrl, signedPreviews] = await Promise.all([
+    signedObjectUrl(db, originalTarget.bucket, originalTarget.path, PREVIEW_URL_SECONDS),
+    signPreviewPaths(db, order.combinedOriginalPath, previewPaths),
   ]);
+  const translationUrl = signedPreviews.get(sources.viewerPath);
+  if (!translationUrl) throw new HttpError("Preview is not ready", 409);
+  const reportUrl = sources.reportPath ? signedPreviews.get(sources.reportPath) ?? null : null;
   await insertEvent(db, order.id, "preview_viewed", { version: preview.version });
 
   const corrections = await listCorrections(db, order.id);
@@ -224,13 +260,13 @@ export async function getPreview(token: string): Promise<PreviewResponse> {
     billablePages: order.billablePages,
     original: { url: originalUrl, pageCount: pages.length, pages },
     translation: {
-      url: translationUrl,
+      url: sources.translationPath ? signedPreviews.get(sources.translationPath) ?? translationUrl : translationUrl,
       pageCount: pages.length,
       pages,
       version: preview.version,
     },
-    report: order.service
-      ? { url: translationUrl, pageCount: order.evaluationResult?.pageCount ?? pages.length }
+    report: reportUrl
+      ? { url: reportUrl, pageCount: order.evaluationResult?.pageCount ?? pages.length }
       : null,
     corrections: corrections.map((correction) => ({
       id: correction.id,

@@ -209,6 +209,8 @@ export function toPreviewOrder(
       pages: mapPages(preview.translation.pages),
     },
     product: order.orderType === "evaluation" ? "evaluation" : "translation",
+    service: order.service,
+    report: preview.report,
     pricing: {
       perPageCents: preview.unitPriceCents,
       pages,

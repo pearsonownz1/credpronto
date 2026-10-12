@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { checkoutPayload } from "./addon-panel";
-import { OrderRail } from "./preview-chrome";
+import { MobileBuyBar, OrderRail } from "./preview-chrome";
 import type { AddonPanelState } from "./addon-panel";
 import {
   CERTIFICATE_PREVIEW,
@@ -95,6 +95,60 @@ describe("preview order", () => {
     expect(html).toContain("shipping-address");
     expect(html).toContain("Mail requires a US shipping address");
     expect(html).toContain("Buy &amp; download — $30.65");
+  });
+
+  it("opens the evaluation report and the certified translation from separate URLs", () => {
+    const diploma: PreviewOrder = {
+      ...CERTIFICATE_PREVIEW,
+      product: "evaluation",
+      service: "diploma",
+      report: { url: "/samples/long-en.pdf", pageCount: 1 },
+    };
+    const html = renderToStaticMarkup(
+      <OrderRail order={diploma} corrections={[]} panel={panel({ options: [], selected: [], totalCents: 3985 })} />,
+    );
+    expect(html).toContain('data-testid="evaluation-report-link"');
+    expect(html).toContain('href="/samples/long-en.pdf"');
+    expect(html).toContain("Evaluation report");
+    expect(html).toContain('data-testid="translation-link"');
+    expect(html).toContain('href="/samples/birth-certificate-en.pdf"');
+    expect(html).toContain("Translation");
+
+    const mobile = renderToStaticMarkup(
+      <MobileBuyBar
+        order={diploma}
+        onFlag={() => undefined}
+        panel={panel({ options: [], selected: [], totalCents: 3985 })}
+      />,
+    );
+    expect(mobile).toContain('href="/samples/long-en.pdf"');
+    expect(mobile).toContain('href="/samples/birth-certificate-en.pdf"');
+
+    const shared = renderToStaticMarkup(
+      <OrderRail
+        order={{
+          ...CERTIFICATE_PREVIEW,
+          product: "evaluation",
+          service: "course_by_course",
+          translation: { ...CERTIFICATE_PREVIEW.translation, url: "/samples/long-en.pdf" },
+          report: { url: "/samples/long-en.pdf", pageCount: 1 },
+        }}
+        corrections={[]}
+        panel={panel({ options: [], selected: [], totalCents: 3995 })}
+      />,
+    );
+    expect(shared).toContain('data-testid="evaluation-report-link"');
+    expect(shared).not.toContain('data-testid="translation-link"');
+
+    const translationOnly = renderToStaticMarkup(
+      <OrderRail
+        order={CERTIFICATE_PREVIEW}
+        corrections={[]}
+        panel={panel({ options: [], selected: [], totalCents: 2985 })}
+      />,
+    );
+    expect(translationOnly).not.toContain("evaluation-report-link");
+    expect(translationOnly).not.toContain("translation-link");
   });
 
   it("hides the add-on panel when the order returns none", () => {

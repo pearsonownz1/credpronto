@@ -277,7 +277,11 @@ const mockClient: FlowClient = {
         })),
         version: 1,
       },
-      report: null,
+      report:
+        order.orderType === "evaluation" &&
+        (order.service === "diploma" || order.service === "course_by_course")
+          ? { url: "/samples/long-en.pdf", pageCount: 1 }
+          : null,
       corrections: [],
     };
   },

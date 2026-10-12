@@ -217,7 +217,23 @@ describe("preview mapping", () => {
       { label: "3 pages × $9.95", amountCents: 2985 },
     ]);
     expect(mapped.product).toBe("translation");
+    expect(mapped.service).toBeNull();
+    expect(mapped.report).toBeNull();
+    expect(mapped.translation.url).toBe("https://files.example/preview");
     expect(mapped.corrections[0]?.note).toBe("use the passport spelling");
+
+    const evaluation = toPreviewOrder(
+      order({ orderType: "evaluation", service: "diploma" }),
+      {
+        ...preview,
+        report: { url: "https://files.example/report", pageCount: 1 },
+        translation: { ...preview.translation, url: "https://files.example/translation" },
+      },
+    );
+    expect(evaluation.product).toBe("evaluation");
+    expect(evaluation.service).toBe("diploma");
+    expect(evaluation.report).toEqual({ url: "https://files.example/report", pageCount: 1 });
+    expect(evaluation.translation.url).toBe("https://files.example/translation");
     expect(documentIdForPage(order().documents, 2)).toBe("doc-a");
     expect(documentIdForPage(order().documents, 3)).toBe("doc-b");
   });

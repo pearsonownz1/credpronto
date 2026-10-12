@@ -1,5 +1,5 @@
 import { addonOptions } from "@/lib/orders/addons";
-import type { ShippingAddress } from "@/lib/orders/types";
+import type { EvaluationService, ShippingAddress } from "@/lib/orders/types";
 
 export type AddonOption = {
   id: string;
@@ -49,6 +49,9 @@ export type PreviewOrder = {
   id: string;
   status: "preview_ready";
   product?: "translation" | "evaluation";
+  service?: EvaluationService | null;
+  /** Watermarked evaluation report. Absent on a translation preview. */
+  report?: { url: string; pageCount: number } | null;
   sourceLanguage: string;
   targetLanguage: string;
   filename: string;
