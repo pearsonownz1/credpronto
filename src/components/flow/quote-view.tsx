@@ -6,11 +6,13 @@ import { FlowApiError, getFlowClient } from "@/lib/flow/client";
 import { formatMoney, pageLabel } from "@/lib/flow/pricing";
 import {
   UPLOAD_ORDER_NOTE,
+  canOpenConfirm,
   canSetSourceLanguage,
   displayedPageRule,
   languageChoices,
   languageLine,
   servicePriceLines,
+  settleTargetLanguageUpdate,
   showTargetLanguagePicker,
   targetChoices,
   totalLabel,
@@ -75,7 +77,7 @@ export function QuoteView({ token: pathToken }: { token?: string }) {
   );
 }
 
-function QuoteBody({
+export function QuoteBody({
   order,
   token,
   onReplaced,
@@ -90,6 +92,8 @@ function QuoteBody({
   const sameLanguage = showTargetLanguagePicker(order);
   const [language, setLanguage] = useState(order.sourceLanguage ?? choices[0]?.code ?? "es");
   const [target, setTarget] = useState(order.targetLanguage || "en");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [updating, setUpdating] = useState(false);
   const sourceCode = picker ? language : (order.sourceLanguage ?? language);
   const targetCode = sameLanguage ? target : order.targetLanguage;
   const line = order.sourceLanguage
@@ -100,7 +104,31 @@ function QuoteBody({
   const evaluation = order.orderType === "evaluation";
   const showPrice = !qualityHold;
   const priceLines = showPrice ? servicePriceLines(order) : [];
+  const showContinue = canOpenConfirm(order);
   const orderedPages = order.pageOrder && order.pageOrder.pages.length > 1 ? order.pageOrder : null;
+
+  async function onUpdateLanguage() {
+    setUpdating(true);
+    setNotice(null);
+    try {
+      await getFlowClient().updateTargetLanguage(token, target);
+      const outcome = settleTargetLanguageUpdate(null);
+      if (outcome.refetch) onReplaced();
+      setNotice(outcome.message);
+    } catch (cause) {
+      const outcome = settleTargetLanguageUpdate(
+        cause instanceof FlowApiError
+          ? { status: cause.status, message: cause.message }
+          : {
+              status: 0,
+              message: cause instanceof Error ? cause.message : "We couldn't update the language.",
+            },
+      );
+      setNotice(outcome.message);
+    } finally {
+      setUpdating(false);
+    }
+  }
 
   return (
     <FlowColumns>
@@ -111,7 +139,11 @@ function QuoteBody({
         <p className="mt-2 mb-6 text-[15px] text-ink-muted">
           {qualityHold
             ? "A photo was too hard to read, so this is not a quote yet. Retake it and upload a replacement. A reviewer can also accept the file you already sent."
-            : "We read your files. Check the language and pages, then continue. You won’t be charged now."}
+            : showContinue
+              ? "We read your files. Check the language and pages, then continue. You won’t be charged now."
+              : sameLanguage
+                ? "Choose the language you want, then update this quote. You won’t be charged now."
+                : "We read your files. Check the language and pages. You won’t be charged now."}
         </p>
         <div>
           <span className="mb-1.5 block text-[13px] font-semibold">Detected language</span>
@@ -125,7 +157,10 @@ function QuoteBody({
                 data-testid="target-language"
                 aria-label="Target language"
                 value={target}
-                onChange={(event) => setTarget(event.target.value)}
+                onChange={(event) => {
+                  setTarget(event.target.value);
+                  setNotice(null);
+                }}
                 className="bg-transparent text-[13px] font-semibold text-primary outline-none"
               >
                 {targets.map((choice) => (
@@ -241,21 +276,48 @@ function QuoteBody({
             emphasize
           />
         </Summary>
-        {order.status === "quoted" || (order.status === "needs_review" && !qualityHold) ? (
-          <Link
-            href={`/confirm?lang=${encodeURIComponent(sourceCode)}&target=${encodeURIComponent(targetCode)}`}
-            data-testid="continue"
-            className={buttonClasses("primary", "mt-4 h-[50px] w-full text-[15px]")}
-          >
-            Continue
-          </Link>
-        ) : qualityHold ? (
+        {qualityHold ? (
           <ImageQuality order={order} token={token} onReplaced={onReplaced} />
         ) : (
-          <p className="mt-4 text-[13.5px] text-ink-muted">
-            We’ll confirm the language before the free preview starts. You don’t need to do
-            anything else right now.
-          </p>
+          <>
+            {sameLanguage ? (
+              <button
+                type="button"
+                data-testid="update-language"
+                disabled={updating || !token || target === order.targetLanguage}
+                onClick={() => void onUpdateLanguage()}
+                className={buttonClasses(
+                  showContinue ? "secondary" : "primary",
+                  "mt-4 h-[50px] w-full text-[15px] disabled:cursor-not-allowed disabled:opacity-60",
+                )}
+              >
+                {updating ? "Updating…" : "Update language"}
+              </button>
+            ) : null}
+            {notice ? (
+              <p
+                data-testid="language-update-note"
+                role="status"
+                className="mt-4 text-[13.5px] text-ink-muted"
+              >
+                {notice}
+              </p>
+            ) : null}
+            {showContinue ? (
+              <Link
+                href={`/confirm?lang=${encodeURIComponent(sourceCode)}&target=${encodeURIComponent(targetCode)}`}
+                data-testid="continue"
+                className={buttonClasses("primary", "mt-4 h-[50px] w-full text-[15px]")}
+              >
+                Continue
+              </Link>
+            ) : sameLanguage ? null : (
+              <p className="mt-4 text-[13.5px] text-ink-muted">
+                We’ll confirm the language before the free preview starts. You don’t need to do
+                anything else right now.
+              </p>
+            )}
+          </>
         )}
         <div className="mt-[18px]">
           <Checks

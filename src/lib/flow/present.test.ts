@@ -6,6 +6,7 @@ import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import {
   LANGUAGE_PENDING,
   UPLOAD_ORDER_NOTE,
+  TARGET_LANGUAGE_REVIEW_MESSAGE,
   canOpenConfirm,
   canSetSourceLanguage,
   checkoutFailureMessage,
@@ -16,6 +17,7 @@ import {
   languageLine,
   orderHubStep,
   servicePriceLines,
+  settleTargetLanguageUpdate,
   showTargetLanguagePicker,
   splitParents,
   toPreviewOrder,
@@ -109,9 +111,76 @@ describe("quote language", () => {
     expect(showTargetLanguagePicker(english)).toBe(true);
     expect(languageLine({ sourceLanguage: "en", targetLanguage: "es" })).toBe("English → Spanish");
     expect(showTargetLanguagePicker(order())).toBe(false);
-    expect(canOpenConfirm(english)).toBe(true);
+    expect(canOpenConfirm(english)).toBe(false);
     expect(canOpenConfirm(order({ status: "needs_review", reviewReason: IMAGE_QUALITY_REASON }))).toBe(
       false,
+    );
+  });
+
+  it("continues only when a quoted order has line items and a total", () => {
+    expect(canOpenConfirm(order())).toBe(true);
+    expect(
+      canOpenConfirm(
+        order({
+          lineItems: [
+            {
+              kind: "translation",
+              description: "Certified translation",
+              quantity: 2,
+              unitAmountCents: 995,
+              amountCents: 1990,
+            },
+          ],
+          billablePages: 0,
+          totalCents: 1990,
+        }),
+      ),
+    ).toBe(true);
+    expect(canOpenConfirm(order({ lineItems: [], billablePages: 0, totalCents: 1990 }))).toBe(false);
+    expect(canOpenConfirm(order({ totalCents: null }))).toBe(false);
+    expect(
+      canOpenConfirm(
+        order({
+          status: "needs_review",
+          sourceLanguage: "en",
+          targetLanguage: "en",
+          lineItems: [],
+          billablePages: 0,
+          totalCents: null,
+          reviewReason: "The document appears to already be in English.",
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      canOpenConfirm(
+        order({
+          status: "needs_review",
+          sourceLanguage: "en",
+          targetLanguage: "en",
+          lineItems: [],
+          totalCents: 2985,
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("refetches after a target-language update and explains a missing route", () => {
+    expect(settleTargetLanguageUpdate(null)).toEqual({ refetch: true, message: null });
+    expect(settleTargetLanguageUpdate({ status: 404, message: "Not found" })).toEqual({
+      refetch: false,
+      message: TARGET_LANGUAGE_REVIEW_MESSAGE,
+    });
+    expect(settleTargetLanguageUpdate({ status: 405, message: "Method Not Allowed" })).toEqual({
+      refetch: false,
+      message: TARGET_LANGUAGE_REVIEW_MESSAGE,
+    });
+    expect(TARGET_LANGUAGE_REVIEW_MESSAGE).toBe("We'll review this order and email you a quote.");
+    expect(settleTargetLanguageUpdate({ status: 400, message: "Pick another language" })).toEqual({
+      refetch: false,
+      message: "Pick another language",
+    });
+    expect(settleTargetLanguageUpdate({ status: 500, message: "" }).message).toBe(
+      "We couldn't update the language.",
     );
   });
 
