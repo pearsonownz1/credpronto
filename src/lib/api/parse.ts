@@ -1,4 +1,19 @@
-import type { AdminList, AdminOrder, CustomerOrder, StaffCorrection, StaffDetail, StaffNote, StaffPage } from "./types";
+import type {
+  AdminList,
+  AdminOrder,
+  CustomerOrder,
+  QaIssue,
+  QaIssueType,
+  QaReport,
+  QaStatus,
+  StaffCorrection,
+  StaffDetail,
+  StaffNote,
+  StaffPage,
+} from "./types";
+
+const QA_STATUS = new Set<QaStatus>(["pass", "fail", "retranslated"]);
+const QA_ISSUE_TYPE = new Set<QaIssueType>(["name", "date", "number", "missing_text", "layout", "other"]);
 
 function text(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value : null;
@@ -88,6 +103,42 @@ export function parseAdminList(body: unknown): AdminList | null {
   };
 }
 
+function parseQa(value: unknown): QaReport | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  const status = text(row.status);
+  const score = amount(row.score);
+  const attempts = amount(row.attempts);
+  if (!status || !QA_STATUS.has(status as QaStatus) || score == null || attempts == null) return null;
+  if (!Array.isArray(row.issues)) return null;
+  const issues: QaIssue[] = row.issues.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const issue = entry as Record<string, unknown>;
+    const type = text(issue.type);
+    const severity = text(issue.severity);
+    const page = parseIssuePage(issue.page);
+    if (!type || !QA_ISSUE_TYPE.has(type as QaIssueType) || !severity || page === undefined) return [];
+    return [
+      {
+        type: type as QaIssueType,
+        severity,
+        page,
+        original: text(issue.original) ?? "",
+        translated: text(issue.translated) ?? "",
+        note: text(issue.note) ?? "",
+      },
+    ];
+  });
+  return { status: status as QaStatus, score, checkedAt: text(row.checkedAt), attempts, issues };
+}
+
+function parseIssuePage(value: unknown): number | null | undefined {
+  if (value == null) return null;
+  const page = amount(value);
+  if (page == null || !Number.isInteger(page) || page < 1) return undefined;
+  return page;
+}
+
 function paragraphsOf(value: unknown): string[] {
   if (!value || typeof value !== "object") return [];
   const paragraphs = (value as { paragraphs?: unknown }).paragraphs;
@@ -173,6 +224,7 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
         : null,
     originalUrl: text(row.originalUrl),
     translationUrl: text(row.translationUrl),
+    qa: parseQa(row.qa),
   };
 }
 
