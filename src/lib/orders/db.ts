@@ -1,3 +1,4 @@
+import { ADDON_CATALOG, type PricedAddon } from "./addons";
 import { parseEvaluationResult } from "./evaluation-price";
 import { parseStoredPageOrder, compareCombinedPages } from "./page-order";
 import type { Db } from "./storage";
@@ -11,10 +12,12 @@ import type {
   DeliveryRecord,
   DeliveryStatus,
   DocumentRecord,
+  AddonId,
   OrderEventType,
   OrderNoteRecord,
   OrderRecord,
   OrderStatus,
+  ShippingAddress,
   PageRecord,
   PaymentRecord,
   PaymentStatus,
@@ -71,7 +74,32 @@ function mapOrder(row: Row): OrderRecord {
     evaluationCents: num(row.evaluation_cents),
     translationCents: num(row.translation_cents),
     evaluationResult: parseEvaluationResult(row.evaluation_result),
+    addonCents: num(row.addon_cents) ?? 0,
+    expedited: row.expedited === true,
+    shippingAddress: mapShipping(row),
+    mailStatus: row.mail_status === "pending" || row.mail_status === "shipped" ? row.mail_status : null,
+    mailTracking: str(row.mail_tracking),
+    notarizationStatus:
+      row.notarization_status === "pending" || row.notarization_status === "done" ? row.notarization_status : null,
     createdAt: str(row.created_at) ?? new Date().toISOString(),
+  };
+}
+
+function mapShipping(row: Row): ShippingAddress | null {
+  const name = str(row.shipping_name);
+  const line1 = str(row.shipping_line1);
+  const city = str(row.shipping_city);
+  const state = str(row.shipping_state);
+  const postalCode = str(row.shipping_postal_code);
+  if (!name || !line1 || !city || !state || !postalCode || row.shipping_country !== "US") return null;
+  return {
+    name,
+    line1,
+    line2: str(row.shipping_line2),
+    city,
+    state,
+    postalCode,
+    country: "US",
   };
 }
 
@@ -277,6 +305,72 @@ export async function updateOrder(
 ): Promise<void> {
   const { error } = await db.from("orders").update(patch).eq("id", orderId);
   fail(error);
+}
+
+export type StoredAddon = {
+  id: AddonId;
+  unitCents: number;
+  quantity: number;
+  totalCents: number;
+};
+
+export async function listOrderAddons(db: Db, orderId: string): Promise<StoredAddon[]> {
+  const { data, error } = await db.from("order_addons").select("*").eq("order_id", orderId);
+  fail(error);
+  const rank = new Map<AddonId, number>(ADDON_CATALOG.map((item, index) => [item.id, index]));
+  return ((data ?? []) as Row[])
+    .flatMap((row): StoredAddon[] => {
+      const id = str(row.addon_id);
+      if (id !== "notarization" && id !== "mail" && id !== "expedited") return [];
+      return [
+        {
+          id,
+          unitCents: num(row.unit_cents) ?? 0,
+          quantity: num(row.quantity) ?? 1,
+          totalCents: num(row.total_cents) ?? 0,
+        },
+      ];
+    })
+    .sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+}
+
+export async function replaceOrderAddons(
+  db: Db,
+  orderId: string,
+  input: { addons: PricedAddon[]; shippingAddress: ShippingAddress | null; addonCents: number; totalCents: number },
+): Promise<void> {
+  const { error: deleted } = await db.from("order_addons").delete().eq("order_id", orderId);
+  fail(deleted);
+  if (input.addons.length > 0) {
+    const { error } = await db.from("order_addons").insert(
+      input.addons.map((item) => ({
+        order_id: orderId,
+        addon_id: item.id,
+        unit_cents: item.unitCents,
+        quantity: item.quantity,
+        total_cents: item.totalCents,
+      })),
+    );
+    fail(error);
+  }
+  const mail = input.addons.some((item) => item.id === "mail");
+  const notarization = input.addons.some((item) => item.id === "notarization");
+  const address = input.shippingAddress;
+  await updateOrder(db, orderId, {
+    total_cents: input.totalCents,
+    addon_cents: input.addonCents,
+    expedited: input.addons.some((item) => item.id === "expedited"),
+    shipping_name: address?.name ?? null,
+    shipping_line1: address?.line1 ?? null,
+    shipping_line2: address?.line2 ?? null,
+    shipping_city: address?.city ?? null,
+    shipping_state: address?.state ?? null,
+    shipping_postal_code: address?.postalCode ?? null,
+    shipping_country: address?.country ?? null,
+    mail_status: mail ? "pending" : null,
+    mail_tracking: null,
+    notarization_status: notarization ? "pending" : null,
+  });
 }
 
 export async function insertDocument(
@@ -843,9 +937,10 @@ export async function listOrders(
   let query = db
     .from("orders")
     .select(
-      "id, status, service_type, source_language, billable_pages, total_cents, currency, created_at, review_reason, customer_id, customers(email)",
+      "id, status, service_type, source_language, billable_pages, total_cents, currency, created_at, review_reason, expedited, customer_id, customers(email)",
       { count: "exact" },
     )
+    .order("expedited", { ascending: false })
     .order("created_at", { ascending: false })
     .range(page.offset, page.offset + page.limit - 1);
   if (status) query = query.eq("status", status);
@@ -864,6 +959,7 @@ export async function listOrders(
       currency: str(row.currency),
       createdAt: str(row.created_at),
       reviewReason: str(row.review_reason),
+      expedited: row.expedited === true,
       email: email ?? null,
     };
   });

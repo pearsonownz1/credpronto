@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { addonOptions } from "./addons";
 import { WORD_PAGE_RULE } from "./billing";
 import type { OrderRecord, PageRecord } from "./types";
 import { previewPages, toCustomerOrder } from "./view";
@@ -31,6 +32,12 @@ function orderRecord(): OrderRecord {
     evaluationCents: null,
     translationCents: null,
     evaluationResult: null,
+    addonCents: 0,
+    expedited: false,
+    shippingAddress: null,
+    mailStatus: null,
+    mailTracking: null,
+    notarizationStatus: null,
     createdAt: "2026-10-12T00:00:00.000Z",
   };
 }
@@ -70,6 +77,10 @@ describe("customer order", () => {
     expect(order.email).toBe("ada@example.com");
     expect(order.orderId).toBe("order-1");
     expect(order.pageRule).toBe(WORD_PAGE_RULE);
+    expect(order.addons).toEqual([]);
+    expect(order.addonOptions).toEqual(addonOptions(2));
+    expect(order.shippingAddress).toBeNull();
+    expect(order.totalCents).toBe(1990);
     expect(order).not.toHaveProperty("combinedOriginalPath");
   });
 
@@ -110,6 +121,34 @@ describe("customer order", () => {
     expect(order.degreeCount).toBe(1);
     expect(order.lineItems.map((item) => item.kind)).toEqual(["evaluation", "translation"]);
     expect(order.evaluation).toBeNull();
+  });
+
+  it("returns the selected add-ons in catalog order with the stored address", () => {
+    const order = toCustomerOrder({
+      order: {
+        ...orderRecord(),
+        totalCents: 7765,
+        shippingAddress: {
+          name: "Ada Lovelace",
+          line1: "2520 Venture Oaks Way",
+          line2: null,
+          city: "Sacramento",
+          state: "CA",
+          postalCode: "95833",
+          country: "US",
+        },
+      },
+      documents: [],
+      confirmations: [],
+      previewVersion: null,
+      paymentStatus: null,
+      deliveryStatus: null,
+      email: "ada@example.com",
+      addons: [{ id: "mail" }, { id: "notarization" }],
+    });
+    expect(order.addons).toEqual(["notarization", "mail"]);
+    expect(order.shippingAddress?.state).toBe("CA");
+    expect(order.totalCents).toBe(7765);
   });
 });
 

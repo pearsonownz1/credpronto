@@ -7,6 +7,7 @@ import {
   latestReadyPreview,
   listConfirmations,
   listDocuments,
+  listOrderAddons,
   listPages,
 } from "./db";
 import { translateOrder } from "./translation";
@@ -16,13 +17,14 @@ import type { OrderRecord } from "./types";
 
 export async function loadCustomerOrder(db: Db, order: OrderRecord): Promise<CustomerOrder> {
   const documents = await listDocuments(db, order.id);
-  const [pages, confirmations, preview, payment, delivery, email] = await Promise.all([
+  const [pages, confirmations, preview, payment, delivery, email, addons] = await Promise.all([
     listPages(db, documents.map((document) => document.id)),
     listConfirmations(db, order.id),
     latestReadyPreview(db, order.id),
     latestPayment(db, order.id),
     getDelivery(db, order.id),
     customerEmail(db, order.customerId),
+    listOrderAddons(db, order.id),
   ]);
 
   return toCustomerOrder({
@@ -34,6 +36,7 @@ export async function loadCustomerOrder(db: Db, order: OrderRecord): Promise<Cus
     paymentStatus: payment?.status ?? null,
     deliveryStatus: delivery?.status ?? null,
     email,
+    addons,
   });
 }
 

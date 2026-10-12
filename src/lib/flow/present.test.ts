@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { addonOptions } from "@/lib/orders/addons";
 import { CJK_PAGE_RULE, WORD_PAGE_RULE } from "@/lib/orders/billing";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import {
@@ -65,6 +66,9 @@ function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
     translationCents: null,
     lineItems: [],
     evaluation: null,
+    addons: [],
+    addonOptions: addonOptions(3),
+    shippingAddress: null,
     ...patch,
   };
 }

@@ -53,7 +53,21 @@ export type FlowClient = {
     token: string,
     body: { documentId: string; page: number; note: string; passage?: string | null },
   ): Promise<{ id: string; status: string }>;
-  checkout(token: string): Promise<CheckoutResult>;
+  checkout(
+    token: string,
+    body?: {
+      addons?: string[];
+      shippingAddress?: {
+        name: string;
+        line1: string;
+        line2: string | null;
+        city: string;
+        state: string;
+        postalCode: string;
+        country: "US";
+      };
+    },
+  ): Promise<CheckoutResult>;
   download(
     token: string,
     file: "translation" | "certification",
@@ -120,8 +134,12 @@ const liveClient: FlowClient = {
       body: JSON.stringify(body),
     });
   },
-  checkout(token) {
-    return request(`/api/orders/${encodeURIComponent(token)}/checkout`, { method: "POST" });
+  checkout(token, body = {}) {
+    return request(`/api/orders/${encodeURIComponent(token)}/checkout`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
   },
   download(token, file) {
     return request(
@@ -238,10 +256,20 @@ const mockClient: FlowClient = {
   async correct() {
     return { id: "mock-correction", status: "correction_requested" };
   },
-  async checkout(token) {
+  async checkout(token, body) {
     const current = readMockOrder();
+    const addons = (body?.addons ?? current.addons).filter(
+      (id): id is CustomerOrder["addons"][number] =>
+        id === "notarization" || id === "mail" || id === "expedited",
+    );
     writeMockOrder({
       ...current,
+      addons,
+      shippingAddress: body?.shippingAddress
+        ? { ...body.shippingAddress, country: "US" }
+        : addons.includes("mail")
+          ? current.shippingAddress
+          : null,
       status: "paid",
       payment: { status: "paid_test" },
       delivery: { status: "approved" },

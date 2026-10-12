@@ -108,6 +108,18 @@ export type EvaluationResult =
       gradeScale: string;
     };
 
+export type AddonId = "notarization" | "mail" | "expedited";
+
+export type ShippingAddress = {
+  name: string;
+  line1: string;
+  line2: string | null;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: "US";
+};
+
 export type OrderRecord = {
   id: string;
   customerId: string;
@@ -135,6 +147,12 @@ export type OrderRecord = {
   evaluationCents: number | null;
   translationCents: number | null;
   evaluationResult: EvaluationResult | null;
+  addonCents: number;
+  expedited: boolean;
+  shippingAddress: ShippingAddress | null;
+  mailStatus: "pending" | "shipped" | null;
+  mailTracking: string | null;
+  notarizationStatus: "pending" | "done" | null;
   createdAt: string;
 };
 

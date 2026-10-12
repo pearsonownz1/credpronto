@@ -30,6 +30,12 @@ function order(patch: Partial<OrderRecord> = {}): OrderRecord {
     evaluationCents: null,
     translationCents: null,
     evaluationResult: null,
+    addonCents: 0,
+    expedited: false,
+    shippingAddress: null,
+    mailStatus: null,
+    mailTracking: null,
+    notarizationStatus: null,
     createdAt: "2026-10-12T00:00:00.000Z",
     ...patch,
   };
