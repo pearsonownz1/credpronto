@@ -3,13 +3,13 @@ title: "Does USCIS Require a Certified Translation? | CredPronto"
 description: "Yes. Under 8 CFR 103.2(b)(3), USCIS needs a full English translation with a translator's certification. Here's what that means and a sample statement."
 url: /guides/uscis-certified-translation
 canonical: https://www.credpronto.com/guides/uscis-certified-translation
-author: Guy Pearson
+author: CredPronto Editorial Team
 last_updated: 2026-10-12
 ---
 
 # Does USCIS require a certified translation?
 
-*By Guy Pearson. Guy co-founded ImmiTranslate in 2012, later sold it, and runs GEO Credential Services (GCS.org). He has years of experience with translations and credential documents for immigration filings.*
+*By CredPronto Editorial Team.*
 
 *Last updated Oct 12, 2026*
 
