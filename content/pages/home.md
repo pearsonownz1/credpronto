@@ -1,13 +1,13 @@
 ---
 url: /
 title: "Certified Translation from $9.95/Page, Preview Free | CredPronto"
-description: "Certified translations accepted by USCIS from $9.95 a page. Upload your document, see the full translation side by side in a few minutes, and pay only if it's right."
+description: "Certified translations accepted by USCIS from $9.95 a page. Upload your document, see the full translation side by side in 3 minutes, and pay only if it's right."
 canonical: https://www.credpronto.com/
 ---
 
 ## Certified translations accepted by USCIS, and you see them first
 
-Most translation services take your money first and send the translation later. CredPronto turns that around. You upload your document and confirm the names and dates, and in a few minutes you get the complete translation next to your original. Check every line. If something's wrong, flag it and we'll fix it. You pay only when you're happy with it.
+Most translation services take your money first and send the translation later. CredPronto turns that around. You upload your document and confirm the names and dates, and in 3 minutes you get the complete translation next to your original. Check every line. If something's wrong, flag it and we'll fix it. You pay only when you're happy with it.
 
 Every paid order includes:
 - A full English translation of every page, including stamps, seals, handwritten notes and the back side
@@ -18,7 +18,7 @@ Every paid order includes:
 
 1. **Upload.** Send a PDF or a phone photo. Several documents in one order are fine.
 2. **Confirm the details.** We detect the language, count the billable pages and show the exact price before anything is processed. You confirm how names and dates should be spelled.
-3. **Preview for free.** Most previews are ready in a few minutes. You'll get an email link to a side-by-side, watermarked preview.
+3. **Preview for free.** Most previews are ready in 3 minutes. You'll get an email link to a side-by-side, watermarked preview.
 4. **Pay and download.** Payment unlocks the certified PDF. It's emailed to you and stays available through your secure order link.
 
 ## Documents we translate
@@ -67,7 +67,7 @@ The rule doesn't forbid it, but most immigration attorneys advise against transl
 Each 250 words of Latin text counts as one billable page, and each 1,000 Chinese, Japanese, or Korean characters counts as one. A page with text counts as at least one. Blank pages, shipping labels, and pages that are already English are not billed when the translation is into English. You'll see the page count and the exact total before anything is processed.
 
 **How fast will I get it?**
-Most previews are ready in a few minutes. Once you pay, the certified PDF unlocks right away. Hard-to-read scans and unusual languages go to a person for review, and we'll tell you the timing before you pay.
+Most previews are ready in 3 minutes. Once you pay, the certified PDF unlocks right away. Hard-to-read scans and unusual languages go to a person for review, and we'll tell you the timing before you pay.
 
 **Are my documents private?**
 Yes. Files are encrypted and visible only through your private order link, and we'll delete them when you ask.
