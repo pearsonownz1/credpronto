@@ -75,6 +75,25 @@ const ENTRIES: { key: string; entry: Entry }[] = [
   { key: "ELECTRONIC SIGNATURE", entry: { english: "Electronic signature", role: "signature" } },
   { key: "FIRMA", entry: { english: "Signature", role: "signature" } },
   { key: "SIGNATURE", entry: { english: "Signature", role: "signature" } },
+  { key: "出生医学证明", entry: { english: "Medical certificate of birth", role: "heading" } },
+  { key: "MEDICAL CERTIFICATE OF BIRTH", entry: { english: "Medical certificate of birth", role: "heading" } },
+  { key: "编号", entry: { english: "No.", role: "field" } },
+  { key: "NO", entry: { english: "No.", role: "field" } },
+  { key: "新生儿姓名", entry: { english: "Neonate", role: "field" } },
+  { key: "母亲姓名", entry: { english: "Mother", role: "field" } },
+  { key: "父亲姓名", entry: { english: "Father", role: "field" } },
+  { key: "性别", entry: { english: "Sex", role: "field" } },
+  { key: "出生时间", entry: { english: "Time of birth", role: "field" } },
+  { key: "出生地点", entry: { english: "Place of birth", role: "field" } },
+  { key: "出生孕周", entry: { english: "Gestational age", role: "field" } },
+  { key: "出生体重", entry: { english: "Birth weight", role: "field" } },
+  { key: "身长", entry: { english: "Length", role: "field" } },
+  { key: "医疗机构名称", entry: { english: "Medical institution", role: "field" } },
+  { key: "国籍", entry: { english: "Nationality", role: "field" } },
+  { key: "民族", entry: { english: "Ethnicity", role: "field" } },
+  { key: "住址", entry: { english: "Address", role: "field" } },
+  { key: "有效身份证件号码", entry: { english: "ID number", role: "field" } },
+  { key: "姓名", entry: { english: "Name", role: "field" } },
 ];
 
 const VALUE_WORDS: Record<string, string> = {
@@ -86,6 +105,8 @@ const VALUE_WORDS: Record<string, string> = {
   MEXICANO: "Mexican",
   PADRE: "Father",
   MADRE: "Mother",
+  女: "Female",
+  男: "Male",
 };
 
 const MONTHS: Record<string, string> = {
@@ -105,19 +126,43 @@ const MONTHS: Record<string, string> = {
 
 const KEYS_BY_LENGTH = [...ENTRIES].sort((a, b) => b.key.length - a.key.length);
 
+const RADICALS: Record<string, string> = {
+  "\u2ea0": "民",
+  "\u2ed8": "青",
+  "\u2ed3": "长",
+};
+
+/** Kangxi radicals in the text layer become the unified ideograph they stand for. */
+export function normalizeText(text: string): string {
+  const mapped = Array.from(text.normalize("NFKC"), (char) => RADICALS[char] ?? char).join("");
+  const tokens = mapped.trim().split(/\s+/);
+  const singles = tokens.filter((token) => Array.from(token).length === 1).length;
+  const spaced =
+    tokens.length >= 4 && singles / tokens.length >= 0.6
+      ? tokens.map((token) => (Array.from(token).length <= 2 && /^[\p{L}]+$/u.test(token) ? Array.from(token).join(" ") : token)).join(" ")
+      : mapped;
+  return collapseLetterSpacing(spaced).replace(/(\p{Script=Han})[ \t]+(?=\p{Script=Han})/gu, "$1");
+}
+
 export function foldKey(text: string): string {
-  return text
+  return normalizeText(text)
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
     .toUpperCase()
-    .replace(/[^A-Z0-9()]+/g, " ")
+    .replace(/[^\p{L}\p{N}()]+/gu, " ")
     .trim()
     .replace(/\s+/g, " ");
 }
 
 function lookup(text: string): Entry | null {
   const key = foldKey(text);
-  return ENTRIES.find((item) => item.key === key)?.entry ?? null;
+  const exact = ENTRIES.find((item) => item.key === key)?.entry;
+  if (exact) return exact;
+  const squashed = key.replace(/ /g, "");
+  if (squashed.length < 80 && squashed.includes("MEDICALCERTIFICATEOFBIRTH")) {
+    return { english: "Medical certificate of birth", role: "heading" };
+  }
+  return null;
 }
 
 function titleWord(text: string): string {
@@ -196,6 +241,8 @@ function isAllCapsLabel(text: string): boolean {
   if (/\p{Ll}/u.test(trimmed)) return false;
   if (!/\p{Lu}/u.test(trimmed)) return false;
   if (/[.!?]$/.test(trimmed)) return false;
+  const digits = trimmed.match(/\d/g)?.length ?? 0;
+  if (digits > trimmed.length / 2) return false;
   return true;
 }
 
@@ -207,7 +254,7 @@ function isProse(text: string): boolean {
 }
 
 function translateValue(value: string): string {
-  const trimmed = value.trim();
+  const trimmed = normalizeText(value.trim());
   return VALUE_WORDS[foldKey(trimmed)] ?? trimmed;
 }
 
@@ -251,6 +298,9 @@ function coalesce(blocks: RenderBlock[]): RenderBlock[] {
       continue;
     }
     if (block.type === "paragraph" && prev?.type === "paragraph" && prev.text === block.text) {
+      continue;
+    }
+    if (block.type === "heading" && prev?.type === "heading" && prev.text === block.text) {
       continue;
     }
     out.push(block.type === "fields" ? { type: "fields", rows: [...block.rows] } : block);
@@ -482,19 +532,101 @@ function overlapsX(label: TextItem, value: TextItem): boolean {
   return overlap > 2 || Math.abs(value.x - label.x) < 22;
 }
 
+function sameBand(a: TextItem, b: TextItem): boolean {
+  return Math.abs(a.y - b.y) <= Math.max(3, Math.min(a.size, b.size) * 0.45);
+}
+
+function isStructuralText(text: string): boolean {
+  const role = lookup(text)?.role;
+  return role === "field" || role === "section" || role === "heading" || role === "signature";
+}
+
 function findValue(label: TextItem, items: TextItem[]): TextItem | null {
+  const right = items
+    .filter((item) => {
+      if (item === label || isStructuralText(item.text) || isSealMaterial(item.text)) return false;
+      if (!sameBand(label, item)) return false;
+      const gap = item.x - (label.x + label.width);
+      return gap >= -4 && gap < 220;
+    })
+    .sort((a, b) => a.x - b.x)[0];
+  if (right) return right;
+
   let best: TextItem | null = null;
   for (const item of items) {
-    if (item === label) continue;
-    const role = lookup(item.text)?.role;
-    if (role === "field" || role === "section" || role === "heading" || role === "signature") continue;
-    if (isSealMaterial(item.text) || isFictionalWatermark(item.text)) continue;
+    if (item === label || isStructuralText(item.text) || isSealMaterial(item.text)) continue;
     const dy = label.y - item.y;
     if (dy < 4 || dy > 18) continue;
     if (!overlapsX(label, item)) continue;
     if (!best || item.y > best.y) best = item;
   }
   return best;
+}
+
+function clusterLines(items: TextItem[]): TextItem[][] {
+  const sorted = [...items].sort((a, b) => b.y - a.y || a.x - b.x);
+  const lines: TextItem[][] = [];
+  for (const item of sorted) {
+    let best: TextItem[] | null = null;
+    let bestDy = Number.POSITIVE_INFINITY;
+    for (const group of lines) {
+      const ref = group[0];
+      if (!ref) continue;
+      const dy = Math.abs(ref.y - item.y);
+      const limit = Math.max(3, Math.min(ref.size, item.size) * 0.45);
+      if (dy <= limit && dy < bestDy) {
+        best = group;
+        bestDy = dy;
+      }
+    }
+    if (best) best.push(item);
+    else lines.push([item]);
+  }
+  for (const line of lines) line.sort((a, b) => a.x - b.x);
+  return lines;
+}
+
+function joinLineRuns(line: TextItem[]): TextItem[] {
+  const runs: TextItem[] = [];
+  const y = line[0]?.y ?? 0;
+  for (const item of line) {
+    const prev = runs[runs.length - 1];
+    const gap = prev ? item.x - (prev.x + prev.width) : 0;
+    const limit = prev ? Math.max(8, Math.max(prev.size, item.size) * 0.55) : 0;
+    const closed = prev ? /[:：]$/.test(prev.text) || lookup(prev.text)?.role === "field" || lookup(prev.text)?.role === "heading" : false;
+    if (prev && !closed && gap >= -2 && gap <= limit) {
+      prev.text = normalizeText(`${prev.text}${item.text}`);
+      prev.width = item.x + item.width - prev.x;
+      prev.size = Math.max(prev.size, item.size);
+      prev.y = y;
+      continue;
+    }
+    runs.push({ ...item, y, text: normalizeText(item.text) });
+  }
+  return runs;
+}
+
+function splitColonRun(item: TextItem): TextItem[] {
+  const match = item.text.match(/^(.{1,40}?)[：:]\s*(\S.*)$/);
+  if (!match) return [item];
+  const label = match[1] ?? "";
+  if (lookup(label)?.role !== "field") return [item];
+  const value = match[2] ?? "";
+  const share = label.length / Math.max(item.text.length, 1);
+  const labelWidth = Math.max(8, item.width * share);
+  return [
+    { ...item, text: normalizeText(label), width: labelWidth },
+    { ...item, text: value, x: item.x + labelWidth, width: Math.max(4, item.width - labelWidth) },
+  ];
+}
+
+function preparePositioned(items: TextItem[]): TextItem[] {
+  const cleaned = items.flatMap((item) => {
+    const text = item.text.trim();
+    if (!text || isFictionalWatermark(text)) return [];
+    return [{ ...item, text }];
+  });
+  return clusterLines(cleaned).flatMap(joinLineRuns).flatMap(splitColonRun);
 }
 
 function joinProse(items: TextItem[]): Array<{ y: number; x: number; text: string }> {
@@ -526,10 +658,12 @@ function joinProse(items: TextItem[]): Array<{ y: number; x: number; text: strin
 
 /**
  * Positioned text (top of the page is a larger y). Seals are notes at the
- * stamp's vertical position. Label cells pair with the value directly below.
+ * stamp's vertical position. A label pairs with the value on its row, or with
+ * the value directly below when the form stacks them.
  */
 export function structurePositioned(items: TextItem[]): RenderBlock[] {
-  const singles = items.filter((item) => Array.from(item.text.trim()).length === 1);
+  const prepared = preparePositioned(items);
+  const singles = prepared.filter((item) => Array.from(item.text.trim()).length === 1);
   const ring = (item: TextItem) => {
     if (Array.from(item.text.trim()).length !== 1) return false;
     const near = singles.filter((other) => Math.hypot(other.x - item.x, other.y - item.y) < 90);
@@ -538,31 +672,33 @@ export function structurePositioned(items: TextItem[]): RenderBlock[] {
 
   const kept: TextItem[] = [];
   const sealYs: number[] = [];
-  for (const item of items) {
-    const text = item.text.trim();
-    if (!text) continue;
-    if (isFictionalWatermark(text)) continue;
-    if (ring(item) || isSealMaterial(text)) {
+  for (const item of prepared) {
+    if (ring(item) || isSealMaterial(item.text)) {
       sealYs.push(item.y);
       continue;
     }
-    kept.push({ ...item, text });
+    kept.push(item);
   }
 
-  const caption = sealCaptionFromText(items.map((item) => item.text).join("\n"));
+  const caption = sealCaptionFromText(prepared.map((item) => item.text).join("\n"));
   const consumed = new Set<TextItem>();
-  const pieces: Array<{ y: number; x: number; block: RenderBlock }> = [];
+  const pieces: Array<{ top: number; x: number; block: RenderBlock }> = [];
+  const seenHeadings = new Set<string>();
 
   for (const item of kept) {
     const entry = lookup(item.text);
-    if (entry?.role === "heading" || entry?.role === "section") {
+    if (entry?.role !== "heading" && entry?.role !== "section") continue;
+    if (entry.role === "heading" && seenHeadings.has(entry.english)) {
       consumed.add(item);
-      pieces.push({
-        y: item.y,
-        x: item.x,
-        block: { type: "heading", text: entry.english, level: entry.role === "heading" ? 1 : 2 },
-      });
+      continue;
     }
+    if (entry.role === "heading") seenHeadings.add(entry.english);
+    consumed.add(item);
+    pieces.push({
+      top: item.y + item.size,
+      x: item.x,
+      block: { type: "heading", text: entry.english, level: entry.role === "heading" ? 1 : 2 },
+    });
   }
 
   for (const item of kept) {
@@ -578,10 +714,13 @@ export function structurePositioned(items: TextItem[]): RenderBlock[] {
       }
     }
     const electronic = entry ? /electron/i.test(entry.english) || isElectronicSignatureToken(item.text) : true;
-    pieces.push({ y: item.y, x: item.x, block: { type: "signature", electronic } });
+    pieces.push({ top: item.y + item.size, x: item.x, block: { type: "signature", electronic } });
   }
 
-  for (const item of kept) {
+  const fieldItems = kept
+    .filter((item) => !consumed.has(item))
+    .sort((a, b) => b.y - a.y || a.x - b.x);
+  for (const item of fieldItems) {
     if (consumed.has(item)) continue;
     const entry = lookup(item.text);
     if (entry?.role !== "field" && !isAllCapsLabel(item.text)) continue;
@@ -592,11 +731,11 @@ export function structurePositioned(items: TextItem[]): RenderBlock[] {
     consumed.add(item);
     if (value) consumed.add(value);
     if (value && isElectronicSignatureToken(value.text)) {
-      pieces.push({ y: item.y, x: item.x, block: { type: "signature", electronic: true } });
+      pieces.push({ top: item.y + item.size, x: item.x, block: { type: "signature", electronic: true } });
       continue;
     }
     pieces.push({
-      y: item.y,
+      top: item.y + item.size,
       x: item.x,
       block: {
         type: "fields",
@@ -609,9 +748,9 @@ export function structurePositioned(items: TextItem[]): RenderBlock[] {
     if (!prose.text) continue;
     const split = splitRunOn(prose.text);
     if (split) {
-      for (const block of split) pieces.push({ y: prose.y, x: prose.x, block });
+      for (const block of split) pieces.push({ top: prose.y, x: prose.x, block });
     } else {
-      pieces.push({ y: prose.y, x: prose.x, block: { type: "paragraph", text: prose.text } });
+      pieces.push({ top: prose.y, x: prose.x, block: { type: "paragraph", text: prose.text } });
     }
   }
 
@@ -624,11 +763,11 @@ export function structurePositioned(items: TextItem[]): RenderBlock[] {
     }
     for (const cluster of clusters) {
       const y = Math.max(...cluster);
-      pieces.push({ y, x: -1, block: { type: "seal", text: caption } });
+      pieces.push({ top: y, x: -1, block: { type: "seal", text: caption } });
     }
   }
 
-  pieces.sort((a, b) => b.y - a.y || a.x - b.x);
+  pieces.sort((a, b) => b.top - a.top || a.x - b.x);
   return refineSeal(coalesce(pieces.map((piece) => piece.block)));
 }
 
