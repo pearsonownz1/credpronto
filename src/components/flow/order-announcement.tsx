@@ -11,11 +11,16 @@ const PREVIEW_WAIT = new Set(["processing", "confirmed", "correction_requested",
 export function orderLiveMessage(input: {
   loading: boolean;
   error?: string | null;
+  /** Stripe success page, still waiting for the webhook to record payment. */
+  confirming?: boolean;
+  checkout?: string | null;
   order: (Pick<CustomerOrder, "status" | "billablePages" | "totalCents"> & {
     delayed?: boolean;
     progress?: { step?: string | null } | null;
   }) | null;
 }): string {
+  if (input.checkout === "cancel") return "Payment canceled.";
+  if (input.confirming) return "Confirming payment.";
   const order = input.order;
   if (!order) {
     if (input.loading) return "Loading your order…";

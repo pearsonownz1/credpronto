@@ -3,7 +3,7 @@
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 import { trackPreviewReady } from "@/lib/analytics/gtag-events";
-import { orderHubStep } from "@/lib/flow/present";
+import { downloadPhase, orderHubStep } from "@/lib/flow/present";
 import { writeToken } from "@/lib/flow/session";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { GoogleAdsConversion } from "@/components/google-ads-conversion";
@@ -21,8 +21,7 @@ export function OrderHub() {
   const router = useRouter();
   const token = params.token ?? "";
   const checkout = search.get("checkout");
-  const returned = checkout === "success" || checkout === "cancel";
-  const { order, error, loading } = useCustomerOrder(returned ? "" : token, "once");
+  const { order, error, loading } = useCustomerOrder(token, checkout === "success" ? "checkout" : "once");
   const [latest, setLatest] = useState<CustomerOrder | null>(null);
   const [trackedToken, setTrackedToken] = useState(token);
   if (trackedToken !== token) {
@@ -77,7 +76,7 @@ export function OrderHub() {
     body = (
       <>
         <GoogleAdsConversion token={token} enabled={checkout === "success"} />
-        <DownloadStates token={token} />
+        <DownloadStates token={token} pendingPayment={checkout === "success"} />
       </>
     );
   } else if (loading && !current) {
@@ -96,12 +95,17 @@ export function OrderHub() {
     body = <ProcessingView token={token} onOrder={reportPreviewReady} />;
   }
 
+  const confirming =
+    checkout === "success" && !error && (!current || downloadPhase(current) === "confirming");
+
   return (
     <>
       <OrderAnnouncement
         message={orderLiveMessage({
           loading: loading && !current,
           error,
+          confirming,
+          checkout,
           order: current,
         })}
       />

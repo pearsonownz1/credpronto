@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { FlowApiError, getFlowClient, flowUsesMock } from "@/lib/flow/client";
+import { checkoutOrderRetryDelay } from "@/lib/orders/checkout-return";
 import { PREVIEW_POLL_MS, previewPollContinues } from "@/lib/flow/preview-progress";
 import { downloadPhase } from "@/lib/flow/present";
 import {
@@ -48,7 +49,7 @@ const WORKING = new Set(["draft", "confirmed", "processing", "correction_request
 
 export function useCustomerOrder(
   token: string,
-  mode: "once" | "while-working" | "until-download" | "until-preview" = "once",
+  mode: "once" | "while-working" | "until-download" | "until-preview" | "checkout" = "once",
 ) {
   const [snapshot, setSnapshot] = useState<{
     token: string;
@@ -129,18 +130,27 @@ export function useCustomerOrder(
       void loadPreview();
     }
 
+    const startedAt = Date.now();
+
     async function load() {
       try {
         const next = await getFlowClient().getOrder(token);
         if (cancelled) return;
         setSnapshot({ token, order: next, error: null });
         const keep =
-          mode === "until-download"
+          mode === "until-download" || mode === "checkout"
             ? downloadPhase(next) !== "ready"
             : mode === "while-working" && WORKING.has(next.status);
         if (keep) timer = window.setTimeout(load, 4000);
       } catch (cause) {
         if (cancelled) return;
+        if (mode === "checkout") {
+          const delay = checkoutOrderRetryDelay(Date.now() - startedAt);
+          if (delay != null) {
+            timer = window.setTimeout(load, delay);
+            return;
+          }
+        }
         setSnapshot({
           token,
           order: null,
