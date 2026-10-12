@@ -25,6 +25,12 @@ function orderRecord(): OrderRecord {
     pageOrderBasis: null,
     pageOrder: null,
     externalRef: null,
+    orderType: "translation",
+    service: null,
+    degreeCount: null,
+    evaluationCents: null,
+    translationCents: null,
+    evaluationResult: null,
     createdAt: "2026-10-12T00:00:00.000Z",
   };
 }
@@ -78,6 +84,32 @@ describe("customer order", () => {
       email: null,
     });
     expect(order.email).toBeNull();
+  });
+
+  it("exposes the evaluation choice and line items", () => {
+    const order = toCustomerOrder({
+      order: {
+        ...orderRecord(),
+        orderType: "evaluation",
+        service: "diploma",
+        degreeCount: 1,
+        evaluationCents: 1995,
+        translationCents: 995,
+        billablePages: 1,
+        totalCents: 2990,
+      },
+      documents: [],
+      confirmations: [],
+      previewVersion: null,
+      paymentStatus: null,
+      deliveryStatus: null,
+      email: "ada@example.com",
+    });
+    expect(order.orderType).toBe("evaluation");
+    expect(order.service).toBe("diploma");
+    expect(order.degreeCount).toBe(1);
+    expect(order.lineItems.map((item) => item.kind)).toEqual(["evaluation", "translation"]);
+    expect(order.evaluation).toBeNull();
   });
 });
 

@@ -24,6 +24,12 @@ function order(patch: Partial<OrderRecord> = {}): OrderRecord {
     pageOrderBasis: null,
     pageOrder: null,
     externalRef: "crm-1842",
+    orderType: "translation",
+    service: null,
+    degreeCount: null,
+    evaluationCents: null,
+    translationCents: null,
+    evaluationResult: null,
     createdAt: "2026-10-12T00:00:00.000Z",
     ...patch,
   };

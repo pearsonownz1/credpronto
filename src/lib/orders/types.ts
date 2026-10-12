@@ -61,6 +61,53 @@ export type StoredPageOrder = {
   pages: StoredPage[];
 };
 
+export type OrderType = "translation" | "evaluation" | "expert_letter";
+
+export type EvaluationService = "diploma" | "course_by_course";
+
+export type EvaluationLine = {
+  kind: "evaluation" | "translation";
+  description: string;
+  quantity: number;
+  unitAmountCents: number;
+  amountCents: number;
+};
+
+export type DiplomaCredential = {
+  applicant: string;
+  institution: string;
+  country: string;
+  credential: string;
+  field: string;
+  dates: string;
+  usEquivalency: string;
+  documentsReviewed: string[];
+};
+
+export type CourseRow = {
+  originalName: string;
+  englishName: string;
+  localCredits: number;
+  localGrade: string;
+  usSemesterHours: number;
+  usGrade: string;
+  gradePoints: number;
+};
+
+export type EvaluationResult =
+  | { kind: "diploma"; credentials: DiplomaCredential[] }
+  | {
+      kind: "course_by_course";
+      applicant: string;
+      institution: string;
+      country: string;
+      credential: string;
+      years: Array<{ year: string; courses: CourseRow[] }>;
+      totalHours: number;
+      gpa: number;
+      gradeScale: string;
+    };
+
 export type OrderRecord = {
   id: string;
   customerId: string;
@@ -82,6 +129,12 @@ export type OrderRecord = {
   pageOrderBasis: PageOrderBasis | null;
   pageOrder: StoredPageOrder | null;
   externalRef: string | null;
+  orderType: OrderType;
+  service: EvaluationService | null;
+  degreeCount: number | null;
+  evaluationCents: number | null;
+  translationCents: number | null;
+  evaluationResult: EvaluationResult | null;
   createdAt: string;
 };
 
