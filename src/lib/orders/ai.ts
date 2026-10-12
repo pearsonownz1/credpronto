@@ -1,4 +1,4 @@
-import { generateText, NoObjectGeneratedError, Output, type ModelMessage } from "ai";
+import { generateText, Output, type ModelMessage } from "ai";
 import type { ZodType } from "zod";
 import { DEFAULT_TRANSLATION_MODEL } from "./constants";
 import { AiUnavailableError } from "./errors";
@@ -18,64 +18,35 @@ function attemptSignal(parent: AbortSignal | undefined): AbortSignal {
   return parent ? AbortSignal.any([parent, attempt]) : attempt;
 }
 
-export function translationFallbackModelId(): string | null {
-  const configured = process.env.TRANSLATION_FALLBACK_MODEL?.trim();
-  return configured || null;
-}
-
 export async function generateObject<T>(
   schema: ZodType<T>,
   messages: ModelMessage[],
   signal?: AbortSignal,
-  options?: {
-    maxRetries?: number;
-    model?: string;
-    maxOutputTokens?: number;
-    reasoning?: "low" | "medium" | "high";
-  },
+  options?: { maxRetries?: number },
 ): Promise<T> {
   const maxRetries = options?.maxRetries ?? AI_MAX_RETRIES;
-  const model = options?.model?.trim() || translationModelId();
-  const maxOutputTokens = options?.maxOutputTokens ?? 16_000;
   let last: unknown;
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     if (signal?.aborted) break;
     try {
       const result = await generateText({
-        model,
+        model: translationModelId(),
         output: Output.object({ schema }),
         messages,
-        maxOutputTokens,
-        ...(options?.reasoning ? { reasoning: options.reasoning } : {}),
+        maxOutputTokens: 16000,
         maxRetries: 0,
         abortSignal: attemptSignal(signal),
       });
-      if (result.finishReason === "length") {
-        throw new AiUnavailableError(
-          "No object generated: could not parse the response (JSON parsing failed, finishReason=length)",
-        );
-      }
       return result.output;
     } catch (error) {
-      last = lengthAwareFailure(error);
-      const message = last instanceof Error ? last.message : "The model did not respond";
+      last = error;
+      const message = error instanceof Error ? error.message : "The model did not respond";
       const cause =
         error instanceof Error && error.cause instanceof Error ? ` (cause: ${error.cause.message})` : "";
-      const reason = NoObjectGeneratedError.isInstance(error) ? ` finishReason=${error.finishReason}` : "";
-      console.error(`AI model ${model} failed: ${message}${cause}${reason}`, error);
+      console.error(`AI model ${translationModelId()} failed: ${message}${cause}`, error);
       if (signal?.aborted || attempt === maxRetries) break;
     }
   }
   const message = last instanceof Error ? last.message : "The model did not respond";
   throw new AiUnavailableError(message);
-}
-
-/** A token cutoff truncates JSON. Name that so the page retry can see it. */
-function lengthAwareFailure(error: unknown): unknown {
-  if (NoObjectGeneratedError.isInstance(error) && error.finishReason === "length") {
-    return new AiUnavailableError(
-      "No object generated: could not parse the response (JSON parsing failed, finishReason=length)",
-    );
-  }
-  return error;
 }
