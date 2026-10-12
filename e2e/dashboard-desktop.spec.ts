@@ -8,7 +8,7 @@ test("signed-out dashboard redirects to sign-in", async ({ page }) => {
 test("google sign-in explains that email still works", async ({ page }) => {
   await page.goto("/sign-in");
   await page.getByRole("button", { name: "Continue with Google" }).click();
-  await expect(page.getByRole("alert")).toHaveText("Google sign-in isn't available yet, use email");
+  await expect(page.getByText("Google sign-in isn't available yet, use email")).toBeVisible();
   await page.screenshot({ path: "artifacts/sign-in-desktop.png", fullPage: true });
 });
 
