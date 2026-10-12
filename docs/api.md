@@ -499,7 +499,7 @@ These routes require a signed-in Supabase user who has a `staff` row or `profile
 | `PATCH` | `/api/admin/orders/[id]` | `{ "pages": [ { "documentId", "pageNumber", "paragraphs": ["…"] } ] }` | Replaces those pages' translation text, writes a new translation version (`model` `staff-edit`), and regenerates the watermarked preview, clean translation, and certification page the same way the pipeline renders them. Other pages keep their current text. Allowed from `preview_ready`, `correction_requested`, `paid`, `approved`, and `delivered`. The order status does not move backward. An approved or delivered row's file keys are updated. Records `translation_edited`. |
 | `POST` | `/api/admin/orders/[id]/resolve-review` | `{ "sourceLanguage": "es" }` | `needs_review` → `quoted`. `sourceLanguage` optional when the order already has one. |
 | `POST` | `/api/admin/orders/[id]/resolve-corrections` | `{ "action": "dismiss", "correctionIds": [] }` or `{ "action": "regenerate" }` | Dismiss open corrections, or regenerate the translation and preview. |
-| `POST` | `/api/admin/orders/[id]/approve` | | Sets `deliveries.approved_by` and `approved_at`, records `approved`, and returns 5-minute signed URLs for the clean translation and the certification page. A paid order is then emailed and set to `delivered`. |
+| `POST` | `/api/admin/orders/[id]/approve` | | Restamp the certification cover first. On success, set `deliveries.approved_by` and `approved_at`, record `approved`, email the customer, set the order to `delivered`, and return 5-minute signed URLs for the clean translation and the certification page. If the cover stamp fails, the order status stays as it was, no delivery email is sent, and the response is `500` with the stamp error. |
 | `POST` | `/api/admin/orders/[id]/refund` | | Stripe refund when the payment is `paid`, the secret key is `sk_test_…`, and a payment intent is stored. `paid_test` does not call Stripe: the row is marked `refunded` and a `refunded` event is recorded with `mode: "paid_test"`. A second call returns `{ "paymentStatus": "refunded", "duplicate": true }`. Downloads lock again. |
 | `POST` | `/api/admin/orders/[id]/ship` | `{ "trackingNumber": "…" }` | Marks the mail add-on shipped. See Checkout add-ons. |
 | `POST` | `/api/admin/orders/[id]/notarize` | | Marks the notarization add-on done. See Checkout add-ons. |
@@ -526,6 +526,8 @@ Approval copies the clean translation and certification keys onto the delivery a
 ```
 
 `filename` follows the same rules as `GET /api/orders/[token]/download`. Each signed URL is created with the Supabase Storage `download` option set to that filename (`Content-Disposition`). `email` is `sent`, `skipped`, or `failed`. When email fails the delivery stays `approved` and the signed URLs are still returned. The delivery email tells the customer to open the order link from the earlier message. The raw token is not stored, so that email cannot contain a new copy of it.
+
+A failed cover stamp does not change the order or delivery status and does not send the delivery email. The response is `500` `{ "error": "<stamp error>" }` with the server path stripped. Staff can retry Approve from the order page.
 
 A `paid_test` refund returns `{ "paymentStatus": "refunded", "mode": "paid_test", "duplicate": false }`. A Stripe test refund also returns `refundId`. `409` when the payment cannot be refunded or the Stripe key is not a test key. `503` `{ "error": "Payments not configured" }` when a real `paid` row has no Stripe secret.
 

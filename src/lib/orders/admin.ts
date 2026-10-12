@@ -163,11 +163,8 @@ export async function approveOrder(orderId: string) {
   }
 
   await ensureStaffRow(db, userId);
-  try {
-    await stampApprovedCover(db, order, await approverDisplayName(db, userId));
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : "cover stamp failed");
-  }
+  // Status and the delivery email run only after this returns. A throw leaves the order unchanged.
+  await stampApprovedCover(db, order, await approverDisplayName(db, userId));
   const now = new Date().toISOString();
   if (delivery.status !== "approved") {
     await updateDelivery(db, order.id, {
