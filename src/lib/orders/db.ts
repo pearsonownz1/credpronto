@@ -1,4 +1,4 @@
-import { ADDON_CATALOG, type PricedAddon } from "./addons";
+import { ADDON_CATALOG, expeditedFlagForAddons, type PricedAddon } from "./addons";
 import { fulfillmentState } from "./release-decision";
 import {
   countrySlugFallbackFilter,
@@ -287,6 +287,7 @@ export async function insertOrder(
       include_translation: input.includeTranslation === true,
       ...(input.evaluationCents != null ? { evaluation_cents: input.evaluationCents } : {}),
       status: "draft",
+      expedited: false,
       utm_source: input.utmSource,
       utm_medium: input.utmMedium,
       utm_campaign: input.utmCampaign,
@@ -427,6 +428,9 @@ export async function replaceOrderAddons(
   orderId: string,
   input: { addons: PricedAddon[]; shippingAddress: ShippingAddress | null; addonCents: number; totalCents: number },
 ): Promise<void> {
+  const order = await getOrderById(db, orderId);
+  if (!order) throw new HttpError("Order not found", 404);
+  const expedited = expeditedFlagForAddons(order, input.addons);
   const { error: deleted } = await db.from("order_addons").delete().eq("order_id", orderId);
   fail(deleted);
   if (input.addons.length > 0) {
@@ -447,7 +451,7 @@ export async function replaceOrderAddons(
   await updateOrder(db, orderId, {
     total_cents: input.totalCents,
     addon_cents: input.addonCents,
-    expedited: input.addons.some((item) => item.id === "expedited"),
+    expedited,
     shipping_name: address?.name ?? null,
     shipping_line1: address?.line1 ?? null,
     shipping_line2: address?.line2 ?? null,

@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { orderAwaitingAnalysis } from "./analysis";
 import { UNIT_PRICE_CENTS } from "./constants";
+import { HttpError } from "./errors";
 import { decideQuote } from "./quote";
-import { EVALUATION_REVIEW_REASON, apiOrderBeforeQuote, partnerQuoteAction, quotedForCharge, toPartnerOrder } from "./partner";
+import {
+  EVALUATION_REVIEW_REASON,
+  apiOrderBeforeQuote,
+  partnerQuoteAction,
+  quotedForCharge,
+  readPartnerAddonBody,
+  toPartnerOrder,
+} from "./partner";
 import type { OrderRecord } from "./types";
 
 function order(patch: Partial<OrderRecord> = {}): OrderRecord {
@@ -210,5 +218,24 @@ describe("partner orders", () => {
       now: Date.parse("2026-10-12T00:20:00.000Z"),
     });
     expect(ready.delayed).toBe(false);
+  });
+
+  it("rejects expedited on a translation API order and accepts it for an evaluation", () => {
+    const translation = new FormData();
+    translation.set("addons", JSON.stringify(["expedited"]));
+    expect(() => readPartnerAddonBody(translation, "translation")).toThrow(HttpError);
+    expect(() => readPartnerAddonBody(translation, "translation")).toThrow("Expedited is no longer offered");
+
+    const diploma = new FormData();
+    diploma.set("addons", JSON.stringify(["notarization", "expedited"]));
+    expect(readPartnerAddonBody(diploma, "evaluation")).toMatchObject({
+      addons: ["notarization", "expedited"],
+    });
+
+    const course = new FormData();
+    course.append("addons", "expedited");
+    expect(readPartnerAddonBody(course, "evaluation")?.addons).toEqual(["expedited"]);
+    expect(() => readPartnerAddonBody(course, "translation")).toThrow("Expedited is no longer offered");
+    expect(readPartnerAddonBody(new FormData(), "translation")).toBeNull();
   });
 });
