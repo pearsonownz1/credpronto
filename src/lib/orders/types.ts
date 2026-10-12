@@ -65,6 +65,7 @@ export type OrderRecord = {
   id: string;
   customerId: string;
   userId: string | null;
+  serviceType: string;
   status: OrderStatus;
   sourceLanguage: string | null;
   targetLanguage: string;
@@ -80,6 +81,7 @@ export type OrderRecord = {
   certificationPath: string | null;
   pageOrderBasis: PageOrderBasis | null;
   pageOrder: StoredPageOrder | null;
+  externalRef: string | null;
   createdAt: string;
 };
 

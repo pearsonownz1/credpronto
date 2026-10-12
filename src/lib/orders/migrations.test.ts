@@ -59,6 +59,18 @@ describe("auth migrations", () => {
     expect(runs).toMatch(/create table public\.order_qa_runs/);
     expect(runs.toLowerCase()).not.toMatch(/add value/);
     expect(runs.toLowerCase()).not.toMatch(/create type/);
+    const apiKeys = readFileSync(path.join(migrationsDir, "20261012070000_api_keys.sql"), "utf8");
+    const endpoints = readFileSync(path.join(migrationsDir, "20261012070100_webhook_endpoints.sql"), "utf8");
+    const deliveries = readFileSync(path.join(migrationsDir, "20261012070200_webhook_deliveries.sql"), "utf8");
+    const externalRef = readFileSync(path.join(migrationsDir, "20261012070300_orders_external_ref.sql"), "utf8");
+    expect(apiKeys).toMatch(/create table public\.api_keys/);
+    expect(endpoints).toMatch(/create table public\.webhook_endpoints/);
+    expect(deliveries).toMatch(/create table public\.webhook_deliveries/);
+    expect(externalRef).toMatch(/external_ref text/);
+    for (const sql of [apiKeys, endpoints, deliveries, externalRef]) {
+      expect(sql.toLowerCase()).not.toMatch(/create type/);
+      expect(sql.toLowerCase()).not.toMatch(/add value/);
+    }
     for (const file of files) {
       if (file === "20261012060000_staff_notified_event.sql") continue;
       const sql = readFileSync(path.join(migrationsDir, file), "utf8");

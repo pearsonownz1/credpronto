@@ -175,7 +175,12 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
     if (!order) return;
     const open = (await listCorrections(db, orderId)).filter((correction) => correction.status === "open");
     if (order.status === "preview_ready" && open.length === 0) return;
-    if (order.status === "paid" || order.status === "approved" || order.status === "delivered" || order.status === "cancelled") {
+    if (
+      order.status === "approved" ||
+      order.status === "delivered" ||
+      order.status === "cancelled" ||
+      (order.status === "paid" && order.finalTranslationPath)
+    ) {
       return;
     }
     if (!order.languageConfirmed || !order.sourceLanguage) {
@@ -186,7 +191,7 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
       .from("orders")
       .update({ status: "processing" })
       .eq("id", orderId)
-      .in("status", ["confirmed", "correction_requested", "failed", "preview_ready", "processing"])
+      .in("status", ["confirmed", "correction_requested", "failed", "preview_ready", "processing", "paid"])
       .select("id");
     if (claim.error) throw new Error(claim.error.message);
     if ((claim.data ?? []).length === 0) return;
@@ -313,6 +318,8 @@ export async function translateOrder(db: Db, orderId: string, token: string | nu
       await markPreview(db, orderId, version, "failed");
       const message = error instanceof Error ? error.message : "Translation failed.";
       await updateOrder(db, orderId, { status: "failed", review_reason: message });
+      const { notifyOrder } = await import("./webhook-delivery");
+      await notifyOrder(db, orderId, "order.failed");
       throw error;
     }
   }

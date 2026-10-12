@@ -46,6 +46,7 @@ function mapOrder(row: Row): OrderRecord {
     id: String(row.id),
     customerId: String(row.customer_id),
     userId: str(row.user_id),
+    serviceType: str(row.service_type) ?? "translation",
     status: String(row.status) as OrderStatus,
     sourceLanguage: str(row.source_language),
     targetLanguage: str(row.target_language) ?? "en",
@@ -61,6 +62,7 @@ function mapOrder(row: Row): OrderRecord {
     certificationPath: str(row.certification_path),
     pageOrderBasis: row.page_order_basis === "logical" || row.page_order_basis === "upload" ? row.page_order_basis : null,
     pageOrder: parseStoredPageOrder(row.page_order),
+    externalRef: str(row.external_ref),
     createdAt: str(row.created_at) ?? new Date().toISOString(),
   };
 }
@@ -199,6 +201,12 @@ export async function insertOrder(
     utmCampaign: string | null;
     gclid: string | null;
     landingPath: string | null;
+    userId?: string | null;
+    serviceType?: "translation" | "evaluation" | "expert_letter";
+    externalRef?: string | null;
+    sourceLanguage?: string | null;
+    targetLanguage?: string | null;
+    languageConfirmed?: boolean;
   },
 ): Promise<OrderRecord> {
   const { data, error } = await db
@@ -213,6 +221,12 @@ export async function insertOrder(
       utm_campaign: input.utmCampaign,
       gclid: input.gclid,
       landing_path: input.landingPath,
+      ...(input.userId ? { user_id: input.userId } : {}),
+      ...(input.serviceType ? { service_type: input.serviceType } : {}),
+      ...(input.externalRef ? { external_ref: input.externalRef } : {}),
+      ...(input.sourceLanguage ? { source_language: input.sourceLanguage } : {}),
+      ...(input.targetLanguage ? { target_language: input.targetLanguage } : {}),
+      ...(input.languageConfirmed ? { language_confirmed: true } : {}),
     })
     .select("*")
     .single();

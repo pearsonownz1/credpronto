@@ -52,7 +52,8 @@ export async function processOrder(orderId: string, token: string | null = null)
     order.status === "processing" ||
     order.status === "correction_requested" ||
     order.status === "preview_ready" ||
-    (order.status === "failed" && order.languageConfirmed)
+    (order.status === "failed" && order.languageConfirmed) ||
+    (order.status === "paid" && !order.finalTranslationPath)
   ) {
     await translateOrder(db, order.id, token);
   }

@@ -31,6 +31,7 @@ import {
 } from "./page-order";
 import { buildCombinedOriginal, type SourceFile } from "./pdf/combine";
 import { decideQuote, etaFromNow } from "./quote";
+import { notifyOrder } from "./webhook-delivery";
 import { downloadObject, uploadObject } from "./storage";
 import { billableCjkUnits, billableUnits, isCjkBillingLanguage, countCjkUnits } from "./billing";
 import { countWords, isCjkDominant } from "./words";
@@ -473,6 +474,7 @@ export async function analyzeOrder(db: Db, orderId: string): Promise<void> {
         totalCents: decision.totalCents,
       });
     }
+    if (decision.status === "quoted") await notifyOrder(db, orderId, "order.quoted");
   } catch (error) {
     await markDocuments(db, orderId, "failed");
     const message = error instanceof Error ? error.message : "We could not read the upload.";
