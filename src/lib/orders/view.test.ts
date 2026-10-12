@@ -44,6 +44,9 @@ function orderRecord(): OrderRecord {
     edgeMatchMethod: null,
     createdAt: "2026-10-12T00:00:00.000Z",
     updatedAt: "2026-10-12T00:00:00.000Z",
+    paidAt: null,
+    staffAlertSentAt: null,
+    staffUrgentAlertSentAt: null,
     progress: { step: "done", pagesRead: 2, pagesTotal: 2 },
   };
 }

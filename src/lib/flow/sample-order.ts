@@ -71,6 +71,8 @@ export function sampleCustomerOrder(): CustomerOrder {
     evaluation: null,
     progress: { step: "done", pagesRead: 2, pagesTotal: 2 },
     delayed: false,
+    paidAt: null,
+    fulfillment: null,
   };
 }
 

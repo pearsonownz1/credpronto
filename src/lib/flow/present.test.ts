@@ -92,6 +92,8 @@ function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
     addonOptions: addonOptions(3),
     shippingAddress: null,
     ...patch,
+    paidAt: patch.paidAt ?? null,
+    fulfillment: patch.fulfillment ?? null,
   };
 }
 

@@ -132,6 +132,9 @@ function orderRecord(result: EvaluationResult): OrderRecord {
     edgeMatchMethod: "base",
     createdAt: "2026-10-12T00:00:00.000Z",
     updatedAt: "2026-10-12T00:00:00.000Z",
+    paidAt: null,
+    staffAlertSentAt: null,
+    staffUrgentAlertSentAt: null,
     progress: { step: "done", pagesRead: 1, pagesTotal: 1 },
   };
 }

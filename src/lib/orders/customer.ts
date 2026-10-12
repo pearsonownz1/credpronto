@@ -548,6 +548,8 @@ export async function startCheckout(token: string, body: unknown = {}) {
       paymentLabel: "Test checkout",
       addons: selection.addons,
     });
+    const { settlePaidOrder } = await import("./paid-release");
+    await settlePaidOrder(db, order.id);
     return { mode: "paid_test" as const, paymentStatus: "paid_test" as const, orderStatus: "paid" as const };
   }
 
@@ -648,6 +650,10 @@ export async function handleStripeWebhook(request: Request) {
   );
 
   if (decision.action === "duplicate" || decision.action === "ignore") {
+    if (decision.action === "duplicate" && payment) {
+      const { settlePaidOrder } = await import("./paid-release");
+      await settlePaidOrder(db, payment.orderId);
+    }
     return { received: true, duplicate: decision.action === "duplicate" };
   }
   if (decision.action === "fail") {
@@ -685,6 +691,8 @@ export async function handleStripeWebhook(request: Request) {
       paymentLabel: await stripePaymentLabel(stripe, decision.paymentIntentId),
     });
   }
+  const { settlePaidOrder } = await import("./paid-release");
+  await settlePaidOrder(db, payment.orderId);
   return { received: true };
 }
 

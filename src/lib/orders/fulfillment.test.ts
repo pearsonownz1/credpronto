@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { expeditedFirst, fulfillmentFor, parseTrackingNumber } from "./fulfillment";
+import { expeditedFirst, fulfillmentFor, parseTrackingNumber, staffQueueOrder } from "./fulfillment";
 
 const address = {
   name: "Ada Lovelace",
@@ -50,5 +50,15 @@ describe("fulfillment tasks", () => {
       { id: "newer-rush", expedited: true, createdAt: "2026-10-12T00:00:00.000Z" },
     ]);
     expect(sorted.map((order) => order.id)).toEqual(["newer-rush", "old-rush", "new"]);
+  });
+
+  it("sorts the staff queue oldest paid first and uses expedited only as a tiebreak", () => {
+    const sorted = staffQueueOrder([
+      { id: "new-rush", expedited: true, createdAt: "2026-10-12T00:00:00.000Z", paidAt: "2026-10-12T02:00:00.000Z" },
+      { id: "old-plain", expedited: false, createdAt: "2026-10-08T12:00:00.000Z", paidAt: "2026-10-11T09:00:00.000Z" },
+      { id: "same-rush", expedited: true, createdAt: "2026-10-11T08:00:00.000Z", paidAt: "2026-10-11T09:00:00.000Z" },
+      { id: "unpaid", expedited: true, createdAt: "2026-10-01T00:00:00.000Z", paidAt: null },
+    ]);
+    expect(sorted.map((order) => order.id)).toEqual(["same-rush", "old-plain", "new-rush", "unpaid"]);
   });
 });
