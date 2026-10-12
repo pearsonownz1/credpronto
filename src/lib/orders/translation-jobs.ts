@@ -22,13 +22,14 @@ import {
   TRANSLATION_ASSEMBLE_PATH,
   TRANSLATION_PAGE_PATH,
   dispatchTranslation,
+  translationContinuesInProcess,
 } from "./translation-dispatch";
 import {
   PAGE_ATTEMPT_LIMIT,
   TRANSLATION_JOB_STUCK_MS,
-  TRANSLATION_PAGE_CONCURRENCY,
   isSkippedTranslationPage,
   jobsToDispatch,
+  dispatchConcurrency,
   pageAttemptResult,
   pagesToTranslate,
 } from "./translation-pages";
@@ -340,7 +341,8 @@ export async function fillTranslationSlots(db: Db, orderId: string, version: num
   const run = await getTranslationRun(db, orderId, version);
   if (!run || run.status !== "running") return;
   const jobs = await listPageJobs(db, orderId, version);
-  const batch = jobsToDispatch(jobs, TRANSLATION_PAGE_CONCURRENCY);
+  const running = jobs.filter((job) => job.status === "running").length;
+  const batch = jobsToDispatch(jobs, dispatchConcurrency(running, translationContinuesInProcess()));
   await Promise.all(
     batch.map((job) =>
       dispatchTranslation(TRANSLATION_PAGE_PATH, { orderId, version, jobId: job.id }),

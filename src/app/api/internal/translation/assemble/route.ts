@@ -4,6 +4,7 @@ import { serviceDb } from "@/lib/orders/storage";
 import {
   internalTranslationAuthorized,
   parseTranslationAssembleRequest,
+  withTranslationDispatch,
 } from "@/lib/orders/translation-dispatch";
 import { runTranslationAssemble } from "@/lib/orders/translation";
 
@@ -17,7 +18,7 @@ export async function POST(request: Request) {
   if (!parsed) return json({ error: "Expected a translation assemble." }, 400);
   after(async () => {
     try {
-      await runTranslationAssemble(serviceDb(), parsed);
+      await withTranslationDispatch(() => runTranslationAssemble(serviceDb(), parsed));
     } catch (error) {
       console.error(error instanceof Error ? error.message : "translation assemble failed");
     }

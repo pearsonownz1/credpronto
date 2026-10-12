@@ -4,6 +4,7 @@ import { serviceDb } from "@/lib/orders/storage";
 import {
   internalTranslationAuthorized,
   parseTranslationPageRequest,
+  withTranslationDispatch,
 } from "@/lib/orders/translation-dispatch";
 import { runTranslationPage } from "@/lib/orders/translation";
 
@@ -17,7 +18,7 @@ export async function POST(request: Request) {
   if (!parsed) return json({ error: "Expected a translation page." }, 400);
   after(async () => {
     try {
-      await runTranslationPage(serviceDb(), parsed);
+      await withTranslationDispatch(() => runTranslationPage(serviceDb(), parsed));
     } catch (error) {
       console.error(error instanceof Error ? error.message : "page translation failed");
     }

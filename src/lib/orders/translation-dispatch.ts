@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { appOrigin } from "./email";
 import { cronAuthorized } from "./translation-watch";
 
@@ -46,8 +47,63 @@ export function parseTranslationAssembleRequest(body: unknown): TranslationAssem
   return { orderId: row.orderId, version: row.version };
 }
 
+/**
+ * Vercel forwards `x-vercel-id` on a function's outbound fetch and returns 508
+ * once that chain fetches this deployment a few times. The first fan-out is HTTP.
+ * Anything already inside a page or assemble invocation continues in-process.
+ */
+export const TRANSLATION_HTTP_DEPTH = 1;
+
+const dispatchDepth = new AsyncLocalStorage<number>();
+
+export type TranslationInlineRunner = (
+  path: string,
+  body: TranslationPageRequest | TranslationAssembleRequest,
+) => Promise<void>;
+
+/** True inside a page or assemble invocation that was itself started by HTTP. */
+export function translationContinuesInProcess(): boolean {
+  return (dispatchDepth.getStore() ?? 0) >= TRANSLATION_HTTP_DEPTH;
+}
+
+export function withTranslationDispatch<T>(work: () => Promise<T>): Promise<T> {
+  const depth = (dispatchDepth.getStore() ?? 0) + 1;
+  return dispatchDepth.run(depth, work);
+}
+
+async function runTranslationInline(
+  path: string,
+  body: TranslationPageRequest | TranslationAssembleRequest,
+): Promise<void> {
+  const { serviceDb } = await import("./storage");
+  try {
+    if (path === TRANSLATION_PAGE_PATH && "jobId" in body) {
+      const { runTranslationPage } = await import("./translation");
+      await runTranslationPage(serviceDb(), body);
+      return;
+    }
+    if (path === TRANSLATION_ASSEMBLE_PATH && !("jobId" in body)) {
+      const { runTranslationAssemble } = await import("./translation");
+      await runTranslationAssemble(serviceDb(), body);
+      return;
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "translation continuation failed");
+    return;
+  }
+  throw new Error(`Unknown translation path ${path}`);
+}
+
 /** Starts another function and returns when that function accepts the work. */
-export async function dispatchTranslation(path: string, body: TranslationPageRequest | TranslationAssembleRequest): Promise<void> {
+export async function dispatchTranslation(
+  path: string,
+  body: TranslationPageRequest | TranslationAssembleRequest,
+  inline: TranslationInlineRunner = runTranslationInline,
+): Promise<void> {
+  if (translationContinuesInProcess()) {
+    await inline(path, body);
+    return;
+  }
   const secret = process.env.CRON_SECRET;
   if (!secret) throw new Error("CRON_SECRET is not set");
   const headers: Record<string, string> = {
