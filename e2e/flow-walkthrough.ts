@@ -52,7 +52,9 @@ export async function walkCustomerFlow(
   await expect(shown(page, "file-list")).toContainText("acta-nacimiento.pdf");
   await expect(shown(page, "file-list")).toContainText("IMG_4021.HEIC");
   await expect(shown(page, "file-list")).toContainText("1 billable page");
-  await expect(shown(page, "file-turnaround").first()).toContainText("Ready in a few minutes");
+  await expect(page.getByTestId("file-turnaround")).toHaveCount(0);
+  await expect(shown(page, "quote-turnaround")).toContainText("3 minutes");
+  await expect(shown(page, "quote-turnaround")).toContainText("Fast");
   await expect(page.getByTestId("quote-counts")).toHaveCount(0);
   await expect(shown(page, "quote-total")).toContainText("$19.90");
   await expect(page.getByText("2 pages × $9.95").filter({ visible: true })).toBeVisible();

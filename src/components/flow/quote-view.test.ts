@@ -80,13 +80,26 @@ describe("quote step actions", () => {
     expect(CJK_PAGE_RULE).not.toContain("400 units");
   });
 
-  it("keeps the green turnaround beside the file name after the quote is ready", () => {
+  it("puts a turnaround row under Preview and leaves the file card without that byline", () => {
     const html = htmlFor(sampleCustomerOrder());
-    expect(html).toContain('data-testid="file-turnaround"');
-    expect(html).toContain("Ready in a few minutes");
+    const preview = html.indexOf(">Preview<");
+    const turnaround = html.indexOf('data-testid="quote-turnaround"');
+    const total = html.indexOf('data-testid="quote-total"');
+    expect(preview).toBeGreaterThan(-1);
+    expect(turnaround).toBeGreaterThan(preview);
+    expect(total).toBeGreaterThan(turnaround);
+    expect(html).toContain("Turnaround time");
+    expect(html).toContain("uppercase");
+    expect(html).toContain("3 minutes");
+    expect(html).toContain(">Fast<");
+    expect(html).toContain("bg-[#EEF3FF]");
+    expect(html).toContain("rounded-[4px]");
+    expect(html).toContain("p-3.5");
+    expect(html).toContain("text-[22px]");
+    expect(html).toContain('width="20"');
+    expect(html).toContain("text-primary");
+    expect(html).not.toContain('data-testid="file-turnaround"');
     expect(html).not.toContain("10 minutes");
-    expect(html).toContain("text-[var(--cp-ok)]");
-    expect(html).toContain("md:flex-row");
     expect(html).not.toContain('data-testid="file-thumb-skeleton"');
     expect(html).not.toContain('data-testid="page-details"');
     expect(html).not.toContain('data-testid="page-thumb"');
