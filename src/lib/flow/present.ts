@@ -120,6 +120,14 @@ export function customerEmail(order: { email: string | null | undefined }): stri
   return order.email?.trim() ?? "";
 }
 
+/** Checkout shows the order address, then the signed-in account, then nothing. */
+export function checkoutEmail(
+  orderEmail: string | null | undefined,
+  accountEmail: string | null | undefined,
+): string {
+  return customerEmail({ email: orderEmail }) || accountEmail?.trim() || "";
+}
+
 export function documentIdForPage(
   documents: Array<{ id: string; pageCount: number | null }>,
   page: number,

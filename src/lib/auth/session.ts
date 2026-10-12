@@ -23,6 +23,18 @@ export function emailIsVerified(user: {
   return (user.identities ?? []).some((identity) => identity.identity_data?.email_verified === true);
 }
 
+/** Empty when nobody is signed in or auth is not configured. */
+export async function signedInEmail(): Promise<string> {
+  try {
+    const client = await createClient();
+    const { data, error } = await client.auth.getUser();
+    if (error || !data.user?.email) return "";
+    return data.user.email.trim();
+  } catch {
+    return "";
+  }
+}
+
 export async function requireUser(): Promise<AuthUser> {
   let client: Awaited<ReturnType<typeof createClient>>;
   try {

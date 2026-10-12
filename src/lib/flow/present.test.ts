@@ -4,6 +4,7 @@ import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import {
   LANGUAGE_PENDING,
   canSetSourceLanguage,
+  checkoutEmail,
   checkoutFailureMessage,
   displayedPageRule,
   customerEmail,
@@ -118,6 +119,16 @@ describe("checkout errors", () => {
   it("turns a not-ready preview into a waiting message", () => {
     expect(checkoutFailureMessage(409, "Preview is not ready")).toMatch(/isn't ready yet/);
     expect(checkoutFailureMessage(503, "Payments not configured")).toBeNull();
+  });
+});
+
+describe("checkout email", () => {
+  it("prefers the order address, then the signed-in account", () => {
+    expect(checkoutEmail("ada@example.com", "other@example.com")).toBe("ada@example.com");
+    expect(checkoutEmail("  ", "ada@example.com")).toBe("ada@example.com");
+    expect(checkoutEmail(null, " ada@example.com ")).toBe("ada@example.com");
+    expect(checkoutEmail(null, null)).toBe("");
+    expect(checkoutEmail(undefined, "  ")).toBe("");
   });
 });
 
