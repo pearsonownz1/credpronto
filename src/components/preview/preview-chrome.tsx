@@ -1,6 +1,7 @@
 "use client";
 
 import type { FormEvent } from "react";
+import { evaluationPreviewLinks } from "@/lib/orders/preview-documents";
 import { AddonError, AddonPanel, AddonTotal, type AddonPanelState } from "./addon-panel";
 import {
   buyLabel,
@@ -8,6 +9,32 @@ import {
   type PreviewCorrection,
   type PreviewOrder,
 } from "./preview-order";
+
+function EvaluationDocumentLinks({ order }: { order: PreviewOrder }) {
+  const links = evaluationPreviewLinks({
+    orderType: order.product === "evaluation" ? "evaluation" : "translation",
+    service: order.service ?? null,
+    reportUrl: order.report?.url ?? null,
+    translationUrl: order.translation.url,
+  });
+  if (links.length === 0) return null;
+  return (
+    <div data-testid="evaluation-documents" className="grid gap-2 text-sm">
+      {links.map((link) => (
+        <a
+          key={link.id}
+          data-testid={link.testId}
+          href={link.href}
+          target="_blank"
+          rel="noopener"
+          className="font-semibold text-primary"
+        >
+          {link.label}
+        </a>
+      ))}
+    </div>
+  );
+}
 
 export function OrderRail({
   order,
@@ -45,6 +72,7 @@ export function OrderRail({
           ? "Check the equivalency against your documents. Staff sign off before the report is released."
           : "Check names, dates and numbers against your original. Corrections are free and come back as a new preview."}
       </p>
+      <EvaluationDocumentLinks order={order} />
       <div data-testid="preview-price" className="rounded-[var(--cp-radius)] border border-line text-sm">
         {lines.map((line, index) => (
           <div
@@ -129,6 +157,7 @@ export function MobileBuyBar({
       data-testid="mobile-buy-bar"
       className="flex max-h-[70dvh] flex-col gap-2 overflow-y-auto border-t border-line bg-bg px-4 pt-3 pb-6"
     >
+      <EvaluationDocumentLinks order={order} />
       <AddonPanel panel={panel} />
       <AddonError panel={panel} />
       <div className="flex shrink-0 items-center justify-between text-[13px] text-ink-muted">

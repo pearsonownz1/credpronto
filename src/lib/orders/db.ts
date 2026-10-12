@@ -624,6 +624,19 @@ export async function latestReadyPreview(db: Db, orderId: string): Promise<Previ
   return row ? mapPreview(row) : null;
 }
 
+export async function listReadyPreviewPaths(db: Db, orderId: string): Promise<string[]> {
+  const { data, error } = await db
+    .from("previews")
+    .select("preview_path")
+    .eq("order_id", orderId)
+    .eq("status", "ready");
+  fail(error);
+  return (data ?? []).flatMap((row) => {
+    const path = (row as Row).preview_path;
+    return typeof path === "string" && path ? [path] : [];
+  });
+}
+
 export async function nextPreviewVersion(db: Db, orderId: string): Promise<number> {
   const { data, error } = await db
     .from("previews")

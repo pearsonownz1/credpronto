@@ -30,6 +30,7 @@ import {
   ZoomPluginPackage,
   type ZoomLevel,
 } from "@embedpdf/plugin-zoom/react";
+import { evaluationViewerLabel } from "@/lib/orders/preview-documents";
 import { useAddonPanel, type AddonPanelState, type CheckoutBody } from "./addon-panel";
 import {
   CorrectionPopover,
@@ -227,6 +228,11 @@ function ViewerWorkspace({
   notice?: string;
   noticeTestId?: string;
 }) {
+  const translationLabel = evaluationViewerLabel({
+    product: order.product,
+    reportUrl: order.report?.url,
+    translationUrl: order.translation.url,
+  });
   const isMobile = useIsMobile();
   const [role, setRole] = useState<Role>("original");
   const [lead, setLead] = useState<Role>("original");
@@ -551,7 +557,7 @@ function ViewerWorkspace({
               testId="doc-toggle-translation"
               onClick={() => showRole("translation")}
             >
-              Translation
+              {translationLabel}
             </SegmentButton>
           </div>
           <div className="flex w-full flex-wrap items-center gap-x-2.5 gap-y-2 px-4 py-2 md:h-[52px] md:flex-nowrap md:px-5 md:py-0">
@@ -665,7 +671,7 @@ function ViewerWorkspace({
         <DocumentPane
           key={visible}
           role={visible}
-          label={visible === "original" ? "Original" : "Translation"}
+          label={visible === "original" ? "Original" : translationLabel}
           subtitle={order[visible].subtitle}
           watermark={visible === "translation"}
         />

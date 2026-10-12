@@ -304,7 +304,8 @@ export async function completeEvaluation(
   }
 
   const version = await nextPreviewVersion(db, order.id);
-  const previewPath = `${order.id}/preview-v${version}.pdf`;
+  // Watermarked evaluation report. A certified translation uses its own preview object.
+  const previewPath = `${order.id}/report-v${version}.pdf`;
   const inserted = await insertPreview(db, { orderId: order.id, version, previewPath });
   if (inserted === "exists") return;
 
