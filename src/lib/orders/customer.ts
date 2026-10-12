@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { downloadGate } from "./access";
+import { checkoutPreviewImageUrl } from "./checkout-image";
+import { checkoutLineProduct, checkoutProductDescription } from "./checkout-preview";
 import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET, ORIGINALS_BUCKET, PREVIEW_URL_SECONDS } from "./constants";
 import {
   confirmFields,
@@ -316,6 +318,15 @@ export async function startCheckout(token: string) {
   await insertEvent(db, order.id, "checkout_started", { mode: "stripe" });
   const stripe = new Stripe(secret);
   const email = await customerEmail(db, order.customerId);
+  const documents = await listDocuments(db, order.id);
+  const description = checkoutProductDescription({
+    sourceLanguage: order.sourceLanguage,
+    targetLanguage: order.targetLanguage,
+    documentNames: documents.map((document) => document.filename),
+    pages: order.billablePages,
+  });
+  const preview = await latestReadyPreview(db, order.id);
+  const imageUrl = preview ? await checkoutPreviewImageUrl(db, order.id, preview.previewPath) : null;
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
     customer_email: email ?? undefined,
@@ -327,9 +338,11 @@ export async function startCheckout(token: string) {
         price_data: {
           currency: order.currency,
           unit_amount: order.totalCents,
-          product_data: {
-            name: `CredPronto certified translation (${order.billablePages} pages)`,
-          },
+          product_data: checkoutLineProduct({
+            billablePages: order.billablePages,
+            description,
+            imageUrl,
+          }),
         },
       },
     ],

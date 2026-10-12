@@ -237,6 +237,10 @@ Stripe session:
 { "url": "https://checkout.stripe.com/…", "sessionId": "cs_…" }
 ```
 
+The Checkout line is `CredPronto certified translation (N pages)`. `price_data.product_data.description` names the languages, the documents, and the billable pages, for example `French → English · fr_diplome-licence.pdf · 1 page`. Language codes are shown as names (`fr` → French, `en` → English). The first document name follows upload order. Further documents are `+N more` (`acta.pdf` plus two others → `acta.pdf +2 more`). One billable page reads `1 page`; any other count reads `N pages`.
+
+`price_data.product_data.images[0]` is a signed URL, valid for 25 hours, for a PNG of page 1 of the watermarked translation preview. The PNG's longer side is about 1000px. It is stored in the private `previews` bucket at `checkout-previews/<orderId>/<random>.png`. A later checkout for the same order reuses that PNG and signs a new URL. The object is the watermarked preview in `previews`, whose key starts with `preview-`. If rendering or signing fails, the session is still created without `images`, and the error is logged.
+
 `CHECKOUT_PLACEHOLDER=1` does not call Stripe. The payment row status is `paid_test`, the order status is `paid`, and a pending delivery is created.
 
 ```json
