@@ -14,7 +14,10 @@ const ALNUM = /^[A-Za-z0-9]$/;
 const JOINER = /^[.,/-]$/;
 const LETTER_OR_NUMBER = /[\p{L}\p{N}]/u;
 const OTHER_SCRIPT =
-  /[\p{Script=Cyrillic}\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Greek}\p{Script=Devanagari}\p{Script=Thai}]/u;
+  /[\p{Script=Cyrillic}\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Greek}\p{Script=Devanagari}\p{Script=Thai}]/gu;
+/** Printed page marks, including OCR of "第 1 页, 共 2 页" and "1/1". */
+const PAGE_MARK =
+  /第\s*\d+\s*页(?:\s*[,，、]?\s*共\s*\d+\s*页)?|\b(?:page|p)\.?\s*\d+(?:\s*(?:of|\/)\s*\d+)?\b|\b\d+\s*[/／]\s*\d+\b/gi;
 
 const ENGLISH_STOPS = new Set([
   "the", "of", "and", "to", "in", "is", "for", "that", "on", "with", "as", "by",
@@ -137,24 +140,49 @@ function targetBase(language: string | null | undefined): string {
   return language?.trim().toLowerCase().split("-")[0] || "en";
 }
 
+function withoutPageMarks(text: string): string {
+  return text.replace(PAGE_MARK, " ");
+}
+
+/**
+ * Blank when nothing readable remains, or only a page mark, a logo, or a few OCR scraps.
+ * A real line of text is not blank.
+ */
 function isBlankPage(text: string): boolean {
-  return !LETTER_OR_NUMBER.test(text);
+  const body = withoutPageMarks(text);
+  if (!LETTER_OR_NUMBER.test(body)) return true;
+  const tokens = body.match(/[A-Za-z]{2,}/g)?.length ?? 0;
+  return countCjkChars(body) < 8 && tokens < 3;
 }
 
 function isShippingLabel(text: string): boolean {
   const hits = LABEL_PATTERNS.reduce((count, pattern) => count + (pattern.test(text) ? 1 : 0), 0);
   if (hits >= 2) return true;
-  return hits === 1 && countWords(text) < 40 && !isCjkDominant(text);
+  // One carrier or waybill cue on a short page, including a Chinese label whose characters outnumber the Latin words.
+  return hits === 1 && countWords(text) < 80;
 }
 
 function latinWords(text: string): string[] {
   return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().match(/[a-z]+/g) ?? [];
 }
 
-/** Already-English prose, and only when the customer asked for English. */
+function scriptLetters(text: string): { latin: number; cjk: number; other: number } {
+  return {
+    latin: text.match(/[A-Za-z]/g)?.length ?? 0,
+    cjk: countCjkChars(text),
+    other: text.match(OTHER_SCRIPT)?.length ?? 0,
+  };
+}
+
+/**
+ * Mostly Latin English prose, and only when the customer asked for English.
+ * A Chinese footer or seal on an English translation does not keep the page billable.
+ * Checked per page, not from the document language.
+ */
 function isEnglishOnly(text: string, targetLanguage: string | null | undefined): boolean {
   if (targetBase(targetLanguage) !== "en") return false;
-  if (countCjkChars(text) > 0 || OTHER_SCRIPT.test(text)) return false;
+  const letters = scriptLetters(text);
+  if (letters.latin === 0 || letters.latin <= letters.cjk + letters.other) return false;
   const words = latinWords(text);
   if (words.length === 0) return false;
   let english = 0;
@@ -176,7 +204,7 @@ function measure(text: string): { billingBasis: "words" | "cjk"; counted: number
 /**
  * Bill one physical page.
  * Latin text is `max(1, ceil(words / 250))`. CJK text is `max(1, ceil(chars / 1000))`.
- * English-only pages (when the target is English), blank pages, and shipping labels are 0.
+ * A page that is mostly Latin English (when the target is English), a blank page, or a shipping label is 0.
  */
 export function quotePage(input: {
   text: string;
@@ -187,6 +215,17 @@ export function quotePage(input: {
     throw new Error("pageIndex must be a non-negative integer");
   }
   const text = input.text ?? "";
+  if (isShippingLabel(text)) {
+    const measured = measure(text);
+    return {
+      pageIndex: input.pageIndex,
+      billableUnits: 0,
+      skip: true,
+      skipReason: "label",
+      counted: measured.counted,
+      billingBasis: measured.billingBasis,
+    };
+  }
   if (isBlankPage(text)) {
     return {
       pageIndex: input.pageIndex,
@@ -198,16 +237,6 @@ export function quotePage(input: {
     };
   }
   const measured = measure(text);
-  if (isShippingLabel(text)) {
-    return {
-      pageIndex: input.pageIndex,
-      billableUnits: 0,
-      skip: true,
-      skipReason: "label",
-      counted: measured.counted,
-      billingBasis: measured.billingBasis,
-    };
-  }
   if (isEnglishOnly(text, input.targetLanguage)) {
     return {
       pageIndex: input.pageIndex,
