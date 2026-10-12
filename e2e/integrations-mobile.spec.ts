@@ -9,7 +9,8 @@ test("phone integrations opens from the account menu", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Close menu" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Integrations" })).toBeVisible();
   await expect(page.getByTestId("create-key")).toBeVisible();
-  await expect(page.getByTestId("new-key-secret")).toBeVisible();
+  await expect(page.getByTestId("event-order.quoted")).toBeVisible();
+  await expect(page.getByTestId("quick-start")).toContainText("CredPronto-Signature");
   await expect(page.getByText("Expert letter")).toHaveCount(0);
   const blueButtons = await page.locator("button:visible").evaluateAll((buttons) =>
     buttons

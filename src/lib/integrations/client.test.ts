@@ -1,108 +1,106 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  FIXTURE_PRODUCTION_SECRET,
-  FIXTURE_WEBHOOK_SECRET,
   createLiveIntegrationsClient,
-  createMockIntegrationsClient,
-  fixtureSnapshot,
+  parseApiKeys,
+  parseBillingCard,
+  parseCreatedKey,
+  parseSavedWebhook,
+  parseSetupIntent,
 } from "./client";
-import { formatCardExpiry, formatKeyCreated, formatLastUsed, maskKey, maskWebhookSecret } from "./present";
 
-const NOW = Date.parse("2026-10-12T12:00:00.000Z");
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
-describe("integration fixtures", () => {
-  it("matches the designer key, webhook, and card", () => {
-    const snapshot = fixtureSnapshot(NOW);
-    expect(snapshot.keys.map((key) => key.name)).toEqual(["Production", "Staging"]);
-    expect(maskKey(snapshot.keys[0].prefix, snapshot.keys[0].last4)).toBe("cp_live_…a91f");
-    expect(maskKey(snapshot.keys[1].prefix, snapshot.keys[1].last4)).toBe("cp_test_…3c07");
-    expect(formatKeyCreated(snapshot.keys[0].createdAt)).toBe("Oct 11");
-    expect(formatKeyCreated(snapshot.keys[1].createdAt)).toBe("Oct 9");
-    expect(formatLastUsed(snapshot.keys[0].lastUsedAt, NOW)).toBe("2 min ago");
-    expect(formatLastUsed(snapshot.keys[1].lastUsedAt, NOW)).toBe("Yesterday");
-    expect(snapshot.revealed?.secret).toBe(FIXTURE_PRODUCTION_SECRET);
-    expect(snapshot.revealed?.secret.startsWith("cp_live_")).toBe(true);
-    expect(snapshot.revealed?.secret.endsWith("a91f")).toBe(true);
-    expect(maskWebhookSecret(snapshot.webhook.secretLast4)).toBe("whsec_••••••••••••••••b21e");
-    expect(snapshot.webhook.events).not.toContain("order.refunded");
-    expect(snapshot.card && formatCardExpiry(snapshot.card.expMonth, snapshot.card.expYear)).toBe("Expires 08/29");
+describe("integrations API parsing", () => {
+  it("reads keys, an empty card, and a saved visa", () => {
+    expect(
+      parseApiKeys({
+        keys: [
+          {
+            id: "key_1",
+            name: "Production",
+            prefix: "cp_test_",
+            last4: "a91f",
+            createdAt: "2026-10-11T15:04:00.000Z",
+            revokedAt: null,
+          },
+        ],
+      })?.[0],
+    ).toMatchObject({ prefix: "cp_test_", last4: "a91f", revokedAt: null });
+    expect(parseBillingCard({ card: null })).toEqual({ card: null });
+    expect(parseBillingCard({ card: { brand: "visa", last4: "4242" } })).toEqual({
+      card: { brand: "visa", last4: "4242" },
+    });
+    expect(parseCreatedKey({
+      id: "key_1",
+      name: "Production",
+      prefix: "cp_live_",
+      last4: "a91f",
+      secret: "cp_live_abc",
+      createdAt: "2026-10-11T15:04:00.000Z",
+    })?.secret).toBe("cp_live_abc");
+    expect(parseSavedWebhook({ url: "https://example.com/hooks", secret: "whsec_abc" })).toEqual({
+      url: "https://example.com/hooks",
+      secret: "whsec_abc",
+    });
+    expect(parseSetupIntent({ clientSecret: "seti_secret", customerId: "cus_123" })).toEqual({
+      clientSecret: "seti_secret",
+      customerId: "cus_123",
+    });
   });
 
-  it("shows a new secret once, then drops it from the strip on the next create", async () => {
-    const client = createMockIntegrationsClient();
-    const created = await client.createKey(NOW);
-    expect(created.ok).toBe(true);
-    if (!created.ok || !created.data.revealed) return;
-    const firstSecret = created.data.revealed.secret;
-    expect(created.data.revealed.name).toBe("Development");
-    expect(firstSecret).not.toBe(FIXTURE_PRODUCTION_SECRET);
-    expect(JSON.stringify(created.data.keys)).not.toContain(firstSecret);
-    const again = await client.createKey(NOW);
-    expect(again.ok).toBe(true);
-    if (!again.ok) return;
-    expect(again.data.revealed?.secret).not.toBe(firstSecret);
-    expect(JSON.stringify(again.data)).not.toContain(firstSecret);
-    expect(JSON.stringify(again.data)).not.toContain(FIXTURE_PRODUCTION_SECRET);
-  });
-
-  it("revokes a key, toggles events, and swaps the card", async () => {
-    const client = createMockIntegrationsClient();
-    const revoked = await client.revokeKey("key_staging", NOW);
-    expect(revoked.ok).toBe(true);
-    if (!revoked.ok) return;
-    expect(revoked.data.keys.map((key) => key.id)).toEqual(["key_production"]);
-
-    const cleared = await client.revokeKey("key_production", NOW);
-    expect(cleared.ok).toBe(true);
-    if (!cleared.ok) return;
-    expect(cleared.data.revealed).toBeNull();
-
-    const toggled = await client.toggleEvent("order.refunded", NOW);
-    expect(toggled.ok).toBe(true);
-    if (!toggled.ok) return;
-    expect(toggled.data.webhook.events).toContain("order.refunded");
-
-    const removed = await client.removeCard(NOW);
-    expect(removed.ok).toBe(true);
-    if (!removed.ok) return;
-    expect(removed.data.card).toBeNull();
-    const replaced = await client.replaceCard(NOW);
-    expect(replaced.ok).toBe(true);
-    if (!replaced.ok) return;
-    expect(replaced.data.card?.brand).toBe("Visa");
-    const swapped = await client.replaceCard(NOW);
-    expect(swapped.ok).toBe(true);
-    if (!swapped.ok) return;
-    expect(swapped.data.card?.last4).toBe("4444");
-  });
-
-  it("does not call the network while the integrations contract is unpublished", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-    const live = createLiveIntegrationsClient();
-    const result = await live.load(NOW);
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.status).toBe(501);
-    const secret = await live.revealWebhookSecret(NOW);
-    expect(secret.ok).toBe(false);
-    expect(fetchSpy).not.toHaveBeenCalled();
-    fetchSpy.mockRestore();
-  });
-
-  it("keeps the webhook secret behind reveal", async () => {
-    const client = createMockIntegrationsClient();
-    const loaded = await client.load(NOW);
-    expect(loaded.ok).toBe(true);
-    if (!loaded.ok) return;
-    expect(JSON.stringify(loaded.data.webhook)).not.toContain(FIXTURE_WEBHOOK_SECRET);
-    const revealed = await client.revealWebhookSecret(NOW);
-    expect(revealed.ok).toBe(true);
-    if (!revealed.ok) return;
-    expect(revealed.data.secret).toBe(FIXTURE_WEBHOOK_SECRET);
-    const sent = await client.sendTest(NOW);
-    expect(sent.ok).toBe(true);
-    if (!sent.ok) return;
-    expect(sent.data.webhook.sentCount).toBe(1);
-    expect(sent.data.webhook.lastLabel).toBe("200 OK");
+  it("calls the documented key, webhook, and billing routes", async () => {
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.endsWith("/api/me/api-keys") && method === "GET") {
+        return json({ keys: [] });
+      }
+      if (url.endsWith("/api/me/billing") && method === "GET") {
+        return json({ card: { brand: "visa", last4: "4242" } });
+      }
+      if (url.endsWith("/api/me/api-keys") && method === "POST") {
+        expect(init?.body).toBe(JSON.stringify({ name: "Production", mode: "test" }));
+        return json(
+          {
+            id: "key_1",
+            name: "Production",
+            prefix: "cp_test_",
+            last4: "abcd",
+            secret: "cp_test_abcd",
+            createdAt: "2026-10-12T00:00:00.000Z",
+          },
+          201,
+        );
+      }
+      if (url.endsWith("/api/me/webhook") && method === "PUT") {
+        return json({ url: "https://example.com/hooks", secret: "whsec_once" });
+      }
+      if (url.endsWith("/api/me/billing/setup-intent") && method === "POST") {
+        return json({ clientSecret: "seti_secret", customerId: "cus_123" });
+      }
+      if (url.endsWith("/api/me/billing") && method === "DELETE") {
+        return json({ card: null });
+      }
+      return json({ error: "missing" }, 404);
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    const client = createLiveIntegrationsClient();
+    const loaded = await client.load();
+    expect(loaded.ok && loaded.data.card).toEqual({ brand: "visa", last4: "4242" });
+    const created = await client.createKey({ name: "Production", mode: "test" });
+    expect(created.ok && created.data.secret).toBe("cp_test_abcd");
+    const webhook = await client.saveWebhook("https://example.com/hooks");
+    expect(webhook.ok && webhook.data.secret).toBe("whsec_once");
+    const intent = await client.createSetupIntent();
+    expect(intent.ok && intent.data.clientSecret).toBe("seti_secret");
+    const removed = await client.removeCard();
+    expect(removed.ok && removed.data.card).toBeNull();
+    expect(fetchSpy).toHaveBeenCalled();
   });
 });
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+}
