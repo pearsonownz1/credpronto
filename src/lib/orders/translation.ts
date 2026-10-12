@@ -38,7 +38,7 @@ import {
   isUnreadableModelOutput,
   raceWorkAgainstDeadline,
 } from "./translation-failure";
-import { checkedProgress } from "./translation-watch";
+import { OPEN_TRANSLATION_STATUSES, checkedProgress } from "./translation-watch";
 import {
   beginTranslation,
   claimAssemble,
@@ -274,12 +274,17 @@ export async function recordTranslationFailure(db: Db, orderId: string, error: u
     readyPreview: (await latestReadyPreview(db, orderId)) != null,
     openCorrections: open.length > 0,
   });
-  await updateOrder(db, orderId, {
-    status: decision.status,
-    review_reason: decision.reviewReason,
-    progress: checkedProgress(order.progress, { step: "done" }),
-  });
-  if (!decision.notifyFailed) return;
+  const wrote = await updateOrder(
+    db,
+    orderId,
+    {
+      status: decision.status,
+      review_reason: decision.reviewReason,
+      progress: checkedProgress(order.progress, { step: "done" }),
+    },
+    { statuses: OPEN_TRANSLATION_STATUSES },
+  );
+  if (wrote === false || !decision.notifyFailed) return;
   const { notifyOrder } = await import("./webhook-delivery");
   await notifyOrder(db, orderId, "order.failed");
 }
@@ -362,24 +367,24 @@ export async function runTranslationPage(
 async function ensurePageFailureReviewed(db: Db, orderId: string, error: unknown): Promise<void> {
   const order = await getOrderById(db, orderId);
   if (!order) return;
-  if (
-    order.status === "preview_ready" ||
-    order.status === "approved" ||
-    order.status === "delivered" ||
-    order.status === "cancelled"
-  ) {
-    return;
-  }
+  const open = (OPEN_TRANSLATION_STATUSES as readonly string[]).includes(order.status);
+  if (!open && order.status !== "needs_review") return;
   const raw = error instanceof Error ? error.message : "Translation failed.";
   const reviewReason = isTemporaryTranslationError(error)
     ? TRANSLATION_TIMEOUT_REASON
     : (humanReviewReason(raw) ?? "Translation failed.");
   if (order.status !== "needs_review" || order.reviewReason !== reviewReason) {
-    await updateOrder(db, orderId, {
-      status: "needs_review",
-      review_reason: reviewReason,
-      progress: checkedProgress(order.progress, { step: "done" }),
-    });
+    const wrote = await updateOrder(
+      db,
+      orderId,
+      {
+        status: "needs_review",
+        review_reason: reviewReason,
+        progress: checkedProgress(order.progress, { step: "done" }),
+      },
+      { statuses: OPEN_TRANSLATION_STATUSES },
+    );
+    if (wrote === false) return;
   }
   await alertStaffForHeldTranslation(db, orderId, reviewReason);
 }

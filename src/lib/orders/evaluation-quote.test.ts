@@ -103,6 +103,7 @@ describe("evaluation quote", () => {
     const updates: Record<string, unknown>[] = [];
     vi.spyOn(db, "updateOrder").mockImplementation(async (_client, _id, patch) => {
       updates.push(patch);
+      return true;
     });
 
     const quoted = await startEvaluationQuote({} as db.Db, evaluationOrder({ status: "draft" }), readable);
@@ -121,7 +122,7 @@ describe("evaluation quote", () => {
   });
 
   it("adds $9.95 only when translation was already chosen", async () => {
-    vi.spyOn(db, "updateOrder").mockResolvedValue(undefined);
+    vi.spyOn(db, "updateOrder").mockResolvedValue(true);
     const quoted = await startEvaluationQuote(
       {} as db.Db,
       evaluationOrder({ status: "draft", includeTranslation: true }),
@@ -140,7 +141,7 @@ describe("evaluation quote", () => {
   });
 
   it("holds a quote when the language or the scan is not ready", async () => {
-    vi.spyOn(db, "updateOrder").mockResolvedValue(undefined);
+    vi.spyOn(db, "updateOrder").mockResolvedValue(true);
     const blurry = await startEvaluationQuote({} as db.Db, evaluationOrder({ status: "draft" }), {
       ...readable,
       imageQuality: true,
@@ -161,7 +162,7 @@ describe("evaluation confirm", () => {
     vi.spyOn(storage, "serviceDb").mockReturnValue({} as db.Db);
     vi.spyOn(db, "listDocuments").mockResolvedValue([]);
     vi.spyOn(db, "listPages").mockResolvedValue([]);
-    vi.spyOn(db, "updateOrder").mockResolvedValue(undefined);
+    vi.spyOn(db, "updateOrder").mockResolvedValue(true);
     vi.spyOn(db, "getOrderById").mockImplementation(async () => evaluationOrder());
     vi.spyOn(pipeline, "loadCustomerOrder").mockResolvedValue({ totalCents: 1995 } as CustomerOrder);
   });

@@ -88,7 +88,7 @@ describe("runTranslationPage JSON parse", () => {
     vi.spyOn(jobs, "loadPageWork").mockResolvedValue(work());
     vi.spyOn(jobs, "completePageJob").mockResolvedValue(undefined);
     vi.spyOn(jobs, "failPageJob").mockResolvedValue(undefined);
-    vi.spyOn(db, "updateOrder").mockResolvedValue(undefined);
+    vi.spyOn(db, "updateOrder").mockResolvedValue(true);
     vi.spyOn(db, "claimOrderColumn").mockResolvedValue(true);
     vi.spyOn(db, "clearOrderColumn").mockResolvedValue(undefined);
     vi.spyOn(email, "sendStaffOrderAlert").mockResolvedValue({ sent: true, skipped: false });
@@ -179,6 +179,7 @@ describe("runTranslationPage JSON parse", () => {
         review_reason: "translation_timeout",
         progress: expect.objectContaining({ step: "done" }),
       }),
+      { statuses: ["confirmed", "processing", "correction_requested"] },
     );
     expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
     expect(email.sendTranslationFailureAlert).toHaveBeenCalledWith(

@@ -16,10 +16,18 @@ const CLOSED = new Set([
   "quoted",
   "needs_review",
   "preview_ready",
+  "paid",
   "approved",
   "delivered",
   "cancelled",
 ]);
+
+/**
+ * Statuses a translation worker may still change.
+ * `processing` is the in-flight job. Confirmed and correction orders are still open.
+ * Cancelled, paid, delivered, and preview-ready rows are not in this list.
+ */
+export const OPEN_TRANSLATION_STATUSES = ["confirmed", "processing", "correction_requested"] as const;
 
 /** Customer is waiting on a preview that has not been saved yet. */
 const WAITING_FOR_PREVIEW = new Set(["confirmed", "processing", "correction_requested"]);
