@@ -32,9 +32,11 @@ import {
   formatPlaced,
   maskWebhookSecret,
   QUICK_START_CODE_CLASS,
+  integrationSamples,
   quickStartCurl,
   safeOrderLink,
 } from "@/lib/integrations/present";
+import { API_DOCS_PATH } from "@/lib/seo";
 
 const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
 const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
@@ -143,7 +145,7 @@ export function IntegrationsPanel() {
           <h1 className="text-[26px] tracking-[-0.6px]">Integrations</h1>
           <p className="mt-1 text-sm text-ink-muted">Send orders from your own system and get certified files back automatically.</p>
         </div>
-        <a href="https://www.credpronto.com/docs/api" target="_blank" rel="noreferrer" data-testid="api-docs" className={secondary}>
+        <a href={API_DOCS_PATH} target="_blank" rel="noreferrer" data-testid="api-docs" className={secondary}>
           Read the API docs ↗
         </a>
       </div>
@@ -401,16 +403,23 @@ export function IntegrationsPanel() {
               </p>
             </div>
           </Panel>
-          <Panel title="Quick start" subtitle="Place an order with one call.">
+          <Panel title="Quick start" subtitle="Place an order with one call. The key above is shown once.">
             <div className="min-w-0 px-[18px] py-4">
               <div className="mb-2 flex justify-end">
                 <button type="button" data-testid="copy-quick-start" className="text-[13px] font-semibold text-primary" onClick={() => void copy("curl", curl)}>
                   {copied === "curl" ? "Copied" : "Copy"}
                 </button>
               </div>
-              <pre data-testid="quick-start" className={QUICK_START_CODE_CLASS}>
-                {curl}
-              </pre>
+              <div data-testid="quick-start" className="grid min-w-0 gap-4">
+                {integrationSamples(revealed?.secret ?? null).map((sample) => (
+                  <div key={sample.id} className="min-w-0">
+                    <p className="mb-1.5 text-[12.5px] font-semibold text-ink">{sample.title}</p>
+                    <pre data-testid={sample.id} className={QUICK_START_CODE_CLASS}>
+                      {sample.code}
+                    </pre>
+                  </div>
+                ))}
+              </div>
             </div>
           </Panel>
         </div>

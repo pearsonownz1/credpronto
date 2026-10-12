@@ -2,10 +2,16 @@ import { describe, expect, it } from "vitest";
 import type { ApiOrder } from "./client";
 import {
   QUICK_START_CODE_CLASS,
+  apiKeySamples,
   apiOrdersCsv,
   formatCharged,
   formatKeyPrefix,
   formatLastUsed,
+  integrationSamples,
+  orderCreateCurl,
+  orderCreateResponse,
+  orderFilesResponse,
+  orderGetResponse,
   quickStartCurl,
   safeOrderLink,
 } from "./present";
@@ -41,9 +47,56 @@ describe("integrations presentation", () => {
   it("builds a bearer curl and a csv from api fields only", () => {
     const placeholder = quickStartCurl(null);
     expect(placeholder).toContain('Authorization: Bearer <key>');
-    expect(placeholder).toContain("curl https://www.credpronto.com/api/v1/orders");
+    expect(placeholder).toContain("curl -X POST https://www.credpronto.com/api/v1/orders");
+    expect(placeholder).toContain("-F files=@acta.pdf");
+    expect(placeholder).toContain("-F service=translation");
+    expect(placeholder).toContain("-F source_language=es");
+    expect(placeholder).toContain("-F target_language=en");
+    expect(placeholder).toContain("-F external_ref=crm-1842");
+    expect(placeholder).not.toContain("-F file=");
     expect(placeholder).not.toMatch(/\$\d/);
+    expect(orderCreateCurl("cp_test_secret")).toContain('Authorization: Bearer cp_test_secret');
     expect(quickStartCurl("cp_test_secret")).toContain('Authorization: Bearer cp_test_secret');
+
+    const created = JSON.parse(orderCreateResponse()) as Record<string, unknown>;
+    expect(Object.keys(created)).toEqual([
+      "id",
+      "status",
+      "service",
+      "sourceLanguage",
+      "targetLanguage",
+      "externalRef",
+      "billablePages",
+      "unitPriceCents",
+      "expeditedUnit",
+      "totalCents",
+      "currency",
+      "payment",
+      "progress",
+      "paidAt",
+      "fulfillment",
+      "delayed",
+    ]);
+    expect(created).not.toHaveProperty("reviewReason");
+    expect(created).not.toHaveProperty("retries");
+    const detail = JSON.parse(orderGetResponse()) as Record<string, unknown>;
+    expect(detail.reviewReason).toBeNull();
+    expect(detail.qa).toBeNull();
+    expect(detail.progress).toMatchObject({ pagesDone: 1, pagesTranslateTotal: 3 });
+    const files = JSON.parse(orderFilesResponse()) as Record<string, unknown>;
+    expect(Object.keys(files)).toEqual(["downloadAvailable", "originals", "translation", "certification"]);
+    expect(files.translation).toBeNull();
+    expect(files.certification).toBeNull();
+
+    const keys = apiKeySamples();
+    expect(keys).toContain("POST /api/me/api-keys");
+    expect(keys).toContain("GET /api/me/api-keys");
+    expect(keys).toContain("DELETE /api/me/api-keys/{id}");
+    expect(keys).toContain('"mode": "test"');
+    expect(keys).toContain('"secret": "cp_test_…"');
+    const listed = keys.split("GET /api/me/api-keys")[1] ?? "";
+    expect(listed).not.toContain('"secret"');
+    expect(integrationSamples(null).map((sample) => sample.id)).toContain("sample-create-order");
     expect(QUICK_START_CODE_CLASS).toContain("overflow-x-auto");
     expect(QUICK_START_CODE_CLASS).toContain("whitespace-pre-wrap");
     expect(QUICK_START_CODE_CLASS).toContain("break-words");

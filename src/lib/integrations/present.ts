@@ -1,3 +1,4 @@
+import { SITE_ORIGIN } from "@/lib/seo";
 import type { ApiOrder } from "./client";
 
 export function formatKeyCreated(iso: string): string {
@@ -94,18 +95,210 @@ export function safeOrderLink(value: string | null): string | null {
 export const QUICK_START_CODE_CLASS =
   "block w-full min-w-0 max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-[var(--cp-radius)] bg-[#0b1220] p-4 font-mono text-[11.5px] leading-[1.6] text-[#d6e0ff]";
 
-export function quickStartCurl(secret: string | null): string {
-  const key = secret && secret.trim() !== "" ? secret.replace(/\\/g, "\\\\").replace(/"/g, '\\"') : "<key>";
+function pretty(value: unknown): string {
+  return JSON.stringify(value, null, 2);
+}
+
+/** Bearer token for a sample. A real secret is escaped for double quotes. */
+export function sampleBearer(secret: string | null): string {
+  if (!secret || secret.trim() === "") return "<key>";
+  return secret.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+/**
+ * `POST /api/v1/orders` as the handler reads it.
+ * `files` is the upload field. `service` and `source_language` are required for a translation.
+ * `target_language` defaults to `en`. `external_ref` is optional and idempotent.
+ */
+export function orderCreateCurl(secret: string | null): string {
+  const key = sampleBearer(secret);
   return [
-    "curl https://www.credpronto.com/api/v1/orders \\",
+    `curl -X POST ${SITE_ORIGIN}/api/v1/orders \\`,
     `  -H "Authorization: Bearer ${key}" \\`,
-    "  -F file=@acta.pdf \\",
+    "  -F files=@acta.pdf \\",
     "  -F service=translation \\",
-    "  -F source_language=es",
+    "  -F source_language=es \\",
+    "  -F target_language=en \\",
+    "  -F external_ref=crm-1842",
+  ].join("\n");
+}
+
+/** `201` body from `POST /api/v1/orders`. No `reviewReason` or `qa` on create. */
+export function orderCreateResponse(): string {
+  return pretty({
+    id: "…",
+    status: "paid",
+    service: "translation",
+    sourceLanguage: "es",
+    targetLanguage: "en",
+    externalRef: "crm-1842",
+    billablePages: 3,
+    unitPriceCents: 995,
+    expeditedUnit: "order",
+    totalCents: 2985,
+    currency: "usd",
+    payment: { status: "paid" },
+    progress: { step: "done", pagesRead: 3, pagesTotal: 3 },
+    paidAt: "2026-10-12T00:00:00.000Z",
+    fulfillment: "awaiting_review",
+    delayed: false,
+  });
+}
+
+export function orderGetCurl(secret: string | null): string {
+  const key = sampleBearer(secret);
+  return [`curl ${SITE_ORIGIN}/api/v1/orders/{id} \\`, `  -H "Authorization: Bearer ${key}"`].join("\n");
+}
+
+/** `GET /api/v1/orders/{id}` adds `reviewReason` and `qa` to the create body. */
+export function orderGetResponse(): string {
+  return pretty({
+    id: "…",
+    status: "processing",
+    service: "translation",
+    sourceLanguage: "es",
+    targetLanguage: "en",
+    externalRef: "crm-1842",
+    billablePages: 3,
+    unitPriceCents: 995,
+    expeditedUnit: "order",
+    totalCents: 2985,
+    currency: "usd",
+    payment: { status: "paid" },
+    progress: {
+      step: "translating",
+      pagesRead: 3,
+      pagesTotal: 3,
+      pagesDone: 1,
+      pagesTranslateTotal: 3,
+    },
+    paidAt: "2026-10-12T00:00:00.000Z",
+    fulfillment: "awaiting_review",
+    delayed: false,
+    reviewReason: null,
+    qa: null,
+  });
+}
+
+export function orderFilesCurl(secret: string | null): string {
+  const key = sampleBearer(secret);
+  return [`curl ${SITE_ORIGIN}/api/v1/orders/{id}/files \\`, `  -H "Authorization: Bearer ${key}"`].join("\n");
+}
+
+/** `GET /api/v1/orders/{id}/files` before the translation is released. */
+export function orderFilesResponse(): string {
+  return pretty({
+    downloadAvailable: false,
+    originals: [
+      {
+        documentId: "…",
+        filename: "acta.pdf",
+        url: "https://…",
+        expiresInSeconds: 300,
+      },
+    ],
+    translation: null,
+    certification: null,
+  });
+}
+
+/**
+ * Signed-in key routes. `secret` is only on the create response.
+ * `GET` returns `prefix` and `last4`, never the raw key.
+ */
+export function apiKeySamples(): string {
+  const created = {
+    id: "…",
+    name: "Production",
+    prefix: "cp_test_",
+    last4: "a91f",
+    createdAt: "2026-10-12T00:00:00.000Z",
+    lastUsedAt: null,
+    revokedAt: null,
+    secret: "cp_test_…",
+  };
+  const listed = {
+    id: created.id,
+    name: created.name,
+    prefix: created.prefix,
+    last4: created.last4,
+    createdAt: created.createdAt,
+    lastUsedAt: created.lastUsedAt,
+    revokedAt: created.revokedAt,
+  };
+  return [
+    "POST /api/me/api-keys",
+    pretty({ name: "Production", mode: "test" }),
     "",
+    "201",
+    pretty(created),
+    "",
+    "GET /api/me/api-keys",
+    pretty({ keys: [listed] }),
+    "",
+    "DELETE /api/me/api-keys/{id}",
+    pretty({ id: "…", revokedAt: "2026-10-12T01:00:00.000Z" }),
+  ].join("\n");
+}
+
+export function webhookSignatureNote(): string {
+  return [
     "# Verify the CredPronto-Signature header on each webhook.",
     "# It is t=<unix seconds>,v1=<hex HMAC-SHA256 of ${t}.${rawBody}>.",
   ].join("\n");
+}
+
+export type ApiSample = { id: string; title: string; code: string };
+
+/** Docs and the Integrations page share these samples. */
+export function integrationSamples(secret: string | null): ApiSample[] {
+  return [
+    {
+      id: "sample-keys",
+      title: "API keys",
+      code: apiKeySamples(),
+    },
+    {
+      id: "sample-create-order",
+      title: "Place an order",
+      code: orderCreateCurl(secret),
+    },
+    {
+      id: "sample-create-response",
+      title: "201 response",
+      code: orderCreateResponse(),
+    },
+    {
+      id: "sample-get-order",
+      title: "Read an order",
+      code: orderGetCurl(secret),
+    },
+    {
+      id: "sample-get-response",
+      title: "200 response",
+      code: orderGetResponse(),
+    },
+    {
+      id: "sample-files",
+      title: "Download files",
+      code: orderFilesCurl(secret),
+    },
+    {
+      id: "sample-files-response",
+      title: "Files response",
+      code: orderFilesResponse(),
+    },
+    {
+      id: "sample-signature",
+      title: "Webhook signature",
+      code: webhookSignatureNote(),
+    },
+  ];
+}
+
+/** Runnable order call, including the signature check. */
+export function quickStartCurl(secret: string | null): string {
+  return [orderCreateCurl(secret), "", webhookSignatureNote()].join("\n");
 }
 
 function csvCell(value: string): string {

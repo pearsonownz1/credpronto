@@ -24,8 +24,16 @@ test("integrations shows keys, webhook, card, orders, and quick start", async ({
   await expect(page.getByTestId("event-order.delivered")).toHaveCount(0);
   await expect(page.getByTestId("webhook-events-soon")).toHaveCount(0);
   await expect(page.getByTestId("quick-start")).toContainText("Authorization: Bearer <key>");
-  await expect(page.getByTestId("quick-start")).toContainText("curl https://www.credpronto.com/api/v1/orders");
+  await expect(page.getByTestId("quick-start")).toContainText("curl -X POST https://www.credpronto.com/api/v1/orders");
+  await expect(page.getByTestId("quick-start")).toContainText("-F files=@acta.pdf");
+  await expect(page.getByTestId("quick-start")).not.toContainText("-F file=");
+  await expect(page.getByTestId("quick-start")).toContainText("-F source_language=es");
+  await expect(page.getByTestId("quick-start")).toContainText("/api/v1/orders/{id}/files");
+  await expect(page.getByTestId("quick-start")).toContainText("POST /api/me/api-keys");
+  await expect(page.getByTestId("sample-create-response")).toContainText('"externalRef": "crm-1842"');
+  await expect(page.getByTestId("sample-get-response")).toContainText('"reviewReason": null');
   await expect(page.getByTestId("quick-start")).toContainText("CredPronto-Signature");
+  await expect(page.getByTestId("api-docs")).toHaveAttribute("href", "/docs/api");
   await expect(page.getByTestId("copy-quick-start")).toBeVisible();
   await expect(page.getByTestId("create-key")).toBeVisible();
   await expect(page.getByTestId("save-webhook")).toBeVisible();

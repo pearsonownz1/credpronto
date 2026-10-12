@@ -738,7 +738,7 @@ A key is `cp_live_` or `cp_test_` plus 32 bytes of CSPRNG hex (64 hex characters
 | Method | Path | Body | Result |
 | --- | --- | --- | --- |
 | `GET` | `/api/me/api-keys` | | `{ "keys": [ { id, name, prefix, last4, createdAt, lastUsedAt, revokedAt } ] }`. `lastUsedAt` is an ISO timestamp or `null`. |
-| `POST` | `/api/me/api-keys` | `{ "name": "Production", "mode": "live" \| "test" }` | `201` `{ id, name, prefix, last4, secret, createdAt, lastUsedAt }`. `secret` is the full key. `lastUsedAt` is `null` until the key authenticates a request. |
+| `POST` | `/api/me/api-keys` | `{ "name": "Production", "mode": "live" \| "test" }` | `201` `{ id, name, prefix, last4, createdAt, lastUsedAt, revokedAt, secret }`. `secret` is the full key. `lastUsedAt` and `revokedAt` are `null` on create. |
 | `DELETE` | `/api/me/api-keys/[id]` | | `{ "id", "revokedAt" }`. A revoked key no longer authenticates. `404` when the id is not owned by the session. |
 
 `name` is 1 to 80 characters. `mode` is required. `prefix` is `cp_live_` when `mode` is `live` and `cp_test_` when `mode` is `test`.
