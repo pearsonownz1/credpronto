@@ -52,6 +52,26 @@ body {
   color: var(--cp-primary);
 }
 
+.preview-mono {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+.report-frame {
+  position: relative;
+  container-type: inline-size;
+  aspect-ratio: 816 / 1056;
+}
+
+.report-page {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 816px;
+  height: 1056px;
+  transform-origin: top left;
+  transform: scale(calc(100cqi / 816px));
+}
+
 .flow-card-shadow {
   box-shadow: 0 24px 48px -28px rgba(11, 18, 32, 0.35);
 }
