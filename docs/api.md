@@ -384,8 +384,216 @@ A `paid_test` refund returns `{ "paymentStatus": "refunded", "mode": "paid_test"
 
 `draft` → `quoted` or `needs_review` → `confirmed` → `processing` → `preview_ready` → (`correction_requested` → `processing` → `preview_ready`) → `paid` → `approved` → `delivered`.
 
-`failed` can be retried with `POST /api/orders/[token]/process`. `cancelled` is unused by these routes.
+After translation, QA runs before `preview_ready`. A failing QA retranslates up to 2 times. If it still fails, the order becomes `needs_review` and `reviewReason` names the QA issues. `failed` can be retried with `POST /api/orders/[token]/process`. `cancelled` is unused by these routes.
 
 ## Events
 
-`order_events` records `upload_started`, `upload_done`, `quote_shown`, `preview_ready`, `preview_viewed`, `checkout_started`, `paid`, `refunded`, `downloaded`, `account_linked`, `translation_edited`, `note_added`, and `approved`. The raw token is never written on those rows.
+`order_events` records `upload_started`, `upload_done`, `quote_shown`, `preview_ready`, `preview_viewed`, `checkout_started`, `paid`, `refunded`, `downloaded`, `account_linked`, `translation_edited`, `note_added`, `approved`, and `staff_notified`. The raw token is never written on those rows. `staff_notified` is written once when a new order finishes upload. It is the staff notification for now. Email to staff comes later. The payload is `{ "channel": "event" }`.
+
+## Integrations
+
+Signed-in routes under `/api/me` use the same cookie session as `GET /api/me/orders`. `401` `{ "error": "Sign in required" }` when the session is missing. `503` `{ "error": "Auth is not configured" }` when Supabase auth is missing.
+
+### API keys
+
+A key is `cp_live_` or `cp_test_` plus 32 bytes of CSPRNG hex (64 hex characters). The database stores only the lowercase hex SHA-256 of the full string in `api_keys.key_hash`. The raw key is returned once, on create. Later reads return `prefix`, `last4` (the last 4 characters of the full key), and `name`. The hash and the raw key are never returned again.
+
+| Method | Path | Body | Result |
+| --- | --- | --- | --- |
+| `GET` | `/api/me/api-keys` | | `{ "keys": [ { id, name, prefix, last4, createdAt, revokedAt } ] }` |
+| `POST` | `/api/me/api-keys` | `{ "name": "Production", "mode": "live" \| "test" }` | `201` `{ id, name, prefix, last4, secret, createdAt }`. `secret` is the full key. |
+| `DELETE` | `/api/me/api-keys/[id]` | | `{ "id", "revokedAt" }`. A revoked key no longer authenticates. `404` when the id is not owned by the session. |
+
+`name` is 1 to 80 characters. `mode` is required. `prefix` is `cp_live_` when `mode` is `live` and `cp_test_` when `mode` is `test`.
+
+### Saved card
+
+One Stripe Customer per profile (`billing_customers.user_id`). Card numbers are not stored. The row keeps `stripe_customer_id`, `payment_method_id`, `brand`, and `last4`.
+
+| Method | Path | Result |
+| --- | --- | --- |
+| `POST` | `/api/me/billing/setup-intent` | `{ "clientSecret": "seti_…", "customerId": "cus_…" }`. Creates the Stripe Customer on first use and a SetupIntent with `usage: off_session`. |
+| `GET` | `/api/me/billing` | `{ "card": { "brand": "visa", "last4": "4242" } }` or `{ "card": null }` |
+| `DELETE` | `/api/me/billing` | Detaches the payment method and clears `payment_method_id`, `brand`, and `last4`. The Stripe Customer id stays. `{ "card": null }` |
+
+SetupIntent and the off-session charge run only when `STRIPE_SECRET_KEY` starts with `sk_test_`. Otherwise `503` `{ "error": "Payments not configured", "code": "payments_not_configured" }`. The webhook `setup_intent.succeeded` copies `brand` and `last4` onto the row. `POST /api/me/billing/setup-intent` can also be confirmed by the client; `GET` reads whatever is stored.
+
+### Outbound webhook
+
+One endpoint per profile.
+
+`PUT /api/me/webhook`
+
+```json
+{ "url": "https://example.com/hooks/credpronto" }
+```
+
+```json
+{ "url": "https://example.com/hooks/credpronto", "secret": "whsec_…" }
+```
+
+`url` must be `https`. `400` `{ "error": "Webhook URL must be https", "code": "validation_error" }` otherwise. The signing secret is 32 bytes of hex prefixed with `whsec_`. It is stored so deliveries can be signed, and it is returned only from this `PUT`. A later `PUT` rotates it and returns the new secret once.
+
+Deliveries are posted for orders whose `user_id` has an endpoint:
+
+| Event | When |
+| --- | --- |
+| `order.quoted` | Analysis sets the order to `quoted` |
+| `order.delivered` | Delivery becomes `delivered` |
+| `order.failed` | The order becomes `failed` |
+
+```json
+{
+  "id": "evt_…",
+  "type": "order.quoted",
+  "createdAt": "2026-10-12T00:00:00.000Z",
+  "data": {
+    "orderId": "…",
+    "status": "quoted",
+    "externalRef": null
+  }
+}
+```
+
+`CredPronto-Signature` is `t=<unix seconds>,v1=<hex>`. `v1` is HMAC-SHA256 of `${t}.${rawBody}` using the current signing secret, hex-encoded. Receivers reject a timestamp more than 5 minutes off.
+
+Each delivery is stored in `webhook_deliveries`. A non-2xx response or a network error is retried up to 3 attempts total (immediately, then after 60 seconds, then after 5 minutes). `attempt` is 1, 2, or 3. `status` is `pending`, `succeeded`, or `failed`. After the third failure the row stays `failed` and no further retry is scheduled.
+
+### Public API
+
+`Authorization: Bearer <secret>`. The secret is hashed and matched to an unrevoked `api_keys` row. `401` `{ "error": "Invalid API key", "code": "invalid_api_key" }` otherwise.
+
+While `STRIPE_SECRET_KEY` starts with `sk_test_`, `cp_live_` keys may call `GET` but `POST /api/v1/orders` returns `403` `{ "error": "Live mode is disabled", "code": "live_mode_disabled" }`. `cp_test_` keys may create orders.
+
+#### `POST /api/v1/orders`
+
+`multipart/form-data`.
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `files` | yes | Same rules as `POST /api/orders`. `file` is also accepted. |
+| `source_language` | yes for `translation` | Confirmed immediately. No separate confirm call. |
+| `target_language` | no | Defaults to `en` |
+| `service` | yes | `translation` or `evaluation` |
+| `external_ref` | no | Stored on the order. Unique per `user_id`. A repeat returns the existing order with `200`. |
+
+The order is owned by the key's user (`orders.user_id`). Analysis quotes it. The saved card is then charged off-session for `totalCents` in Stripe test mode (`confirm: true`, `off_session: true`). A successful charge marks the payment `paid`, records `paid`, and for `translation` starts the normal translation pipeline. `evaluation` is quoted and charged the same way, then set to `needs_review` with `reviewReason` `Credential evaluation is reviewed by staff.` It does not enter translation.
+
+`201` after a new charge:
+
+```json
+{
+  "id": "…",
+  "status": "paid",
+  "service": "translation",
+  "sourceLanguage": "es",
+  "targetLanguage": "en",
+  "externalRef": "crm-1842",
+  "billablePages": 3,
+  "unitPriceCents": 995,
+  "totalCents": 2985,
+  "currency": "usd",
+  "payment": { "status": "paid" }
+}
+```
+
+No saved card, after the quote exists:
+
+`402`
+
+```json
+{
+  "error": "A saved card is required",
+  "code": "card_required",
+  "orderId": "…",
+  "totalCents": 2985,
+  "currency": "usd"
+}
+```
+
+The order stays `quoted` and can be charged by repeating the request with the same `external_ref` once a card is saved. Stripe decline is `402` `{ "error": "The card was declined", "code": "card_declined", "orderId": "…" }`. The payment row is `failed`.
+
+Other codes: `400` `validation_error`, `415` `unsupported_type`, `409` `quote_unavailable` when analysis cannot price the order, `503` `payments_not_configured`.
+
+#### `GET /api/v1/orders/[id]`
+
+The shape above, plus `reviewReason` and `qa` (the same object as the admin order, or `null`). `404` `{ "error": "Order not found", "code": "not_found" }` when the id is not owned by the key's user.
+
+#### `GET /api/v1/orders/[id]/files`
+
+Originals are the caller's uploads and are signed at any status. The clean translation and the certification page follow the same payment and approval gate as `GET /api/orders/[token]/download`. When that gate is closed they are `null`, not an error.
+
+```json
+{
+  "downloadAvailable": false,
+  "originals": [
+    {
+      "documentId": "…",
+      "filename": "diploma.pdf",
+      "url": "https://…",
+      "expiresInSeconds": 300
+    }
+  ],
+  "translation": null,
+  "certification": null
+}
+```
+
+When the gate is open, `translation` and `certification` are `{ "url", "filename", "expiresInSeconds": 300 }` using the same filenames as the token download.
+
+## Fulfillment QA
+
+After each translation render, and before `preview_ready`, the server compares the original page text with the translation.
+
+Checked:
+
+| `type` | Fails the run when |
+| --- | --- |
+| `name` | A confirmed `full_name`, `parent_names`, or `place_of_birth` value is missing from the translation. |
+| `date` | A confirmed `date_of_birth` is missing from the translation. |
+| `number` | A number of 2 or more digits in the original text is missing from the translation. |
+| `missing_text` | An original page with text has an empty translation. |
+| `layout` | The translation page count differs from the original page count. |
+
+`severity` is `high`, `medium`, or `low`. The checks above are `high`. `score` starts at 100 and loses 25 per high issue, 10 per medium, and 5 per low, with a floor of 0. The run fails when any high issue exists or `score` is below 80.
+
+On failure the order is retranslated, up to 2 times (3 QA runs total). Prior issues are passed into the next translation. A failing run that will be retried is stored as `retranslated` and still lists its `issues`. The run that passes on the first attempt is `pass` with `issues: []`. A pass after at least one retranslation is `retranslated` with `issues: []` and `attempts` greater than 1. The run that still fails on attempt 3 is `fail`, the order becomes `needs_review`, and `reviewReason` is `QA found issues that were not fixed after 2 retranslations.`
+
+`GET /api/admin/orders/[id]` includes `qa`. `null` when no run exists.
+
+```json
+{
+  "status": "fail",
+  "score": 50,
+  "checkedAt": "2026-10-12T00:00:00.000Z",
+  "attempts": 3,
+  "issues": [
+    {
+      "type": "name",
+      "severity": "high",
+      "page": 1,
+      "original": "Ada Lovelace",
+      "translated": "",
+      "note": "Confirmed full_name is missing from the translation."
+    }
+  ]
+}
+```
+
+`page` is the combined page number, or `null` for a layout issue that covers the whole order. `checkedAt` is the latest run's timestamp. `attempts` is how many runs exist for the order.
+
+The clean translation in `finals` (`file=translation`) starts with the certification cover page, then the translated pages. The watermarked preview does not include the cover. The separate certification object (`file=certification`) is still the cover alone. The cover text is the existing translator certification (order id, date, source language to English).
+
+### Tables
+
+`api_keys`: `id`, `user_id` → `auth.users`, `name`, `prefix` (`cp_live_` or `cp_test_`), `key_hash` (unique lowercase hex SHA-256), `last4`, `created_at`, `revoked_at` null until delete. RLS: the owner selects their rows; staff select all. Writes go through the service role.
+
+`billing_customers`: `user_id` primary key → `auth.users`, `stripe_customer_id` unique, `payment_method_id` null, `brand` null, `last4` null, `created_at`, `updated_at`. No card number. RLS: the owner selects their row. Writes go through the service role.
+
+`webhook_endpoints`: `id`, `user_id` unique → `auth.users`, `url`, `signing_secret`, `created_at`, `updated_at`. The secret is not readable by the customer session. RLS: no customer policy. Staff select. Writes go through the service role.
+
+`webhook_deliveries`: `id`, `endpoint_id`, `order_id`, `event` (`order.quoted`, `order.delivered`, `order.failed`), `attempt`, `status` (`pending`, `succeeded`, `failed`), `response_status` null, `created_at`, `next_retry_at` null. RLS: staff select. Writes go through the service role.
+
+`order_qa_runs`: `id`, `order_id`, `attempt` (unique per order, 1–3), `status` (`pass`, `fail`, `retranslated`), `score` 0–100, `issues` jsonb, `created_at`. RLS: staff select. Customers do not select QA rows. Writes go through the service role.
+
+New enum values (`order_event_type` value `staff_notified`, and the QA status labels when stored as an enum) land in their own migration files. A later file creates the table or inserts the row. Do not add an enum value and use it in the same file.
