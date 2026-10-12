@@ -141,7 +141,7 @@ describe("preview mapping", () => {
   it("keeps signed-url page numbers and sizes", () => {
     const preview: PreviewResponse = {
       status: "preview_ready",
-      totalCents: 2985,
+      totalCents: 7765,
       unitPriceCents: 995,
       billablePages: 3,
       original: {
@@ -211,6 +211,7 @@ describe("preview mapping", () => {
       documentId: "doc-a",
     });
     expect(mapped.pricing.totalCents).toBe(2985);
+    expect(mapped.addonOptions?.map((option) => option.totalCents)).toEqual([1795, 1295, 2985]);
     expect(mapped.corrections[0]?.note).toBe("use the passport spelling");
     expect(documentIdForPage(order().documents, 2)).toBe("doc-a");
     expect(documentIdForPage(order().documents, 3)).toBe("doc-b");

@@ -25,6 +25,9 @@ test("mobile toggle keeps the page and zoom", async ({ page }) => {
   await expect(page.getByTestId("translation-watermark")).toBeVisible();
   await expect(page.getByTestId("buy-download")).toBeVisible();
   await expect(page.getByTestId("mobile-buy-bar")).toContainText("3 pages · certified");
+  await page.getByTestId("addon-mail").check();
+  await expect(page.getByTestId("shipping-address")).toBeVisible();
+  await expect(page.getByTestId("buy-download")).toContainText("Buy & download — $42.80");
 
   await page.getByTestId("doc-toggle-original").click();
   await expect(page.getByTestId("pane-original")).toHaveAttribute("data-page", "2");

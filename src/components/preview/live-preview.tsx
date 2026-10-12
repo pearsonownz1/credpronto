@@ -90,9 +90,30 @@ export function LivePreview() {
       order={preview}
       notice={canceled ? "Payment canceled" : undefined}
       noticeTestId={canceled ? "payment-canceled" : undefined}
-      onBuy={() => {
+      onBuy={async (body) => {
         writeToken(token);
-        router.push("/checkout");
+        try {
+          const result = await getFlowClient().checkout(token, body);
+          if ("url" in result && result.url) {
+            window.location.assign(result.url);
+            return;
+          }
+          if ("mode" in result && result.mode === "paid_test") {
+            router.push(`/order/${encodeURIComponent(token)}?checkout=success`);
+            return;
+          }
+          throw new Error("Checkout did not return a payment link.");
+        } catch (cause) {
+          if (cause instanceof FlowApiError) {
+            if (cause.status === 409 && /already paid/i.test(cause.message)) {
+              router.push(`/order/${encodeURIComponent(token)}?checkout=success`);
+              return;
+            }
+            const waiting = checkoutFailureMessage(cause.status, cause.message);
+            throw new Error(waiting ?? cause.message);
+          }
+          throw cause instanceof Error ? cause : new Error("Payment could not start.");
+        }
       }}
       onCorrect={async ({ page, note }) => {
         const documentId =

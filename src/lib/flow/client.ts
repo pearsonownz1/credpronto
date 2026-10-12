@@ -64,7 +64,7 @@ export type FlowClient = {
         city: string;
         state: string;
         postalCode: string;
-        country: "US";
+        country: string;
       };
     },
   ): Promise<CheckoutResult>;
