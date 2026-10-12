@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PAID_REVIEW_COPY } from "@/lib/flow/present";
 import { orderLiveMessage } from "./order-announcement";
 
 const order = {
@@ -19,6 +20,40 @@ describe("order live message", () => {
     expect(
       orderLiveMessage({ loading: false, error: "Order not found", checkout: "success", order: null }),
     ).toBe("We couldn't load this order.");
+    expect(
+      orderLiveMessage({
+        loading: false,
+        checkout: "success",
+        order: {
+          status: "paid",
+          billablePages: 1,
+          totalCents: 995,
+          fulfillment: "awaiting_review",
+        },
+      }),
+    ).toBe(PAID_REVIEW_COPY);
+    expect(
+      orderLiveMessage({
+        loading: false,
+        order: {
+          status: "needs_review",
+          billablePages: 1,
+          totalCents: 995,
+          fulfillment: "awaiting_review",
+        },
+      }),
+    ).toBe(PAID_REVIEW_COPY);
+    expect(
+      orderLiveMessage({
+        loading: false,
+        order: {
+          status: "approved",
+          billablePages: 1,
+          totalCents: 995,
+          fulfillment: "released",
+        },
+      }),
+    ).toBe("Your translation is ready.");
   });
 
   it("says the order is loading until a status arrives", () => {

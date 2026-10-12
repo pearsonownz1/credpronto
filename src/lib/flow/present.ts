@@ -521,12 +521,33 @@ export function downloadReadyCopy(order: {
 
 export type DownloadPhase = "confirming" | "certifying" | "ready";
 
+/** Status heading while a paid order is still with the translator. */
+export const PAID_REVIEW_COPY =
+  "Paid. Our certified translator is doing a final check, and your PDF will be emailed and appear right here.";
+
+export function paidReviewEmailLine(email: string | null | undefined): string {
+  const address = email?.trim();
+  return address
+    ? `We'll email ${address} when the certified PDF is ready to download.`
+    : "We'll email you when the certified PDF is ready to download.";
+}
+
+/** How often the paid page asks for order status until the PDF is released. */
+export const ORDER_STATUS_POLL_MS = 5_000;
+
+export function orderStatusPollDelay(phase: DownloadPhase): number | null {
+  return phase === "ready" ? null : ORDER_STATUS_POLL_MS;
+}
+
 export function downloadPhase(order: {
   status: string;
   payment: { status: string } | null;
   delivery: { status: string } | null;
+  fulfillment?: "released" | "awaiting_review" | null;
 }): DownloadPhase {
   const paid =
+    order.fulfillment === "released" ||
+    order.fulfillment === "awaiting_review" ||
     order.status === "paid" ||
     order.status === "approved" ||
     order.status === "delivered" ||
@@ -535,6 +556,7 @@ export function downloadPhase(order: {
   if (!paid) return "confirming";
   const delivery = order.delivery?.status;
   if (
+    order.fulfillment === "released" ||
     delivery === "approved" ||
     delivery === "delivered" ||
     order.status === "approved" ||
@@ -551,10 +573,17 @@ export type OrderHubStep = "download" | "preview" | "quote" | "processing" | "ca
 export function orderHubStep(
   checkout: string | null | undefined,
   status: string | null | undefined,
-  order?: { delayed?: boolean; reviewReason?: string | null } | null,
+  order?: {
+    delayed?: boolean;
+    reviewReason?: string | null;
+    fulfillment?: "released" | "awaiting_review" | null;
+  } | null,
 ): OrderHubStep {
   if (checkout === "success") return "download";
   if (checkout === "cancel") return "cancel";
+  if (order?.fulfillment === "released" || order?.fulfillment === "awaiting_review") {
+    return "download";
+  }
   if (
     status === "paid" ||
     status === "approved" ||

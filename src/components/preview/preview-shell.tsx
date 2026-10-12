@@ -11,6 +11,7 @@ export function PreviewShell({
   status,
   notice,
   noticeTestId,
+  layout = "page",
 }: {
   order?: PreviewOrder;
   toolbar?: ReactNode;
@@ -20,12 +21,20 @@ export function PreviewShell({
   status?: string;
   notice?: string;
   noticeTestId?: string;
+  /** `embedded` sits under the paid-order status and fills its parent. */
+  layout?: "page" | "embedded";
 }) {
   return (
     <div
       data-testid="preview-shell"
-      className="preview-theme flex h-dvh flex-col bg-bg text-ink"
+      data-layout={layout}
+      className={
+        layout === "embedded"
+          ? "preview-theme flex h-full min-h-0 flex-col bg-bg text-ink"
+          : "preview-theme flex h-dvh flex-col bg-bg text-ink"
+      }
     >
+      {layout === "embedded" ? null : (
       <header className="flex h-[54px] shrink-0 items-center justify-between gap-5 border-b border-line bg-bg px-4 md:h-[60px] md:justify-start md:px-6">
         <Link href="/" className="flex items-center gap-2 text-lg font-bold tracking-[-0.4px] md:text-[18px]">
           <span className="relative inline-block size-[22px] shrink-0 rounded-[3px] bg-primary" aria-hidden>
@@ -59,6 +68,7 @@ export function PreviewShell({
           <span className="text-sm text-ink-muted">Preview</span>
         )}
       </header>
+      )}
       {notice ? (
         <p
           data-testid={noticeTestId}

@@ -13,12 +13,16 @@ import {
   canSetSourceLanguage,
   checkoutFailureMessage,
   displayedPageRule,
+  ORDER_STATUS_POLL_MS,
+  PAID_REVIEW_COPY,
   downloadReadyCopy,
   documentIdForPage,
   downloadPhase,
   joinParents,
   languageLine,
   orderHubStep,
+  orderStatusPollDelay,
+  paidReviewEmailLine,
   fileCountLabel,
   quoteCounts,
   quoteFileGroups,
@@ -487,6 +491,18 @@ describe("download phase", () => {
           status: "paid",
           payment: { status: "paid" },
           delivery: { status: "pending" },
+          fulfillment: "awaiting_review",
+        }),
+      ),
+    ).toBe("certifying");
+    expect(
+      downloadPhase(
+        order({
+          status: "needs_review",
+          paidAt: "2026-04-01T00:00:00.000Z",
+          payment: { status: "paid" },
+          delivery: { status: "pending" },
+          fulfillment: "awaiting_review",
         }),
       ),
     ).toBe("certifying");
@@ -499,6 +515,25 @@ describe("download phase", () => {
         }),
       ),
     ).toBe("ready");
+    expect(
+      downloadPhase(
+        order({
+          status: "approved",
+          payment: { status: "paid" },
+          delivery: { status: "approved" },
+          fulfillment: "released",
+        }),
+      ),
+    ).toBe("ready");
+    expect(orderStatusPollDelay("certifying")).toBe(ORDER_STATUS_POLL_MS);
+    expect(orderStatusPollDelay("confirming")).toBe(5_000);
+    expect(orderStatusPollDelay("ready")).toBeNull();
+    expect(PAID_REVIEW_COPY).toBe(
+      "Paid. Our certified translator is doing a final check, and your PDF will be emailed and appear right here.",
+    );
+    expect(paidReviewEmailLine("ada@example.com")).toBe(
+      "We'll email ada@example.com when the certified PDF is ready to download.",
+    );
   });
 });
 
@@ -779,6 +814,11 @@ describe("order hub", () => {
     expect(orderHubStep(null, "preview_ready")).toBe("processing");
     expect(orderHubStep(null, "paid")).toBe("download");
     expect(orderHubStep(null, "approved")).toBe("download");
+    expect(orderHubStep(null, "needs_review", { fulfillment: "awaiting_review" })).toBe("download");
+    expect(orderHubStep(null, "correction_requested", { fulfillment: "awaiting_review" })).toBe(
+      "download",
+    );
+    expect(orderHubStep(null, "approved", { fulfillment: "released" })).toBe("download");
     expect(orderHubStep(undefined, undefined)).toBe("processing");
   });
 });
