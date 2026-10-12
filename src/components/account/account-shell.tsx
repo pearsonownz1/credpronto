@@ -97,9 +97,6 @@ export function AccountShell({
           <SoonItem testId="nav-evaluation" icon={<CapIcon />}>
             Credential evaluation
           </SoonItem>
-          <SoonItem testId="nav-letter" icon={<PenIcon />}>
-            Expert letter
-          </SoonItem>
           <div className="mt-auto border-t border-line pt-2">
             <AccountMenu account={account} />
           </div>
@@ -242,13 +239,6 @@ function CapIcon() {
     <Icon>
       <path d="M2 9l10-5 10 5-10 5z" />
       <path d="M6 11v5c3 2 9 2 12 0v-5" />
-    </Icon>
-  );
-}
-function PenIcon() {
-  return (
-    <Icon>
-      <path d="M4 20l4-1 11-11-3-3L5 16z" />
     </Icon>
   );
 }

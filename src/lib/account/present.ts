@@ -58,7 +58,6 @@ export function initials(name: string): string {
 export function serviceLabel(serviceType: string): string {
   if (serviceType === "translation") return "Certified translation";
   if (serviceType === "evaluation") return "Credential evaluation";
-  if (serviceType === "expert_letter") return "Expert letter";
   return serviceType;
 }
 
