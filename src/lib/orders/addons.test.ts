@@ -2,7 +2,18 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { HttpError } from "./errors";
-import { addonOptions, addonStripeLines, chargeCents, parseCheckoutBody, serviceCents } from "./addons";
+import {
+  addonOptions,
+  addonStripeLines,
+  chargeCents,
+  expeditedFlagForAddons,
+  parseCheckoutBody,
+  serviceCents,
+} from "./addons";
+
+const evaluation = { serviceType: "evaluation" as const, orderType: "evaluation" as const, service: "diploma" as const };
+const course = { serviceType: "evaluation" as const, orderType: "evaluation" as const, service: "course_by_course" as const };
+const translation = { serviceType: "translation" as const, orderType: "translation" as const, service: null };
 
 const address = {
   name: "Ada Lovelace",
@@ -16,14 +27,17 @@ const address = {
 
 describe("checkout add-ons", () => {
   it("prices every option from the billable pages", () => {
-    expect(addonOptions(3)).toEqual([
+    expect(addonOptions(3, translation).map((item) => item.id)).toEqual(["notarization", "mail"]);
+    expect(addonOptions(3, evaluation)).toEqual([
       { id: "notarization", label: "Notarization", unitCents: 1795, per: "order", totalCents: 1795 },
       { id: "mail", label: "USPS Priority hard copy", unitCents: 1295, per: "order", totalCents: 1295 },
       { id: "expedited", label: "Expedited", unitCents: 995, per: "page", totalCents: 2985 },
     ]);
-    expect(addonOptions(null)[2]?.totalCents).toBeNull();
-    expect(chargeCents(2985, addonOptions(3), ["notarization", "expedited"])).toBe(7765);
-    expect(chargeCents(2985, addonOptions(null), ["expedited"])).toBeNull();
+    expect(addonOptions(3, course).find((item) => item.id === "expedited")?.totalCents).toBe(2985);
+    expect(addonOptions(null, evaluation)[2]?.totalCents).toBeNull();
+    expect(chargeCents(2985, addonOptions(3, evaluation), ["notarization", "expedited"])).toBe(7765);
+    expect(chargeCents(2985, addonOptions(null, evaluation), ["expedited"])).toBeNull();
+    expect(chargeCents(2985, addonOptions(3, translation), ["expedited"])).toBeNull();
   });
 
   it("keeps the service price separate from add-ons", () => {
@@ -47,10 +61,11 @@ describe("checkout add-ons", () => {
     ).toBe(3985);
   });
 
-  it("accepts a mail address and prices expedited per page", () => {
+  it("accepts a mail address and prices expedited per page on an evaluation", () => {
     const selection = parseCheckoutBody(
       { addons: ["expedited", "mail", "notarization"], shippingAddress: { ...address, state: "ca" } },
       3,
+      evaluation,
     );
     expect(selection.addons.map((item) => item.id)).toEqual(["notarization", "mail", "expedited"]);
     expect(selection.addonCents).toBe(1795 + 1295 + 2985);
@@ -69,8 +84,28 @@ describe("checkout add-ons", () => {
     );
     expect(() => parseCheckoutBody({ addons: ["notarization", "notarization"] }, 1)).toThrow("Unknown add-on");
     expect(() => parseCheckoutBody({ addons: ["rush"] }, 1)).toThrow("Unknown add-on");
-    expect(() => parseCheckoutBody({ addons: ["expedited"] }, null)).toThrow("Expedited needs a page count");
+    expect(() => parseCheckoutBody({ addons: ["expedited"] }, null, evaluation)).toThrow("Expedited needs a page count");
+    expect(() => parseCheckoutBody({ addons: ["expedited"] }, 3, course)).not.toThrow();
     expect(parseCheckoutBody({}, 2).addons).toEqual([]);
+  });
+
+  it("rejects expedited on translation orders and stores it only for evaluations", () => {
+    expect(() => parseCheckoutBody({ addons: ["expedited"] }, 3, translation)).toThrow(HttpError);
+    expect(() => parseCheckoutBody({ addons: ["expedited"] }, 3, translation)).toThrow("Expedited is no longer offered");
+    expect(() => parseCheckoutBody({ addons: ["expedited"] }, null, translation)).toThrow("Expedited is no longer offered");
+    expect(() => parseCheckoutBody({ addons: ["notarization", "expedited"] }, 2, { serviceType: "translation" })).toThrow(
+      "Expedited is no longer offered",
+    );
+    const priced = parseCheckoutBody({ addons: ["expedited"] }, 4, { serviceType: "evaluation" });
+    expect(priced.addons).toEqual([
+      { id: "expedited", label: "Expedited", unitCents: 995, per: "page", quantity: 4, totalCents: 3980 },
+    ]);
+    expect(priced.addonCents).toBe(3980);
+    expect(expeditedFlagForAddons(translation, [])).toBe(false);
+    expect(expeditedFlagForAddons(evaluation, [{ id: "expedited" }])).toBe(true);
+    expect(expeditedFlagForAddons(course, [{ id: "expedited" }])).toBe(true);
+    expect(expeditedFlagForAddons({ service: "diploma" }, [{ id: "mail" }])).toBe(false);
+    expect(() => expeditedFlagForAddons(translation, [{ id: "expedited" }])).toThrow("Expedited is no longer offered");
   });
 
   it("stores add-ons without creating an enum", () => {

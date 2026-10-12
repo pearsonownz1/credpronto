@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { parseCheckoutBody, selectedAddonIds } from "./addons";
 import { analyzeOrder } from "./analysis";
 import {
   bearerApiKey,
@@ -21,6 +22,7 @@ import {
   latestReadyPreview,
   listDocuments,
   listQaRuns,
+  replaceOrderAddons,
   settledPayment,
   updateOrder,
   upsertCustomer,
@@ -166,6 +168,35 @@ export function assertLiveOrderAllowed(prefix: ApiKeyPrefix): void {
   }
 }
 
+/** Optional checkout add-ons on `POST /api/v1/orders`. Translation orders cannot buy Expedited. */
+export function readPartnerAddonBody(form: FormData, service: PartnerService): Record<string, unknown> | null {
+  if (!form.has("addons")) return null;
+  try {
+    const entries = form.getAll("addons").filter((entry): entry is string => typeof entry === "string");
+    let addons: unknown = entries;
+    if (entries.length === 1 && entries[0].trim().startsWith("[")) {
+      try {
+        addons = JSON.parse(entries[0]) as unknown;
+      } catch {
+        throw new HttpError("Unknown add-on", 400);
+      }
+    }
+    const body: Record<string, unknown> = { addons };
+    const rawAddress = form.get("shippingAddress");
+    if (typeof rawAddress === "string" && rawAddress.trim()) {
+      try {
+        body.shippingAddress = JSON.parse(rawAddress) as unknown;
+      } catch {
+        throw new HttpError("Mail requires a US shipping address", 400);
+      }
+    }
+    selectedAddonIds(addons, { serviceType: service });
+    return body;
+  } catch (error) {
+    rethrowValidation(error);
+  }
+}
+
 export async function createV1Order(request: Request, key: ApiKeyRow): Promise<CreatedPartnerOrder> {
   assertLiveOrderAllowed(key.prefix);
   const form = await readForm(request);
@@ -182,6 +213,7 @@ export async function createV1Order(request: Request, key: ApiKeyRow): Promise<C
   }
 
   const service = parseService(form.get("service"));
+  const addonBody = readPartnerAddonBody(form, service);
   const sourceLanguage = parseLanguage(form.get("source_language"), "source_language", service === "translation");
   if (service === "translation" && !supportedSource(sourceLanguage)) {
     throw new HttpError("source_language is not supported", 400, "validation_error");
@@ -216,7 +248,25 @@ export async function createV1Order(request: Request, key: ApiKeyRow): Promise<C
 
   const analyzed = await ownedOrder(db, key.userId, order.id);
   const quoted = await applyPartnerQuote(db, analyzed, service, sourceLanguage);
-  const finished = await finishPartnerOrder(db, quoted, true);
+  let ready = quoted;
+  if (addonBody) {
+    try {
+      const selection = parseCheckoutBody(addonBody, quoted.billablePages, quoted);
+      if (quoted.totalCents == null) {
+        throw new HttpError("This order cannot be priced", 409, "quote_unavailable");
+      }
+      await replaceOrderAddons(db, quoted.id, {
+        addons: selection.addons,
+        shippingAddress: selection.shippingAddress,
+        addonCents: selection.addonCents,
+        totalCents: quoted.totalCents + selection.addonCents,
+      });
+      ready = await ownedOrder(db, key.userId, quoted.id);
+    } catch (error) {
+      rethrowValidation(error);
+    }
+  }
+  const finished = await finishPartnerOrder(db, ready, true);
   return { status: 201, ...finished };
 }
 

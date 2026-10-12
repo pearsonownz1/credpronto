@@ -9,6 +9,23 @@ export const ADDON_CATALOG = [
 
 const ADDON_IDS = new Set<string>(ADDON_CATALOG.map((item) => item.id));
 
+export type AddonOrderContext = {
+  serviceType?: string | null;
+  orderType?: string | null;
+  service?: string | null;
+};
+
+/** Diploma and course-by-course evaluations still sell Expedited. Translation orders do not. */
+export function offersExpedited(order: AddonOrderContext): boolean {
+  if (order.service === "diploma" || order.service === "course_by_course") return true;
+  if (order.serviceType === "evaluation" || order.orderType === "evaluation") return true;
+  return false;
+}
+
+function offeredCatalog(order: AddonOrderContext) {
+  return offersExpedited(order) ? ADDON_CATALOG : ADDON_CATALOG.filter((item) => item.id !== "expedited");
+}
+
 export const US_STATE_CODES = [
   "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL",
   "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME",
@@ -42,15 +59,39 @@ export type CheckoutSelection = {
   addonCents: number;
 };
 
-export function addonOptions(billablePages: number | null): AddonOption[] {
+export function addonOptions(billablePages: number | null, order: AddonOrderContext = {}): AddonOption[] {
   const pages = billablePages != null && billablePages > 0 ? billablePages : null;
-  return ADDON_CATALOG.map((item) => ({
+  return offeredCatalog(order).map((item) => ({
     id: item.id,
     label: item.label,
     unitCents: item.unitCents,
     per: item.per,
     totalCents: item.per === "order" ? item.unitCents : pages == null ? null : item.unitCents * pages,
   }));
+}
+
+export function selectedAddonIds(addons: unknown, order: AddonOrderContext = {}): AddonId[] {
+  if (!Array.isArray(addons)) throw new HttpError("Unknown add-on", 400);
+  const seen = new Set<string>();
+  const chosen: AddonId[] = [];
+  for (const entry of addons) {
+    if (entry === "expedited" && !offersExpedited(order)) {
+      throw new HttpError("Expedited is no longer offered", 400);
+    }
+    if (typeof entry !== "string" || !ADDON_IDS.has(entry) || seen.has(entry)) {
+      throw new HttpError("Unknown add-on", 400);
+    }
+    seen.add(entry);
+    chosen.push(entry as AddonId);
+  }
+  return chosen;
+}
+
+/** Translation orders always store false. Evaluations store true only when Expedited was purchased. */
+export function expeditedFlagForAddons(order: AddonOrderContext, addons: readonly { id: string }[]): boolean {
+  const chosen = addons.some((item) => item.id === "expedited");
+  if (chosen && !offersExpedited(order)) throw new HttpError("Expedited is no longer offered", 400);
+  return chosen;
 }
 
 export function serviceCents(order: {
@@ -69,23 +110,18 @@ export function serviceCents(order: {
   return null;
 }
 
-export function parseCheckoutBody(body: unknown, billablePages: number | null): CheckoutSelection {
+export function parseCheckoutBody(
+  body: unknown,
+  billablePages: number | null,
+  order: AddonOrderContext = {},
+): CheckoutSelection {
   const record =
     body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
   if (record.addons == null) {
     return { addons: [], shippingAddress: null, addonCents: 0 };
   }
-  if (!Array.isArray(record.addons)) throw new HttpError("Unknown add-on", 400);
-
-  const seen = new Set<string>();
-  const chosen: AddonId[] = [];
-  for (const entry of record.addons) {
-    if (typeof entry !== "string" || !ADDON_IDS.has(entry) || seen.has(entry)) {
-      throw new HttpError("Unknown add-on", 400);
-    }
-    seen.add(entry);
-    chosen.push(entry as AddonId);
-  }
+  const chosen = selectedAddonIds(record.addons, order);
+  const seen = new Set<string>(chosen);
 
   const pages = billablePages != null && billablePages > 0 ? billablePages : null;
   if (seen.has("expedited") && pages == null) throw new HttpError("Expedited needs a page count", 400);

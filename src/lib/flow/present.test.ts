@@ -35,6 +35,9 @@ import {
 } from "./present";
 
 function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
+  const orderType = patch.orderType ?? "translation";
+  const service = patch.service === undefined ? null : patch.service;
+  const billablePages = patch.billablePages === undefined ? 3 : patch.billablePages;
   return {
     orderId: "order-1",
     email: "ada@example.com",
@@ -89,7 +92,11 @@ function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
     progress: { step: "done", pagesRead: 3, pagesTotal: 3 },
     delayed: false,
     addons: [],
-    addonOptions: addonOptions(3),
+    addonOptions: addonOptions(billablePages, {
+      orderType,
+      service,
+      serviceType: orderType === "evaluation" ? "evaluation" : "translation",
+    }),
     shippingAddress: null,
     ...patch,
   };
@@ -571,7 +578,7 @@ describe("preview mapping", () => {
       documentId: "doc-a",
     });
     expect(mapped.pricing.totalCents).toBe(2985);
-    expect(mapped.addonOptions?.map((option) => option.totalCents)).toEqual([1795, 1295, 2985]);
+    expect(mapped.addonOptions?.map((option) => option.totalCents)).toEqual([1795, 1295]);
     expect(mapped.pricing.lines).toEqual([
       { label: "3 pages × $9.95", amountCents: 2985 },
     ]);
@@ -609,6 +616,8 @@ describe("evaluation prices", () => {
         },
       ],
     });
+    expect(diploma.addonOptions.map((option) => option.id)).toEqual(["notarization", "mail", "expedited"]);
+    expect(diploma.addonOptions.find((option) => option.id === "expedited")?.totalCents).toBe(1990);
     expect(servicePriceLines(diploma)).toEqual([
       { label: "Diploma evaluation", amountCents: 1995 },
       { label: "Certified translation, 2 billable pages", amountCents: 1990 },
@@ -631,6 +640,7 @@ describe("evaluation prices", () => {
         },
       ],
     });
+    expect(course.addonOptions.map((option) => option.id)).toContain("expedited");
     expect(servicePriceLines(course)).toEqual([
       { label: "Course-by-course evaluation", amountCents: 7990 },
     ]);

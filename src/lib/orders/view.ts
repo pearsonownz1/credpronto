@@ -185,7 +185,7 @@ export function toCustomerOrder(input: {
           ADDON_CATALOG.findIndex((item) => item.id === b.id),
       )
       .map((item) => item.id),
-    addonOptions: addonOptions(input.order.billablePages),
+    addonOptions: addonOptions(input.order.billablePages, input.order),
     shippingAddress: input.order.shippingAddress,
     totalCents: input.order.totalCents,
     currency: input.order.currency,

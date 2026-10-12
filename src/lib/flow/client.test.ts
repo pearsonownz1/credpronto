@@ -107,6 +107,57 @@ describe("quote update", () => {
   });
 });
 
+describe("mock checkout add-ons", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("rejects expedited on a translation order", async () => {
+    vi.stubEnv("NEXT_PUBLIC_FLOW_MOCK", "1");
+    await expect(getFlowClient().checkout("tok", { addons: ["expedited"] })).rejects.toMatchObject({
+      status: 400,
+      message: "Expedited is no longer offered",
+    });
+  });
+
+  it("keeps expedited on a diploma or course-by-course evaluation", async () => {
+    vi.stubEnv("NEXT_PUBLIC_FLOW_MOCK", "1");
+    const store = new Map<string, string>();
+    vi.stubGlobal("sessionStorage", {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+      },
+      removeItem: (key: string) => {
+        store.delete(key);
+      },
+      clear: () => store.clear(),
+      key: () => null,
+      length: 0,
+    });
+    vi.stubGlobal("window", { dispatchEvent: () => true });
+    const client = getFlowClient();
+    await client.upload({
+      email: "ada@example.com",
+      files: [],
+      choice: { orderType: "evaluation", service: "course_by_course", degreeCount: 1, includeTranslation: false },
+    });
+    await client.checkout("tok", { addons: ["expedited"] });
+    await expect(client.getOrder("tok")).resolves.toMatchObject({ addons: ["expedited"] });
+
+    store.clear();
+    await client.upload({
+      email: "ada@example.com",
+      files: [],
+      choice: { orderType: "evaluation", service: "diploma", degreeCount: 2, includeTranslation: false },
+    });
+    await client.checkout("tok", { addons: ["notarization", "expedited"] });
+    const diploma = await client.getOrder("tok");
+    expect(diploma.addons).toEqual(["notarization", "expedited"]);
+  });
+});
+
 describe("target language update", () => {
   it("patches /api/orders/[token] with the chosen target", async () => {
     const fetchSpy = vi.fn(async () => json({ orderId: "order-1", status: "quoted" }));

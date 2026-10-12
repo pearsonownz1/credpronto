@@ -511,7 +511,7 @@ export async function startCheckout(token: string, body: unknown = {}) {
   const blocked = checkoutBlockReason(order);
   if (blocked) throw new HttpError(blocked, 409);
   if (await settledPayment(db, order.id)) throw new HttpError("This order is already paid", 409);
-  const selection = parseCheckoutBody(body, order.billablePages);
+  const selection = parseCheckoutBody(body, order.billablePages, order);
   const base = serviceCents(order);
   if (base == null) throw new HttpError("This order is not ready to pay", 409);
   const total = base + selection.addonCents;

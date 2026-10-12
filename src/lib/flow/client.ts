@@ -1,3 +1,4 @@
+import { offersExpedited } from "@/lib/orders/addons";
 import {
   evaluationCheckoutTotal,
   evaluationQuote,
@@ -414,9 +415,13 @@ const mockClient: FlowClient = {
   },
   async checkout(token, body) {
     const current = readMockOrder();
-    const addons = (body?.addons ?? current.addons).filter(
+    const requested = body?.addons ?? current.addons;
+    if (requested.includes("expedited") && !offersExpedited(current)) {
+      throw new FlowApiError("Expedited is no longer offered", 400);
+    }
+    const addons = requested.filter(
       (id): id is CustomerOrder["addons"][number] =>
-        id === "notarization" || id === "mail" || id === "expedited",
+        id === "notarization" || id === "mail" || (id === "expedited" && offersExpedited(current)),
     );
     writeMockOrder({
       ...current,
