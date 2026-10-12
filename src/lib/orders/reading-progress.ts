@@ -26,6 +26,25 @@ export type OrderReadProgress = {
   pagesTotal?: number;
 };
 
+/** Progress stored on the order and returned by GET. */
+export type OrderProgress = {
+  step: ReadingStep;
+  pagesRead: number;
+  pagesTotal: number;
+};
+
+export const UPLOADED_PROGRESS: OrderProgress = { step: "uploaded", pagesRead: 0, pagesTotal: 0 };
+
+/** Full progress object, or null when the payload is missing a step or an integer count. */
+export function asOrderProgress(value: unknown): OrderProgress | null {
+  const parsed = readOrderProgress(value);
+  const pagesRead = parsed?.pagesRead;
+  const pagesTotal = parsed?.pagesTotal;
+  if (!parsed || !Number.isInteger(pagesRead) || !Number.isInteger(pagesTotal)) return null;
+  if (pagesRead == null || pagesTotal == null || pagesRead < 0 || pagesTotal < 0) return null;
+  return { step: parsed.step, pagesRead, pagesTotal };
+}
+
 export type StepState = "done" | "current" | "pending";
 
 export type ReadingPresentation = {

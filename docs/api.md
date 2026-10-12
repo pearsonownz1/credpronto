@@ -172,9 +172,12 @@ Idempotent retry of analysis or translation. Safe to call more than once. Return
   ],
   "previewVersion": null,
   "payment": null,
-  "delivery": null
+  "delivery": null,
+  "progress": { "step": "done", "pagesRead": 3, "pagesTotal": 3 }
 }
 ```
+
+`progress.step` is `uploaded`, `reading`, `language`, `counting`, `quoting`, or `done`. `pagesRead` increases once per page while the text is extracted, and `pagesTotal` is the number of physical pages. A skipped replacement upload resets it to `uploaded` with both counts at 0. A finished quote is `done`.
 
 `email` is the customer address stored for the order. It is `null` only when that customer row is missing. `confirmations` has one row per document for each of `full_name`, `date_of_birth`, `parent_names`, `place_of_birth`, and `date_format`. `originalValue` is what the model read. `confirmedValue` is null until the customer confirms. `payment.status` is `pending`, `paid`, `paid_test`, `failed`, `canceled`, `expired`, or `refunded`. `delivery.status` is `pending`, `approved`, `delivered`, or `failed`.
 

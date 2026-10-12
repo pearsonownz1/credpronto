@@ -41,6 +41,7 @@ function orderRecord(): OrderRecord {
     edgeCredentialId: null,
     edgeGradingScaleId: null,
     createdAt: "2026-10-12T00:00:00.000Z",
+    progress: { step: "done", pagesRead: 2, pagesTotal: 2 },
   };
 }
 
@@ -157,7 +158,7 @@ describe("customer order", () => {
     expect(order.totalCents).toBe(7765);
   });
 
-  it("keeps read progress optional on the customer order", () => {
+  it("exposes stored read progress on the customer order", () => {
     const shared = {
       order: orderRecord(),
       documents: [],
@@ -167,14 +168,19 @@ describe("customer order", () => {
       deliveryStatus: null,
       email: "ada@example.com",
     };
-    expect(toCustomerOrder(shared).progress).toBeUndefined();
+    expect(toCustomerOrder(shared).progress).toEqual({ step: "done", pagesRead: 2, pagesTotal: 2 });
     expect(
       toCustomerOrder({
         ...shared,
-        progress: { step: "reading", pagesRead: 6, pagesTotal: 9 },
+        order: { ...orderRecord(), progress: { step: "reading", pagesRead: 6, pagesTotal: 9 } },
       }).progress,
     ).toEqual({ step: "reading", pagesRead: 6, pagesTotal: 9 });
-    expect(toCustomerOrder({ ...shared, progress: { step: "scanning" } }).progress).toBeUndefined();
+    expect(
+      toCustomerOrder({
+        ...shared,
+        order: { ...orderRecord(), progress: { step: "uploaded", pagesRead: 0, pagesTotal: 0 } },
+      }).progress,
+    ).toEqual({ step: "uploaded", pagesRead: 0, pagesTotal: 0 });
   });
 
   it("passes page ids and optional billing fields, and omits them when absent", () => {

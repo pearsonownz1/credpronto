@@ -1,3 +1,5 @@
+import type { OrderProgress } from "./reading-progress";
+
 export const ORDER_STATUSES = [
   "draft",
   "quoted",
@@ -158,6 +160,7 @@ export type OrderRecord = {
   edgeCredentialId: string | null;
   edgeGradingScaleId: string | null;
   createdAt: string;
+  progress: OrderProgress;
 };
 
 export type DocumentRecord = {

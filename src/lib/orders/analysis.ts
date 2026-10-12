@@ -10,6 +10,7 @@ import {
   markDocuments,
   replaceExtractedConfirmations,
   replacePages,
+  setOrderProgress,
   updateDocument,
   updateOrder,
   type Db,
@@ -34,6 +35,7 @@ import { decideQuote, etaFromNow } from "./quote";
 import { notifyOrder } from "./webhook-delivery";
 import { downloadObject, uploadObject } from "./storage";
 import { quotePage, storedDensity } from "./billing";
+import type { ReadingStep } from "./reading-progress";
 import { countWords } from "./words";
 import type { DocumentRecord } from "./types";
 
@@ -301,14 +303,32 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
   const documents = await claimDocuments(db, orderId);
   if (documents.length === 0) return;
 
+  let pagesRead = 0;
+  let pagesTotal = 0;
+  const writeProgress = (step: ReadingStep) =>
+    setOrderProgress(db, orderId, { step, pagesRead, pagesTotal });
+
   try {
+    await writeProgress("reading");
     const slots: Slot[] = [];
     for (const document of documents) {
       const bytes = await downloadObject(db, "originals", document.originalPath);
       const mime = document.mime ?? "application/pdf";
-      const texts = mime === "application/pdf" ? await pdfPageTexts(bytes) : [];
+      const texts =
+        mime === "application/pdf"
+          ? await pdfPageTexts(bytes, async ({ pageNumber, pageCount }) => {
+              if (pageNumber === 1) pagesTotal += pageCount;
+              pagesRead += 1;
+              await writeProgress("reading");
+            })
+          : [];
       const pageCount = mime === "application/pdf" ? texts.length : 1;
       const reads = await assessFile(bytes, mime, pageCount, texts);
+      if (mime !== "application/pdf") {
+        pagesTotal += 1;
+        pagesRead += 1;
+        await writeProgress("reading");
+      }
       slots.push({
         document,
         documentId: document.id,
@@ -355,6 +375,8 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
     await uploadObject(db, "originals", combinedPath, pdf, "application/pdf");
     const metaByKey = new Map(metas.map((meta) => [`${meta.documentId}:${meta.uploadPage}`, meta]));
 
+    await writeProgress("language");
+
     const extractedFields: Array<{ documentId: string; fieldKey: string; originalValue: string | null }> = [];
     const languages: string[] = [];
     const confidences: number[] = [];
@@ -364,6 +386,12 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
     let pageIndex = 0;
     const transcripts: string[] = [];
     let imageQuality = false;
+    const prepared: Array<{
+      slot: Slot;
+      docPages: typeof applied.pages;
+      language: string | null;
+      confidence: number | null;
+    }> = [];
 
     for (const slot of ordered) {
       const docPages = applied.pages
@@ -396,7 +424,13 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
           originalValue: values[fieldKey],
         });
       }
+      prepared.push({ slot, docPages, language, confidence });
+    }
 
+    await writeProgress("counting");
+
+    for (const item of prepared) {
+      const { slot, docPages, language, confidence } = item;
       await replacePages(
         db,
         slot.documentId,
@@ -449,6 +483,8 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
       });
     }
 
+    await writeProgress("quoting");
+
     const distinct = [...new Set(languages)];
     const decision = decideQuote({
       billableUnits: pageBillable,
@@ -476,6 +512,7 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
         pageOrder: applied,
         token,
       });
+      await writeProgress("done");
       return;
     }
 
@@ -489,6 +526,7 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
       combined_original_path: combinedPath,
       page_order_basis: applied.basis,
       page_order: applied,
+      progress: { step: "done", pagesRead, pagesTotal },
     });
 
     if (decision.status === "quoted" && !(await hasEvent(db, orderId, "quote_shown"))) {
@@ -508,6 +546,7 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
       eta_at: etaFromNow(24),
       page_order_basis: null,
       page_order: null,
+      progress: { step: "done", pagesRead, pagesTotal },
     });
   }
 }
