@@ -14,9 +14,12 @@ import {
   checkoutFailureMessage,
   displayedPageRule,
   ORDER_STATUS_POLL_MS,
-  FINALIZING_COPY,
+  CONFIRMING_PAYMENT_COPY,
+  CONFIRMING_PAYMENT_DETAIL,
   FINALIZING_POLL_MS,
-  PAID_REVIEW_COPY,
+  QUICK_CHECK_COPY,
+  QUICK_CHECK_DETAIL,
+  downloadEmailedLine,
   downloadReadyCopy,
   documentIdForPage,
   downloadPhase,
@@ -543,13 +546,15 @@ describe("download phase", () => {
     expect(orderStatusPollDelay("certifying")).toBe(ORDER_STATUS_POLL_MS);
     expect(orderStatusPollDelay("finalizing")).toBe(FINALIZING_POLL_MS);
     expect(orderStatusPollDelay("ready")).toBeNull();
-    expect(FINALIZING_COPY).toBe("Finalizing your certified PDF…");
-    expect(PAID_REVIEW_COPY).toBe(
-      "Paid. Our certified translator is doing a quick final check, and your PDF will be emailed and appear right here.",
-    );
+    expect(CONFIRMING_PAYMENT_COPY).toBe("Confirming payment");
+    expect(CONFIRMING_PAYMENT_DETAIL).not.toMatch(/second|minute|countdown|usually/i);
+    expect(QUICK_CHECK_COPY).toBe("Quick final check");
+    expect(QUICK_CHECK_DETAIL).not.toMatch(/second|minute|countdown|usually/i);
     expect(paidReviewEmailLine("ada@example.com")).toBe(
-      "We'll email ada@example.com when the certified PDF is ready to download.",
+      "We'll email ada@example.com when it is released.",
     );
+    expect(downloadEmailedLine("ada@example.com")).toBe("We also emailed it to ada@example.com.");
+    expect(downloadEmailedLine("  ")).toBe("We also emailed it to you.");
   });
 });
 

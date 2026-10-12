@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { FINALIZING_COPY, PAID_REVIEW_COPY } from "@/lib/flow/present";
+import {
+  CONFIRMING_PAYMENT_COPY,
+  CONFIRMING_PAYMENT_DETAIL,
+  QUICK_CHECK_COPY,
+  QUICK_CHECK_DETAIL,
+} from "@/lib/flow/present";
 import { orderLiveMessage } from "./order-announcement";
 
 const order = {
@@ -9,12 +14,13 @@ const order = {
 };
 
 describe("order live message", () => {
-  it("says the certified PDF is finalizing instead of calling a checkout return missing", () => {
+  it("says payment is confirming instead of calling a checkout return missing", () => {
+    const confirming = `${CONFIRMING_PAYMENT_COPY}. ${CONFIRMING_PAYMENT_DETAIL}`;
     expect(orderLiveMessage({ loading: true, phase: "finalizing", checkout: "success", order: null })).toBe(
-      FINALIZING_COPY,
+      confirming,
     );
     expect(orderLiveMessage({ loading: false, phase: "finalizing", checkout: "success", order })).toBe(
-      FINALIZING_COPY,
+      confirming,
     );
     expect(orderLiveMessage({ loading: false, checkout: "cancel", order: null })).toBe("Payment canceled.");
     expect(
@@ -31,7 +37,7 @@ describe("order live message", () => {
           fulfillment: "awaiting_review",
         },
       }),
-    ).toBe(PAID_REVIEW_COPY);
+    ).toBe(`${QUICK_CHECK_COPY}. ${QUICK_CHECK_DETAIL}`);
     expect(
       orderLiveMessage({
         loading: false,
@@ -42,7 +48,7 @@ describe("order live message", () => {
           fulfillment: "awaiting_review",
         },
       }),
-    ).toBe(PAID_REVIEW_COPY);
+    ).toBe(`${QUICK_CHECK_COPY}. ${QUICK_CHECK_DETAIL}`);
     expect(
       orderLiveMessage({
         loading: false,

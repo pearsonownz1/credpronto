@@ -2,7 +2,13 @@
 
 import { useEffect } from "react";
 import { formatMoney } from "@/lib/flow/pricing";
-import { FINALIZING_COPY, PAID_REVIEW_COPY, type DownloadPhase } from "@/lib/flow/present";
+import {
+  CONFIRMING_PAYMENT_COPY,
+  CONFIRMING_PAYMENT_DETAIL,
+  QUICK_CHECK_COPY,
+  QUICK_CHECK_DETAIL,
+  type DownloadPhase,
+} from "@/lib/flow/present";
 import type { CustomerOrder } from "@/lib/orders/view";
 
 const LOADING_ORDER = "Loading your order";
@@ -22,7 +28,7 @@ export function orderLiveMessage(input: {
   }) | null;
 }): string {
   if (input.checkout === "cancel") return "Payment canceled.";
-  if (input.phase === "finalizing") return FINALIZING_COPY;
+  if (input.phase === "finalizing") return `${CONFIRMING_PAYMENT_COPY}. ${CONFIRMING_PAYMENT_DETAIL}`;
   const order = input.order;
   if (!order) {
     if (input.loading) return "Loading your order…";
@@ -32,7 +38,9 @@ export function orderLiveMessage(input: {
 
   const pages = order.billablePages ?? 0;
   const pageText = `${pages} ${pages === 1 ? "page" : "pages"}`;
-  if (input.phase === "certifying" || order.fulfillment === "awaiting_review") return PAID_REVIEW_COPY;
+  if (input.phase === "certifying" || order.fulfillment === "awaiting_review") {
+    return `${QUICK_CHECK_COPY}. ${QUICK_CHECK_DETAIL}`;
+  }
   if (
     order.fulfillment === "released" ||
     order.status === "paid" ||
