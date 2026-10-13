@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { WaitingBadge } from "@/components/admin/waiting-badge";
 import { humanStatus } from "@/components/admin/orders-board";
 import { formatOrderMoney } from "@/lib/account/present";
+import { evaluationUploadError } from "@/lib/api/evaluation-staff";
 import { uploadFinishedEvaluation } from "@/lib/api/mutations";
 import type { StaffDetail } from "@/lib/api/types";
 import { pageLabel } from "@/lib/flow/pricing";
@@ -46,7 +47,7 @@ export function EvaluationDelivery({ detail }: { detail: StaffDetail }) {
     const result = await uploadFinishedEvaluation(detail.id, file);
     setPending(false);
     if (!result.ok) {
-      setError(result.error);
+      setError(evaluationUploadError(result.status, result.error));
       return;
     }
     setUploaded(true);

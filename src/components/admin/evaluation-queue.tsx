@@ -4,13 +4,23 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { WaitingBadge } from "@/components/admin/waiting-badge";
 import { formatOrderDate } from "@/lib/account/present";
+import { EVALUATION_QUEUE_UNAVAILABLE } from "@/lib/api/evaluation-staff";
 import type { EvaluationQueueOrder } from "@/lib/orders/evaluation-review";
 
 function typeLabel(type: EvaluationQueueOrder["type"]): string {
   return type === "diploma" ? "Diploma" : "Course-by-course";
 }
 
-export function EvaluationQueue({ orders, now }: { orders: EvaluationQueueOrder[]; now?: number }) {
+export function EvaluationQueue({
+  orders,
+  now,
+  unavailable = false,
+}: {
+  orders: EvaluationQueueOrder[];
+  now?: number;
+  /** GET /api/admin/orders?queue=evaluation returned 404. */
+  unavailable?: boolean;
+}) {
   const [query, setQuery] = useState("");
   const needle = query.trim().toLowerCase();
   const rows = useMemo(() => {
@@ -44,7 +54,11 @@ export function EvaluationQueue({ orders, now }: { orders: EvaluationQueueOrder[
         </label>
       </div>
       <section className="overflow-hidden rounded-[var(--cp-radius)] border border-line bg-white">
-        {rows.length === 0 ? (
+        {unavailable ? (
+          <p data-testid="evaluation-queue-unavailable" className="px-4 py-10 text-center text-sm text-ink-muted">
+            {EVALUATION_QUEUE_UNAVAILABLE}
+          </p>
+        ) : rows.length === 0 ? (
           <p className="px-4 py-10 text-center text-sm text-ink-muted">No paid evaluations are waiting.</p>
         ) : (
           <div className="overflow-x-auto">
