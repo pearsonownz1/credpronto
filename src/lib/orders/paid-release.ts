@@ -2,6 +2,7 @@ import { approvalBlockReason } from "./equivalency";
 import { EVALUATION_REVIEW_REASON } from "./evaluation-price";
 import { stampApprovedCover } from "./certification";
 import {
+  claimEvalPaidAlert,
   claimOrderColumn,
   claimOrderStatus,
   clearOrderColumn,
@@ -22,6 +23,7 @@ import {
   updateOrder,
   type Db,
 } from "./db";
+import { postEvaluationPaidAlert } from "./eval-alert-webhook";
 import { adminStudioLink, sendDeliveryReady, sendStaffOrderAlert } from "./email";
 import { EMPTY_TRANSLATION_MESSAGE, emptyTranslationMessage, paragraphsForPage } from "./translation-edit";
 import { notifyLifecycle, notifyOrder } from "./webhook-delivery";
@@ -79,6 +81,7 @@ export async function settlePaidOrder(
   if (action === "wait") return { fulfillment: fulfillmentState(stamped) };
 
   const sent = await sendFirstStaffAlert(db, stamped);
+  await notifyEvaluationPaidAlert(db, stamped);
   if (sent && options.scheduleUrgent !== false) {
     const schedule = options.scheduleUrgent ?? scheduleDefault;
     await schedule(order.id);
@@ -208,6 +211,27 @@ async function translationEmpty(db: Db, order: OrderRecord): Promise<boolean> {
     return translation ? paragraphsForPage(translation.output, { pageNumber: page.pageNumber }) ?? [] : [];
   });
   return emptyTranslationMessage(paragraphs.map((page) => ({ paragraphs: page }))) === EMPTY_TRANSLATION_MESSAGE;
+}
+
+/** Staff webhook at payment time. The later urgent email does not send this again. */
+async function notifyEvaluationPaidAlert(db: Db, order: OrderRecord): Promise<void> {
+  if (order.service !== "diploma" && order.service !== "course_by_course") return;
+  if (!process.env.EVAL_ALERT_WEBHOOK_URL?.trim()) return;
+  try {
+    const at = new Date().toISOString();
+    const claimed = await claimEvalPaidAlert(db, order.id, at);
+    if (!claimed) return;
+    const email = await customerEmail(db, order.customerId);
+    await postEvaluationPaidAlert({
+      orderId: order.id,
+      type: order.service,
+      customerEmail: email,
+      paidAt: order.paidAt ?? at,
+      adminUrl: adminStudioLink(order.id),
+    });
+  } catch {
+    // Payment stays settled when the alert cannot be claimed or delivered.
+  }
 }
 
 async function sendFirstStaffAlert(db: Db, order: OrderRecord): Promise<boolean> {

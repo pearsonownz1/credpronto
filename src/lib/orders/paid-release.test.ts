@@ -1,7 +1,9 @@
+import { createHmac } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as certification from "./certification";
 import * as db from "./db";
 import * as email from "./email";
+import { EVAL_ALERT_SIGNATURE_HEADER } from "./eval-alert-webhook";
 import { settlePaidOrder } from "./paid-release";
 import type { Db } from "./storage";
 import type { DeliveryRecord, DocumentRecord, OrderRecord, PageRecord, PaymentRecord } from "./types";
@@ -107,7 +109,11 @@ describe("settlePaidOrder", () => {
     vi.spyOn(email, "sendStaffOrderAlert").mockResolvedValue({ sent: true, skipped: false });
     vi.spyOn(webhooks, "notifyOrder").mockResolvedValue(undefined);
     vi.spyOn(webhooks, "notifyLifecycle").mockResolvedValue(undefined);
+    vi.spyOn(db, "claimEvalPaidAlert").mockResolvedValue(false);
     delete process.env.AUTO_RELEASE_ENABLED;
+    delete process.env.EVAL_ALERT_WEBHOOK_URL;
+    delete process.env.EVAL_ALERT_WEBHOOK_SECRET;
+    delete process.env.STAFF_ALERT_EMAILS;
   });
 
   it("releases a high-confidence paid order and does not email staff", async () => {
@@ -197,6 +203,138 @@ describe("settlePaidOrder", () => {
     });
     expect(certification.stampApprovedCover).not.toHaveBeenCalled();
     expect(email.sendDeliveryReady).not.toHaveBeenCalled();
+  });
+
+  it("posts one signed evaluation.paid alert when the order is paid", async () => {
+    process.env.EVAL_ALERT_WEBHOOK_URL = "https://alerts.example/paid";
+    process.env.EVAL_ALERT_WEBHOOK_SECRET = "test-secret";
+    vi.spyOn(db, "claimEvalPaidAlert").mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(
+      async () => new Response(null, { status: 204 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const paid = order({
+      serviceType: "evaluation",
+      orderType: "evaluation",
+      service: "course_by_course",
+      degreeCount: 1,
+      evaluationCents: 3995,
+      translationCents: 0,
+      unitPriceCents: 3995,
+      totalCents: 3995,
+      billablePages: null,
+      finalTranslationPath: null,
+      certificationPath: null,
+      languageConfirmed: false,
+    });
+    vi.spyOn(db, "getOrderById").mockResolvedValue(paid);
+    vi.spyOn(db, "listQaRuns").mockResolvedValue([]);
+
+    const result = await settlePaidOrder(dbHandle, orderId, { scheduleUrgent: false });
+    await settlePaidOrder(dbHandle, orderId, { scheduleUrgent: false });
+
+    expect(result.fulfillment).toBe("awaiting_review");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect(init).toBeTruthy();
+    if (!init) return;
+    const raw = String(init.body);
+    const adminUrl = email.adminStudioLink(orderId);
+    expect(raw).toBe(
+      JSON.stringify({
+        event: "evaluation.paid",
+        orderId,
+        type: "course_by_course",
+        customerEmail: "ada@example.com",
+        paidAt: paid.paidAt,
+        adminUrl,
+      }),
+    );
+    const headers = init.headers as Record<string, string>;
+    expect(headers[EVAL_ALERT_SIGNATURE_HEADER]).toBe(
+      createHmac("sha256", "test-secret").update(raw).digest("hex"),
+    );
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    vi.unstubAllGlobals();
+  });
+
+  it("still settles the evaluation when the alert post throws", async () => {
+    process.env.EVAL_ALERT_WEBHOOK_URL = "https://alerts.example/paid";
+    process.env.EVAL_ALERT_WEBHOOK_SECRET = "test-secret";
+    vi.spyOn(db, "claimEvalPaidAlert").mockResolvedValue(true);
+    vi.stubGlobal("fetch", async () => {
+      throw new Error("timed out");
+    });
+    vi.spyOn(db, "getOrderById").mockResolvedValue(
+      order({
+        serviceType: "evaluation",
+        orderType: "evaluation",
+        service: "diploma",
+        degreeCount: 1,
+        evaluationCents: 1995,
+        translationCents: 0,
+        unitPriceCents: 1995,
+        totalCents: 1995,
+        billablePages: null,
+        finalTranslationPath: null,
+        certificationPath: null,
+      }),
+    );
+    vi.spyOn(db, "listQaRuns").mockResolvedValue([]);
+
+    await expect(settlePaidOrder(dbHandle, orderId, { scheduleUrgent: false })).resolves.toEqual({
+      fulfillment: "awaiting_review",
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it("does not post the evaluation alert for a translation", async () => {
+    process.env.EVAL_ALERT_WEBHOOK_URL = "https://alerts.example/paid";
+    process.env.EVAL_ALERT_WEBHOOK_SECRET = "test-secret";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(db, "getOrderById").mockResolvedValue(order());
+    vi.spyOn(db, "listQaRuns").mockResolvedValue([
+      { id: "qa-1", orderId, attempt: 1, status: "pass", score: 81, issues: [], createdAt: "2026-10-12T00:04:00.000Z" },
+    ]);
+
+    await settlePaidOrder(dbHandle, orderId, { scheduleUrgent: false });
+
+    expect(email.sendStaffOrderAlert).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(db.claimEvalPaidAlert).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("posts the evaluation alert when no staff inbox is configured", async () => {
+    process.env.EVAL_ALERT_WEBHOOK_URL = "https://alerts.example/paid";
+    process.env.EVAL_ALERT_WEBHOOK_SECRET = "test-secret";
+    process.env.STAFF_ALERT_EMAILS = "not-an-email";
+    vi.spyOn(db, "claimEvalPaidAlert").mockResolvedValue(true);
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(db, "getOrderById").mockResolvedValue(
+      order({
+        serviceType: "evaluation",
+        orderType: "evaluation",
+        service: "diploma",
+        degreeCount: 1,
+        evaluationCents: 1995,
+        translationCents: 0,
+        unitPriceCents: 1995,
+        totalCents: 1995,
+        billablePages: null,
+        finalTranslationPath: null,
+        certificationPath: null,
+      }),
+    );
+    vi.spyOn(db, "listQaRuns").mockResolvedValue([]);
+
+    await settlePaidOrder(dbHandle, orderId, { scheduleUrgent: false });
+
+    expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
   });
 
   it("waits without an alert when the certified file is not stored yet", async () => {
