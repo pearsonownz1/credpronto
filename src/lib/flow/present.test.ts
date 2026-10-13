@@ -675,6 +675,15 @@ describe("preview mapping", () => {
     expect(
       toPreviewOrder(
         order({
+          uploadedAt: "2026-10-12T00:00:00.000Z",
+          translationReadyAt: "2026-10-12T00:00:30.000Z",
+        }),
+        preview,
+      ).speedLine,
+    ).toBeNull();
+    expect(
+      toPreviewOrder(
+        order({
           orderType: "evaluation",
           service: "diploma",
           uploadedAt: "2026-10-12T00:00:00.000Z",
