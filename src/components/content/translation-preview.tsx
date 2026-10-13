@@ -62,9 +62,6 @@ export function TranslationPreview() {
       <p className="pointer-events-none absolute top-3 right-3 z-20 rounded-[4px] border border-primary/25 bg-white px-2 py-1 text-[11px] font-bold tracking-[0.16em] text-primary">
         PREVIEW
       </p>
-      <figcaption className="relative z-20 mt-3 text-[12px] font-semibold text-ink-muted">
-        Example data · watermarked preview, not for official use
-      </figcaption>
     </figure>
   );
 }
