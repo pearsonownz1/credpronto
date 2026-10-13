@@ -8,11 +8,11 @@ import {
   upsertCustomer,
   type Db,
 } from "./db";
-import { assertEmail, assertUploadBudget, dedupeUploads, resolveUploadMime, safeFilename } from "./files";
+import { readDirectOrder, referencedOriginals, storeReferencedFiles } from "./direct-upload";
+import { assertEmail, safeFilename } from "./files";
 import { serviceDb, uploadObject } from "./storage";
 import { generateOrderToken, hashOrderToken } from "./token";
 import { evaluationFeeCents, evaluationUnitCents, parseOrderChoice } from "./evaluation-price";
-import { HttpError } from "./errors";
 import type { OrderType } from "./types";
 
 /**
@@ -32,13 +32,6 @@ export function resolveOrderCustomer(input: {
   return { email: assertEmail(input.bodyEmail ?? ""), userId: null };
 }
 
-function textField(form: FormData, key: string): string | null {
-  const value = form.get(key);
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed.slice(0, 500) : null;
-}
-
 export async function createOrder(request: Request): Promise<{
   orderToken: string;
   orderId: string;
@@ -49,37 +42,21 @@ export async function createOrder(request: Request): Promise<{
   targetLanguage: string;
   orderType: OrderType;
 }> {
-  const form = await request.formData();
+  const body = await readDirectOrder(request);
   const session = await optionalUser();
-  const bodyEmail = form.get("email");
   const { email, userId } = resolveOrderCustomer({
     session: session ? { id: session.id, email: session.email } : null,
-    bodyEmail: typeof bodyEmail === "string" ? bodyEmail : null,
+    bodyEmail: body.email,
   });
-  const uploads = [...form.getAll("files"), ...form.getAll("file")].filter(
-    (entry): entry is File => entry instanceof File,
-  );
-  assertUploadBudget(uploads.map((file) => ({ size: file.size })));
-
-  const prepared: Array<{ filename: string; mime: string; bytes: Uint8Array }> = [];
-  for (const file of uploads) {
-    const mime = resolveUploadMime(file.name, file.type || "");
-    if (!mime) throw new HttpError(`Unsupported file type: ${file.name}`, 415);
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    if (bytes.byteLength === 0) throw new HttpError("Empty files are not accepted", 400);
-    prepared.push({ filename: file.name || "upload", mime, bytes });
-  }
-  const files = dedupeUploads(prepared);
-  assertUploadBudget(files.map((file) => ({ size: file.bytes.byteLength })));
-
   const choice = parseOrderChoice({
-    orderType: textField(form, "orderType"),
-    service: textField(form, "service"),
-    degreeCount: textField(form, "degreeCount"),
-    includeTranslation: textField(form, "includeTranslation"),
+    orderType: body.orderType,
+    service: body.service,
+    degreeCount: body.degreeCount,
+    includeTranslation: body.includeTranslation,
   });
 
   const db = serviceDb();
+  const files = await referencedOriginals(db, body.sessionId, body.files);
   const customer = await upsertCustomer(db, email);
   const orderToken = generateOrderToken();
   const evaluationCents =
@@ -87,6 +64,7 @@ export async function createOrder(request: Request): Promise<{
       ? evaluationFeeCents(choice.service, choice.degreeCount)
       : null;
   const order = await insertOrder(db, {
+    id: body.sessionId,
     tokenHash: hashOrderToken(orderToken),
     customerId: customer.id,
     orderType: choice.orderType,
@@ -98,16 +76,16 @@ export async function createOrder(request: Request): Promise<{
     translationCents: evaluationCents == null ? null : 0,
     totalCents: evaluationCents,
     unitPriceCents: choice.service ? evaluationUnitCents(choice.service) : null,
-    utmSource: textField(form, "utm_source"),
-    utmMedium: textField(form, "utm_medium"),
-    utmCampaign: textField(form, "utm_campaign"),
-    gclid: textField(form, "gclid"),
-    landingPath: textField(form, "landing_path"),
+    utmSource: body.utmSource,
+    utmMedium: body.utmMedium,
+    utmCampaign: body.utmCampaign,
+    gclid: body.gclid,
+    landingPath: body.landingPath,
     userId,
   });
 
   await insertEvent(db, order.id, "upload_started", { fileCount: files.length });
-  await storeFiles(db, order.id, files);
+  await storeReferencedFiles(db, order.id, files);
   await insertEvent(db, order.id, "upload_done", { fileCount: files.length });
   await insertEvent(db, order.id, "staff_notified", { channel: "event" });
 

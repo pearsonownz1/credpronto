@@ -67,14 +67,41 @@ Signed URLs expire in 10 minutes. `translation.url` is a watermarked preview onl
 
 `documentId` is the upload that page came from. `documentIndex` is the 0-based index of that upload in `documents` on `GET /api/orders/[token]` (upload order). `documentName` is that document's `filename`. Original and translation pages share `number`, `documentId`, `documentIndex`, and `documentName`, because page N of the watermarked preview is page N of the combined original.
 
+## `POST /api/uploads`
+
+`application/json`. Issues one signed upload URL per file. The browser PUTs each file to Supabase Storage (`originals`) and then calls `POST /api/orders` with the object keys. There is no file-count cap. Each file may be 50MB. The `originals` bucket `file_size_limit` is 50MB.
+
+```json
+{ "files": [{ "name": "diploma.pdf", "size": 1200, "type": "application/pdf" }] }
+```
+
+```json
+{
+  "sessionId": "…",
+  "uploads": [
+    {
+      "path": "<sessionId>/<fileId>/diploma.pdf",
+      "token": "…",
+      "signedUrl": "https://…",
+      "filename": "diploma.pdf",
+      "mime": "application/pdf",
+      "size": 1200
+    }
+  ]
+}
+```
+
+`path` always starts with `sessionId`. `400` for an empty file, a file over 50MB, or no files. `415` for an unsupported type. `503` when the service role is not configured.
+
 ## `POST /api/orders`
 
-`multipart/form-data`.
+`application/json`. File bytes are not in this body. Each `files[].path` must be an object key from `POST /api/uploads` for the same `sessionId` (`<sessionId>/<fileId>/<filename>`). Any other key is `400` `{ "error": "That file is outside this upload" }`. The server checks the object is in the `originals` bucket and inserts the same `documents` rows the pipeline already reads.
 
 | Field | Required | Notes |
 | --- | --- | --- |
 | `email` | when signed out | Upserts `customers` by email. A valid Supabase session uses that user's email, sets `orders.user_id`, and ignores this field. |
-| `files` | yes | Repeat the field. `file` is also accepted. 1–15 files, 25MB each, 100MB total |
+| `sessionId` | yes | Upload session from `POST /api/uploads`. Stored as `orders.id`. |
+| `files` | yes | `{ path, filename, mime, size }`. No file-count cap. 50MB each, taken from the stored object. |
 | `utm_source`, `utm_medium`, `utm_campaign`, `gclid`, `landing_path` | no | Stored on the order |
 
 Allowed types: PDF, JPEG, PNG, WEBP, HEIC/HEIF. HEIC is converted when the runtime can decode it.
@@ -200,7 +227,7 @@ A photo or scan the model sees (a phone picture, or a PDF page without a usable 
 
 Multipart upload with one `file` (or `files`) field. Allowed only when `status` is `needs_review` and `reviewReason` is `image_quality`. The file replaces that document and every document on the order is read again. The response is the `GET /api/orders/[token]` shape with `status` `draft`. Analysis runs after the response. A readable replacement can then be quoted. Another unreadable photo stays `needs_review` with `reviewReason` `image_quality`.
 
-`400` when the file is missing or empty. `404` when the token or document is unknown. `409` when the order is not waiting on a retake. `415` for an unsupported type. The same size limits as `POST /api/orders` apply.
+`400` when the file is missing or empty. `404` when the token or document is unknown. `409` when the order is not waiting on a retake. `415` for an unsupported type. One file, 25MB maximum.
 
 ## `POST /api/orders/[token]/confirm`
 
@@ -561,7 +588,7 @@ An evaluation is an order whose `orderType` is `evaluation`. `service` is `diplo
 
 ### Upload choice
 
-`POST /api/orders` accepts these extra form fields. The front end sends them with the files.
+`POST /api/orders` accepts these extra JSON fields. The front end sends them with the file references.
 
 | Field | Required | Notes |
 | --- | --- | --- |
@@ -852,7 +879,7 @@ While `STRIPE_SECRET_KEY` starts with `sk_test_`, `cp_live_` keys may call `GET`
 
 | Field | Required | Notes |
 | --- | --- | --- |
-| `files` | yes | Same rules as `POST /api/orders`. `file` is also accepted. |
+| `files` | yes | Repeat the field. `file` is also accepted. 1–15 files, 25MB each, 100MB total. |
 | `source_language` | yes for `translation` | Confirmed immediately. No separate confirm call. |
 | `target_language` | no | Defaults to `en` |
 | `service` | yes | `translation` or `evaluation` |

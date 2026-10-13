@@ -15,6 +15,31 @@ export function serviceDb(): Db {
   }
 }
 
+export async function createSignedUpload(
+  db: Db,
+  path: string,
+): Promise<{ signedUrl: string; token: string; path: string }> {
+  const { data, error } = await db.storage.from(ORIGINALS_BUCKET).createSignedUploadUrl(path);
+  if (error || !data?.signedUrl || !data.token) {
+    throw new HttpError(error?.message || "Could not start the upload", 503);
+  }
+  return { signedUrl: data.signedUrl, token: data.token, path: data.path || path };
+}
+
+export async function originalObjectInfo(
+  db: Db,
+  path: string,
+): Promise<{ size: number; contentType: string | null }> {
+  const { data, error } = await db.storage.from(ORIGINALS_BUCKET).info(path);
+  if (error || !data) throw new HttpError(error?.message || "That file is not uploaded yet", 400);
+  const reported = typeof data.size === "number" && Number.isFinite(data.size) ? data.size : null;
+  if (reported == null) {
+    const bytes = await downloadObject(db, ORIGINALS_BUCKET, path);
+    return { size: bytes.byteLength, contentType: data.contentType ?? null };
+  }
+  return { size: reported, contentType: data.contentType ?? null };
+}
+
 export async function uploadObject(
   db: Db,
   bucket: ObjectBucket,

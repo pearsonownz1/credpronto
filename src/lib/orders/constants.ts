@@ -4,6 +4,9 @@ export const CJK_CHARS_PER_BILLABLE_PAGE = 1000;
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
 export const MAX_FILES = 15;
 export const MAX_TOTAL_BYTES = 100 * 1024 * 1024;
+/** Direct-to-storage customer uploads. The originals bucket must allow this size. */
+export const MAX_DIRECT_FILE_BYTES = 50 * 1024 * 1024;
+export const DIRECT_FILE_LIMIT_MESSAGE = "Each file must be 50MB or smaller";
 export const PREVIEW_URL_SECONDS = 10 * 60;
 export const DOWNLOAD_URL_SECONDS = 5 * 60;
 /** Signed URL lifetime for the customer's original upload. */

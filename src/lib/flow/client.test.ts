@@ -29,61 +29,177 @@ describe("source file URL", () => {
 });
 
 describe("order upload", () => {
-  it("reports computable XHR upload progress", async () => {
-    const progress: number[] = [];
-    const sent: { body: FormData | null } = { body: null };
+  const sessionId = "11111111-1111-4111-8111-111111111111";
+  const notesPath = `${sessionId}/22222222-2222-4222-8222-222222222222/notes.pdf`;
+  const photoPath = `${sessionId}/33333333-3333-4333-8333-333333333333/photo.jpg`;
 
+  function stubUpload(options?: { orderStatus?: number; orderBody?: unknown; xhrStatus?: number; xhrBody?: string }) {
+    const requests: Array<{ url: string; body: unknown }> = [];
+    const puts: string[] = [];
     class FakeXHR {
       upload: { onprogress: ((event: ProgressEvent) => void) | null } = { onprogress: null };
-      status = 201;
-      responseText = JSON.stringify({ orderToken: "tok", orderId: "ord_1" });
+      status = options?.xhrStatus ?? 200;
+      statusText = "";
+      responseText = options?.xhrBody ?? "";
       onload: (() => void) | null = null;
       onerror: (() => void) | null = null;
-      open() {}
-      send(body: FormData) {
-        sent.body = body;
+      open(_method: string, url: string) {
+        puts.push(url);
+      }
+      setRequestHeader() {}
+      send() {
         this.upload.onprogress?.({ lengthComputable: true, loaded: 5, total: 10 } as ProgressEvent);
         this.onload?.();
       }
     }
-
     vi.stubGlobal("XMLHttpRequest", FakeXHR);
-    const file = new File(["hello"], "notes.pdf", { type: "application/pdf" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const body = typeof init?.body === "string" ? (JSON.parse(init.body) as unknown) : null;
+        requests.push({ url, body });
+        if (url === "/api/uploads") {
+          const files = (body as { files: Array<{ name: string; size: number; type: string }> }).files;
+          return json({
+            sessionId,
+            uploads: files.map((file, index) => ({
+              path: index === 0 ? notesPath : photoPath,
+              token: "tok",
+              signedUrl: `https://files.example/upload/${index}?token=tok`,
+              filename: file.name,
+              mime: file.type,
+              size: file.size,
+            })),
+          });
+        }
+        return json(options?.orderBody ?? { orderToken: "tok", orderId: "ord_1" }, options?.orderStatus ?? 200);
+      }),
+    );
+    return { requests, puts };
+  }
+
+  it("uploads each file to storage and posts only the object keys", async () => {
+    const progress: number[] = [];
+    const fileProgress: Array<Array<{ name: string; ratio: number }>> = [];
+    const { requests, puts } = stubUpload();
+    const notes = new File(["hello-bytes"], "notes.pdf", { type: "application/pdf" });
+    const photo = new File(["pixel-bytes"], "photo.jpg", { type: "image/jpeg" });
     const result = await getFlowClient().upload({
       email: "a@credpronto.com",
-      files: [file],
+      files: [notes, photo],
+      choice: { orderType: "evaluation", service: "diploma", degreeCount: 1, includeTranslation: true },
       onProgress: (ratio) => progress.push(ratio),
+      onFileProgress: (files) => fileProgress.push(files.map((file) => ({ ...file }))),
     });
 
     expect(result).toEqual({ orderToken: "tok", orderId: "ord_1" });
-    expect(progress).toEqual([0.5]);
-    expect(sent.body?.get("email")).toBe("a@credpronto.com");
-    expect(sent.body?.get("files")).toBeInstanceOf(File);
+    expect(puts).toEqual([
+      "https://files.example/upload/0?token=tok",
+      "https://files.example/upload/1?token=tok",
+    ]);
+    expect(requests[0]?.url).toBe("/api/uploads");
+    expect(requests[0]?.body).toMatchObject({
+      files: [
+        { name: "notes.pdf", type: "application/pdf" },
+        { name: "photo.jpg", type: "image/jpeg" },
+      ],
+    });
+    const order = requests[1];
+    expect(order?.url).toBe("/api/orders");
+    expect(JSON.stringify(order?.body)).not.toContain("hello-bytes");
+    expect(JSON.stringify(order?.body)).not.toContain("pixel-bytes");
+    expect(order?.body).toMatchObject({
+      email: "a@credpronto.com",
+      sessionId,
+      orderType: "evaluation",
+      service: "diploma",
+      degreeCount: "1",
+      includeTranslation: true,
+      files: [
+        { path: notesPath, filename: "notes.pdf" },
+        { path: photoPath, filename: "photo.jpg" },
+      ],
+    });
+    expect(fileProgress.some((list) => list[0]?.ratio === 0.5 && list[1]?.ratio === 0)).toBe(true);
+    expect(fileProgress.at(-1)).toEqual([
+      { name: "notes.pdf", ratio: 1 },
+      { name: "photo.jpg", ratio: 1 },
+    ]);
+    expect(progress.at(-1)).toBe(1);
   });
 
-  it("leaves progress alone when the browser cannot report a total", async () => {
-    const progress: number[] = [];
-
+  it("does not invent a ratio when the browser cannot report a total", async () => {
+    const fileProgress: Array<Array<{ name: string; ratio: number }>> = [];
     class FakeXHR {
       upload: { onprogress: ((event: ProgressEvent) => void) | null } = { onprogress: null };
       status = 200;
-      responseText = JSON.stringify({ orderToken: "tok", orderId: "ord_1" });
+      statusText = "";
+      responseText = "";
       onload: (() => void) | null = null;
       onerror: (() => void) | null = null;
       open() {}
+      setRequestHeader() {}
       send() {
         this.upload.onprogress?.({ lengthComputable: false, loaded: 5, total: 0 } as ProgressEvent);
         this.onload?.();
       }
     }
-
     vi.stubGlobal("XMLHttpRequest", FakeXHR);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/uploads") {
+          return json({
+            sessionId,
+            uploads: [
+              {
+                path: notesPath,
+                token: "tok",
+                signedUrl: "https://files.example/upload?token=tok",
+                filename: "notes.pdf",
+                mime: "application/pdf",
+                size: 5,
+              },
+            ],
+          });
+        }
+        return json({ orderToken: "tok", orderId: "ord_1" });
+      }),
+    );
     await getFlowClient().upload({
       email: "a@credpronto.com",
       files: [new File(["hello"], "notes.pdf", { type: "application/pdf" })],
-      onProgress: (ratio) => progress.push(ratio),
+      onFileProgress: (files) => fileProgress.push(files.map((file) => ({ ...file }))),
     });
-    expect(progress).toEqual([]);
+    expect(fileProgress.some((list) => list[0]?.ratio === 0)).toBe(true);
+    expect(fileProgress.some((list) => list[0]?.ratio > 0 && list[0]?.ratio < 1)).toBe(false);
+    expect(fileProgress.at(-1)?.[0]?.ratio).toBe(1);
+  });
+
+  it("shows the storage error instead of Request failed", async () => {
+    stubUpload({
+      xhrStatus: 413,
+      xhrBody: JSON.stringify({ message: "The object exceeded the maximum allowed size" }),
+    });
+    await expect(
+      getFlowClient().upload({
+        email: "a@credpronto.com",
+        files: [new File(["hello"], "notes.pdf", { type: "application/pdf" })],
+      }),
+    ).rejects.toThrow("notes.pdf: The object exceeded the maximum allowed size");
+  });
+
+  it("surfaces a nested payload error from the order request", async () => {
+    stubUpload({
+      orderStatus: 413,
+      orderBody: { error: { code: "FUNCTION_PAYLOAD_TOO_LARGE", message: "Request Entity Too Large" } },
+    });
+    await expect(
+      getFlowClient().upload({
+        email: "a@credpronto.com",
+        files: [new File(["hello"], "notes.pdf", { type: "application/pdf" })],
+      }),
+    ).rejects.toThrow("Request Entity Too Large");
   });
 });
 

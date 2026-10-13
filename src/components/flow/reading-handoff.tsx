@@ -8,9 +8,15 @@ import { FlowStatus } from "./status";
 
 type Phase = "idle" | "uploading" | "reading";
 
+export type UploadFileProgress = {
+  name: string;
+  ratio: number;
+};
+
 type HandoffState = {
   phase: Phase;
   uploadRatio: number | null;
+  uploadFiles: UploadFileProgress[];
   order: CustomerOrder | null;
 };
 
@@ -19,14 +25,15 @@ type ReadingHandoffApi = {
   uploadRatio: number | null;
   order: CustomerOrder | null;
   phase: Phase;
-  beginUpload: () => void;
+  beginUpload: (files?: UploadFileProgress[]) => void;
   setUploadRatio: (ratio: number) => void;
+  setUploadFiles: (files: UploadFileProgress[]) => void;
   orderCreated: () => void;
   endHandoff: () => void;
   reportOrder: (order: CustomerOrder) => void;
 };
 
-const INITIAL: HandoffState = { phase: "idle", uploadRatio: null, order: null };
+const INITIAL: HandoffState = { phase: "idle", uploadRatio: null, uploadFiles: [], order: null };
 
 const ReadingHandoffContext = createContext<ReadingHandoffApi | null>(null);
 
@@ -38,8 +45,8 @@ export function useReadingHandoff(): ReadingHandoffApi {
 export function ReadingHandoff({ children }: { children: ReactNode }) {
   const [state, setState] = useState<HandoffState>(INITIAL);
 
-  const beginUpload = useCallback(() => {
-    setState({ phase: "uploading", uploadRatio: null, order: null });
+  const beginUpload = useCallback((files?: UploadFileProgress[]) => {
+    setState({ phase: "uploading", uploadRatio: null, uploadFiles: files ?? [], order: null });
   }, []);
 
   const setUploadRatio = useCallback((ratio: number) => {
@@ -47,6 +54,10 @@ export function ReadingHandoff({ children }: { children: ReactNode }) {
     setState((current) =>
       current.phase === "uploading" ? { ...current, uploadRatio: ratio } : current,
     );
+  }, []);
+
+  const setUploadFiles = useCallback((files: UploadFileProgress[]) => {
+    setState((current) => (current.phase === "uploading" ? { ...current, uploadFiles: files } : current));
   }, []);
 
   const orderCreated = useCallback(() => {
@@ -73,11 +84,12 @@ export function ReadingHandoff({ children }: { children: ReactNode }) {
       phase: state.phase,
       beginUpload,
       setUploadRatio,
+      setUploadFiles,
       orderCreated,
       endHandoff,
       reportOrder,
     }),
-    [state, beginUpload, setUploadRatio, orderCreated, endHandoff, reportOrder],
+    [state, beginUpload, setUploadRatio, setUploadFiles, orderCreated, endHandoff, reportOrder],
   );
 
   return (
@@ -98,6 +110,7 @@ function ReadingCover({ state }: { state: HandoffState }) {
           status={state.order?.status ?? "draft"}
           progress={uploading ? undefined : state.order?.progress}
           uploadRatio={uploading ? state.uploadRatio : undefined}
+          uploadFiles={uploading ? state.uploadFiles : undefined}
         />
       </main>
     </div>
@@ -118,6 +131,7 @@ const IDLE_API: ReadingHandoffApi = {
   phase: "idle",
   beginUpload() {},
   setUploadRatio() {},
+  setUploadFiles() {},
   orderCreated() {},
   endHandoff() {},
   reportOrder() {},

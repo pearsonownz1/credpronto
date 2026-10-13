@@ -202,7 +202,7 @@ Three private buckets, inserted into `storage.buckets` with `public = false`:
 
 | Bucket | Holds | Written by | Read by |
 | --- | --- | --- | --- |
-| `originals` | Customer uploads (`documents.original_path`) | Service role | Staff, via `staff_read_originals` |
+| `originals` | Customer uploads (`documents.original_path`). `file_size_limit` is 50MB. | Service role, or a signed upload URL for one session path | Staff, via `staff_read_originals` |
 | `previews` | Watermarked preview PDFs (`previews.preview_path`) | Service role | Staff, via `staff_read_previews` |
 | `finals` | Clean translation and the certification page | Service role | Staff, via `staff_read_finals` |
 
