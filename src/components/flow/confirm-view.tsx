@@ -13,7 +13,6 @@ import {
   splitParents,
   totalLabel,
 } from "@/lib/flow/present";
-import { evaluationServiceDescription } from "@/lib/orders/evaluation-price";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
 import { FlowStatus } from "./status";
@@ -58,6 +57,8 @@ export function ConfirmView({ token: pathToken }: { token?: string }) {
           <FlowStatus title="Loading the details…" body="" />
         ) : error && !order ? (
           <FlowStatus title="We couldn't load this order" body={error} />
+        ) : order && isCustomerEvaluation(order) ? (
+          <EvaluationPayRedirect token={token} />
         ) : !order || !canOpenConfirm(order) ? (
           <FlowStatus
             title="These details aren't ready to confirm"
@@ -67,8 +68,6 @@ export function ConfirmView({ token: pathToken }: { token?: string }) {
                 : "Open your quote first."
             }
           />
-        ) : order.orderType === "evaluation" || order.service != null ? (
-          <EvaluationConfirmForm token={token} order={order} />
         ) : (
           <ConfirmForm token={token} order={order} />
         )}
@@ -77,155 +76,20 @@ export function ConfirmView({ token: pathToken }: { token?: string }) {
   );
 }
 
+function EvaluationPayRedirect({ token }: { token: string }) {
+  const router = useRouter();
+  useEffect(() => {
+    if (!token) return;
+    router.replace(`/checkout?token=${encodeURIComponent(token)}`);
+  }, [router, token]);
+  return <FlowStatus title="Opening payment…" body="" />;
+}
+
 function valueOf(order: CustomerOrder, documentId: string, key: string) {
   const row = order.confirmations.find(
     (field) => field.documentId === documentId && field.fieldKey === key,
   );
   return row?.confirmedValue ?? row?.originalValue ?? "";
-}
-
-type EvaluationFields = {
-  holder_name: string;
-  school: string;
-  degree: string;
-  dates_attended: string;
-  date_awarded: string;
-};
-
-function evaluationSeed(order: CustomerOrder, documentId: string, index: number): EvaluationFields {
-  const diploma = order.evaluation?.kind === "diploma" ? order.evaluation.credentials[index] : null;
-  const course = order.evaluation?.kind === "course_by_course" && index === 0 ? order.evaluation : null;
-  return {
-    holder_name: valueOf(order, documentId, "holder_name") || diploma?.applicant || course?.applicant || "",
-    school: valueOf(order, documentId, "school") || diploma?.institution || course?.institution || "",
-    degree: valueOf(order, documentId, "degree") || diploma?.credential || course?.credential || "",
-    dates_attended: valueOf(order, documentId, "dates_attended"),
-    date_awarded: valueOf(order, documentId, "date_awarded") || diploma?.dates || "",
-  };
-}
-
-function EvaluationConfirmForm({ token, order }: { token: string; order: CustomerOrder }) {
-  const router = useRouter();
-  const params = useSearchParams();
-  const multiple = order.documents.length > 1;
-  const language = params.get("lang") || order.sourceLanguage || "es";
-  const service = order.service ? evaluationServiceDescription(order.service) : "Evaluation";
-  const [docs, setDocs] = useState<Record<string, EvaluationFields>>(() => {
-    const initial: Record<string, EvaluationFields> = {};
-    order.documents.forEach((document, index) => {
-      initial[document.id] = evaluationSeed(order, document.id, index);
-    });
-    return initial;
-  });
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-
-  function update(documentId: string, patch: Partial<EvaluationFields>) {
-    setDocs((current) => ({
-      ...current,
-      [documentId]: { ...current[documentId], ...patch },
-    }));
-  }
-
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setPending(true);
-    setError(null);
-    try {
-      await getFlowClient().confirm(token, {
-        sourceLanguage: language,
-        includeTranslation: order.includeTranslation,
-        documents: order.documents.map((document) => {
-          const fields = docs[document.id];
-          return {
-            documentId: document.id,
-            holder_name: fields?.holder_name ?? "",
-            school: fields?.school ?? "",
-            degree: fields?.degree ?? "",
-            dates_attended: fields?.dates_attended ?? "",
-            date_awarded: fields?.date_awarded ?? "",
-          };
-        }),
-      });
-      router.push(`/checkout?token=${encodeURIComponent(token)}`);
-    } catch (cause) {
-      setError(cause instanceof FlowApiError ? cause.message : "Could not save these details.");
-    } finally {
-      setPending(false);
-    }
-  }
-
-  function nameFor(documentName: string, label: string) {
-    return multiple ? `${label} · ${documentName}` : label;
-  }
-
-  return (
-    <FlowColumns>
-      <form id="confirm-form" onSubmit={onSubmit}>
-        <h1 className="text-[32px] font-bold tracking-[-0.6px]">Confirm the credential.</h1>
-        <p className="mt-2 mb-6 text-[15px] text-ink-muted">
-          We’ll print the holder, school, degree, and dates on the evaluation. Fix anything we
-          read wrong.
-        </p>
-        <input type="hidden" name="sourceLanguage" value={language} />
-        {order.documents.map((document) => {
-          const fields = docs[document.id];
-          if (!fields) return null;
-          return (
-            <fieldset key={document.id} className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <legend className="mb-2 text-sm font-semibold">{document.filename}</legend>
-              {(
-                [
-                  ["holder_name", "Credential holder name"],
-                  ["school", "School"],
-                  ["degree", "Degree"],
-                  ["dates_attended", "Dates attended"],
-                  ["date_awarded", "Date awarded"],
-                ] as const
-              ).map(([key, label]) => (
-                <Field key={key} label={nameFor(document.filename, label)}>
-                  <input
-                    aria-label={nameFor(document.filename, label)}
-                    value={fields[key]}
-                    onChange={(event) => update(document.id, { [key]: event.target.value })}
-                    className={fieldClass}
-                  />
-                </Field>
-              ))}
-            </fieldset>
-          );
-        })}
-        {error ? (
-          <p role="alert" className="text-sm text-[var(--cp-warn)]">
-            {error}
-          </p>
-        ) : null}
-      </form>
-      <div>
-        <Summary>
-          <SummaryRow label={service} value={totalLabel(order.totalCents)} />
-          <SummaryRow
-            testId="quote-total"
-            label="Total"
-            value={totalLabel(order.totalCents)}
-            emphasize
-          />
-        </Summary>
-        <button
-          type="submit"
-          form="confirm-form"
-          data-testid="continue-to-pay"
-          disabled={pending}
-          className={buttonClasses("primary", "mt-4 h-[50px] w-full text-[15px] disabled:opacity-60")}
-        >
-          {pending ? "Saving…" : "Continue to payment"}
-        </button>
-        <p className="mt-3 text-[12.5px] leading-normal text-ink-muted">
-          Payment is the next step. Nothing is charged until you pay.
-        </p>
-      </div>
-    </FlowColumns>
-  );
 }
 
 function ConfirmForm({ token, order }: { token: string; order: CustomerOrder }) {

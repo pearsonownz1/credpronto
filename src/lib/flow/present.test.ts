@@ -849,6 +849,8 @@ describe("order hub", () => {
     );
     expect(orderHubStep(null, "needs_review", { reviewReason: "image_quality" })).toBe("quote");
     expect(orderHubStep(null, "draft")).toBe("quote");
+    expect(orderHubStep(null, "draft", { service: "diploma" })).toBe("checkout");
+    expect(orderHubStep(null, "quoted", { orderType: "evaluation" })).toBe("checkout");
     expect(orderHubStep(null, "processing")).toBe("processing");
     expect(orderHubStep(null, "correction_requested")).toBe("processing");
     expect(orderHubStep(null, "preview_ready")).toBe("processing");

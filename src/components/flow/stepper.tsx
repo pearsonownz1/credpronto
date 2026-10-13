@@ -10,7 +10,6 @@ const TRANSLATION_STEPS: { id: FlowStep; label: string }[] = [
 
 const EVALUATION_STEPS: { id: FlowStep; label: string }[] = [
   { id: "upload", label: "Upload" },
-  { id: "quote", label: "Quote" },
   { id: "confirm", label: "Pay" },
   { id: "review", label: "Review" },
   { id: "download", label: "Download" },

@@ -71,9 +71,7 @@ function CheckoutForm({
     postalCode: order.shippingAddress?.postalCode ?? "",
   });
 
-  const notReady = evaluationOrder
-    ? order.status !== "confirmed" && order.status !== "preview_ready"
-    : order.status !== "preview_ready";
+  const notReady = evaluationOrder ? false : order.status !== "preview_ready";
   const evaluation = evaluationOrder;
   const options = withoutExpedited(order.addonOptions, true);
   const service = serviceCents(order);

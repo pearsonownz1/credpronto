@@ -40,6 +40,11 @@ export function useQuoteUpload() {
       writeEmail(email);
       rememberUpload(result.orderToken, input.files);
       clearUploadDraft();
+      if (input.choice.orderType === "evaluation") {
+        endHandoff();
+        router.push(`/checkout?token=${encodeURIComponent(result.orderToken)}`);
+        return;
+      }
       orderCreated();
       const useOrderRoute =
         !mock ||

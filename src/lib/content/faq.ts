@@ -33,11 +33,11 @@ export const FAQ_ITEMS: FaqItem[] = [
   },
   {
     question: "What is a diploma evaluation?",
-    answer: `A diploma evaluation is ${DIPLOMA_PRICE_LABEL} and states the ${DIPLOMA_DETAIL}. You can read a watermarked preview before you pay. A credential evaluator signs the report before CredPronto releases it. The preview is not for official use.`,
+    answer: `A diploma evaluation is ${DIPLOMA_PRICE_LABEL} and states the ${DIPLOMA_DETAIL}. You pay that flat fee, then a credential evaluator signs the report before CredPronto releases it.`,
   },
   {
     question: "What is a course-by-course evaluation?",
-    answer: `Course-by-course is ${COURSE_BY_COURSE_PRICE_LABEL}. ${COURSE_BY_COURSE_DETAIL} The preview is watermarked and is not for official use. Staff sign off before the report is released.`,
+    answer: `Course-by-course is ${COURSE_BY_COURSE_PRICE_LABEL}. ${COURSE_BY_COURSE_DETAIL} You pay that flat fee. Staff sign off before the report is released.`,
   },
   {
     question: "Does an evaluation include a translation?",

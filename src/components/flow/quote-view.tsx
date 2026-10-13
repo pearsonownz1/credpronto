@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useState, type ChangeEvent } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
 import { formatMoney } from "@/lib/flow/pricing";
@@ -40,9 +41,11 @@ export function QuoteView({
   token?: string;
   onOrder?: (order: CustomerOrder) => void;
 }) {
+  const router = useRouter();
   const token = useStoredToken(pathToken);
   const { order, error, loading, reload } = useCustomerOrder(token, "while-working");
   const { covering, reportOrder, endHandoff } = useReadingHandoff();
+  const evaluationOrder = order != null && isCustomerEvaluation(order);
 
   useLayoutEffect(() => {
     if (!covering) return;
@@ -54,9 +57,15 @@ export function QuoteView({
     if (order) onOrder?.(order);
   }, [order, onOrder]);
 
+  useEffect(() => {
+    if (!evaluationOrder || !token) return;
+    endHandoff();
+    router.replace(`/checkout?token=${encodeURIComponent(token)}`);
+  }, [evaluationOrder, token, router, endHandoff]);
+
   return (
     <div>
-      <FlowHeader current="quote" track={order && isCustomerEvaluation(order) ? "evaluation" : "translation"} />
+      <FlowHeader current={evaluationOrder ? "confirm" : "quote"} track={evaluationOrder ? "evaluation" : "translation"} />
       <main>
         {loading && !order ? (
           covering ? (
@@ -84,6 +93,8 @@ export function QuoteView({
               </Link>
             }
           />
+        ) : evaluationOrder ? (
+          <FlowStatus title="Opening payment…" body="" />
         ) : order.status === "draft" ? (
           <ReadingFiles status={order.status} progress={order.progress} />
         ) : order.status === "failed" ? (

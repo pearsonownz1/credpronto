@@ -45,7 +45,10 @@ describe("evaluation prices", () => {
   it("does not promise a timed turnaround", () => {
     expect(evaluationCopyPromisesTurnaround()).toBe(false);
     expect(evaluationMarketingLines().join(" ")).toMatch(/staff sign off before/i);
-    expect(evaluationMarketingLines().join(" ")).toMatch(/watermarked report/i);
+    expect(evaluationMarketingLines().join(" ")).toMatch(/\$19\.95 per degree/);
+    expect(evaluationMarketingLines().join(" ")).toMatch(/\$39\.95 per degree/);
+    expect(evaluationMarketingLines().join(" ")).not.toMatch(/watermarked/i);
+    expect(evaluationMarketingLines().join(" ")).not.toMatch(/preview/i);
   });
 });
 
