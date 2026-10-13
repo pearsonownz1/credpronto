@@ -11,6 +11,7 @@ export function PreviewShell({
   status,
   notice,
   noticeTestId,
+  onRetry,
   layout = "page",
 }: {
   order?: PreviewOrder;
@@ -21,6 +22,8 @@ export function PreviewShell({
   status?: string;
   notice?: string;
   noticeTestId?: string;
+  /** Reinitializes the preview after automatic retries are exhausted. */
+  onRetry?: () => void;
   /** `embedded` sits under the paid-order status and fills its parent. */
   layout?: "page" | "embedded";
 }) {
@@ -80,11 +83,22 @@ export function PreviewShell({
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col bg-bg-muted">
           <div className="relative z-20 flex min-h-[52px] shrink-0 items-center border-b border-line bg-bg">
-            {toolbar ?? (
-              <p className="px-5 text-sm text-ink-muted">
-                {status ?? "Loading preview…"}
-              </p>
-            )}
+            {toolbar ??
+              (onRetry ? (
+                <div className="flex items-center gap-3 px-5">
+                  <p className="text-sm text-ink-muted">{status ?? "Loading preview…"}</p>
+                  <button
+                    type="button"
+                    data-testid="preview-retry"
+                    className="inline-flex h-8 shrink-0 items-center rounded-[var(--cp-radius)] border border-line bg-bg px-3 text-[13px] font-semibold text-ink"
+                    onClick={onRetry}
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : (
+                <p className="px-5 text-sm text-ink-muted">{status ?? "Loading preview…"}</p>
+              ))}
           </div>
           <div className="relative flex min-h-0 flex-1">
             {children ?? <div className="min-h-0 min-w-0 flex-1" />}
