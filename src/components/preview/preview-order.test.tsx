@@ -64,6 +64,28 @@ describe("preview order", () => {
     });
   });
 
+  it("shows a translation speed line only when the order carries one", () => {
+    const shown = renderToStaticMarkup(
+      <OrderRail
+        order={{ ...CERTIFICATE_PREVIEW, speedLine: "Translated in 4.2 seconds" }}
+        corrections={[]}
+        panel={panel({ options: [], selected: [], totalCents: 995 })}
+      />,
+    );
+    expect(shown).toContain('data-testid="translation-speed"');
+    expect(shown).toContain("Translated in 4.2 seconds");
+    expect(shown).toContain("text-ink-muted");
+    const hidden = renderToStaticMarkup(
+      <OrderRail
+        order={CERTIFICATE_PREVIEW}
+        corrections={[]}
+        panel={panel({ options: [], selected: [], totalCents: 995 })}
+      />,
+    );
+    expect(hidden).not.toContain("Translated in");
+    expect(hidden).not.toContain('data-testid="translation-speed"');
+  });
+
   it("renders returned add-ons, the mail form, and the address error", () => {
     const html = renderToStaticMarkup(
       <OrderRail

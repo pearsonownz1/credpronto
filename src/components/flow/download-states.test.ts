@@ -73,6 +73,28 @@ describe("download page", () => {
     expect(html).not.toContain('data-testid="download-certified"');
     expect(html).not.toContain('data-testid="download-certification"');
     expect(html).not.toContain("Certified translation");
+    expect(html).not.toContain("Evaluated in");
+  });
+
+  it("shows how long the evaluation took from payment to delivery", () => {
+    state.error = null;
+    state.loading = false;
+    state.order = readyOrder({
+      orderType: "evaluation",
+      service: "diploma",
+      degreeCount: 1,
+      evaluationCents: 1995,
+      translationCents: 0,
+      totalCents: 1995,
+      paidAt: "2026-10-12T00:00:00.000Z",
+      deliveredAt: "2026-10-12T00:12:00.000Z",
+      fulfillment: "released",
+    });
+    const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
+    expect(html).toContain('data-phase="ready"');
+    expect(html).toContain('data-testid="evaluation-speed"');
+    expect(html).toContain("Evaluated in 12 minutes");
+    expect(html).toContain("text-ink-muted");
   });
 
   it("shows the evaluator wait and switches the step to Review", () => {
@@ -169,6 +191,7 @@ describe("download page", () => {
     expect(html).toContain('data-testid="download-certified"');
     expect(html).toContain('data-phase="ready"');
     expect(html).toContain(">Download<");
+    expect(html).not.toContain("Evaluated in");
     expect(html).not.toContain("Confirming payment");
     expect(html).not.toContain("Quick final check");
   });

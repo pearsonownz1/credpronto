@@ -94,6 +94,42 @@ describe("customer order", () => {
     expect(order.shippingAddress).toBeNull();
     expect(order.totalCents).toBe(1990);
     expect(order).not.toHaveProperty("combinedOriginalPath");
+    expect(order.uploadedAt).toBe("2026-10-12T00:00:00.000Z");
+    expect(order.translationReadyAt).toBeNull();
+    expect(order.deliveredAt).toBeNull();
+  });
+
+  it("times a translation from the upload and a delivery from its stored instants", () => {
+    const order = toCustomerOrder({
+      order: orderRecord(),
+      documents: [
+        {
+          id: "doc-1",
+          orderId: "order-1",
+          originalPath: "order-1/a.pdf",
+          filename: "a.pdf",
+          mime: "application/pdf",
+          size: 10,
+          pageCount: 1,
+          status: "uploaded",
+          detectedLanguage: "es",
+          confidence: 0.9,
+          position: 1,
+          appliedPosition: 1,
+          createdAt: "2026-10-12T00:00:03.000Z",
+        },
+      ],
+      confirmations: [],
+      previewVersion: 1,
+      paymentStatus: "paid",
+      deliveryStatus: "delivered",
+      deliveredAt: "2026-10-12T00:14:00.000Z",
+      translationReadyAt: "2026-10-12T00:00:07.400Z",
+      email: "ada@example.com",
+    });
+    expect(order.uploadedAt).toBe("2026-10-12T00:00:03.000Z");
+    expect(order.translationReadyAt).toBe("2026-10-12T00:00:07.400Z");
+    expect(order.deliveredAt).toBe("2026-10-12T00:14:00.000Z");
   });
 
   it("passes through a missing customer email as null", () => {

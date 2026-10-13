@@ -8,6 +8,7 @@ import {
   targetLanguageChoices,
 } from "@/lib/orders/languages";
 import { skipPageNote, sumQuotedBillable } from "@/lib/orders/skip-pages";
+import { translationSpeedLine } from "@/lib/orders/speed-line";
 import type { EvaluationLine } from "@/lib/orders/types";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import {
@@ -786,6 +787,10 @@ export function toPreviewOrder(
     addons: order.addons,
     shippingAddress: order.shippingAddress,
     included: order.orderType === "evaluation" ? EVALUATION_INCLUDED : PREVIEW_INCLUDED,
+    speedLine:
+      order.orderType === "evaluation" || order.service != null
+        ? null
+        : translationSpeedLine(order.uploadedAt, order.translationReadyAt),
     corrections: preview.corrections
       .filter((correction) => correction.page != null)
       .map((correction) => ({
