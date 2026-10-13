@@ -7,7 +7,7 @@ canonical: https://www.credpronto.com/
 
 ## Certified translations accepted by USCIS, and you see them first
 
-See your full translation in minutes. Pay only when it's right.
+Upload your document and see the full translation in 3 minutes. Pay only when you're happy with it.
 
 Every paid order includes:
 - A full English translation of every page, including stamps, seals, handwritten notes and the back side
