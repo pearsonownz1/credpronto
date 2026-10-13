@@ -214,7 +214,7 @@ describe("checkout price lines", () => {
         quantity: 1,
         unitAmountCents: 1995,
         name: "Diploma evaluation",
-        description: "French → English · diploma.pdf · 2 pages",
+        description: "Diploma evaluation",
         imageUrl: "https://files.example/preview.png",
       },
       {
@@ -234,5 +234,27 @@ describe("checkout price lines", () => {
       description: "translation",
       imageUrl: null,
     })).toBeNull();
+  });
+
+  it("uses only the evaluation name when the order has no language or page count", () => {
+    expect(
+      checkoutPriceLines({
+        service: "course_by_course",
+        degreeCount: 1,
+        evaluationCents: 3995,
+        translationCents: 0,
+        billablePages: 0,
+        description: "Unknown → English · diploma.pdf · 0 pages",
+        imageUrl: null,
+      }),
+    ).toEqual([
+      {
+        quantity: 1,
+        unitAmountCents: 3995,
+        name: "Course-by-course evaluation",
+        description: "Course-by-course evaluation",
+        imageUrl: null,
+      },
+    ]);
   });
 });
