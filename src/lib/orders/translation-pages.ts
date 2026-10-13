@@ -1,3 +1,4 @@
+import { languageLabel, languagesEqual, normalizeLanguage } from "./languages";
 import type { RenderBlock } from "./pdf/layout";
 
 /** How many page invocations run at once. Each invocation is one billable page. */
@@ -39,6 +40,67 @@ export function isSkippedTranslationPage(page: TranslationPageLike): boolean {
 
 export function pagesToTranslate<T extends TranslationPageLike>(pages: readonly T[]): T[] {
   return pages.filter((page) => !isSkippedTranslationPage(page));
+}
+
+export type PlannedTranslationPage = {
+  id: string;
+  skip?: boolean;
+  skipReason?: string | null;
+};
+
+export type PlannedTranslationJob = {
+  pageId: string;
+  status: "pending" | "running" | "ready" | "failed";
+  sourceLanguage: string | null;
+  targetLanguage: string | null;
+};
+
+/**
+ * Billable pages only. A missing job starts. A failed job, or one stored for
+ * another source or target language, runs again. Everything else is reused.
+ * A snapshot with no languages is reused so an older in-flight job is not discarded.
+ */
+export function translationPagePlan(input: {
+  pages: readonly PlannedTranslationPage[];
+  jobs: readonly PlannedTranslationJob[];
+  sourceLanguage: string;
+  targetLanguage: string;
+}): { reuse: string[]; rerun: string[]; start: string[] } {
+  const jobsByPage = new Map(input.jobs.map((job) => [job.pageId, job]));
+  const reuse: string[] = [];
+  const rerun: string[] = [];
+  const start: string[] = [];
+  for (const page of pagesToTranslate(input.pages)) {
+    const job = jobsByPage.get(page.id);
+    if (!job) {
+      start.push(page.id);
+      continue;
+    }
+    const sourceDiffers = job.sourceLanguage != null && !languagesEqual(job.sourceLanguage, input.sourceLanguage);
+    const targetDiffers = job.targetLanguage != null && !languagesEqual(job.targetLanguage, input.targetLanguage);
+    if (job.status === "failed" || sourceDiffers || targetDiffers) {
+      rerun.push(page.id);
+      continue;
+    }
+    reuse.push(page.id);
+  }
+  return { reuse, rerun, start };
+}
+
+/** English keeps the existing prompt. Any other target is named in the same sentences. */
+export function pageTranslationPhrases(targetLanguage: string): { lead: string; labels: string } {
+  const code = normalizeLanguage(targetLanguage) ?? "en";
+  if (code === "en") {
+    return {
+      lead: "Translate this document into English, one original page to one translated page.",
+      labels: "Translate labels into English.",
+    };
+  }
+  const name = languageLabel(code);
+  return {
+    lead: `Translate this document into ${name}, one original page to one translated page.`,
+    labels: `Translate labels into ${name}.`,
+  };
 }
 
 export type DispatchJob = {

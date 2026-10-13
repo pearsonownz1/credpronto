@@ -2,7 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as pdf from "./pdf/render";
 import * as storage from "./storage";
 import type { Db } from "./storage";
-import { claimPageJob, completePageJob, failPageJob, listPageJobs } from "./translation-jobs";
+import {
+  claimPageJob,
+  completePageJob,
+  failPageJob,
+  failTranslationOrder,
+  listPageJobs,
+  queueEarlyTranslation,
+} from "./translation-jobs";
 import { TRANSLATION_ASSEMBLE_PATH, TRANSLATION_PAGE_PATH } from "./translation-dispatch";
 import * as dispatch from "./translation-dispatch";
 import { QA_REVIEW_REASON } from "./qa";
@@ -638,6 +645,116 @@ describe("retry a translation that failed to dispatch", () => {
     });
     expect(db.tables.translation_runs).toHaveLength(1);
     expect(pageDispatches().length).toBeGreaterThan(0);
+  });
+
+  it("translates quoted pages before confirm and reruns only a changed page", async () => {
+    db.tables.orders = [
+      orderRow({
+        status: "quoted",
+        language_confirmed: false,
+        review_reason: null,
+        progress: { step: "done", pagesRead: 2, pagesTotal: 2 },
+      }),
+    ];
+    db.tables.documents = [
+      {
+        id: "doc-1",
+        order_id: orderId,
+        original_path: `${orderId}/acta.pdf`,
+        filename: "acta.pdf",
+        mime: "application/pdf",
+        size: 10,
+        page_count: 2,
+        status: "ready",
+        position: 0,
+      },
+    ];
+    db.tables.document_pages = [1, 2].map((pageNumber) => ({
+      id: `page-${pageNumber}`,
+      document_id: "doc-1",
+      page_number: pageNumber,
+      ocr_text: "Hello",
+      word_count: 1,
+      billable_units: 1,
+      billing_basis: "words",
+    }));
+    const handle = db as unknown as Db;
+
+    await queueEarlyTranslation(handle, orderId, "token-1");
+    await queueEarlyTranslation(handle, orderId, "token-1");
+
+    expect(orderStatus(db)).toMatchObject({ status: "quoted", progress: { step: "done" } });
+    expect(db.tables.translation_runs).toHaveLength(1);
+    expect(db.tables.translation_page_jobs).toHaveLength(2);
+    expect(db.tables.translation_page_jobs.map((job) => job.page_id).sort()).toEqual(["page-1", "page-2"]);
+    const firstDispatches = vi.mocked(dispatch.dispatchTranslation).mock.calls.filter((call) => call[0] === TRANSLATION_PAGE_PATH);
+    expect(new Set(firstDispatches.map((call) => (call[1] as { jobId: string }).jobId)).size).toBe(2);
+    expect(vi.mocked(dispatch.dispatchTranslation).mock.calls.some((call) => call[0] === TRANSLATION_ASSEMBLE_PATH)).toBe(
+      false,
+    );
+
+    const queued = await listPageJobs(handle, orderId, 1);
+    for (const job of queued) {
+      const claimed = await claimPageJob(handle, job.id);
+      expect(claimed).not.toBeNull();
+      await completePageJob(handle, claimed!, pageOutput);
+    }
+    expect(orderStatus(db)).toMatchObject({ status: "quoted", progress: { step: "done" } });
+    expect(orderStatus(db).progress.pagesDone).toBeUndefined();
+    expect(vi.mocked(dispatch.dispatchTranslation).mock.calls.some((call) => call[0] === TRANSLATION_ASSEMBLE_PATH)).toBe(
+      false,
+    );
+
+    await failTranslationOrder(handle, { orderId, version: 1, error: new Error("early page failed") });
+    expect(orderStatus(db).status).toBe("quoted");
+    expect(db.tables.translation_runs[0]?.status).toBe("running");
+
+    db.tables.orders[0].status = "confirmed";
+    db.tables.orders[0].language_confirmed = true;
+    db.tables.orders[0].target_language = "es";
+    db.tables.document_pages[1].skipped = true;
+    vi.mocked(dispatch.dispatchTranslation).mockClear();
+
+    await translateOrder(handle, orderId, "token-1");
+
+    expect(orderStatus(db).status).toBe("confirmed");
+    expect(db.tables.translation_runs.map((run) => run.version)).toEqual([1]);
+    const pageOne = db.tables.translation_page_jobs.find((job) => job.page_id === "page-1");
+    const pageTwo = db.tables.translation_page_jobs.find((job) => job.page_id === "page-2");
+    expect(pageOne).toMatchObject({ status: "pending", attempts: 0 });
+    expect((pageOne?.output as { targetLanguage?: string }).targetLanguage).toBe("es");
+    expect(pageTwo?.status).toBe("ready");
+    const rerun = vi.mocked(dispatch.dispatchTranslation).mock.calls;
+    expect(rerun.map((call) => call[0])).toEqual([TRANSLATION_PAGE_PATH]);
+    expect((rerun[0]?.[1] as { jobId?: string }).jobId).toBe(pageOne?.id);
+    expect(rerun.some((call) => call[0] === TRANSLATION_ASSEMBLE_PATH)).toBe(false);
+  });
+
+  it("does not start an early translation for an evaluation", async () => {
+    db.tables.orders = [
+      orderRow({
+        status: "quoted",
+        language_confirmed: false,
+        service: "diploma",
+        order_type: "evaluation",
+        service_type: "evaluation",
+      }),
+    ];
+    await queueEarlyTranslation(db as unknown as Db, orderId, "token-1");
+    expect(db.tables.translation_runs ?? []).toHaveLength(0);
+    expect(dispatch.dispatchTranslation).not.toHaveBeenCalled();
+  });
+
+  it("does not assemble a cancelled order when a late page finishes", async () => {
+    seedOnePage(db, { pagesDone: 1, jobStatus: "running" });
+    db.tables.orders[0].status = "cancelled";
+    const handle = db as unknown as Db;
+    const [job] = await listPageJobs(handle, orderId, 1);
+    await completePageJob(handle, job, pageOutput);
+    expect(orderStatus(db).status).toBe("cancelled");
+    expect(vi.mocked(dispatch.dispatchTranslation).mock.calls.some((call) => call[0] === TRANSLATION_ASSEMBLE_PATH)).toBe(
+      false,
+    );
   });
 });
 

@@ -218,6 +218,8 @@ function seedJob(db: MemoryDb, id: string, attempts: number): PageJobRecord {
     status: "running",
     attempts,
     output: null,
+    sourceLanguage: null,
+    targetLanguage: null,
     error: null,
     updatedAt: STALE,
   };
