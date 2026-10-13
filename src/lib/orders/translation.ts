@@ -53,12 +53,10 @@ import {
   loadPageWork,
   markRunFailed,
   markRunReady,
-  reconcileOpenTranslation,
-  releaseSkippedPageJob,
   resumeTranslation,
   type PageJobOutput,
 } from "./translation-jobs";
-import { isSkippedTranslationPage, pageTranslationPhrases, passThroughBlocks, pagesToTranslate } from "./translation-pages";
+import { isSkippedTranslationPage, passThroughBlocks } from "./translation-pages";
 import { staffAlertRecipients } from "./release-decision";
 import { uploadObject } from "./storage";
 import type { ConfirmationRecord, CorrectionRecord, PageRecord } from "./types";
@@ -213,7 +211,6 @@ ${pageText}`;
 async function translateOnePage(input: {
   filename: string;
   sourceLanguage: string;
-  targetLanguage: string;
   fields: ConfirmationRecord[];
   page: PageRecord & { number: number };
   corrections: CorrectionRecord[];
@@ -228,8 +225,7 @@ async function translateOnePage(input: {
   const qaNotes = input.qaIssues
     .map((item) => `Page ${item.page ?? "all"} (${item.type}): ${item.note} Original: ${item.original}`)
     .join("\n");
-  const phrases = pageTranslationPhrases(input.targetLanguage);
-  const prompt = `${phrases.lead}
+  const prompt = `Translate this document into English, one original page to one translated page.
 Source language: ${input.sourceLanguage}.
 File: ${input.filename}.
 
@@ -246,7 +242,7 @@ ${qaNotes ? `A previous translation failed QA. Fix every item and keep confirmed
 Return one page object for page ${input.page.number}, with blocks in the original top-to-bottom order.
 Keep names, CURPs, and place spellings exactly as printed or confirmed. Do not join a label and its value into a paragraph.
 
-For a form, use type "fields" and rows of {label, value}. ${phrases.labels} One row per field, in the original order. A line-broken reading (type "lines", one label or value per line) is acceptable when you cannot split a row.
+For a form, use type "fields" and rows of {label, value}. Translate labels into English. One row per field, in the original order. A line-broken reading (type "lines", one label or value per line) is acceptable when you cannot split a row.
 
 For prose, use type "paragraph" and preserve paragraph breaks.
 
@@ -347,7 +343,6 @@ async function startPageTranslation(db: Db, orderId: string, token: string | nul
 
   const openRun = await findOpenRun(db, orderId);
   if (openRun) {
-    await reconcileOpenTranslation(db, order, openRun);
     await resumeTranslation(db, openRun);
     return;
   }
@@ -362,14 +357,10 @@ export async function runTranslationPage(
   if (!claimed || claimed.orderId !== input.orderId || claimed.version !== input.version) return;
   try {
     const work = await loadPageWork(db, claimed.id);
-    if (!work?.order.sourceLanguage) {
-      if (await releaseSkippedPageJob(db, claimed)) return;
-      throw new HttpError("The page is not ready to translate.", 409);
-    }
+    if (!work?.order.sourceLanguage) throw new HttpError("The page is not ready to translate.", 409);
     const blocks = await translateOnePage({
       filename: work.filename,
       sourceLanguage: work.order.sourceLanguage,
-      targetLanguage: work.order.targetLanguage,
       fields: work.fields,
       page: work.page,
       corrections: work.corrections,
@@ -442,12 +433,11 @@ export async function runTranslationAssemble(
 ): Promise<void> {
   const run = await getTranslationRun(db, input.orderId, input.version);
   if (!run || run.status === "ready" || run.status === "failed") return;
-  const order = await getOrderById(db, input.orderId);
-  if (!order?.sourceLanguage || !order.languageConfirmed) return;
-  if (order.status === "cancelled" || order.status === "delivered" || order.status === "approved") return;
   const claimed = await claimAssemble(db, input.orderId, input.version);
   if (!claimed) return;
 
+  const order = await getOrderById(db, input.orderId);
+  if (!order?.sourceLanguage) return;
   const sourceLanguage = order.sourceLanguage;
   const open = (await listCorrections(db, input.orderId)).filter((correction) => correction.status === "open");
 
@@ -458,8 +448,7 @@ export async function runTranslationAssemble(
         const { documents, pages } = await loadOrderPages(db, input.orderId);
         const jobs = await listPageJobs(db, input.orderId, input.version);
         const ready = new Map(jobs.filter((job) => job.status === "ready" && job.output).map((job) => [job.pageId, job]));
-        const billable = pagesToTranslate(pages);
-        if (billable.some((page) => !ready.get(page.id)?.output)) {
+        if (jobs.some((job) => job.status !== "ready" || !job.output)) {
           throw new HttpError("The translation did not return every page.", 502);
         }
 
@@ -605,11 +594,10 @@ export async function runTranslationAssemble(
         await insertEvent(db, input.orderId, "preview_ready", { version: input.version });
 
         const stillOpen = (await listCorrections(db, input.orderId)).filter((correction) => correction.status === "open");
-        const translatedCount = pagesToTranslate(pages).length;
         const settled = checkedProgress(order.progress, {
           step: "done",
-          pagesDone: translatedCount,
-          pagesTranslateTotal: translatedCount,
+          pagesDone: jobs.length,
+          pagesTranslateTotal: jobs.length,
         });
         if (deadline.aborted) throw new AiUnavailableError("translation_timeout");
         if (stillOpen.length === 0) {

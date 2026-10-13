@@ -24,8 +24,6 @@ function claimed(attempts: number): PageJobRecord {
     status: "running",
     attempts,
     output: null,
-    sourceLanguage: null,
-    targetLanguage: null,
     error: null,
     updatedAt: "2026-10-12T00:00:00.000Z",
   };
