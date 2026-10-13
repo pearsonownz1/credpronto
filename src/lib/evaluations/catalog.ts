@@ -36,15 +36,15 @@ export const EVALUATION_STEPS = [
     detail: "Send the diploma or transcript for the degree.",
   },
   {
-    title: "2 · Preview",
-    detail: "Read the watermarked report before you pay.",
+    title: "2 · Pay",
+    detail: `Pay ${DIPLOMA_PRICE_LABEL} for a diploma, or ${COURSE_BY_COURSE_PRICE_LABEL} for course-by-course.`,
   },
   {
-    title: "3 · Pay",
-    detail: "The evaluation and any translation share one invoice.",
+    title: "3 · Review",
+    detail: "We'll email you when the report is ready.",
   },
   {
-    title: "4 · Sign-off",
+    title: "4 · Download",
     detail: "Staff sign off before the report is released.",
   },
 ] as const;
@@ -59,7 +59,6 @@ export function evaluationMarketingLines(): string[] {
     COURSE_BY_COURSE_OFFER,
     TRANSLATION_ADDON,
     ...EVALUATION_STEPS.flatMap((step) => [step.title, step.detail]),
-    "The preview is watermarked and is not for official use.",
     "A credential evaluator signs the report before CredPronto releases it.",
   ];
 }

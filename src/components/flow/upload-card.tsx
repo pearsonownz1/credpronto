@@ -101,10 +101,12 @@ export function UploadCard({
   intro,
   initialService,
   sessionEmail,
+  onEvaluationChange,
 }: {
   intro?: { title: string; lede: string };
   initialService?: string | null;
   sessionEmail?: string | null;
+  onEvaluationChange?: (evaluation: boolean) => void;
 }) {
   const { mock, pending, error, setError, submit } = useQuoteUpload();
   const signedInEmail = useQuoteEmail(sessionEmail);
@@ -166,6 +168,10 @@ export function UploadCard({
       serviceKey: seenService.current,
     });
   }, [email, picked, checks, degrees]);
+
+  useEffect(() => {
+    onEvaluationChange?.(checks.diploma || checks.courseByCourse);
+  }, [checks.diploma, checks.courseByCourse, onEvaluationChange]);
   const files: ListedFile[] =
     mock && picked.length === 0
       ? SAMPLE_FILES
@@ -382,7 +388,11 @@ export function UploadCard({
           disabled={pending}
           className={buttonClasses("primary", "mt-4 h-[50px] w-full text-[15px] disabled:opacity-60")}
         >
-          {pending ? "Uploading…" : "Get my quote"}
+          {pending
+            ? "Uploading…"
+            : checks.diploma || checks.courseByCourse
+              ? "Continue to payment"
+              : "Get my quote"}
         </button>
         <p className="mt-2.5 text-center text-xs text-ink-muted">
           <span aria-hidden>🔒 </span>

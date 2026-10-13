@@ -33,7 +33,9 @@ export function orderLiveMessage(input: {
   }) | null;
 }): string {
   if (input.checkout === "cancel") return "Payment canceled.";
-  if (input.phase === "finalizing") return `${CONFIRMING_PAYMENT_COPY}. ${CONFIRMING_PAYMENT_DETAIL}`;
+  if (input.phase === "finalizing" && input.checkout === "success") {
+    return `${CONFIRMING_PAYMENT_COPY}. ${CONFIRMING_PAYMENT_DETAIL}`;
+  }
   const order = input.order;
   if (!order) {
     if (input.loading) return "Loading your order…";

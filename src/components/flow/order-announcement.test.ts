@@ -70,6 +70,12 @@ describe("order live message", () => {
   });
 
   it("announces a quote with the billable page count and price", () => {
+    expect(orderLiveMessage({ loading: false, phase: "finalizing", order })).toBe(
+      "Quote ready: 2 pages, $19.90",
+    );
+    expect(orderLiveMessage({ loading: false, phase: "finalizing", order })).not.toContain(
+      "Stripe sent you back",
+    );
     expect(orderLiveMessage({ loading: false, order })).toBe("Quote ready: 2 pages, $19.90");
     expect(
       orderLiveMessage({

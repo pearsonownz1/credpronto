@@ -80,7 +80,10 @@ describe("evaluation checkout", () => {
     expect(html).toContain("CredPronto Certification Team");
     expect(html).toContain("Pay $19.95");
     expect(html).not.toContain("reviewed the report");
+    expect(html).not.toContain("Confirm the credential details");
+    expect(html).toContain('data-step="confirm"');
     expect(html).toContain('data-step="review"');
+    expect(html).not.toContain('data-step="quote"');
     expect(html).not.toContain('data-step="preview"');
     expect(html).not.toContain("Expedited");
     expect(html).not.toContain('data-testid="addon-expedited"');
@@ -90,6 +93,16 @@ describe("evaluation checkout", () => {
     expect(html).not.toContain("Certificate of accuracy");
     expect(html).toContain("1 page");
     expect(html).not.toContain("1 pages");
+  });
+
+  it("lets a draft evaluation pay the flat fee", () => {
+    state.order = { ...checkoutOrder(false), status: "draft" };
+    const html = renderToStaticMarkup(createElement(CheckoutView, { token: "token-1" }));
+    expect(html).not.toContain("Confirm the credential details");
+    expect(html).toContain("Pay $19.95");
+    expect(html).toMatch(/<button type="button" data-testid="pay-button" class="/);
+    expect(html).not.toContain('data-step="quote"');
+    expect(html).not.toContain('data-step="preview"');
   });
 
   it("shows $29.90 after translation is included", () => {

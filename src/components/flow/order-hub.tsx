@@ -111,7 +111,15 @@ export function OrderHub() {
   }
 
   const phase =
-    error && !current ? null : current ? downloadPhase(current) : checkout === "success" ? "finalizing" : null;
+    view === "download"
+      ? error && !current
+        ? null
+        : current
+          ? downloadPhase(current)
+          : checkout === "success"
+            ? "finalizing"
+            : null
+      : null;
 
   return (
     <>

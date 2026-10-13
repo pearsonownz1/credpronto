@@ -629,13 +629,7 @@ export function orderHubStep(
   ) {
     return "download";
   }
-  if (
-    (status === "confirmed" || status === "preview_ready") &&
-    order &&
-    isCustomerEvaluation(order)
-  ) {
-    return "checkout";
-  }
+  if (order && isCustomerEvaluation(order)) return "checkout";
   if (status === "preview_ready") return "processing";
   if (
     status === "needs_review" &&

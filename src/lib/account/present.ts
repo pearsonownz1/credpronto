@@ -101,7 +101,13 @@ export function orderStepHref(order: {
   const key = token || (orderId && isOrderId(orderId) ? orderId : null);
   if (!key) return null;
   const id = encodeURIComponent(key);
-  if (order.serviceType === "evaluation" && (order.status === "preview_ready" || order.status === "confirmed")) {
+  if (
+    order.serviceType === "evaluation" &&
+    order.status !== "paid" &&
+    order.status !== "approved" &&
+    order.status !== "delivered" &&
+    order.status !== "cancelled"
+  ) {
     return `/checkout?token=${id}`;
   }
   if (order.status === "preview_ready") return `/preview/${id}`;
@@ -124,19 +130,26 @@ export function presentOrder(order: CustomerOrder, now = Date.now()): OrderPrese
     return { ...base, tab: "refunded", chip: { label: "Refunded", tone: "neutral" }, action: NONE };
   }
 
+  if (
+    order.serviceType === "evaluation" &&
+    order.status !== "paid" &&
+    order.status !== "approved" &&
+    order.status !== "delivered" &&
+    order.status !== "cancelled"
+  ) {
+    return {
+      ...base,
+      tab: "needs_check",
+      chip: { label: "Ready to pay", tone: "warn" },
+      action: { kind: "confirm", label: "Pay", emphasis: "primary", href: rowHref },
+    };
+  }
+
   switch (order.status) {
     case "draft":
     case "needs_review":
       return { ...base, tab: "translating", chip: { label: "Uploaded", tone: "neutral" }, action: NONE };
     case "confirmed":
-      if (order.serviceType === "evaluation") {
-        return {
-          ...base,
-          tab: "needs_check",
-          chip: { label: "Ready to pay", tone: "warn" },
-          action: { kind: "confirm", label: "Pay", emphasis: "primary", href: rowHref },
-        };
-      }
       return { ...base, tab: "translating", chip: { label: "Translating", tone: "neutral" }, action: NONE };
     case "correction_requested":
     case "failed":
@@ -163,14 +176,6 @@ export function presentOrder(order: CustomerOrder, now = Date.now()): OrderPrese
         },
       };
     case "preview_ready":
-      if (order.serviceType === "evaluation") {
-        return {
-          ...base,
-          tab: "needs_check",
-          chip: { label: "Ready to pay", tone: "blue" },
-          action: { kind: "review", label: "Pay", emphasis: "primary", href: rowHref },
-        };
-      }
       return {
         ...base,
         tab: "preview_ready",

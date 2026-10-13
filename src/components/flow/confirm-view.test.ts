@@ -6,7 +6,7 @@ import { evaluationQuote } from "@/lib/orders/evaluation-price";
 import type { CustomerOrder } from "@/lib/orders/view";
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: () => undefined }),
+  useRouter: () => ({ push: () => undefined, replace: () => undefined }),
   useSearchParams: () => new URLSearchParams("lang=es"),
 }));
 
@@ -66,26 +66,17 @@ vi.mock("next/link", () => ({
 }));
 
 describe("evaluation confirm", () => {
-  it("asks for the credential instead of birth-certificate fields", () => {
+  it("opens payment instead of a credential form", () => {
     const html = renderToStaticMarkup(createElement(ConfirmView, { token: "tok" }));
-    expect(html).toContain("Credential holder name");
-    expect(html).toContain("School");
-    expect(html).toContain("Degree");
-    expect(html).toContain("Dates attended");
-    expect(html).toContain("Date awarded");
-    expect(html).toContain("Ada Lovelace");
-    expect(html).toContain("Example University");
-    expect(html).toContain("Licence");
-    expect(html).toContain("Diploma evaluation");
-    expect(html).toContain("$19.95");
+    expect(html).toContain("Opening payment…");
+    expect(html).not.toContain("Credential holder name");
     expect(html).not.toContain("Date of birth");
     expect(html).not.toContain("Place of birth");
-    expect(html).not.toContain("Father");
-    expect(html).not.toContain("Mother");
-    expect(html).toContain("Continue to payment");
-    expect(html).toContain('data-testid="continue-to-pay"');
+    expect(html).not.toContain("Continue to payment");
+    expect(html).not.toContain('data-testid="continue-to-pay"');
     expect(html).not.toContain("Start my free preview");
-    expect(html).toContain('data-step="review"');
+    expect(html).toContain('data-step="confirm"');
+    expect(html).not.toContain('data-step="quote"');
     expect(html).not.toContain('data-step="preview"');
   });
 });

@@ -83,7 +83,7 @@ export function ProcessingView({
               <>
                 <p className={`mt-2.5 text-base text-ink-muted ${takingLong ? "mb-2" : "mb-8"}`}>
                   {evaluation
-                    ? "We'll email you when the watermarked report is ready to review."
+                    ? "We'll email you when the report is ready."
                     : "Usually ready in 3 minutes. We'll email you when your preview is ready."}
                 </p>
                 {takingLong ? (

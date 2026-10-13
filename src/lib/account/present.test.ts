@@ -73,6 +73,26 @@ describe("customer order presentation", () => {
     expect(initials("María Ruiz")).toBe("MR");
   });
 
+  it("sends an unpaid evaluation to checkout and leaves a quoted translation on confirm", () => {
+    const draft = { ...order("draft"), serviceType: "evaluation" };
+    expect(orderStepHref(draft)).toBe("/checkout?token=tok");
+    expect(presentOrder(draft, NOW).chip.label).toBe("Ready to pay");
+    expect(presentOrder(draft, NOW).action.label).toBe("Pay");
+    expect(presentOrder(draft, NOW).action.href).toBe("/checkout?token=tok");
+
+    const quoted = { ...order("quoted"), serviceType: "evaluation" };
+    expect(orderStepHref(quoted)).toBe("/checkout?token=tok");
+    expect(presentOrder(quoted, NOW).action.label).toBe("Pay");
+
+    const translation = order("quoted");
+    expect(orderStepHref(translation)).toBe("/confirm?token=tok");
+    expect(presentOrder(translation, NOW).action.label).toBe("Confirm details");
+
+    const cancelled = { ...order("cancelled"), serviceType: "evaluation" };
+    expect(presentOrder(cancelled, NOW).chip.label).toBe("Cancelled");
+    expect(orderStepHref(cancelled)).toBe("/order/tok");
+  });
+
   it("maps API statuses onto the dashboard tabs and keeps one filled action", () => {
     for (const status of ORDER_STATUSES) {
       const view = presentOrder(order(status), NOW);

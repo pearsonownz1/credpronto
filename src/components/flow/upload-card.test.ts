@@ -15,7 +15,7 @@ vi.mock("@/lib/supabase/client", () => ({
 }));
 
 import { UploadCard } from "./upload-card";
-import { UploadExperience, UploadPageFallback } from "./upload-view";
+import { UploadExperience, UploadPageFallback, UploadView } from "./upload-view";
 
 function html(sessionEmail?: string | null, initialService?: string | null) {
   return renderToStaticMarkup(createElement(UploadCard, { sessionEmail, initialService }));
@@ -28,6 +28,8 @@ describe("quote email field", () => {
     expect(markup).toContain("Email for your preview link");
     expect(markup).toContain('data-testid="email"');
     expect(markup).toContain('data-testid="get-quote"');
+    expect(markup).toContain("Get my quote");
+    expect(markup).not.toContain("Continue to payment");
     expect(markup).not.toMatch(/data-testid="email"[^>]*required/);
     expect(markup.match(/type="email"/g)).toHaveLength(1);
     expect(markup).not.toContain("Preview link goes to");
@@ -75,10 +77,27 @@ describe("service checkboxes", () => {
     expect(diploma).toContain('data-testid="degree-count"');
     expect(diploma).toContain("Email for your order");
     expect(diploma).not.toContain("Email for your preview link");
+    expect(diploma).toContain("Continue to payment");
+    expect(diploma).not.toContain("Get my quote");
+    expect(diploma).toContain('data-testid="get-quote"');
 
     const course = html(null, "course_by_course");
     expect(course).toMatch(/data-testid="choice-course_by_course"[^>]*checked=""/);
     expect(course).not.toMatch(/data-testid="choice-translation"[^>]*checked=""/);
     expect(course).not.toMatch(/data-testid="choice-diploma"[^>]*checked=""/);
+    expect(course).toContain("Continue to payment");
+  });
+
+  it("shows the flat fee and the pay step when the page is a diploma upload", () => {
+    const markup = renderToStaticMarkup(
+      createElement(UploadView, { initialService: "diploma", sessionEmail: null }),
+    );
+    expect(markup).toContain("Diploma evaluation is $19.95 per degree");
+    expect(markup).toContain("Course-by-course is $39.95 per degree");
+    expect(markup).toContain("You pay next.");
+    expect(markup).not.toContain("watermarked");
+    expect(markup).not.toContain('data-step="quote"');
+    expect(markup).not.toContain('data-step="preview"');
+    expect(markup).toContain("Continue to payment");
   });
 });
