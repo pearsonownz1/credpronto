@@ -13,6 +13,7 @@ import { serviceDb, uploadObject } from "./storage";
 import { generateOrderToken, hashOrderToken } from "./token";
 import { evaluationFeeCents, evaluationUnitCents, parseOrderChoice } from "./evaluation-price";
 import { HttpError } from "./errors";
+import type { OrderType } from "./types";
 
 /**
  * A validated session owns the customer email. The body email is used only
@@ -46,6 +47,7 @@ export async function createOrder(request: Request): Promise<{
   estimatedCents: number | null;
   sourceLanguage: string | null;
   targetLanguage: string;
+  orderType: OrderType;
 }> {
   const form = await request.formData();
   const session = await optionalUser();
@@ -117,6 +119,7 @@ export async function createOrder(request: Request): Promise<{
     estimatedCents: order.evaluationCents,
     sourceLanguage: order.sourceLanguage,
     targetLanguage: order.targetLanguage,
+    orderType: order.orderType,
   };
 }
 

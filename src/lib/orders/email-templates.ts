@@ -32,6 +32,8 @@ export type OrderReceivedEmail = {
   pageCount: number | null;
   estimatedCents: number | null;
   trackUrl: string;
+  /** Evaluations skip the preview. Omitted means a translation. */
+  product?: "translation" | "evaluation";
 };
 
 export type PreviewReadyEmail = {
@@ -164,23 +166,29 @@ export function renderOrderReceivedEmail(input: OrderReceivedEmail): RenderedEma
     ["Documents", documents, false],
     ["Estimated price", price, false],
   ] as const;
+  const evaluation = input.product === "evaluation";
+  const intro = evaluation
+    ? "We got your documents. Confirm the details and pay from your quote. An evaluator reviews them after payment, usually within minutes, and we'll email you when the evaluation is ready."
+    : "We got your documents. Your free side-by-side preview is being prepared now, and we'll email you the moment it's ready. You only pay once you've seen it.";
   const html = layout({
-    preheader: "We got your documents and are preparing your free preview.",
+    preheader: evaluation
+      ? "We got your documents. Pay from the quote, then an evaluator reviews them."
+      : "We got your documents and are preparing your free preview.",
     body: `${badge("Order received", "#EEF3FF", "#1F5EFF")}
 <h1 style="margin:14px 0 8px;font-size:24px;letter-spacing:-.4px;line-height:1.25">${escapeHtml(heading)}</h1>
-<p style="margin:0;color:#5B6575">We got your documents. Your free side-by-side preview is being prepared now, and we'll email you the moment it's ready. You only pay once you've seen it.</p>
+<p style="margin:0;color:#5B6575">${intro}</p>
 ${detailTable(rows)}
 ${button("Track your order", input.trackUrl)}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:22px;font-size:13.5px"><tr>
 <td style="padding-right:8px;vertical-align:top"><b style="color:#1F5EFF">1</b> &nbsp;Received</td>
-<td style="padding:0 8px;vertical-align:top;color:#5B6575"><b>2</b> &nbsp;Preview ready</td>
-<td style="padding-left:8px;vertical-align:top;color:#5B6575"><b>3</b> &nbsp;Certified PDF</td>
+<td style="padding:0 8px;vertical-align:top;color:#5B6575"><b>2</b> &nbsp;${evaluation ? "Pay" : "Preview ready"}</td>
+<td style="padding-left:8px;vertical-align:top;color:#5B6575"><b>3</b> &nbsp;${evaluation ? "Evaluation ready" : "Certified PDF"}</td>
 </tr></table>`,
   });
   const text = [
     heading,
     "",
-    "We got your documents. Your free side-by-side preview is being prepared now, and we'll email you the moment it's ready. You only pay once you've seen it.",
+    intro,
     "",
     `Order: ${input.orderId}`,
     `Language: ${language}`,

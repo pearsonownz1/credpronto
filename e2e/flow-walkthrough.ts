@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { QUOTE_BILLING_NOTE } from "../src/lib/flow/present";
+import { MOCK_TOKEN } from "../src/lib/flow/session";
 
 async function expectNoHorizontalOverflow(page: Page) {
   const overflows = await page.evaluate(
@@ -124,7 +125,7 @@ export async function walkCustomerFlow(
   await check();
 
   await shown(page, "pay-button").click();
-  await expect(page).toHaveURL(/\/order\/mock-token\?checkout=success$/);
+  await expect(page).toHaveURL(new RegExp(`/order/${MOCK_TOKEN}\\?checkout=success$`));
   await expect(shown(page, "download-certified")).toBeVisible();
   await expect(shown(page, "download-certified")).toHaveAttribute(
     "download",

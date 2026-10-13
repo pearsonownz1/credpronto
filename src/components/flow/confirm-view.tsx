@@ -7,6 +7,7 @@ import { writeToken } from "@/lib/flow/session";
 import { pageLabel } from "@/lib/flow/pricing";
 import {
   canOpenConfirm,
+  isCustomerEvaluation,
   joinParents,
   languageLine,
   splitParents,
@@ -48,7 +49,10 @@ export function ConfirmView({ token: pathToken }: { token?: string }) {
 
   return (
     <div>
-      <FlowHeader current="confirm" />
+      <FlowHeader
+        current="confirm"
+        track={order && isCustomerEvaluation(order) ? "evaluation" : "translation"}
+      />
       <main>
         {loading && !order ? (
           <FlowStatus title="Loading the details…" body="" />
@@ -103,7 +107,6 @@ function evaluationSeed(order: CustomerOrder, documentId: string, index: number)
 function EvaluationConfirmForm({ token, order }: { token: string; order: CustomerOrder }) {
   const router = useRouter();
   const params = useSearchParams();
-  const email = useStoredEmail();
   const multiple = order.documents.length > 1;
   const language = params.get("lang") || order.sourceLanguage || "es";
   const service = order.service ? evaluationServiceDescription(order.service) : "Evaluation";
@@ -144,9 +147,9 @@ function EvaluationConfirmForm({ token, order }: { token: string; order: Custome
           };
         }),
       });
-      router.push("/processing");
+      router.push(`/checkout?token=${encodeURIComponent(token)}`);
     } catch (cause) {
-      setError(cause instanceof FlowApiError ? cause.message : "Could not start the preview.");
+      setError(cause instanceof FlowApiError ? cause.message : "Could not save these details.");
     } finally {
       setPending(false);
     }
@@ -203,7 +206,7 @@ function EvaluationConfirmForm({ token, order }: { token: string; order: Custome
           <SummaryRow label={service} value={totalLabel(order.totalCents)} />
           <SummaryRow
             testId="quote-total"
-            label="Total if you buy"
+            label="Total"
             value={totalLabel(order.totalCents)}
             emphasize
           />
@@ -211,15 +214,14 @@ function EvaluationConfirmForm({ token, order }: { token: string; order: Custome
         <button
           type="submit"
           form="confirm-form"
-          data-testid="start-preview"
+          data-testid="continue-to-pay"
           disabled={pending}
           className={buttonClasses("primary", "mt-4 h-[50px] w-full text-[15px] disabled:opacity-60")}
         >
-          {pending ? "Starting…" : "Start my free preview"}
+          {pending ? "Saving…" : "Continue to payment"}
         </button>
         <p className="mt-3 text-[12.5px] leading-normal text-ink-muted">
-          We’ll email {email ? <b className="text-ink">{email}</b> : "you"} when it’s ready. You can
-          close this tab.
+          Payment is the next step. Nothing is charged until you pay.
         </p>
       </div>
     </FlowColumns>

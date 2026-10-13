@@ -171,6 +171,10 @@ describe("quote step actions", () => {
     expect(html).not.toContain("Page details");
     expect(html).not.toContain("$29.90");
     expect(html).toContain('data-testid="continue"');
+    expect(html).not.toContain("Pay only after");
+    expect(html).not.toContain("3 minutes");
+    expect(html).not.toContain(">Preview<");
+    expect(html).toContain("Pay from this quote");
   });
 
   it("shows the $29.90 total after the customer opts into translation", () => {

@@ -1,5 +1,5 @@
 import { browserJson, publicMockMode } from "@/lib/api/browser";
-import type { ApiResult, StaffNote } from "@/lib/api/types";
+import { errorMessage, type ApiResult, type StaffNote } from "@/lib/api/types";
 
 export type PageEdit = { documentId: string; pageNumber: number; paragraphs: string[] };
 
@@ -74,6 +74,33 @@ export async function notarizeOrder(
     return { ok: true, status: 200, data: { task: "notarization", status: "done" } };
   }
   return browserJson(`/api/admin/orders/${encodeURIComponent(id)}/notarize`, { method: "POST" });
+}
+
+export async function uploadFinishedEvaluation(
+  id: string,
+  file: File,
+): Promise<ApiResult<{ status: string }>> {
+  if (publicMockMode()) return { ok: true, status: 200, data: { status: "delivered" } };
+  const body = new FormData();
+  body.set("file", file);
+  try {
+    const response = await fetch(`/api/admin/orders/${encodeURIComponent(id)}/evaluation`, {
+      method: "POST",
+      body,
+      credentials: "include",
+    });
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      return { ok: false, status: response.status, error: errorMessage(payload, response.status) };
+    }
+    const status =
+      payload && typeof payload === "object" && typeof (payload as { status?: unknown }).status === "string"
+        ? (payload as { status: string }).status
+        : "delivered";
+    return { ok: true, status: response.status, data: { status } };
+  } catch {
+    return { ok: false, status: 503, error: "Request failed" };
+  }
 }
 
 export async function addNote(id: string, body: string): Promise<ApiResult<StaffNote>> {

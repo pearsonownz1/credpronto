@@ -70,6 +70,21 @@ describe("email templates", () => {
     expect(priced.html).toContain("Spanish to English");
     expect(priced.html).toContain("1 document · 3 pages");
     expect(priced.html).toContain("$19.95");
+
+    const evaluation = renderOrderReceivedEmail({
+      customerName: null,
+      orderId: "order-9",
+      sourceLanguage: "es",
+      targetLanguage: "en",
+      documentCount: 1,
+      pageCount: 1,
+      estimatedCents: 1995,
+      trackUrl: ORDER_URL,
+      product: "evaluation",
+    });
+    expect(evaluation.html).toContain("An evaluator reviews them after payment");
+    expect(evaluation.html).not.toContain("free side-by-side preview");
+    expect(evaluation.html).toContain("Evaluation ready");
   });
 
   it("renders the preview-ready email with a view-and-pay link to the order", () => {

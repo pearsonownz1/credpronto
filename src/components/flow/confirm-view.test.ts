@@ -82,5 +82,10 @@ describe("evaluation confirm", () => {
     expect(html).not.toContain("Place of birth");
     expect(html).not.toContain("Father");
     expect(html).not.toContain("Mother");
+    expect(html).toContain("Continue to payment");
+    expect(html).toContain('data-testid="continue-to-pay"');
+    expect(html).not.toContain("Start my free preview");
+    expect(html).toContain('data-step="review"');
+    expect(html).not.toContain('data-step="preview"');
   });
 });

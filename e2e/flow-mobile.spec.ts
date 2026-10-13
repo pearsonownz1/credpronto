@@ -1,8 +1,9 @@
 import { expect, test } from "@playwright/test";
+import { MOCK_TOKEN } from "../src/lib/flow/session";
 import { walkCustomerFlow } from "./flow-walkthrough";
 
 test("the turnaround row stays full width on a phone", async ({ page }) => {
-  await page.goto("/order/mock-token");
+  await page.goto(`/order/${MOCK_TOKEN}`);
   const row = page.getByTestId("file-row").filter({ visible: true }).first();
   await expect(page.getByTestId("file-turnaround")).toHaveCount(0);
   const turnaround = page.getByTestId("quote-turnaround").filter({ visible: true });

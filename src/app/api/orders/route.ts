@@ -20,6 +20,7 @@ export async function POST(request: Request) {
           documentCount: created.documentCount,
           pageCount: null,
           estimatedCents: created.estimatedCents,
+          product: created.orderType === "evaluation" ? "evaluation" : "translation",
         });
       } catch (error) {
         console.error(error instanceof Error ? error.message : "order email failed");

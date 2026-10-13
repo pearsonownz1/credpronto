@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { MOCK_TOKEN } from "@/lib/flow/session";
 import { generateOrderToken, hashOrderToken, isOrderId, isOrderToken } from "./token";
 
 describe("order token hashing", () => {
@@ -26,5 +27,6 @@ describe("order token hashing", () => {
     expect(isOrderId("11111111-1111-4111-8111-111111111111")).toBe(true);
     expect(isOrderId(token)).toBe(false);
     expect(isOrderToken("11111111-1111-4111-8111-111111111111")).toBe(false);
+    expect(isOrderToken(MOCK_TOKEN)).toBe(true);
   });
 });

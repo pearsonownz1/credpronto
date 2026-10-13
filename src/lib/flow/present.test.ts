@@ -841,6 +841,7 @@ describe("order hub", () => {
   it("follows the checkout return and otherwise the current step", () => {
     expect(orderHubStep("success", "preview_ready")).toBe("download");
     expect(orderHubStep("cancel", "preview_ready")).toBe("cancel");
+    expect(orderHubStep("cancel", "confirmed", { service: "diploma" })).toBe("checkout");
     expect(orderHubStep(null, "quoted")).toBe("quote");
     expect(orderHubStep(null, "needs_review")).toBe("quote");
     expect(orderHubStep(null, "needs_review", { delayed: true, reviewReason: "translation_timeout" })).toBe(
@@ -851,6 +852,9 @@ describe("order hub", () => {
     expect(orderHubStep(null, "processing")).toBe("processing");
     expect(orderHubStep(null, "correction_requested")).toBe("processing");
     expect(orderHubStep(null, "preview_ready")).toBe("processing");
+    expect(orderHubStep(null, "preview_ready", { orderType: "evaluation", service: "diploma" })).toBe("checkout");
+    expect(orderHubStep(null, "confirmed", { orderType: "evaluation", service: "diploma" })).toBe("checkout");
+    expect(orderHubStep(null, "confirmed")).toBe("processing");
     expect(orderHubStep(null, "paid")).toBe("download");
     expect(orderHubStep(null, "approved")).toBe("download");
     expect(orderHubStep(null, "needs_review", { fulfillment: "awaiting_review" })).toBe("download");

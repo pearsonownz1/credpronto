@@ -5,8 +5,10 @@ import { formatMoney } from "@/lib/flow/pricing";
 import {
   CONFIRMING_PAYMENT_COPY,
   CONFIRMING_PAYMENT_DETAIL,
+  EVALUATION_REVIEW_COPY,
   QUICK_CHECK_COPY,
   QUICK_CHECK_DETAIL,
+  isCustomerEvaluation,
   type DownloadPhase,
 } from "@/lib/flow/present";
 import type { CustomerOrder } from "@/lib/orders/view";
@@ -24,6 +26,9 @@ export function orderLiveMessage(input: {
   order: (Pick<CustomerOrder, "status" | "billablePages" | "totalCents"> & {
     fulfillment?: CustomerOrder["fulfillment"];
     delayed?: boolean;
+    orderType?: CustomerOrder["orderType"];
+    service?: CustomerOrder["service"];
+    serviceType?: string | null;
     progress?: { step?: string | null } | null;
   }) | null;
 }): string {
@@ -38,8 +43,9 @@ export function orderLiveMessage(input: {
 
   const pages = order.billablePages ?? 0;
   const pageText = `${pages} ${pages === 1 ? "page" : "pages"}`;
+  const evaluation = isCustomerEvaluation(order);
   if (input.phase === "certifying" || order.fulfillment === "awaiting_review") {
-    return `${QUICK_CHECK_COPY}. ${QUICK_CHECK_DETAIL}`;
+    return evaluation ? EVALUATION_REVIEW_COPY : `${QUICK_CHECK_COPY}. ${QUICK_CHECK_DETAIL}`;
   }
   if (
     order.fulfillment === "released" ||
@@ -47,7 +53,7 @@ export function orderLiveMessage(input: {
     order.status === "approved" ||
     order.status === "delivered"
   ) {
-    return "Your translation is ready.";
+    return evaluation ? "Your credential evaluation is ready." : "Your translation is ready.";
   }
   if (order.status === "needs_review" && order.delayed) {
     return "Taking longer than usual, we're on it.";
@@ -64,6 +70,7 @@ export function orderLiveMessage(input: {
   if (order.delayed && PREVIEW_WAIT.has(order.status)) {
     return "Taking longer than usual, we're on it.";
   }
+  if (evaluation && order.status === "confirmed") return "Ready to pay.";
   if (
     order.status === "processing" ||
     order.status === "confirmed" ||

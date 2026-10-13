@@ -122,6 +122,7 @@ export type StaffDetail = {
   } | null;
   filename: string;
   pages: StaffPage[];
+  originals: Array<{ filename: string; url: string | null; pages: number | null }>;
   corrections: StaffCorrection[];
   payment: { status: string; paidAt: string | null } | null;
   delivery: { status: string; approvedAt: string | null; deliveredAt: string | null } | null;

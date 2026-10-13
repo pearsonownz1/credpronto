@@ -1,4 +1,4 @@
-import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET } from "./constants";
+import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET, ORIGINALS_BUCKET } from "./constants";
 import { approverDisplayName, stampApprovedCover } from "./certification";
 import { notifyLifecycle, notifyOrder } from "./webhook-delivery";
 import { orderDownloadFilename } from "./download-name";
@@ -33,7 +33,7 @@ import { staffEdgeView } from "./edge";
 import { awaitingEquivalencyPublish, approvalBlockReason } from "./equivalency";
 import { etaFromNow } from "./quote";
 import { sourceTextForDisplay } from "./source-text";
-import { signedObjectUrl } from "./storage";
+import { signedObjectUrl, signedObjectUrls } from "./storage";
 import { ensureStaffRow, requireStaff } from "./staff";
 import { EMPTY_TRANSLATION_MESSAGE, emptyTranslationMessage, paragraphsForPage } from "./translation-edit";
 import { ORDER_STATUSES, type OrderStatus } from "./types";
@@ -76,6 +76,7 @@ export async function staffOrder(orderId: string) {
     listQaRuns(db, order.id),
   ]);
   const latestQa = qaRuns[qaRuns.length - 1] ?? null;
+  const originals = order.service ? await signedOriginals(db, documents) : [];
   const [edgeCredential, edgeScale] = await Promise.all([
     order.edgeCredentialId ? getEdgeCredential(db, order.edgeCredentialId) : Promise.resolve(null),
     order.edgeGradingScaleId ? getEdgeGradingScale(db, order.edgeGradingScaleId) : Promise.resolve(null),
@@ -128,7 +129,25 @@ export async function staffOrder(orderId: string) {
           issues: latestQa.issues,
         }
       : null,
+    originals,
   };
+}
+
+async function signedOriginals(
+  db: Parameters<typeof signedObjectUrls>[0],
+  documents: Array<{ originalPath: string; filename: string; pageCount: number | null }>,
+) {
+  const urls = await signedObjectUrls(
+    db,
+    ORIGINALS_BUCKET,
+    documents.map((document) => document.originalPath),
+    DOWNLOAD_URL_SECONDS,
+  );
+  return documents.map((document) => ({
+    filename: document.filename,
+    url: urls.get(document.originalPath) ?? null,
+    pages: document.pageCount,
+  }));
 }
 
 async function signedFinals(
