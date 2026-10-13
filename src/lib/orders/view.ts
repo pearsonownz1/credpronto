@@ -1,6 +1,6 @@
 import { ADDON_CATALOG, EXPEDITED_UNIT, addonOptions, type AddonOption } from "./addons";
 import { lineItemForStoredPage, pageRuleForLanguages, type PageLineItem } from "./billing";
-import { asOrderProgress, publicOrderProgress, UPLOADED_PROGRESS, type OrderProgress } from "./reading-progress";
+import { progressForOrder, type PublicOrderProgress } from "./reading-progress";
 import { isPreviewDelayed } from "./translation-watch";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
 import { evaluationPrice, lineItemsForOrder, translationOfferCents } from "./evaluation-price";
@@ -101,7 +101,7 @@ export type CustomerOrder = {
   translationOfferCents: number | null;
   lineItems: EvaluationLine[];
   evaluation: EvaluationResult | null;
-  progress: OrderProgress;
+  progress: PublicOrderProgress;
   /** True after 4 minutes with no preview, including a translation timeout in review. */
   delayed: boolean;
   /** When checkout settled. Null until the order is paid. */
@@ -239,8 +239,12 @@ export function toCustomerOrder(input: {
       translationCents,
       billablePages: input.order.billablePages,
     }),
-    evaluation: publicEvaluation(input.order.evaluationResult),
-    progress: publicOrderProgress(asOrderProgress(input.order.progress) ?? UPLOADED_PROGRESS),
+    evaluation: customerEvaluation(
+      input.order,
+      input.deliveryStatus,
+      documents.map((document) => document.filename),
+    ),
+    progress: progressForOrder(input.order, input.deliveryStatus),
     paidAt: input.order.paidAt,
     uploadedAt: uploadOrCreatedAt(input.documents, input.order.createdAt),
     translationReadyAt: storedTimestamp(input.translationReadyAt),
@@ -262,6 +266,64 @@ function publicEvaluation(result: EvaluationResult | null): EvaluationResult | n
   const copy = customerEvaluationResult(result);
   delete copy.pageCount;
   return copy;
+}
+
+function evaluationDelivered(
+  order: { status: string; orderType: string; serviceType: string; service: EvaluationService | null },
+  deliveryStatus: string | null,
+): boolean {
+  const evaluation =
+    order.orderType === "evaluation" || order.serviceType === "evaluation" || order.service != null;
+  return evaluation && (order.status === "delivered" || deliveryStatus === "delivered");
+}
+
+/** Stored report when one exists. After delivery, a staff PDF still leaves this non-null. */
+function customerEvaluation(
+  order: OrderRecord,
+  deliveryStatus: string | null,
+  filenames: readonly string[],
+): EvaluationResult | null {
+  const shown = publicEvaluation(order.evaluationResult);
+  if (shown || !evaluationDelivered(order, deliveryStatus)) return shown;
+  return deliveredEvaluationInfo(order.service, filenames);
+}
+
+function deliveredEvaluationInfo(
+  service: EvaluationService | null,
+  filenames: readonly string[],
+): EvaluationResult {
+  const documentsReviewed = filenames.map((name) => name.trim()).filter((name) => name.length > 0);
+  if (service === "course_by_course") {
+    return {
+      kind: "course_by_course",
+      applicant: "",
+      institution: "",
+      country: "",
+      credential: "",
+      years: [],
+      totalHours: 0,
+      gpa: 0,
+      gradeScale: "",
+    };
+  }
+  return {
+    kind: "diploma",
+    credentials:
+      documentsReviewed.length > 0
+        ? [
+            {
+              applicant: "",
+              institution: "",
+              country: "",
+              credential: "",
+              field: "",
+              dates: "",
+              usEquivalency: "",
+              documentsReviewed,
+            },
+          ]
+        : [],
+  };
 }
 
 export type PreviewPage = {

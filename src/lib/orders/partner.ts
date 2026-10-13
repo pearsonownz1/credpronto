@@ -35,7 +35,7 @@ import { EVALUATION_REVIEW_REASON } from "./evaluation-price";
 import { assertUploadBudget, dedupeUploads, resolveUploadMime } from "./files";
 import { findActiveApiKey, orderByExternalRef, touchApiKeyLastUsed, type ApiKeyRow } from "./integrations-db";
 import { isSupportedSourceLanguage } from "./languages";
-import { asOrderProgress, publicOrderProgress, UPLOADED_PROGRESS, type OrderProgress } from "./reading-progress";
+import { progressForOrder, type PublicOrderProgress } from "./reading-progress";
 import { chargeOffSession, type OffSessionCharge } from "./off-session";
 import { paidWebhookEvent } from "./outbound-webhook";
 import { notifyLifecycle, notifyOrder } from "./webhook-delivery";
@@ -66,7 +66,7 @@ export type PartnerOrderBody = {
   totalCents: number | null;
   currency: string;
   payment: { status: string } | null;
-  progress: Omit<OrderProgress, "retries">;
+  progress: PublicOrderProgress;
   delayed: boolean;
   paidAt: string | null;
   fulfillment: FulfillmentState | null;
@@ -127,7 +127,7 @@ export function toPartnerOrder(input: {
   previewVersion?: number | null;
   now?: number;
 }): PartnerOrderBody {
-  const progress = publicOrderProgress(asOrderProgress(input.order.progress) ?? UPLOADED_PROGRESS);
+  const progress = progressForOrder(input.order);
   const body: PartnerOrderBody = {
     id: input.order.id,
     status: input.order.status,

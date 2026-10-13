@@ -25,7 +25,7 @@ export function deliveryFileTarget(input: {
         filename: orderDownloadFilename("certification", input.documentNames, input.targetLanguage),
       };
     }
-    if (!input.finalPath) return null;
+    if (input.file !== "evaluation" || !input.finalPath) return null;
     return {
       path: input.finalPath,
       filename: orderDownloadFilename("evaluation", input.documentNames, input.targetLanguage),

@@ -188,11 +188,119 @@ describe("customer order", () => {
     expect(order.unitPriceCents).not.toBe(995);
     expect(order.lineItems.some((item) => item.unitAmountCents === 995)).toBe(false);
     expect(order.evaluation).toBeNull();
+    expect(order.progress.step).not.toBe("delivered");
     expect(order).not.toHaveProperty("edge");
     expect(order).not.toHaveProperty("edgeCredentialId");
     expect(order).not.toHaveProperty("edgeMatchMethod");
     expect(JSON.stringify(order)).not.toContain("edge_credential");
     expect(JSON.stringify(order)).not.toContain("edge_match");
+  });
+
+  it("returns the evaluation and step delivered after the report is delivered", () => {
+    const stored = {
+      kind: "diploma" as const,
+      pageCount: 2,
+      credentials: [
+        {
+          applicant: "Ada Lovelace",
+          institution: "Université de Paris",
+          country: "France",
+          credential: "Licence",
+          field: "Mathematics",
+          dates: "2016–2019",
+          usEquivalency: "Bachelor's degree",
+          documentsReviewed: ["licence.pdf"],
+        },
+      ],
+    };
+    const delivered = toCustomerOrder({
+      order: {
+        ...orderRecord(),
+        status: "delivered",
+        orderType: "evaluation",
+        serviceType: "evaluation",
+        service: "diploma",
+        degreeCount: 1,
+        evaluationCents: 1995,
+        translationCents: 0,
+        evaluationResult: stored,
+        progress: { step: "uploaded", pagesRead: 0, pagesTotal: 1 },
+      },
+      documents: [],
+      confirmations: [],
+      previewVersion: null,
+      paymentStatus: "paid",
+      deliveryStatus: "delivered",
+      email: "ada@example.com",
+    });
+    expect(delivered.evaluation).toEqual({
+      kind: "diploma",
+      credentials: stored.credentials,
+    });
+    expect(delivered.evaluation).not.toHaveProperty("pageCount");
+    expect(delivered.progress).toEqual({ step: "delivered", pagesRead: 0, pagesTotal: 1 });
+
+    const withoutResult = toCustomerOrder({
+      order: {
+        ...orderRecord(),
+        status: "delivered",
+        orderType: "evaluation",
+        serviceType: "evaluation",
+        service: "diploma",
+        degreeCount: 1,
+        evaluationResult: null,
+        progress: { step: "uploaded", pagesRead: 0, pagesTotal: 0 },
+      },
+      documents: [
+        {
+          id: "doc-1",
+          orderId: "order-1",
+          originalPath: "order-1/a.pdf",
+          filename: "licence.pdf",
+          mime: "application/pdf",
+          size: 10,
+          pageCount: 1,
+          status: "uploaded",
+          detectedLanguage: null,
+          confidence: null,
+          position: 1,
+          appliedPosition: null,
+        },
+      ],
+      confirmations: [],
+      previewVersion: null,
+      paymentStatus: "paid",
+      deliveryStatus: "delivered",
+      email: "ada@example.com",
+    });
+    expect(withoutResult.evaluation).toEqual({
+      kind: "diploma",
+      credentials: [
+        {
+          applicant: "",
+          institution: "",
+          country: "",
+          credential: "",
+          field: "",
+          dates: "",
+          usEquivalency: "",
+          documentsReviewed: ["licence.pdf"],
+        },
+      ],
+    });
+    expect(withoutResult.progress.step).toBe("delivered");
+
+    const translation = toCustomerOrder({
+      order: { ...orderRecord(), status: "delivered" },
+      documents: [],
+      confirmations: [],
+      previewVersion: null,
+      paymentStatus: "paid",
+      deliveryStatus: "delivered",
+      email: "ada@example.com",
+    });
+    expect(translation.evaluation).toBeNull();
+    expect(translation.progress.step).toBe("done");
   });
 
   it("offers translation on a Spanish diploma without adding it to the total", () => {

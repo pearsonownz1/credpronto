@@ -1,6 +1,6 @@
 import { MAX_FILE_BYTES, FINALS_BUCKET } from "./constants";
 import { customerEmail, ensurePendingDelivery, getDelivery, getOrderById, hasEvent, insertEvent, listEvaluationQueueOrders, settledPayment, updateDelivery, updateOrder } from "./db";
-import { sendDeliveryReady } from "./email";
+import { orderPageLink, sendDeliveryReady } from "./email";
 import { HttpError } from "./errors";
 import { ensureStaffRow, requireStaff } from "./staff";
 import { uploadObject } from "./storage";
@@ -116,7 +116,7 @@ export async function deliverEvaluationReport(orderId: string, request: Request)
   }
 
   const email = await customerEmail(db, order.customerId);
-  const sent = email ? await sendDeliveryReady(email, "evaluation") : { sent: false, skipped: true };
+  const sent = email ? await sendDeliveryReady(email, "evaluation", orderPageLink(order.id)) : { sent: false, skipped: true };
   await notifyOrder(db, order.id, "order.delivered");
   await notifyLifecycle(db, order.id, "order.completed");
   if (!sent.sent && !sent.skipped) {
