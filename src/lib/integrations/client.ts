@@ -39,14 +39,26 @@ export const INTEGRATION_ROUTES = {
 } as const;
 
 /** Customer-facing webhook chips. */
-export const WEBHOOK_EVENTS = ["order.quoted", "order.preview_ready", "order.paid", "order.completed"] as const;
+export const WEBHOOK_EVENTS = [
+  "order.quoted",
+  "order.preview_ready",
+  "order.paid",
+  "evaluation.paid",
+  "order.completed",
+] as const;
 export type WebhookEventName = (typeof WEBHOOK_EVENTS)[number];
 
 /**
  * Chips the delivery pipeline can post today.
  * The server also emits `order.delivered` and `order.failed`, which are not in this list.
  */
-export const LIVE_WEBHOOK_EVENTS = ["order.quoted", "order.preview_ready", "order.paid", "order.completed"] as const;
+export const LIVE_WEBHOOK_EVENTS = [
+  "order.quoted",
+  "order.preview_ready",
+  "order.paid",
+  "evaluation.paid",
+  "order.completed",
+] as const;
 
 export type ApiKeyMode = "live" | "test";
 

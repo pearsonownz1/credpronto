@@ -776,7 +776,8 @@ Deliveries are posted for orders whose `user_id` has an endpoint:
 | --- | --- |
 | `order.quoted` | Analysis sets the order to `quoted` |
 | `order.preview_ready` | The translation or evaluation pipeline saves a preview |
-| `order.paid` | Checkout, the Stripe webhook, or an API-key charge marks the order paid |
+| `order.paid` | Checkout, the Stripe webhook, or an API-key charge marks a translation order paid |
+| `evaluation.paid` | Checkout, the Stripe webhook, or an API-key charge marks an evaluation order paid |
 | `order.completed` | Staff approval marks the delivery delivered |
 | `order.delivered` | Delivery becomes `delivered` |
 | `order.failed` | The order becomes `failed` |
@@ -796,11 +797,11 @@ Deliveries are posted for orders whose `user_id` has an endpoint:
 
 `CredPronto-Signature` is `t=<unix seconds>,v1=<hex>`. `v1` is HMAC-SHA256 of `${t}.${rawBody}` using the current signing secret, hex-encoded. Receivers reject a timestamp more than 5 minutes off.
 
-`order.quoted`, `order.delivered`, and `order.failed` are stored in `webhook_deliveries` and retried up to 3 attempts (immediately, then after 60 seconds, then after 5 minutes). `order.preview_ready`, `order.paid`, and `order.completed` are one attempt with a 5 second timeout. A network error or a non-2xx response is recorded as `failed` and is not retried. The caller still finishes.
+`order.quoted`, `order.delivered`, and `order.failed` are stored in `webhook_deliveries` and retried up to 3 attempts (immediately, then after 60 seconds, then after 5 minutes). `order.preview_ready`, `order.paid`, `evaluation.paid`, and `order.completed` are one attempt with a 5 second timeout. A network error or a non-2xx response is recorded as `failed` and is not retried. The caller still finishes. An evaluation payment posts `evaluation.paid` and does not also post `order.paid`. A translation payment posts `order.paid` and does not post `evaluation.paid`.
 
 `POST /api/me/webhook/test` sends `webhook.test` to the saved URL with the same `CredPronto-Signature` header and records that delivery. `404` `{ "error": "Save a webhook URL first", "code": "not_found" }` when no URL is saved. The response is `{ "status", "event", "at", "responseStatus" }`. The signing secret is not included.
 
-`webhook_deliveries.event` is `order.quoted`, `order.delivered`, `order.failed`, `order.preview_ready`, `order.paid`, `order.completed`, or `webhook.test`. `order_id` is null only for `webhook.test`.
+`webhook_deliveries.event` is `order.quoted`, `order.delivered`, `order.failed`, `order.preview_ready`, `order.paid`, `evaluation.paid`, `order.completed`, or `webhook.test`. `order_id` is null only for `webhook.test`.
 
 ### API orders
 
@@ -1016,7 +1017,7 @@ The clean translation in `finals` (`file=translation`) starts with the certifica
 
 `webhook_endpoints`: `id`, `user_id` unique → `auth.users`, `url`, `signing_secret`, `created_at`, `updated_at`. The secret is not readable by the customer session. RLS: no customer policy. Staff select. Writes go through the service role.
 
-`webhook_deliveries`: `id`, `endpoint_id`, `order_id` null only for `webhook.test`, `event` (`order.quoted`, `order.delivered`, `order.failed`, `order.preview_ready`, `order.paid`, `order.completed`, `webhook.test`), `attempt`, `status` (`pending`, `succeeded`, `failed`), `response_status` null, `created_at`, `next_retry_at` null. RLS: staff select. Writes go through the service role.
+`webhook_deliveries`: `id`, `endpoint_id`, `order_id` null only for `webhook.test`, `event` (`order.quoted`, `order.delivered`, `order.failed`, `order.preview_ready`, `order.paid`, `evaluation.paid`, `order.completed`, `webhook.test`), `attempt`, `status` (`pending`, `succeeded`, `failed`), `response_status` null, `created_at`, `next_retry_at` null. RLS: staff select. Writes go through the service role.
 
 `order_qa_runs`: `id`, `order_id`, `attempt` (unique per order, 1–3), `status` (`pass`, `fail`, `retranslated`), `score` 0–100, `issues` jsonb, `created_at`. RLS: staff select. Customers do not select QA rows. Writes go through the service role.
 

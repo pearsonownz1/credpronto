@@ -108,6 +108,15 @@ describe("auth migrations", () => {
     expect(lifecycle).toMatch(/order\.paid/);
     expect(lifecycle).toMatch(/order\.completed/);
     expect(lifecycle).toMatch(/webhook\.test/);
+    const evaluationPaid = readFileSync(
+      path.join(migrationsDir, "20261013100000_evaluation_paid_webhook.sql"),
+      "utf8",
+    );
+    expect(evaluationPaid).toMatch(/evaluation\.paid/);
+    expect(evaluationPaid).toMatch(/drop constraint webhook_deliveries_event_chk/);
+    expect(evaluationPaid).toMatch(/add constraint webhook_deliveries_event_chk/);
+    expect(evaluationPaid.toLowerCase()).not.toMatch(/create table/);
+    expect(evaluationPaid.toLowerCase()).not.toMatch(/add column/);
     expect(lifecycle).toMatch(/alter column order_id drop not null/);
     expect(lifecycle.toLowerCase()).not.toMatch(/create table/);
     expect(lifecycle.toLowerCase()).not.toMatch(/add column/);

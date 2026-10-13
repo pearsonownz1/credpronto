@@ -13,6 +13,7 @@ test("phone integrations opens from the account menu", async ({ page }) => {
   await expect(page.getByTestId("create-key")).toBeVisible();
   await expect(page.getByTestId("event-order.quoted")).toBeVisible();
   await expect(page.getByTestId("event-order.preview_ready")).toBeVisible();
+  await expect(page.getByTestId("event-evaluation.paid")).toBeVisible();
   await expect(page.getByTestId("quick-start")).toContainText("Authorization: Bearer <key>");
   await expect(page.getByTestId("quick-start")).toContainText("-F files=@acta.pdf");
   await expect(page.getByTestId("quick-start")).toContainText("POST /api/me/api-keys");
