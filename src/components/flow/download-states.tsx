@@ -18,6 +18,7 @@ import {
   type DownloadFileKind,
 } from "@/lib/flow/present";
 import { orderDownloadFilename } from "@/lib/orders/download-name";
+import { evaluationSpeedLine } from "@/lib/orders/speed-line";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
 import { PaidPreview } from "./paid-preview";
@@ -149,6 +150,7 @@ function Ready({
 }) {
   const copy = downloadReadyCopy(order);
   const names = order.documents.map((document) => document.filename);
+  const evaluatedIn = isCustomerEvaluation(order) ? evaluationSpeedLine(order.paidAt, order.deliveredAt) : null;
   return (
     <div data-testid="download-phase" data-phase="ready">
       <div className="flex size-12 items-center justify-center rounded-full bg-[#e8f6f0] text-2xl font-bold text-[var(--cp-ok)]">
@@ -157,6 +159,11 @@ function Ready({
       <h1 className="mt-5 text-[32px] font-bold tracking-[-0.6px] md:text-4xl">
         {copy.title}
       </h1>
+      {evaluatedIn ? (
+        <p data-testid="evaluation-speed" className="mt-2 text-[13.5px] text-ink-muted">
+          {evaluatedIn}
+        </p>
+      ) : null}
       <p data-testid="email-note" className="mt-2.5 mb-7 text-base text-ink-muted">
         Paid {totalLabel(order.totalCents)} · Order {order.orderId}. {downloadEmailedLine(email)}
       </p>

@@ -662,6 +662,27 @@ describe("preview mapping", () => {
       { label: "3 pages × $9.95", amountCents: 2985 },
     ]);
     expect(mapped.product).toBe("translation");
+    expect(mapped.speedLine).toBeNull();
+    expect(
+      toPreviewOrder(
+        order({
+          uploadedAt: "2026-10-12T00:00:00.000Z",
+          translationReadyAt: "2026-10-12T00:00:04.200Z",
+        }),
+        preview,
+      ).speedLine,
+    ).toBe("Translated in 4.2 seconds");
+    expect(
+      toPreviewOrder(
+        order({
+          orderType: "evaluation",
+          service: "diploma",
+          uploadedAt: "2026-10-12T00:00:00.000Z",
+          translationReadyAt: "2026-10-12T00:00:04.200Z",
+        }),
+        preview,
+      ).speedLine,
+    ).toBeNull();
     expect(mapped.corrections[0]?.note).toBe("use the passport spelling");
     expect(documentIdForPage(order().documents, 2)).toBe("doc-a");
     expect(documentIdForPage(order().documents, 3)).toBe("doc-b");

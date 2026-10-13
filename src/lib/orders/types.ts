@@ -189,6 +189,8 @@ export type DocumentRecord = {
   confidence: number | null;
   position: number;
   appliedPosition: number | null;
+  /** When the file was stored. Absent on rows loaded before that column was read. */
+  createdAt?: string | null;
 };
 
 export type PageRecord = {

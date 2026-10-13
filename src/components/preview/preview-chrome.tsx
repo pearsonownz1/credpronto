@@ -10,6 +10,15 @@ import {
   type PreviewOrder,
 } from "./preview-order";
 
+function TranslationSpeed({ order }: { order: PreviewOrder }) {
+  if (order.product === "evaluation" || !order.speedLine) return null;
+  return (
+    <p data-testid="translation-speed" className="text-[13px] text-ink-muted">
+      {order.speedLine}
+    </p>
+  );
+}
+
 export function OrderRail({
   order,
   corrections,
@@ -40,6 +49,7 @@ export function OrderRail({
         <h2 className="text-xl tracking-[-0.3px]">
           {evaluation ? "Review the report, then buy." : "Review every page, then buy."}
         </h2>
+        <TranslationSpeed order={order} />
       </div>
       <p className="text-[13.5px] leading-normal text-ink-muted">
         {evaluation
@@ -145,6 +155,7 @@ export function MobileBuyBar({
     >
       <AddonPanel panel={panel} />
       <AddonError panel={panel} />
+      <TranslationSpeed order={order} />
       <div className="flex shrink-0 items-center justify-between text-[13px] text-ink-muted">
         <button type="button" data-testid="flag-correction" onClick={onFlag}>
           ⚑ Flag a correction

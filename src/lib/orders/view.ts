@@ -6,6 +6,7 @@ import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
 import { evaluationPrice, lineItemsForOrder, translationOfferCents } from "./evaluation-price";
 import { customerEvaluationResult, customerReviewReason } from "./equivalency";
 import { fulfillmentState, type FulfillmentState } from "./release-decision";
+import { storedTimestamp, uploadOrCreatedAt } from "./speed-line";
 import { compareCombinedPages } from "./page-order";
 import type {
   AddonId,
@@ -105,6 +106,12 @@ export type CustomerOrder = {
   delayed: boolean;
   /** When checkout settled. Null until the order is paid. */
   paidAt: string | null;
+  /** First upload, or the order created time when no upload time is stored. */
+  uploadedAt?: string | null;
+  /** When the first ready translation preview was generated. */
+  translationReadyAt?: string | null;
+  /** When the finished file was delivered. Null until then. */
+  deliveredAt?: string | null;
   /** `released` after certification. `awaiting_review` while a paid order is still with staff. */
   fulfillment: FulfillmentState | null;
 };
@@ -117,6 +124,8 @@ export function toCustomerOrder(input: {
   previewVersion: number | null;
   paymentStatus: string | null;
   deliveryStatus: string | null;
+  deliveredAt?: string | null;
+  translationReadyAt?: string | null;
   email: string | null;
   addons?: Array<{ id: AddonId }>;
   now?: number;
@@ -233,6 +242,9 @@ export function toCustomerOrder(input: {
     evaluation: publicEvaluation(input.order.evaluationResult),
     progress: publicOrderProgress(asOrderProgress(input.order.progress) ?? UPLOADED_PROGRESS),
     paidAt: input.order.paidAt,
+    uploadedAt: uploadOrCreatedAt(input.documents, input.order.createdAt),
+    translationReadyAt: storedTimestamp(input.translationReadyAt),
+    deliveredAt: storedTimestamp(input.deliveredAt),
     fulfillment: fulfillmentState(input.order),
     delayed: isPreviewDelayed({
       status: input.order.status,

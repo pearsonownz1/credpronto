@@ -67,6 +67,8 @@ export type PreviewOrder = {
   evaluationDetails?: Array<{ label: string; value: string }>;
   included: string[];
   corrections: PreviewCorrection[];
+  /** Set from upload and translation-ready timestamps. Hidden when either is missing. */
+  speedLine?: string | null;
   /** Prices come from the order. Options that are absent stay hidden. */
   addonOptions?: AddonOption[];
   addons?: string[];

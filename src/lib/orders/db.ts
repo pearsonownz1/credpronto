@@ -139,6 +139,7 @@ function mapDocument(row: Row): DocumentRecord {
     confidence: num(row.confidence),
     position: num(row.position) ?? 0,
     appliedPosition: num(row.applied_position),
+    createdAt: str(row.created_at),
   };
 }
 
@@ -854,6 +855,20 @@ export async function dismissCorrections(db: Db, ids: string[]): Promise<void> {
     .in("id", ids)
     .eq("status", "open");
   fail(error);
+}
+
+/** When the first ready translation preview was generated. Later corrections do not move it. */
+export async function earliestReadyPreviewAt(db: Db, orderId: string): Promise<string | null> {
+  const { data, error } = await db
+    .from("previews")
+    .select("generated_at")
+    .eq("order_id", orderId)
+    .eq("status", "ready")
+    .order("version", { ascending: true })
+    .limit(1);
+  fail(error);
+  const row = (data ?? [])[0] as Row | undefined;
+  return str(row?.generated_at);
 }
 
 export async function latestReadyPreview(db: Db, orderId: string): Promise<PreviewRecord | null> {
