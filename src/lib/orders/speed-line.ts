@@ -32,7 +32,7 @@ function minuteLabel(minutes: number): string {
   return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
 }
 
-/** Seconds with one decimal under 60s. Longer durations round to whole minutes. */
+/** One decimal of seconds. Hidden when the translation took more than 10 seconds. */
 export function translationSpeedLine(
   startedAt: string | null | undefined,
   readyAt: string | null | undefined,
@@ -41,11 +41,9 @@ export function translationSpeedLine(
   if (ms == null) return null;
   const seconds = ms / 1000;
   const tenths = Math.round(seconds * 10) / 10;
-  if (tenths < 60) {
-    const shown = tenths.toFixed(1);
-    return `Translated in ${shown} ${shown === "1.0" ? "second" : "seconds"}`;
-  }
-  return `Translated in ${minuteLabel(Math.round(seconds / 60))}`;
+  if (tenths > 10) return null;
+  const shown = tenths.toFixed(1);
+  return `Translated in ${shown} ${shown === "1.0" ? "second" : "seconds"}`;
 }
 
 /** Whole minutes from payment to delivery. */

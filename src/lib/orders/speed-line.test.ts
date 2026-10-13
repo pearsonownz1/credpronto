@@ -19,11 +19,14 @@ describe("speed lines", () => {
     expect(uploadOrCreatedAt([], "not-a-time")).toBeNull();
   });
 
-  it("shows one decimal under a minute and whole minutes after that", () => {
+  it("shows one decimal at 10 seconds or under, and hides anything slower", () => {
     expect(translationSpeedLine(START, "2026-10-12T00:00:04.200Z")).toBe("Translated in 4.2 seconds");
     expect(translationSpeedLine(START, "2026-10-12T00:00:01.000Z")).toBe("Translated in 1.0 second");
-    expect(translationSpeedLine(START, "2026-10-12T00:01:00.000Z")).toBe("Translated in 1 minute");
-    expect(translationSpeedLine(START, "2026-10-12T00:01:30.000Z")).toBe("Translated in 2 minutes");
+    expect(translationSpeedLine(START, "2026-10-12T00:00:10.000Z")).toBe("Translated in 10.0 seconds");
+    expect(translationSpeedLine(START, "2026-10-12T00:00:10.100Z")).toBeNull();
+    expect(translationSpeedLine(START, "2026-10-12T00:00:30.000Z")).toBeNull();
+    expect(translationSpeedLine(START, "2026-10-12T00:01:00.000Z")).toBeNull();
+    expect(translationSpeedLine(START, "2026-10-12T00:01:30.000Z")).toBeNull();
   });
 
   it("hides the translation line when a timestamp is missing or reversed", () => {
