@@ -7,7 +7,7 @@ canonical: https://www.credpronto.com/
 
 ## Certified translations accepted by USCIS, and you see them first
 
-Most translation services take your money first and send the translation later. CredPronto turns that around. You upload your document and confirm the names and dates, and in 3 minutes you get the complete translation next to your original. Check every line. If something's wrong, flag it and we'll fix it. You pay only when you're happy with it.
+Upload your document and see the full translation in 3 minutes. Pay only when you're happy with it.
 
 Every paid order includes:
 - A full English translation of every page, including stamps, seals, handwritten notes and the back side
