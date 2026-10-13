@@ -429,6 +429,18 @@ export async function claimOrderColumn(
   return ((data ?? []) as { id?: string }[]).length > 0;
 }
 
+/** Claims the paid-evaluation staff webhook once. False means it was already claimed. */
+export async function claimEvalPaidAlert(db: Db, orderId: string, at: string): Promise<boolean> {
+  const { data, error } = await db
+    .from("orders")
+    .update({ eval_paid_alert_sent_at: at })
+    .eq("id", orderId)
+    .is("eval_paid_alert_sent_at", null)
+    .select("id");
+  fail(error);
+  return ((data ?? []) as { id?: string }[]).length > 0;
+}
+
 export async function clearOrderColumn(
   db: Db,
   orderId: string,
