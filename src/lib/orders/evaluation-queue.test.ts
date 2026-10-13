@@ -68,5 +68,9 @@ describe("evaluation queue screen", () => {
     expect(html).not.toContain("CP-24790");
     const empty = renderToStaticMarkup(createElement(EvaluationQueue, { orders: [] }));
     expect(empty).toContain("No paid evaluations are waiting.");
+    const missing = renderToStaticMarkup(createElement(EvaluationQueue, { orders: [], unavailable: true }));
+    expect(missing).toContain("The evaluation queue isn&#x27;t available yet.");
+    expect(missing).toContain('data-testid="evaluation-queue-unavailable"');
+    expect(missing).not.toContain("No paid evaluations are waiting.");
   });
 });

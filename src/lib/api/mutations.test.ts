@@ -1,11 +1,54 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { approveOrder } from "./mutations";
+import { evaluationUploadError } from "./evaluation-staff";
+import { approveOrder, uploadFinishedEvaluation } from "./mutations";
 import { settleStudioAction } from "@/components/admin/studio-action";
 
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+describe("uploadFinishedEvaluation", () => {
+  it("posts the PDF and turns a missing route into a calm message", async () => {
+    vi.stubEnv("NEXT_PUBLIC_CREDPRONTO_MOCK", "");
+    const sent: { file: FormDataEntryValue | null } = { file: null };
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.body instanceof FormData) sent.file = init.body.get("file");
+      return new Response("<html>missing</html>", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["%PDF-1.4"], "evaluation.pdf", { type: "application/pdf" });
+    const id = "28492f38-1111-4111-8111-111111111111";
+
+    const missing = await uploadFinishedEvaluation(id, file);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/admin/orders/${id}/evaluation`,
+      expect.objectContaining({ method: "POST", credentials: "include" }),
+    );
+    expect(sent.file).toBe(file);
+    expect(missing.ok).toBe(false);
+    if (missing.ok) return;
+    expect(evaluationUploadError(missing.status, missing.error)).toBe(
+      "The finished evaluation upload isn't available yet.",
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: "Order not found" }), {
+            status: 404,
+            headers: { "content-type": "application/json" },
+          }),
+      ),
+    );
+    const absent = await uploadFinishedEvaluation(id, file);
+    expect(absent.ok).toBe(false);
+    if (absent.ok) return;
+    expect(evaluationUploadError(absent.status, absent.error)).toBe("Order not found");
+  });
 });
 
 describe("approveOrder", () => {
