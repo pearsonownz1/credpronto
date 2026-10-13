@@ -32,6 +32,7 @@ import {
   dispatchConcurrency,
   pageAttemptResult,
   pagesToTranslate,
+  translationPagePlan,
 } from "./translation-pages";
 import { OPEN_TRANSLATION_STATUSES, checkedProgress } from "./translation-watch";
 
@@ -56,6 +57,8 @@ export type PageJobRecord = {
   status: PageJobStatus;
   attempts: number;
   output: PageJobOutput | null;
+  sourceLanguage: string | null;
+  targetLanguage: string | null;
   error: string | null;
   updatedAt: string;
 };
@@ -128,8 +131,18 @@ function mapRun(row: Row): TranslationRunRecord {
   };
 }
 
+function jobLanguages(value: unknown): { sourceLanguage: string | null; targetLanguage: string | null } {
+  if (!value || typeof value !== "object") return { sourceLanguage: null, targetLanguage: null };
+  const row = value as { sourceLanguage?: unknown; targetLanguage?: unknown };
+  return {
+    sourceLanguage: typeof row.sourceLanguage === "string" ? row.sourceLanguage : null,
+    targetLanguage: typeof row.targetLanguage === "string" ? row.targetLanguage : null,
+  };
+}
+
 function mapJob(row: Row): PageJobRecord {
   const status = str(row.status);
+  const languages = jobLanguages(row.output);
   return {
     id: String(row.id),
     orderId: String(row.order_id),
@@ -144,6 +157,8 @@ function mapJob(row: Row): PageJobRecord {
         : "pending",
     attempts: num(row.attempts) ?? 0,
     output: parsePageJobOutput(row.output),
+    sourceLanguage: languages.sourceLanguage,
+    targetLanguage: languages.targetLanguage,
     error: str(row.error),
     updatedAt: str(row.updated_at) ?? "",
   };
@@ -287,27 +302,78 @@ async function insertRun(
   return "inserted";
 }
 
+type JobLanguages = { sourceLanguage: string; targetLanguage: string };
+
+function pageJobInsert(orderId: string, version: number, page: NumberedPage, languages: JobLanguages) {
+  return {
+    order_id: orderId,
+    version,
+    document_id: page.documentId,
+    page_id: page.id,
+    page_number: page.pageNumber,
+    combined_page_number: page.number,
+    status: "pending" as const,
+    attempts: 0,
+    output: {
+      sourceLanguage: languages.sourceLanguage,
+      targetLanguage: languages.targetLanguage,
+    },
+  };
+}
+
 async function insertJobs(
   db: Db,
   orderId: string,
   version: number,
   pages: NumberedPage[],
+  languages: JobLanguages,
 ): Promise<void> {
   if (pages.length === 0) return;
   const { error } = await db.from("translation_page_jobs").insert(
-    pages.map((page) => ({
-      order_id: orderId,
-      version,
-      document_id: page.documentId,
-      page_id: page.id,
-      page_number: page.pageNumber,
-      combined_page_number: page.number,
-      status: "pending",
-      attempts: 0,
-    })),
+    pages.map((page) => pageJobInsert(orderId, version, page, languages)),
   );
   if (error?.code === "23505") return;
   fail(error);
+}
+
+/** One page. A duplicate key means that page already has its job. */
+async function insertPageJob(
+  db: Db,
+  orderId: string,
+  version: number,
+  page: NumberedPage,
+  languages: JobLanguages,
+): Promise<"inserted" | "exists"> {
+  const { error } = await db.from("translation_page_jobs").insert(pageJobInsert(orderId, version, page, languages));
+  if (error?.code === "23505") return "exists";
+  fail(error);
+  return "inserted";
+}
+
+/** Same row, new languages. An in-flight complete only writes while status is running. */
+async function resetPageJob(db: Db, jobId: string, languages: JobLanguages): Promise<void> {
+  const { error } = await db
+    .from("translation_page_jobs")
+    .update({
+      status: "pending",
+      attempts: 0,
+      error: null,
+      output: {
+        sourceLanguage: languages.sourceLanguage,
+        targetLanguage: languages.targetLanguage,
+      },
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", jobId);
+  fail(error);
+}
+
+function translationLeftAlone(status: string): boolean {
+  return status === "cancelled" || status === "delivered" || status === "approved";
+}
+
+function isEvaluationOrder(order: OrderRecord): boolean {
+  return order.service != null || order.orderType === "evaluation" || order.serviceType === "evaluation";
 }
 
 export async function bumpTranslationProgress(
@@ -340,9 +406,14 @@ export async function bumpTranslationProgress(
 export async function fillTranslationSlots(db: Db, orderId: string, version: number): Promise<void> {
   const run = await getTranslationRun(db, orderId, version);
   if (!run || run.status !== "running") return;
-  const jobs = await listPageJobs(db, orderId, version);
-  const running = jobs.filter((job) => job.status === "running").length;
-  const batch = jobsToDispatch(jobs, dispatchConcurrency(running, translationContinuesInProcess()));
+  const [{ pages }, jobs] = await Promise.all([
+    loadOrderPages(db, orderId),
+    listPageJobs(db, orderId, version),
+  ]);
+  const billable = new Set(pagesToTranslate(pages).map((page) => page.id));
+  const eligible = jobs.filter((job) => billable.has(job.pageId));
+  const running = eligible.filter((job) => job.status === "running").length;
+  const batch = jobsToDispatch(eligible, dispatchConcurrency(running, translationContinuesInProcess()));
   await Promise.all(
     batch.map((job) =>
       dispatchTranslation(TRANSLATION_PAGE_PATH, { orderId, version, jobId: job.id }),
@@ -359,7 +430,7 @@ export async function failTranslationOrder(
   input: { orderId: string; version: number; error: unknown },
 ): Promise<void> {
   const order = await getOrderById(db, input.orderId);
-  if (!order) return;
+  if (!order || !order.languageConfirmed) return;
   const run = await getTranslationRun(db, input.orderId, input.version);
   if (run?.status === "failed" || run?.status === "ready") return;
   const open = (await listCorrections(db, input.orderId)).filter((correction) => correction.status === "open");
@@ -421,7 +492,10 @@ export async function beginTranslation(
     return;
   }
 
-  await insertJobs(db, order.id, version, billable);
+  await insertJobs(db, order.id, version, billable, {
+    sourceLanguage: order.sourceLanguage ?? "",
+    targetLanguage: order.targetLanguage,
+  });
   const preview = await insertPreview(db, { orderId: order.id, version, previewPath });
   if (preview === "exists") {
     await fillTranslationSlots(db, order.id, version);
@@ -434,9 +508,95 @@ export async function beginTranslation(
   await fillTranslationSlots(db, order.id, version);
 }
 
+/**
+ * Translation orders only, after the quote is saved and before the customer confirms.
+ * Does not change status and does not assemble. Confirm resumes this run.
+ */
+export async function queueEarlyTranslation(db: Db, orderId: string, token: string | null): Promise<void> {
+  const order = await getOrderById(db, orderId);
+  if (!order || isEvaluationOrder(order)) return;
+  if (order.status !== "quoted" || order.languageConfirmed) return;
+  if (!order.sourceLanguage || !order.combinedOriginalPath) return;
+
+  const open = await findOpenRun(db, orderId);
+  if (open) {
+    await fillTranslationSlots(db, orderId, open.version);
+    return;
+  }
+
+  const { pages } = await loadOrderPages(db, orderId);
+  const billable = pagesToTranslate(pages);
+  const version = await nextPreviewVersion(db, orderId);
+  const previewPath = `${orderId}/preview-v${version}.pdf`;
+  const languages = { sourceLanguage: order.sourceLanguage, targetLanguage: order.targetLanguage };
+  const runInsert = await insertRun(db, {
+    orderId,
+    version,
+    pageCount: billable.length,
+    round: 0,
+    token,
+    qaIssues: [],
+  });
+  if (runInsert === "exists") {
+    await fillTranslationSlots(db, orderId, version);
+    return;
+  }
+  await insertJobs(db, orderId, version, billable, languages);
+  await insertPreview(db, { orderId, version, previewPath });
+  if (billable.length === 0) return;
+  await fillTranslationSlots(db, orderId, version);
+}
+
+/**
+ * Confirm keeps the open run. Pages whose target, source, or skip changed are reset
+ * in place. Unchanged pages, including ones still running, are left alone.
+ */
+export async function reconcileOpenTranslation(db: Db, order: OrderRecord, run: TranslationRunRecord): Promise<void> {
+  if (!order.sourceLanguage || run.status === "ready" || run.status === "failed") return;
+  const { pages } = await loadOrderPages(db, order.id);
+  const jobs = await listPageJobs(db, order.id, run.version);
+  const languages = { sourceLanguage: order.sourceLanguage, targetLanguage: order.targetLanguage };
+  const plan = translationPagePlan({
+    pages,
+    jobs: jobs.map((job) => ({
+      pageId: job.pageId,
+      status: job.status,
+      sourceLanguage: job.sourceLanguage,
+      targetLanguage: job.targetLanguage,
+    })),
+    sourceLanguage: languages.sourceLanguage,
+    targetLanguage: languages.targetLanguage,
+  });
+  const byPage = new Map(pages.map((page) => [page.id, page]));
+  const jobsByPage = new Map(jobs.map((job) => [job.pageId, job]));
+  for (const pageId of plan.rerun) {
+    const job = jobsByPage.get(pageId);
+    if (!job) continue;
+    await resetPageJob(db, job.id, languages);
+  }
+  for (const pageId of plan.start) {
+    const page = byPage.get(pageId);
+    if (!page) continue;
+    await insertPageJob(db, order.id, run.version, page, languages);
+  }
+  const billable = pagesToTranslate(pages).length;
+  if (billable !== run.pageCount && run.status === "running") {
+    const { error } = await db
+      .from("translation_runs")
+      .update({ page_count: billable, updated_at: new Date().toISOString() })
+      .eq("order_id", order.id)
+      .eq("version", run.version)
+      .eq("status", "running");
+    fail(error);
+  }
+}
+
 export async function resumeTranslation(db: Db, run: TranslationRunRecord, now = Date.now()): Promise<void> {
+  const order = await getOrderById(db, run.orderId);
+  if (!order || translationLeftAlone(order.status)) return;
+
   if (run.status === "assembling") {
-    await dispatchAssemble(run.orderId, run.version);
+    if (order.languageConfirmed) await dispatchAssemble(run.orderId, run.version);
     return;
   }
   if (run.status !== "running") return;
@@ -455,25 +615,48 @@ export async function resumeTranslation(db: Db, run: TranslationRunRecord, now =
       .eq("status", "running");
   }
 
-  const refreshed = await listPageJobs(db, run.orderId, run.version);
-  if (refreshed.some((job) => job.status === "failed")) {
-    const failed = refreshed.find((job) => job.status === "failed");
-    await failTranslationOrder(db, {
-      orderId: run.orderId,
-      version: run.version,
-      error: new Error(failed?.error || "A page failed twice."),
-    });
-    return;
-  }
-  if (refreshed.length < run.pageCount) {
+  if (!order.languageConfirmed) {
     await fillTranslationSlots(db, run.orderId, run.version);
     return;
   }
-  if (refreshed.every((job) => job.status === "ready")) {
+
+  const refreshed = await listPageJobs(db, run.orderId, run.version);
+  const { pages } = await loadOrderPages(db, run.orderId);
+  const ready = billableReadiness(pages, refreshed);
+  if (ready.failed) {
+    await failTranslationOrder(db, {
+      orderId: run.orderId,
+      version: run.version,
+      error: new Error(ready.failed.error || "A page failed twice."),
+    });
+    return;
+  }
+  if (ready.allReady) {
     await dispatchAssemble(run.orderId, run.version);
     return;
   }
   await fillTranslationSlots(db, run.orderId, run.version);
+}
+
+function billableReadiness(
+  pages: NumberedPage[],
+  jobs: PageJobRecord[],
+): { pagesDone: number; total: number; allReady: boolean; failed: PageJobRecord | null } {
+  const byPage = new Map(jobs.map((job) => [job.pageId, job]));
+  const billable = pagesToTranslate(pages);
+  let pagesDone = 0;
+  let failed: PageJobRecord | null = null;
+  let allReady = billable.length === 0;
+  if (billable.length > 0) {
+    allReady = true;
+    for (const page of billable) {
+      const job = byPage.get(page.id);
+      if (job?.status === "failed") failed = job;
+      if (job?.status === "ready" && job.output) pagesDone += 1;
+      else allReady = false;
+    }
+  }
+  return { pagesDone, total: billable.length, allReady, failed };
 }
 
 export async function claimAssemble(db: Db, orderId: string, version: number, now = Date.now()): Promise<boolean> {
@@ -537,6 +720,20 @@ export type PageWork = {
   qaIssues: QaIssue[];
 };
 
+/** A page skipped after its job started must not fail the order. The row stays pending and is not dispatched. */
+export async function releaseSkippedPageJob(db: Db, job: PageJobRecord): Promise<boolean> {
+  const { pages } = await loadOrderPages(db, job.orderId);
+  const page = pages.find((item) => item.id === job.pageId);
+  if (!page || !isSkippedTranslationPage(page)) return false;
+  const { error } = await db
+    .from("translation_page_jobs")
+    .update({ status: "pending", updated_at: new Date().toISOString() })
+    .eq("id", job.id)
+    .eq("status", "running");
+  fail(error);
+  return true;
+}
+
 export async function loadPageWork(db: Db, jobId: string): Promise<PageWork | null> {
   const job = await getJob(db, jobId);
   if (!job) return null;
@@ -568,10 +765,19 @@ export async function loadPageWork(db: Db, jobId: string): Promise<PageWork | nu
 async function publishReadyPages(db: Db, job: PageJobRecord): Promise<void> {
   const run = await getTranslationRun(db, job.orderId, job.version);
   if (!run || (run.status !== "running" && run.status !== "assembling")) return;
-  const jobs = await listPageJobs(db, job.orderId, job.version);
-  const pagesDone = jobs.filter((item) => item.status === "ready").length;
-  await bumpTranslationProgress(db, job.orderId, pagesDone, jobs.length);
-  if (jobs.length > 0 && jobs.every((item) => item.status === "ready")) {
+  const order = await getOrderById(db, job.orderId);
+  if (!order || translationLeftAlone(order.status)) return;
+  const [jobs, { pages }] = await Promise.all([
+    listPageJobs(db, job.orderId, job.version),
+    loadOrderPages(db, job.orderId),
+  ]);
+  if (!order.languageConfirmed) {
+    await fillTranslationSlots(db, job.orderId, job.version);
+    return;
+  }
+  const ready = billableReadiness(pages, jobs);
+  await bumpTranslationProgress(db, job.orderId, ready.pagesDone, ready.total);
+  if (ready.allReady) {
     await dispatchAssemble(job.orderId, job.version);
     return;
   }
@@ -593,7 +799,11 @@ export async function completePageJob(
     .from("translation_page_jobs")
     .update({
       status: "ready",
-      output,
+      output: {
+        ...output,
+        ...(current?.sourceLanguage ? { sourceLanguage: current.sourceLanguage } : {}),
+        ...(current?.targetLanguage ? { targetLanguage: current.targetLanguage } : {}),
+      },
       error: null,
       updated_at: new Date().toISOString(),
     })

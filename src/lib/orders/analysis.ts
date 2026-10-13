@@ -36,6 +36,7 @@ import { humanReviewReason } from "./review-reason";
 import { notifyOrder } from "./webhook-delivery";
 import { downloadObject, uploadObject } from "./storage";
 import { quotePage, storedDensity } from "./billing";
+import { queueEarlyTranslation } from "./translation-jobs";
 import type { ReadingStep } from "./reading-progress";
 import { countWords } from "./words";
 import type { DocumentRecord } from "./types";
@@ -78,6 +79,30 @@ const readingSchema = z.object({
   place_of_birth: z.string(),
   date_format: z.string(),
 });
+
+type FieldReading = z.infer<typeof readingSchema>;
+
+const FIELD_INSTRUCTIONS = `Read this document for a certified translation into English.
+Return ISO 639-1 language and a confidence from 0 to 1.
+Extract only what is printed. Use an empty string when a field is absent. Do not invent names.
+full_name: the person's full name as spelled. If several people are named, join them with "; ".
+date_of_birth: the date of birth as written.
+parent_names: the parents' names as spelled, joined with "; ".
+place_of_birth: the place of birth as spelled.
+date_format: MM/DD/YYYY or DD/MM/YYYY if the dates on the page show which order is used, otherwise empty.`;
+
+/**
+ * Language and name detection can overlap the text-layer read when the layer is dense.
+ * A thin layer returns null so detection waits for OCR text instead of a second vision call.
+ */
+export function fieldDetectionText(texts: readonly string[]): string | null {
+  const joined = texts
+    .map((text) => text.trim())
+    .filter(Boolean)
+    .join("\n");
+  if (countWords(joined) < SPARSE_PAGE_WORDS) return null;
+  return joined;
+}
 
 type PageRead = {
   text: string;
@@ -251,7 +276,7 @@ ${CUE_INSTRUCTIONS}`,
   return reads;
 }
 
-async function readFields(text: string) {
+async function readFields(text: string): Promise<FieldReading | null> {
   const sample = text.slice(0, 8000);
   if (!sample.trim()) return null;
   try {
@@ -261,14 +286,7 @@ async function readFields(text: string) {
         content: [
           {
             type: "text",
-            text: `Read this document for a certified translation into English.
-Return ISO 639-1 language and a confidence from 0 to 1.
-Extract only what is printed. Use an empty string when a field is absent. Do not invent names.
-full_name: the person's full name as spelled. If several people are named, join them with "; ".
-date_of_birth: the date of birth as written.
-parent_names: the parents' names as spelled, joined with "; ".
-place_of_birth: the place of birth as spelled.
-date_format: MM/DD/YYYY or DD/MM/YYYY if the dates on the page show which order is used, otherwise empty.
+            text: `${FIELD_INSTRUCTIONS}
 
 Document text:
 ${sample}`,
@@ -282,12 +300,42 @@ ${sample}`,
   }
 }
 
+type ExtractedFile = {
+  bytes: Uint8Array;
+  mime: string;
+  texts: string[];
+  pageCount: number;
+};
+
+/**
+ * Dense text overlaps language detection with the text-layer read.
+ * A scan or photo finishes OCR first, then detects from that text.
+ * A second vision call on the raw file stalls behind the model abort.
+ */
+async function readDocument(file: ExtractedFile): Promise<{ reads: PageRead[]; reading: FieldReading | null }> {
+  const detectionText = fieldDetectionText(file.texts);
+  if (detectionText) {
+    const [reads, reading] = await Promise.all([
+      assessFile(file.bytes, file.mime, file.pageCount, file.texts),
+      readFields(detectionText),
+    ]);
+    return { reads, reading };
+  }
+  const reads = await assessFile(file.bytes, file.mime, file.pageCount, file.texts);
+  const joined = reads
+    .map((page) => page.text.trim())
+    .filter(Boolean)
+    .join("\n");
+  return { reads, reading: await readFields(joined) };
+}
+
 type Slot = {
   document: DocumentRecord;
   documentId: string;
   bytes: Uint8Array;
   mime: string;
   reads: PageRead[];
+  reading: FieldReading | null;
   uploadPosition: number;
 };
 
@@ -311,7 +359,14 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
 
   try {
     await writeProgress("reading");
-    const slots: Slot[] = [];
+    const extracted: Array<{
+      document: DocumentRecord;
+      bytes: Uint8Array;
+      mime: string;
+      texts: string[];
+      pageCount: number;
+      uploadPosition: number;
+    }> = [];
     for (const document of documents) {
       const bytes = await downloadObject(db, "originals", document.originalPath);
       const mime = document.mime ?? "application/pdf";
@@ -324,19 +379,32 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
             })
           : [];
       const pageCount = mime === "application/pdf" ? texts.length : 1;
-      const reads = await assessFile(bytes, mime, pageCount, texts);
       if (mime !== "application/pdf") {
         pagesTotal += 1;
         pagesRead += 1;
         await writeProgress("reading");
       }
-      slots.push({
+      extracted.push({
         document,
-        documentId: document.id,
         bytes,
         mime,
+        texts,
+        pageCount,
+        uploadPosition: document.position > 0 ? document.position : extracted.length + 1,
+      });
+    }
+
+    const slots: Slot[] = [];
+    for (const file of extracted) {
+      const { reads, reading } = await readDocument(file);
+      slots.push({
+        document: file.document,
+        documentId: file.document.id,
+        bytes: file.bytes,
+        mime: file.mime,
         reads,
-        uploadPosition: document.position > 0 ? document.position : slots.length + 1,
+        reading,
+        uploadPosition: file.uploadPosition,
       });
     }
 
@@ -403,7 +471,7 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
         .filter(Boolean)
         .join("\n");
       transcripts.push(joined);
-      const reading = await readFields(joined);
+      const reading = slot.reading;
       if (!reading) missedDetection = true;
 
       const language = normalizeLanguage(reading?.language);
@@ -547,6 +615,13 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
       });
     }
     if (decision.status === "quoted") await notifyOrder(db, orderId, "order.quoted");
+    if (decision.status === "quoted") {
+      try {
+        await queueEarlyTranslation(db, orderId, token);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : "early translation failed");
+      }
+    }
   } catch (error) {
     await markDocuments(db, orderId, "failed");
     const message = error instanceof Error ? error.message : "We could not read the upload.";
