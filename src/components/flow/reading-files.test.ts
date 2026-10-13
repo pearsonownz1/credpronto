@@ -47,4 +47,24 @@ describe("reading files", () => {
     expect(html).toMatch(/data-testid="reading-percent">\s*5%/);
     expect(html).toContain('aria-valuenow="5"');
   });
+
+  it("shows each file's upload percent", () => {
+    const html = renderToStaticMarkup(
+      createElement(ReadingFiles, {
+        status: "draft",
+        uploadRatio: 0.5,
+        uploadFiles: [
+          { name: "diploma.pdf", ratio: 1 },
+          { name: "transcript.pdf", ratio: 0.4 },
+        ],
+      }),
+    );
+    expect(html).toContain('data-testid="upload-file-progress"');
+    expect(html).toContain("diploma.pdf");
+    expect(html).toContain("transcript.pdf");
+    expect(html).toMatch(/upload-file-percent">\s*100%/);
+    expect(html).toMatch(/upload-file-percent">\s*40%/);
+    expect(html).toContain('aria-label="diploma.pdf"');
+    expect(html).toContain('aria-valuenow="40"');
+  });
 });

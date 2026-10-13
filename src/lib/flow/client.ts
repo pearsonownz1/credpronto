@@ -7,9 +7,10 @@ import {
 } from "@/lib/orders/evaluation-price";
 import { languagesEqual } from "@/lib/orders/languages";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
-import { appendOrderChoice, type UploadChoice } from "./order-choice";
+import { FlowApiError, requestFailedMessage } from "./api-error";
+import { uploadOrderFiles } from "./direct-upload";
+import type { UploadChoice } from "./order-choice";
 import { quoteCounts } from "./present";
-import { dedupeUploads } from "./uploads";
 import { sampleCustomerOrder } from "./sample-order";
 import {
   EMAIL_KEY,
@@ -22,15 +23,7 @@ import {
 
 const MOCK_ORDER_KEY = "credpronto-mock-order";
 
-export class FlowApiError extends Error {
-  status: number;
-
-  constructor(message: string, status: number) {
-    super(message);
-    this.name = "FlowApiError";
-    this.status = status;
-  }
-}
+export { FlowApiError };
 
 export type ConfirmDocumentInput = {
   documentId: string;
@@ -66,6 +59,7 @@ export type FlowClient = {
     files: File[];
     choice?: UploadChoice;
     onProgress?: (ratio: number) => void;
+    onFileProgress?: (files: Array<{ name: string; ratio: number }>) => void;
   }): Promise<{
     orderToken: string;
     orderId: string;
@@ -120,61 +114,23 @@ export function getFlowClient(): FlowClient {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
   const text = await response.text();
-  let body: { error?: unknown } = {};
+  let body: unknown = {};
   if (text) {
     try {
-      body = JSON.parse(text) as { error?: unknown };
+      body = JSON.parse(text) as unknown;
     } catch {
-      body = {};
+      body = text;
     }
   }
   if (!response.ok) {
-    const message = typeof body.error === "string" ? body.error : "Request failed";
-    throw new FlowApiError(message, response.status);
+    throw new FlowApiError(requestFailedMessage(body, response.status, response.statusText), response.status);
   }
   return body as T;
 }
 
-function postForm<T>(path: string, form: FormData, onProgress?: (ratio: number) => void): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", path);
-    xhr.upload.onprogress = (event) => {
-      if (!onProgress || !event.lengthComputable || event.total <= 0) return;
-      onProgress(event.loaded / event.total);
-    };
-    xhr.onerror = () => reject(new FlowApiError("Request failed", 0));
-    xhr.onload = () => {
-      const text = xhr.responseText;
-      let body: { error?: unknown } = {};
-      if (text) {
-        try {
-          body = JSON.parse(text) as { error?: unknown };
-        } catch {
-          body = {};
-        }
-      }
-      if (xhr.status < 200 || xhr.status >= 300) {
-        const message = typeof body.error === "string" ? body.error : "Request failed";
-        reject(new FlowApiError(message, xhr.status));
-        return;
-      }
-      resolve(body as T);
-    };
-    xhr.send(form);
-  });
-}
-
 const liveClient: FlowClient = {
-  upload({ email, files, choice = { orderType: "translation" }, onProgress }) {
-    const form = new FormData();
-    form.set("email", email);
-    appendOrderChoice(form, choice);
-    for (const file of dedupeUploads(files)) form.append("files", file);
-    if (typeof XMLHttpRequest === "undefined") {
-      return request("/api/orders", { method: "POST", body: form });
-    }
-    return postForm("/api/orders", form, onProgress);
+  upload(input) {
+    return uploadOrderFiles(input);
   },
   getOrder(token) {
     return request(`/api/orders/${encodeURIComponent(token)}`);
@@ -328,8 +284,11 @@ async function holdMockUpload(onProgress?: (ratio: number) => void) {
 }
 
 const mockClient: FlowClient = {
-  async upload({ email, choice = { orderType: "translation" }, onProgress }) {
-    await holdMockUpload(onProgress);
+  async upload({ email, files, choice = { orderType: "translation" }, onProgress, onFileProgress }) {
+    await holdMockUpload((ratio) => {
+      onProgress?.(ratio);
+      onFileProgress?.(files.map((file) => ({ name: file.name, ratio })));
+    });
     const order =
       choice.orderType === "evaluation"
         ? withEvaluationChoice(sampleCustomerOrder(), choice)

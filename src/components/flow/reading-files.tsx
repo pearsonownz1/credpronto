@@ -24,11 +24,14 @@ export function ReadingFiles({
   status,
   progress,
   uploadRatio,
+  uploadFiles,
 }: {
   status: string;
   progress?: unknown;
   /** Set while the file is still uploading and the order does not exist. `null` eases toward 5%. */
   uploadRatio?: number | null;
+  /** Per-file ratios while the bytes are still going to storage. */
+  uploadFiles?: Array<{ name: string; ratio: number }>;
 }) {
   const uploading = uploadRatio !== undefined;
   const uploadElapsed = useElapsed(uploading);
@@ -65,6 +68,33 @@ export function ReadingFiles({
             <span className="reading-shine pointer-events-none absolute inset-0 motion-reduce:hidden" aria-hidden />
           </div>
         </div>
+        {uploading && uploadFiles && uploadFiles.length > 0 ? (
+          <ul data-testid="upload-file-progress" className="mt-4 list-none space-y-3 p-0">
+            {uploadFiles.map((file, index) => {
+              const percent = Math.round(Math.min(1, Math.max(0, file.ratio)) * 100);
+              return (
+                <li key={`${index}-${file.name}`} data-testid="upload-file">
+                  <div className="mb-1 flex items-baseline justify-between gap-3 text-[13px]">
+                    <span className="min-w-0 truncate">{file.name}</span>
+                    <span className="shrink-0 tabular-nums text-ink-muted" data-testid="upload-file-percent">
+                      {percent}%
+                    </span>
+                  </div>
+                  <div
+                    className="h-1 overflow-hidden rounded-[2px] bg-line"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={percent}
+                    aria-label={file.name}
+                  >
+                    <div className="h-full bg-primary" style={{ width: `${percent}%` }} />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
         <ol data-testid="reading-steps" className="mt-6 list-none space-y-2.5 p-0">
           {view.steps.map((step) => (
             <li

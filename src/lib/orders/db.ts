@@ -255,6 +255,7 @@ export async function customerEmail(db: Db, customerId: string): Promise<string 
 export async function insertOrder(
   db: Db,
   input: {
+    id?: string;
     tokenHash: string;
     customerId: string;
     utmSource: string | null;
@@ -282,6 +283,7 @@ export async function insertOrder(
   const { data, error } = await db
     .from("orders")
     .insert({
+      ...(input.id ? { id: input.id } : {}),
       public_token_hash: input.tokenHash,
       customer_id: input.customerId,
       service_type: input.serviceType ?? (input.orderType === "evaluation" ? "evaluation" : "translation"),
