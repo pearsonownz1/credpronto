@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { PREVIEW_LOAD_ATTEMPTS, delayBeforePreviewAttempt, sleep } from "./preview-retry";
 
 export const PDFIUM_WASM_PATH = "/pdfium/pdfium.wasm";
 
@@ -17,11 +18,32 @@ export function pdfiumWasmUrl(): string {
 let blobUrlPromise: Promise<string> | null = null;
 let resolvedBlobUrl: string | null = null;
 
-/** One network fetch for the wasm, shared across strict-mode remounts. */
+/**
+ * One network fetch for the wasm, shared across strict-mode remounts.
+ * A rejected fetch is not cached: the next call tries again. A 404 or an
+ * empty body is retried a few times before the promise rejects.
+ */
 export function loadPdfiumWasmBlobUrl(): Promise<string> {
   if (typeof window === "undefined") return Promise.resolve(PDFIUM_WASM_PATH);
-  blobUrlPromise ??= fetchPdfiumWasmBlob();
+  if (resolvedBlobUrl) return Promise.resolve(resolvedBlobUrl);
+  blobUrlPromise ??= fetchPdfiumWasmWithRetry();
   return blobUrlPromise;
+}
+
+async function fetchPdfiumWasmWithRetry(): Promise<string> {
+  let last: unknown = new Error("PDFium failed to load.");
+  for (let attempt = 0; attempt < PREVIEW_LOAD_ATTEMPTS; attempt += 1) {
+    const delay = delayBeforePreviewAttempt(attempt);
+    if (delay === null) break;
+    if (delay > 0) await sleep(delay);
+    try {
+      return await fetchPdfiumWasmBlob();
+    } catch (cause) {
+      last = cause;
+    }
+  }
+  blobUrlPromise = null;
+  throw last instanceof Error ? last : new Error("PDFium failed to load.");
 }
 
 async function fetchPdfiumWasmBlob(): Promise<string> {
@@ -37,15 +59,29 @@ async function fetchPdfiumWasmBlob(): Promise<string> {
 
 if (typeof window !== "undefined") void loadPdfiumWasmBlobUrl();
 
-export function usePdfiumBlobUrl(): { url: string | null; error: Error | null } {
+export function usePdfiumBlobUrl(): { url: string | null; error: Error | null; retry: () => void } {
   const [url, setUrl] = useState<string | null>(resolvedBlobUrl);
   const [error, setError] = useState<Error | null>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  const retry = useCallback(() => {
+    setError(null);
+    if (resolvedBlobUrl) {
+      setUrl(resolvedBlobUrl);
+      return;
+    }
+    setUrl(null);
+    setAttempt((value) => value + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     loadPdfiumWasmBlobUrl().then(
       (value) => {
-        if (!cancelled) setUrl(value);
+        if (!cancelled) {
+          setUrl(value);
+          setError(null);
+        }
       },
       (cause: unknown) => {
         if (!cancelled) setError(cause instanceof Error ? cause : new Error("PDFium failed to load."));
@@ -54,7 +90,7 @@ export function usePdfiumBlobUrl(): { url: string | null; error: Error | null } 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [attempt]);
 
-  return { url, error };
+  return { url, error, retry };
 }

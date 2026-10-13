@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { usePdfiumEngine } from "@embedpdf/engines/react";
+import type { PdfEngine } from "@embedpdf/models";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
@@ -9,6 +9,7 @@ import { checkoutFailureMessage, documentIdForPage, previewShellOrder, toPreview
 import { writeToken } from "@/lib/flow/session";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { timedDownloadLabel } from "./download-bytes";
+import { PdfiumEngineGate } from "./pdfium-engine-gate";
 import { usePdfiumBlobUrl } from "./pdfium-url";
 import type { PreviewOrder } from "./preview-order";
 import { PreviewShell } from "./preview-shell";
@@ -113,6 +114,7 @@ export function LivePreview() {
         notice={canceled ? "Payment canceled" : undefined}
         noticeTestId={canceled ? "payment-canceled" : undefined}
         status="The preview engine failed to load. Refresh to try again."
+        onRetry={wasm.retry}
       />
     );
   }
@@ -157,16 +159,65 @@ function LivePreviewEngine({
   preview: PreviewOrder | null;
   error: string | null;
 }) {
+  const notice = canceled ? "Payment canceled" : undefined;
+  const noticeTestId = canceled ? "payment-canceled" : undefined;
+
+  return (
+    <PdfiumEngineGate
+      wasmUrl={wasmUrl}
+      loading={<PreviewShell notice={notice} noticeTestId={noticeTestId} status={error ?? "Loading preview…"} />}
+      failed={(retry) => (
+        <PreviewShell
+          notice={notice}
+          noticeTestId={noticeTestId}
+          status="The preview engine failed to load. Refresh to try again."
+          onRetry={retry}
+        />
+      )}
+    >
+      {(engine) => (
+        <LivePreviewReady
+          engine={engine}
+          started={started}
+          token={token}
+          notice={notice}
+          noticeTestId={noticeTestId}
+          order={order}
+          preview={preview}
+          error={error}
+        />
+      )}
+    </PdfiumEngineGate>
+  );
+}
+
+function LivePreviewReady({
+  engine,
+  started,
+  token,
+  notice,
+  noticeTestId,
+  order,
+  preview,
+  error,
+}: {
+  engine: PdfEngine<Blob>;
+  started: RefObject<number>;
+  token: string;
+  notice?: string;
+  noticeTestId?: string;
+  order: CustomerOrder | null;
+  preview: PreviewOrder | null;
+  error: string | null;
+}) {
   const router = useRouter();
-  const engineState = usePdfiumEngine({ wasmUrl });
 
   useEffect(() => {
-    if (!engineState.engine) return;
     logPreviewTiming({ phase: "engine", ms: Math.round(performance.now() - started.current) });
-  }, [engineState.engine, started]);
+  }, [engine, started]);
 
   useEffect(() => {
-    if (!preview || !engineState.engine) return;
+    if (!preview) return;
     logPreviewTiming({ phase: "viewer", ms: Math.round(performance.now() - started.current) });
     const timer = window.setTimeout(() => {
       const resources = performance.getEntriesByType("resource").filter((entry): entry is PerformanceResourceTiming => {
@@ -179,34 +230,18 @@ function LivePreviewEngine({
       });
     }, 1500);
     return () => window.clearTimeout(timer);
-  }, [preview, engineState.engine, started]);
+  }, [preview, engine, started]);
 
-  if (engineState.error) {
-    return (
-      <PreviewShell
-        notice={canceled ? "Payment canceled" : undefined}
-        noticeTestId={canceled ? "payment-canceled" : undefined}
-        status="The preview engine failed to load. Refresh to try again."
-      />
-    );
-  }
-
-  if (error || !preview || !engineState.engine) {
-    return (
-      <PreviewShell
-        notice={canceled ? "Payment canceled" : undefined}
-        noticeTestId={canceled ? "payment-canceled" : undefined}
-        status={error ?? "Loading preview…"}
-      />
-    );
+  if (error || !preview) {
+    return <PreviewShell notice={notice} noticeTestId={noticeTestId} status={error ?? "Loading preview…"} />;
   }
 
   return (
     <SideBySideViewer
       order={preview}
-      engine={engineState.engine}
-      notice={canceled ? "Payment canceled" : undefined}
-      noticeTestId={canceled ? "payment-canceled" : undefined}
+      engine={engine}
+      notice={notice}
+      noticeTestId={noticeTestId}
       onBuy={async (body) => {
         writeToken(token);
         try {

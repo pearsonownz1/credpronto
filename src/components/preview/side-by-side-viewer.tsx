@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPluginRegistration } from "@embedpdf/core";
 import { EmbedPDF } from "@embedpdf/core/react";
-import { usePdfiumEngine } from "@embedpdf/engines/react";
 import type { PdfEngine } from "@embedpdf/models";
 import {
   DocumentContent,
@@ -40,7 +39,9 @@ import {
 import { PreviewShell } from "./preview-shell";
 import type { PreviewCorrection, PreviewOrder } from "./preview-order";
 import { anchorsMatch, visibleAnchor, type ScrollAnchor } from "./scroll-anchor";
+import { PdfiumEngineGate } from "./pdfium-engine-gate";
 import { usePdfiumBlobUrl } from "./pdfium-url";
+import { delayBeforePreviewAttempt, fetchPreviewFile, sleep } from "./preview-retry";
 import { TranslationWatermark } from "./translation-watermark";
 
 export const ORIGINAL_DOCUMENT_ID = "original";
@@ -102,14 +103,31 @@ export function SideBySideViewer(props: ViewerProps) {
 
 function SideBySideOwnEngine(props: ViewerProps) {
   const wasm = usePdfiumBlobUrl();
-  if (wasm.error) return <SideBySideEngine {...props} engine={null} isLoading={false} error={wasm.error} />;
+  if (wasm.error) {
+    return <SideBySideEngine {...props} engine={null} isLoading={false} error={wasm.error} onRetry={wasm.retry} />;
+  }
   if (!wasm.url) return <SideBySideEngine {...props} engine={null} isLoading error={null} />;
   return <SideBySideBlobEngine {...props} wasmUrl={wasm.url} />;
 }
 
 function SideBySideBlobEngine({ wasmUrl, ...props }: ViewerProps & { wasmUrl: string }) {
-  const { engine, isLoading, error } = usePdfiumEngine({ wasmUrl });
-  return <SideBySideEngine {...props} engine={engine} isLoading={isLoading} error={error} />;
+  return (
+    <PdfiumEngineGate
+      wasmUrl={wasmUrl}
+      loading={<SideBySideEngine {...props} engine={null} isLoading error={null} />}
+      failed={(retry) => (
+        <SideBySideEngine
+          {...props}
+          engine={null}
+          isLoading={false}
+          error={new Error("The preview engine failed to load.")}
+          onRetry={retry}
+        />
+      )}
+    >
+      {(engine) => <SideBySideEngine {...props} engine={engine} isLoading={false} error={null} />}
+    </PdfiumEngineGate>
+  );
 }
 
 function SideBySideEngine({
@@ -123,21 +141,26 @@ function SideBySideEngine({
   engine,
   isLoading,
   error,
+  onRetry,
 }: ViewerProps & {
   engine: PdfEngine<Blob> | null;
   isLoading: boolean;
   error: Error | null;
+  onRetry?: () => void;
 }) {
   const panel = useAddonPanel(order, onBuy);
   const original = order.original.url;
   const translation = order.translation.url;
+  const files = usePreviewFileRecovery(original, translation);
+  const sourceOriginal = files.urls?.original ?? original;
+  const sourceTranslation = files.urls?.translation ?? translation;
   const plugins = useMemo(
     () => [
       createPluginRegistration(DocumentManagerPluginPackage, {
         initialDocuments: [
-          { url: original, documentId: ORIGINAL_DOCUMENT_ID, name: "Original" },
+          { url: sourceOriginal, documentId: ORIGINAL_DOCUMENT_ID, name: "Original" },
           {
-            url: translation,
+            url: sourceTranslation,
             documentId: TRANSLATION_DOCUMENT_ID,
             name: "Translation",
           },
@@ -158,13 +181,13 @@ function SideBySideEngine({
         paddingY: 8,
       }),
     ],
-    [original, translation],
+    [sourceOriginal, sourceTranslation],
   );
 
   const layout = chrome === "readonly" ? "embedded" : "page";
   const purchase = showsPurchaseChrome(chrome);
 
-  if (error) {
+  if (error || files.failed) {
     return (
       <PreviewShell
         layout={layout}
@@ -172,12 +195,17 @@ function SideBySideEngine({
         rail={purchase ? <OrderRail order={order} corrections={order.corrections} panel={panel} /> : undefined}
         notice={notice}
         noticeTestId={noticeTestId}
-        status="The preview engine failed to load. Refresh to try again."
+        status={
+          error
+            ? "The preview engine failed to load. Refresh to try again."
+            : "This document could not be opened."
+        }
+        onRetry={error ? onRetry : files.retry}
       />
     );
   }
 
-  if (isLoading || !engine) {
+  if (isLoading || !engine || files.recovering) {
     return (
       <PreviewShell
         layout={layout}
@@ -193,7 +221,7 @@ function SideBySideEngine({
 
   return (
     <EmbedPDF
-      key={`${original}:${translation}`}
+      key={`${sourceOriginal}:${sourceTranslation}`}
       engine={engine}
       plugins={plugins}
     >
@@ -205,6 +233,7 @@ function SideBySideEngine({
         onCorrect={onCorrect}
         notice={notice}
         noticeTestId={noticeTestId}
+        onDocumentError={files.recover}
       />
     </EmbedPDF>
   );
@@ -257,6 +286,7 @@ function ViewerWorkspace({
   onCorrect,
   notice,
   noticeTestId,
+  onDocumentError,
 }: {
   order: PreviewOrder;
   chrome: PreviewChrome;
@@ -265,6 +295,7 @@ function ViewerWorkspace({
   onCorrect?: (input: { page: number; note: string }) => Promise<void>;
   notice?: string;
   noticeTestId?: string;
+  onDocumentError: () => void;
 }) {
   const isMobile = useIsMobile();
   const [role, setRole] = useState<Role>("original");
@@ -710,6 +741,7 @@ function ViewerWorkspace({
           label={visible === "original" ? "Original" : "Translation"}
           subtitle={order[visible].subtitle}
           watermark={visible === "translation"}
+          onDocumentError={onDocumentError}
         />
       ))}
     </PreviewShell>
@@ -771,16 +803,107 @@ function IconButton({
   );
 }
 
+function usePreviewFileRecovery(original: string, translation: string) {
+  const [urls, setUrls] = useState<{ original: string; translation: string } | null>(null);
+  const [phase, setPhase] = useState<"open" | "recovering" | "failed">("open");
+  const [sourceKey, setSourceKey] = useState(`${original}\0${translation}`);
+  const attemptRef = useRef(0);
+  const generation = useRef(0);
+  const lock = useRef(false);
+  const ownedBlobs = useRef<string[]>([]);
+  const nextKey = `${original}\0${translation}`;
+  if (sourceKey !== nextKey) {
+    setSourceKey(nextKey);
+    setUrls(null);
+    setPhase("open");
+  }
+
+  useEffect(() => {
+    attemptRef.current = 0;
+    lock.current = false;
+    return () => {
+      generation.current += 1;
+      lock.current = false;
+      for (const url of ownedBlobs.current) URL.revokeObjectURL(url);
+      ownedBlobs.current = [];
+    };
+  }, [sourceKey]);
+
+  const recover = useCallback(() => {
+    if (lock.current) return;
+    lock.current = true;
+    const gen = ++generation.current;
+    setPhase("recovering");
+    void (async () => {
+      let next = attemptRef.current + 1;
+      while (generation.current === gen) {
+        const delay = delayBeforePreviewAttempt(next);
+        if (delay === null) {
+          setPhase("failed");
+          lock.current = false;
+          return;
+        }
+        await sleep(delay);
+        if (generation.current !== gen) return;
+        try {
+          const [originalBlob, translationBlob] = await Promise.all([
+            fetchPreviewFile(original),
+            fetchPreviewFile(translation),
+          ]);
+          if (generation.current !== gen) return;
+          const nextOriginal = URL.createObjectURL(originalBlob);
+          const nextTranslation = URL.createObjectURL(translationBlob);
+          if (generation.current !== gen) {
+            URL.revokeObjectURL(nextOriginal);
+            URL.revokeObjectURL(nextTranslation);
+            return;
+          }
+          for (const url of ownedBlobs.current) URL.revokeObjectURL(url);
+          ownedBlobs.current = [nextOriginal, nextTranslation];
+          attemptRef.current = next;
+          setUrls({ original: nextOriginal, translation: nextTranslation });
+          setPhase("open");
+          lock.current = false;
+          return;
+        } catch {
+          next += 1;
+        }
+      }
+    })();
+  }, [original, translation]);
+
+  const retry = useCallback(() => {
+    generation.current += 1;
+    lock.current = false;
+    attemptRef.current = 0;
+    for (const url of ownedBlobs.current) URL.revokeObjectURL(url);
+    ownedBlobs.current = [];
+    setUrls(null);
+    setPhase("open");
+  }, []);
+
+  return { urls, recovering: phase === "recovering", failed: phase === "failed", recover, retry };
+}
+
+function DocumentRetrySignal({ onError }: { onError: () => void }) {
+  useEffect(() => {
+    onError();
+  }, [onError]);
+  return <p className="p-4 text-sm text-ink-muted">Opening document…</p>;
+}
+
 function DocumentPane({
   role,
   label,
   subtitle,
   watermark,
+  onDocumentError,
 }: {
   role: Role;
   label: string;
   subtitle: string;
   watermark?: boolean;
+  onDocumentError: () => void;
 }) {
   const documentId = DOCUMENT_ID[role];
   const { currentPage, totalPages } = usePageCount(documentId);
@@ -818,9 +941,7 @@ function DocumentPane({
           <DocumentContent documentId={documentId}>
             {({ isLoaded, isError }) =>
               isError ? (
-                <p className="p-4 text-sm text-ink">
-                  This document could not be opened.
-                </p>
+                <DocumentRetrySignal onError={onDocumentError} />
               ) : isLoaded ? (
                 <Viewport documentId={documentId}>
                   <Scroller
