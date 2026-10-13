@@ -24,14 +24,15 @@ export async function walkCustomerFlow(
 
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { level: 1, name: /Your documents/ }),
+    page.getByRole("heading", { level: 1, name: /Certified translations accepted by USCIS/ }),
   ).toBeVisible();
   await expect(page.getByTestId("upload-drop")).toHaveCount(0);
   await expect(page.getByTestId("nav-log-in")).toBeVisible();
   await expect(page.getByTestId("nav-get-started")).toBeVisible();
-  await expect(page.getByTestId("cover-sample")).toBeVisible();
-  await expect(page.getByText("Signed certification included")).toBeVisible();
-  await expect(page.getByText("Sample certificate · example data")).toBeVisible();
+  await expect(page.getByTestId("home-get-started")).toBeVisible();
+  await expect(page.getByTestId("translation-preview")).toBeVisible();
+  await expect(page.getByTestId("translation-preview")).toContainText("PREVIEW");
+  await expect(page.getByRole("heading", { name: "How it works" })).toBeVisible();
   await expect(page.getByText(/USCIS accepts/i)).toHaveCount(0);
   await check();
 

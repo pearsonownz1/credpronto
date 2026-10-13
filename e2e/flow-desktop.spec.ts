@@ -385,12 +385,12 @@ test("a quote shows billable pages and dims a free page in the large viewer", as
   await expect(viewer.getByTestId("page-viewer-page").locator("img")).toHaveClass(/opacity-40/);
 });
 
-test("the homepage sample opens larger, and a signed-in header shows Dashboard", async ({ page }) => {
+test("the homepage preview is on the page, and a signed-in header shows Dashboard", async ({ page }) => {
   await page.goto("/");
-  await page.getByTestId("see-sample").click();
-  await expect(page.getByTestId("sample-dialog")).toBeVisible();
-  await page.getByRole("button", { name: "Close" }).click();
-  await expect(page.getByTestId("sample-dialog")).toHaveCount(0);
+  await expect(page.getByTestId("translation-preview")).toBeVisible();
+  await expect(page.getByText("8 CFR 103.2(b)(3)")).toBeVisible();
+  await page.getByText("Does USCIS accept CredPronto translations?").click();
+  await expect(page.getByText(/Read our USCIS translation guide/)).toBeVisible();
 
   await page.goto("/evaluations");
   await expect(page.getByTestId("nav-log-in")).toBeVisible();
