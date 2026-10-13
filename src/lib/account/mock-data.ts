@@ -261,21 +261,6 @@ const MOCK_EVALUATION_SERVICE: Record<string, "diploma" | "course_by_course"> = 
   "CP-24922": "diploma",
 };
 
-/** Paid mock rows shaped for the evaluation queue helper. Translations have no service. */
-export function mockEvaluationSources(now = Date.now()): Array<{
-  id: string;
-  service: "diploma" | "course_by_course" | null;
-  email: string | null;
-  paidAt: string | null;
-}> {
-  return mockAdminList({ status: "paid", limit: 100 }, now).orders.map((order) => ({
-    id: order.id,
-    service: MOCK_EVALUATION_SERVICE[order.id] ?? null,
-    email: order.email,
-    paidAt: order.paidAt,
-  }));
-}
-
 export function mockAdminList(
   query: {
     status?: string | null;
