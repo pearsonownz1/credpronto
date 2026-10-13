@@ -15,6 +15,10 @@ describe("delivery ready email", () => {
       subject: "Your CredPronto evaluation is ready to download",
       text: "Your credential evaluation is approved. Open the CredPronto order link from your earlier email to download the evaluation report.",
     });
+    expect(deliveryReadyMessage("evaluation", "https://credpronto.com/order/28492f38-1111-4111-8111-111111111111")).toEqual({
+      subject: "Your CredPronto evaluation is ready to download",
+      text: "Your credential evaluation is approved. Download the evaluation report: https://credpronto.com/order/28492f38-1111-4111-8111-111111111111",
+    });
     expect(deliveryReadyMessage()).toMatchObject({
       subject: "Your CredPronto translation is ready to download",
     });

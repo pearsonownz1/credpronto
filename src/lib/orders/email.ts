@@ -23,6 +23,11 @@ export function orderLink(token: string): string {
   return `${appOrigin()}/order/${token}`;
 }
 
+/** Order page for a signed-in owner. The raw email token is not stored on the order. */
+export function orderPageLink(orderId: string): string {
+  return `${appOrigin()}/order/${orderId}`;
+}
+
 export function adminStudioLink(orderId: string): string {
   return `${appOrigin()}/admin/orders/${encodeURIComponent(orderId)}`;
 }
@@ -145,14 +150,20 @@ export function sendTranslationFailureAlert(
   return send(to, rendered.subject, rendered.text, rendered.html);
 }
 
-export function deliveryReadyMessage(product: "translation" | "evaluation" = "translation"): {
+export function deliveryReadyMessage(
+  product: "translation" | "evaluation" = "translation",
+  downloadUrl?: string | null,
+): {
   subject: string;
   text: string;
 } {
   if (product === "evaluation") {
+    const link = downloadUrl?.trim() || null;
     return {
       subject: "Your CredPronto evaluation is ready to download",
-      text: "Your credential evaluation is approved. Open the CredPronto order link from your earlier email to download the evaluation report.",
+      text: link
+        ? `Your credential evaluation is approved. Download the evaluation report: ${link}`
+        : "Your credential evaluation is approved. Open the CredPronto order link from your earlier email to download the evaluation report.",
     };
   }
   return {
@@ -164,7 +175,8 @@ export function deliveryReadyMessage(product: "translation" | "evaluation" = "tr
 export function sendDeliveryReady(
   to: string,
   product: "translation" | "evaluation" = "translation",
+  downloadUrl?: string | null,
 ): Promise<SendResult> {
-  const message = deliveryReadyMessage(product);
+  const message = deliveryReadyMessage(product, downloadUrl);
   return send(to, message.subject, message.text);
 }

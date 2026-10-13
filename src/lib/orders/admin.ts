@@ -23,7 +23,7 @@ import {
   updateOrder,
   withCombinedNumbers,
 } from "./db";
-import { sendDeliveryReady } from "./email";
+import { orderPageLink, sendDeliveryReady } from "./email";
 import { fulfillmentFor, parseTrackingNumber } from "./fulfillment";
 import { HttpError } from "./errors";
 import { normalizeLanguage } from "./languages";
@@ -240,7 +240,11 @@ export async function approveOrder(orderId: string) {
 
   const email = await customerEmail(db, order.customerId);
   const sent = email
-    ? await sendDeliveryReady(email, order.service ? "evaluation" : "translation")
+    ? await sendDeliveryReady(
+        email,
+        order.service ? "evaluation" : "translation",
+        order.service ? orderPageLink(order.id) : null,
+      )
     : { sent: false, skipped: true };
   const files = await signedFinals(db, order, order.finalTranslationPath, order.certificationPath);
   if (!sent.sent && !sent.skipped) {

@@ -135,7 +135,11 @@ describe("deliverEvaluationReport", () => {
       orderId,
       expect.objectContaining({ status: "delivered", final_path: `${orderId}/evaluation.pdf` }),
     );
-    expect(email.sendDeliveryReady).toHaveBeenCalledWith("ada@example.com", "evaluation");
+    expect(email.sendDeliveryReady).toHaveBeenCalledWith(
+      "ada@example.com",
+      "evaluation",
+      expect.stringMatching(new RegExp(`/order/${orderId}$`)),
+    );
   });
 
   it("rejects a translation order and a file that is not a PDF", async () => {

@@ -43,8 +43,13 @@ export type OrderProgress = {
 
 export const UPLOADED_PROGRESS: OrderProgress = { step: "uploaded", pagesRead: 0, pagesTotal: 0 };
 
+/** Customer and partner JSON. `delivered` is only the public step after an evaluation is delivered. */
+export type PublicOrderProgress = Omit<OrderProgress, "retries" | "step"> & {
+  step: OrderProgress["step"] | "delivered";
+};
+
 /** Customer and partner JSON. Keeps page counts and drops the internal retry counter. */
-export function publicOrderProgress(progress: OrderProgress): Omit<OrderProgress, "retries"> {
+export function publicOrderProgress(progress: OrderProgress): PublicOrderProgress {
   return {
     step: progress.step,
     pagesRead: progress.pagesRead,
@@ -52,6 +57,26 @@ export function publicOrderProgress(progress: OrderProgress): Omit<OrderProgress
     ...(progress.pagesDone != null ? { pagesDone: progress.pagesDone } : {}),
     ...(progress.pagesTranslateTotal != null ? { pagesTranslateTotal: progress.pagesTranslateTotal } : {}),
   };
+}
+
+/** A delivered evaluation reports `delivered` even when the stored quote step is still `uploaded`. */
+export function progressForOrder(
+  order: {
+    status: string;
+    orderType?: string | null;
+    serviceType?: string | null;
+    service?: string | null;
+    progress: unknown;
+  },
+  deliveryStatus: string | null = null,
+): PublicOrderProgress {
+  const stored = publicOrderProgress(asOrderProgress(order.progress) ?? UPLOADED_PROGRESS);
+  const evaluation =
+    order.orderType === "evaluation" || order.serviceType === "evaluation" || order.service != null;
+  if (evaluation && (order.status === "delivered" || deliveryStatus === "delivered")) {
+    return { ...stored, step: "delivered" };
+  }
+  return stored;
 }
 
 function integerCount(value: unknown): number | null {

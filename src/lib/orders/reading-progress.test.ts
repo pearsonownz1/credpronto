@@ -3,6 +3,7 @@ import {
   asOrderProgress,
   fallbackReadingPercent,
   liveReadingPercent,
+  progressForOrder,
   readingPresentation,
   readOrderProgress,
   uploadFallbackPercent,
@@ -166,6 +167,40 @@ describe("reading presentation", () => {
     });
     expect(view.displayPercent).toBe(0);
     expect(view.label).toBe("Uploaded");
+  });
+});
+
+describe("delivered evaluation progress", () => {
+  it("reports delivered instead of the stored uploaded step", () => {
+    expect(
+      progressForOrder({
+        status: "delivered",
+        orderType: "evaluation",
+        serviceType: "evaluation",
+        service: "diploma",
+        progress: { step: "uploaded", pagesRead: 0, pagesTotal: 1 },
+      }),
+    ).toEqual({ step: "delivered", pagesRead: 0, pagesTotal: 1 });
+    expect(
+      progressForOrder(
+        {
+          status: "paid",
+          orderType: "evaluation",
+          service: "course_by_course",
+          progress: { step: "uploaded", pagesRead: 0, pagesTotal: 0 },
+        },
+        "delivered",
+      ).step,
+    ).toBe("delivered");
+    expect(
+      progressForOrder({
+        status: "delivered",
+        orderType: "translation",
+        serviceType: "translation",
+        service: null,
+        progress: { step: "done", pagesRead: 1, pagesTotal: 1 },
+      }).step,
+    ).toBe("done");
   });
 });
 

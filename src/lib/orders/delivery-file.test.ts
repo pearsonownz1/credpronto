@@ -16,9 +16,7 @@ describe("evaluation download", () => {
       path: report,
       filename: "birth-certificate-evaluation.pdf",
     });
-    expect(deliveryFileTarget({ ...shared, file: "translation" })?.filename).toBe(
-      "birth-certificate-evaluation.pdf",
-    );
+    expect(deliveryFileTarget({ ...shared, file: "translation" })).toBeNull();
     expect(deliveryFileTarget({ ...shared, file: "certification" })).toBeNull();
     expect(deliveryFileTarget({ ...shared, file: "evaluation" })?.filename).not.toContain("EN-certified");
   });

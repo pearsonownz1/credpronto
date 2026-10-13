@@ -24,7 +24,7 @@ import {
   type Db,
 } from "./db";
 import { postEvaluationPaidAlert } from "./eval-alert-webhook";
-import { adminStudioLink, sendDeliveryReady, sendStaffOrderAlert } from "./email";
+import { adminStudioLink, orderPageLink, sendDeliveryReady, sendStaffOrderAlert } from "./email";
 import { EMPTY_TRANSLATION_MESSAGE, emptyTranslationMessage, paragraphsForPage } from "./translation-edit";
 import { notifyLifecycle, notifyOrder } from "./webhook-delivery";
 import {
@@ -181,7 +181,11 @@ async function autoReleasePaidOrder(db: Db, order: OrderRecord): Promise<Release
 
   const email = await customerEmail(db, order.customerId);
   const sent = email
-    ? await sendDeliveryReady(email, order.service ? "evaluation" : "translation")
+    ? await sendDeliveryReady(
+        email,
+        order.service ? "evaluation" : "translation",
+        order.service ? orderPageLink(order.id) : null,
+      )
     : { sent: false, skipped: true };
   if (!sent.sent && !sent.skipped) return "released";
 

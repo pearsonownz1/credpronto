@@ -125,7 +125,7 @@ describe("settlePaidOrder", () => {
     expect(result.fulfillment).toBe("released");
     expect(certification.stampApprovedCover).toHaveBeenCalledWith(expect.anything(), expect.anything(), null);
     expect(db.claimOrderStatus).toHaveBeenCalledWith(dbHandle, orderId, "paid", "approved");
-    expect(email.sendDeliveryReady).toHaveBeenCalledWith("ada@example.com", "translation");
+    expect(email.sendDeliveryReady).toHaveBeenCalledWith("ada@example.com", "translation", null);
     expect(db.updateOrder).toHaveBeenCalledWith(dbHandle, orderId, { status: "delivered" });
     expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
     expect(schedule).not.toHaveBeenCalled();
