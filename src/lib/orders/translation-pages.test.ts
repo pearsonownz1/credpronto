@@ -14,8 +14,10 @@ import {
   isSkippedTranslationPage,
   jobsToDispatch,
   pageAttemptResult,
+  pageTranslationPhrases,
   pagesToTranslate,
   simulateBillableTranslation,
+  translationPagePlan,
   type SimPage,
 } from "./translation-pages";
 
@@ -220,5 +222,54 @@ describe("translation dispatch", () => {
     process.env.VERCEL_URL = "credpronto-prod.vercel.app";
     process.env.APP_URL = "https://credpronto.com";
     expect(internalOrigin()).toBe("https://credpronto.com");
+  });
+});
+
+describe("translation page plan", () => {
+  const pages = [
+    { id: "keep" },
+    { id: "change" },
+    { id: "failed" },
+    { id: "new" },
+    { id: "skip", skip: true, skipReason: "english" },
+  ];
+
+  it("reuses a matching page, restarts a language or failure, and starts a missing page", () => {
+    const plan = translationPagePlan({
+      pages,
+      sourceLanguage: "es",
+      targetLanguage: "en",
+      jobs: [
+        { pageId: "keep", status: "ready", sourceLanguage: "es", targetLanguage: "en" },
+        { pageId: "change", status: "running", sourceLanguage: "es", targetLanguage: "fr" },
+        { pageId: "failed", status: "failed", sourceLanguage: "es", targetLanguage: "en" },
+        { pageId: "skip", status: "pending", sourceLanguage: "es", targetLanguage: "en" },
+      ],
+    });
+    expect(plan).toEqual({ reuse: ["keep"], rerun: ["change", "failed"], start: ["new"] });
+  });
+
+  it("restarts when the confirmed source language differs and reuses a job with no snapshot", () => {
+    const plan = translationPagePlan({
+      pages: [{ id: "source" }, { id: "legacy" }],
+      sourceLanguage: "fr",
+      targetLanguage: "en",
+      jobs: [
+        { pageId: "source", status: "ready", sourceLanguage: "es", targetLanguage: "en" },
+        { pageId: "legacy", status: "running", sourceLanguage: null, targetLanguage: null },
+      ],
+    });
+    expect(plan).toEqual({ reuse: ["legacy"], rerun: ["source"], start: [] });
+  });
+
+  it("keeps the English prompt and names another target", () => {
+    expect(pageTranslationPhrases("en")).toEqual({
+      lead: "Translate this document into English, one original page to one translated page.",
+      labels: "Translate labels into English.",
+    });
+    expect(pageTranslationPhrases("es").lead).toBe(
+      "Translate this document into Spanish, one original page to one translated page.",
+    );
+    expect(pageTranslationPhrases("es").labels).toBe("Translate labels into Spanish.");
   });
 });
