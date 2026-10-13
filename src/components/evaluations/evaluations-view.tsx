@@ -9,7 +9,7 @@ import {
   EVALUATION_STEPS,
   TRANSLATION_ADDON,
 } from "@/lib/evaluations/catalog";
-import { EvaluationSections } from "@/components/content/approved-sections";
+import { EvaluationLanding } from "@/components/content/evaluation-landing";
 import { MarketingHeader } from "@/components/flow/marketing-header";
 import { buttonClasses } from "@/components/flow/ui";
 import { CourseSample } from "./course-sample";
@@ -136,7 +136,7 @@ export function EvaluationsView() {
             </SampleFrame>
           </div>
         </section>
-        <EvaluationSections />
+        <EvaluationLanding />
       </main>
     </div>
   );
