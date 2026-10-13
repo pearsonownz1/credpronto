@@ -1,3 +1,4 @@
+import type { EvaluationQueueOrder } from "@/lib/orders/evaluation-review";
 import { fulfillmentState } from "@/lib/orders/release-decision";
 import { sourceTextForDisplay } from "@/lib/orders/source-text";
 import type {
@@ -108,6 +109,43 @@ export function parseAdminList(body: unknown): AdminList | null {
       offset: amount(pageRow.offset) ?? 0,
       total: amount(pageRow.total) ?? list.length,
     },
+  };
+}
+
+export function parseEvaluationQueue(body: unknown): {
+  orders: EvaluationQueueOrder[];
+  page: { limit: number; offset: number; total: number };
+} | null {
+  if (!body || typeof body !== "object" || !Array.isArray((body as { orders?: unknown }).orders)) return null;
+  const orders = (body as { orders: unknown[] }).orders.map(parseEvaluationQueueOrder);
+  if (orders.some((order) => order == null)) return null;
+  const page = (body as { page?: unknown }).page;
+  const pageRow = page && typeof page === "object" ? (page as Record<string, unknown>) : {};
+  const list = orders as EvaluationQueueOrder[];
+  return {
+    orders: list,
+    page: {
+      limit: amount(pageRow.limit) ?? list.length,
+      offset: amount(pageRow.offset) ?? 0,
+      total: amount(pageRow.total) ?? list.length,
+    },
+  };
+}
+
+function parseEvaluationQueueOrder(value: unknown): EvaluationQueueOrder | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  const id = text(row.id);
+  const type = row.type === "diploma" || row.type === "course_by_course" ? row.type : null;
+  const paidAt = text(row.paidAt);
+  const waitMinutes = amount(row.waitMinutes);
+  if (!id || !type || !paidAt || waitMinutes == null || !Number.isInteger(waitMinutes) || waitMinutes < 0) return null;
+  return {
+    id,
+    type,
+    customerEmail: text(row.customerEmail),
+    paidAt,
+    waitMinutes,
   };
 }
 
