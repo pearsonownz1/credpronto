@@ -37,6 +37,7 @@ import { findActiveApiKey, orderByExternalRef, touchApiKeyLastUsed, type ApiKeyR
 import { isSupportedSourceLanguage } from "./languages";
 import { asOrderProgress, publicOrderProgress, UPLOADED_PROGRESS, type OrderProgress } from "./reading-progress";
 import { chargeOffSession, type OffSessionCharge } from "./off-session";
+import { paidWebhookEvent } from "./outbound-webhook";
 import { notifyLifecycle, notifyOrder } from "./webhook-delivery";
 import { originalTargets } from "./originals";
 import type { QaRunRecord } from "./qa";
@@ -456,7 +457,7 @@ async function finishPartnerOrder(
       status: "needs_review",
       review_reason: EVALUATION_REVIEW_REASON,
     });
-    await notifyLifecycle(db, order.id, "order.paid");
+    await notifyLifecycle(db, order.id, paidWebhookEvent(order));
     const { settlePaidOrder } = await import("./paid-release");
     await settlePaidOrder(db, order.id);
     const reviewed = await ownedOrder(db, order.userId ?? "", order.id);
@@ -467,7 +468,7 @@ async function finishPartnerOrder(
     throw new HttpError("This order cannot be priced", 409, "quote_unavailable");
   }
   await updateOrder(db, order.id, { status: "paid" });
-  await notifyLifecycle(db, order.id, "order.paid");
+  await notifyLifecycle(db, order.id, paidWebhookEvent(order));
   await ensurePendingDelivery(db, order.id);
   const { settlePaidOrder } = await import("./paid-release");
   await settlePaidOrder(db, order.id);

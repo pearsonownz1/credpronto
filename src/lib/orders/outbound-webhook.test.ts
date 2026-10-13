@@ -5,6 +5,7 @@ import {
   assertWebhookUrl,
   credProntoSignature,
   nextRetrySeconds,
+  paidWebhookEvent,
   webhookBody,
   webhookReadBody,
 } from "./outbound-webhook";
@@ -64,6 +65,26 @@ describe("outbound webhooks", () => {
       url: null,
       secretLast4: null,
       lastDelivery: null,
+    });
+  });
+
+  it("posts evaluation.paid for an evaluation and order.paid for a translation", () => {
+    expect(paidWebhookEvent({ serviceType: "evaluation", orderType: "evaluation" })).toBe("evaluation.paid");
+    expect(paidWebhookEvent({ serviceType: "evaluation" })).toBe("evaluation.paid");
+    expect(paidWebhookEvent({ orderType: "evaluation" })).toBe("evaluation.paid");
+    expect(paidWebhookEvent({ serviceType: "translation", orderType: "translation" })).toBe("order.paid");
+    expect(paidWebhookEvent(null)).toBe("order.paid");
+    const body = webhookBody({
+      id: "evt_eval",
+      type: "evaluation.paid",
+      createdAt: "2026-10-13T00:00:00.000Z",
+      orderId: "order-1",
+      status: "needs_review",
+      externalRef: "crm-1842",
+    });
+    expect(JSON.parse(body)).toMatchObject({
+      type: "evaluation.paid",
+      data: { orderId: "order-1", status: "needs_review", externalRef: "crm-1842" },
     });
   });
 

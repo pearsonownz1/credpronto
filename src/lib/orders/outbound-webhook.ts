@@ -7,12 +7,18 @@ export const WEBHOOK_EVENTS = [
   "order.failed",
   "order.preview_ready",
   "order.paid",
+  "evaluation.paid",
   "order.completed",
   "webhook.test",
 ] as const;
 
 /** One attempt, short timeout. The retrying events stay on the existing schedule. */
-export const LIFECYCLE_WEBHOOK_EVENTS = ["order.preview_ready", "order.paid", "order.completed"] as const;
+export const LIFECYCLE_WEBHOOK_EVENTS = [
+  "order.preview_ready",
+  "order.paid",
+  "evaluation.paid",
+  "order.completed",
+] as const;
 export type LifecycleWebhookEvent = (typeof LIFECYCLE_WEBHOOK_EVENTS)[number];
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
@@ -67,6 +73,15 @@ export function nextRetrySeconds(attempt: number): number | null {
 
 export function isWebhookEvent(value: string): value is WebhookEvent {
   return (WEBHOOK_EVENTS as readonly string[]).includes(value);
+}
+
+/** Translation payments post `order.paid`. Evaluation payments post `evaluation.paid`. */
+export function paidWebhookEvent(order: {
+  serviceType?: string | null;
+  orderType?: string | null;
+} | null | undefined): "order.paid" | "evaluation.paid" {
+  if (order?.serviceType === "evaluation" || order?.orderType === "evaluation") return "evaluation.paid";
+  return "order.paid";
 }
 
 export type WebhookLastDelivery = {

@@ -44,6 +44,7 @@ import {
   withCombinedNumbers,
 } from "./db";
 import { HttpError } from "./errors";
+import { paidWebhookEvent } from "./outbound-webhook";
 import { assertUploadBudget, resolveUploadMime, safeFilename } from "./files";
 import { replacementAllowed } from "./image-quality";
 import {
@@ -455,7 +456,7 @@ export async function startCheckout(token: string, body: unknown = {}) {
     await updateOrder(db, order.id, { status: "paid" });
     await insertEvent(db, order.id, "paid", { mode: "paid_test" });
     const { notifyLifecycle } = await import("./webhook-delivery");
-    await notifyLifecycle(db, order.id, "order.paid");
+    await notifyLifecycle(db, order.id, paidWebhookEvent(order));
     await emailPaymentReceipt(db, {
       order,
       token,
@@ -594,7 +595,7 @@ export async function handleStripeWebhook(request: Request) {
   if (!(await hasEvent(db, payment.orderId, "paid"))) {
     await insertEvent(db, payment.orderId, "paid", { mode: "stripe" });
     const { notifyLifecycle } = await import("./webhook-delivery");
-    await notifyLifecycle(db, payment.orderId, "order.paid");
+    await notifyLifecycle(db, payment.orderId, paidWebhookEvent(paidOrder ?? chargedOrder));
   }
   const receiptOrder = paidOrder ?? chargedOrder;
   if (receiptOrder) {

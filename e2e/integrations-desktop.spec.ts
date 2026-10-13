@@ -20,6 +20,7 @@ test("integrations shows keys, webhook, card, orders, and quick start", async ({
   await expect(page.getByTestId("event-order.quoted")).toHaveAttribute("data-available", "true");
   await expect(page.getByTestId("event-order.preview_ready")).toHaveAttribute("data-available", "true");
   await expect(page.getByTestId("event-order.paid")).toHaveAttribute("data-available", "true");
+  await expect(page.getByTestId("event-evaluation.paid")).toHaveAttribute("data-available", "true");
   await expect(page.getByTestId("event-order.completed")).toHaveAttribute("data-available", "true");
   await expect(page.getByTestId("event-order.delivered")).toHaveCount(0);
   await expect(page.getByTestId("webhook-events-soon")).toHaveCount(0);
