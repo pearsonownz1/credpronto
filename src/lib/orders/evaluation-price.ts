@@ -226,7 +226,10 @@ export function checkoutPriceLines(input: {
     quantity: item.quantity,
     unitAmountCents: item.unitAmountCents,
     name: item.description,
-    description: input.description,
+    description:
+      item.kind === "evaluation" && input.service
+        ? evaluationServiceDescription(input.service)
+        : input.description,
     imageUrl: index === 0 ? input.imageUrl : null,
   }));
 }
