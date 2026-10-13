@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
+import { EvaluationDelivery } from "@/components/admin/evaluation-delivery";
 import { OrderStudio } from "@/components/admin/order-studio";
 import { getAdminNotes, getAdminOrder } from "@/lib/api/server";
 
@@ -23,6 +24,9 @@ async function OrderDetail({ params }: { params: Promise<{ id: string }> }) {
         {detail.error}
       </p>
     );
+  }
+  if (detail.data.service) {
+    return <EvaluationDelivery key={detail.data.id} detail={detail.data} />;
   }
   return (
     <OrderStudio

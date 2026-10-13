@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { CJK_PAGE_RULE } from "../src/lib/orders/billing";
 import { QUOTE_BILLING_NOTE } from "../src/lib/flow/present";
+import { MOCK_TOKEN } from "../src/lib/flow/session";
 import { signIn } from "./account";
 import { walkCustomerFlow } from "./flow-walkthrough";
 
@@ -9,7 +10,7 @@ test("customer walks from landing through download", async ({ page }) => {
 });
 
 test("a quote file shows a large page viewer and opens it full size", async ({ page }) => {
-  await page.goto("/order/mock-token");
+  await page.goto(`/order/${MOCK_TOKEN}`);
   await expect(page.getByRole("heading", { name: /exact price/ }).filter({ visible: true })).toBeVisible();
   const list = page.getByTestId("file-list").filter({ visible: true });
   await expect(page.getByTestId("file-turnaround")).toHaveCount(0);
@@ -63,7 +64,7 @@ test("a missing source file hides the page viewer", async ({ page }) => {
   await page.addInitScript(() => {
     sessionStorage.setItem("credpronto-mock-source-missing", "1");
   });
-  await page.goto("/order/mock-token");
+  await page.goto(`/order/${MOCK_TOKEN}`);
   await expect(page.getByRole("heading", { name: /exact price/ }).filter({ visible: true })).toBeVisible();
   await expect(page.getByTestId("page-viewer")).toHaveCount(0);
   await expect(page.getByTestId("file-thumb-fallback")).toHaveCount(0);
@@ -73,7 +74,7 @@ test("a missing source file hides the page viewer", async ({ page }) => {
 });
 
 test("a loaded quote replaces the loading announcement", async ({ page }) => {
-  await page.goto("/order/mock-token");
+  await page.goto(`/order/${MOCK_TOKEN}`);
   await expect(page.getByRole("heading", { name: /exact price/ }).filter({ visible: true })).toBeVisible();
   await expect(page.getByTestId("order-announcement")).toHaveText("Quote ready: 2 pages, $19.90");
   const routeAnnouncement = await page.evaluate(() => {
@@ -106,7 +107,7 @@ test("upload shows the reading progress immediately, with no loading screen", as
   expect(await page.getByText("The price will show here in a moment.").count()).toBe(0);
   await expect(page.getByRole("button", { name: "Uploading…" })).toHaveCount(0);
 
-  await expect(page).toHaveURL(/\/order\/mock-token$/);
+  await expect(page).toHaveURL(new RegExp(`/order/${MOCK_TOKEN}$`));
   await expect(
     page.getByRole("heading", { name: /exact price/ }).filter({ visible: true }),
   ).toBeVisible();

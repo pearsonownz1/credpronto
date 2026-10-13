@@ -342,12 +342,13 @@ export function UploadCard({
         ) : null}
         {signedInEmail ? (
           <p data-testid="preview-email" className="mt-4 text-[13px] text-ink-muted">
-            Preview link goes to {signedInEmail}
+            {checks.diploma || checks.courseByCourse ? "Order updates go to" : "Preview link goes to"}{" "}
+            {signedInEmail}
           </p>
         ) : (
           <label className="mt-4 block">
             <span className="mb-1.5 block text-[13px] font-semibold">
-              Email for your preview link
+              {checks.diploma || checks.courseByCourse ? "Email for your order" : "Email for your preview link"}
             </span>
             <input
               ref={emailRef}

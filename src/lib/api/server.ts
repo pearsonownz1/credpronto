@@ -1,8 +1,10 @@
 import { cookies } from "next/headers";
 import { connection } from "next/server";
-import { parseAdminList, parseCustomerOrders, parseNotes, parseStaffDetail } from "@/lib/api/parse";
+import { parseAdminList, parseCustomerOrders, parseEvaluationQueue, parseNotes, parseStaffDetail } from "@/lib/api/parse";
 import { errorMessage, type AdminList, type ApiResult, type CustomerOrder, type StaffDetail, type StaffNote } from "@/lib/api/types";
-import { mockAdminList, mockNotes, mockOrdersFor, mockStaffDetail } from "@/lib/account/mock-data";
+import { mockAdminList, mockEvaluationSources, mockNotes, mockOrdersFor, mockStaffDetail } from "@/lib/account/mock-data";
+import { evaluationQueueRows } from "@/lib/orders/evaluation-queue";
+import type { EvaluationQueueOrder } from "@/lib/orders/evaluation-review";
 import { currentOrigin, getAccount, isMockMode } from "@/lib/account/session";
 
 export function adminOrdersPath(query: {
@@ -71,6 +73,28 @@ export async function listAdminOrders(query: {
   const result = await serverResult(adminOrdersPath(query));
   if (!result.ok) return result;
   const list = parseAdminList(result.data);
+  if (!list) return { ok: false, status: 502, error: "The admin orders response was not in the expected shape." };
+  return { ok: true, status: result.status, data: list };
+}
+
+export async function listEvaluationQueue(): Promise<
+  ApiResult<{ orders: EvaluationQueueOrder[]; page: { limit: number; offset: number; total: number } }>
+> {
+  if (isMockMode()) {
+    const account = await getAccount();
+    if (!account) return { ok: false, status: 401, error: "Sign in required" };
+    if (!account.isAdmin) return { ok: false, status: 403, error: "Staff access required" };
+    const now = Date.now();
+    const orders = evaluationQueueRows(mockEvaluationSources(now), now);
+    return {
+      ok: true,
+      status: 200,
+      data: { orders, page: { limit: 100, offset: 0, total: orders.length } },
+    };
+  }
+  const result = await serverResult("/api/admin/orders?queue=evaluation&limit=100");
+  if (!result.ok) return result;
+  const list = parseEvaluationQueue(result.data);
   if (!list) return { ok: false, status: 502, error: "The admin orders response was not in the expected shape." };
   return { ok: true, status: result.status, data: list };
 }

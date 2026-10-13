@@ -1,6 +1,6 @@
 import type { FlowStep } from "@/lib/flow/types";
 
-const STEPS: { id: FlowStep; label: string }[] = [
+const TRANSLATION_STEPS: { id: FlowStep; label: string }[] = [
   { id: "upload", label: "Upload" },
   { id: "quote", label: "Quote" },
   { id: "confirm", label: "Confirm" },
@@ -8,14 +8,25 @@ const STEPS: { id: FlowStep; label: string }[] = [
   { id: "download", label: "Download" },
 ];
 
+const EVALUATION_STEPS: { id: FlowStep; label: string }[] = [
+  { id: "upload", label: "Upload" },
+  { id: "quote", label: "Quote" },
+  { id: "confirm", label: "Pay" },
+  { id: "review", label: "Review" },
+  { id: "download", label: "Download" },
+];
+
 export function Stepper({
   current,
   compact = false,
+  track = "translation",
 }: {
   current: FlowStep;
   compact?: boolean;
+  track?: "translation" | "evaluation";
 }) {
-  const currentIndex = STEPS.findIndex((step) => step.id === current);
+  const steps = track === "evaluation" ? EVALUATION_STEPS : TRANSLATION_STEPS;
+  const currentIndex = steps.findIndex((step) => step.id === current);
 
   return (
     <div
@@ -27,7 +38,7 @@ export function Stepper({
           : "flex w-max gap-4 text-[13px] md:mx-auto md:gap-7"
       }
     >
-      {STEPS.map((step, index) => {
+      {steps.map((step, index) => {
         const state =
           index < currentIndex ? "done" : index === currentIndex ? "current" : "upcoming";
         return (

@@ -6,11 +6,13 @@ import { flowUsesMock, getFlowClient } from "@/lib/flow/client";
 import {
   CONFIRMING_PAYMENT_COPY,
   CONFIRMING_PAYMENT_DETAIL,
+  EVALUATION_REVIEW_COPY,
   QUICK_CHECK_COPY,
   QUICK_CHECK_DETAIL,
   downloadEmailedLine,
   downloadPhase,
   downloadReadyCopy,
+  isCustomerEvaluation,
   paidReviewEmailLine,
   totalLabel,
   type DownloadFileKind,
@@ -42,6 +44,16 @@ export function DownloadStates({
   const email = order?.email?.trim() || storedEmail;
   const confirming = pendingPayment ? phase !== "certifying" && phase !== "ready" : phase === "finalizing" && order != null;
   const onDownloadStep = confirming || phase === "certifying" || phase === "ready";
+  const evaluation = order != null && isCustomerEvaluation(order);
+  const headerStep = evaluation
+    ? phase === "ready"
+      ? "download"
+      : phase === "certifying"
+        ? "review"
+        : "confirm"
+    : onDownloadStep
+      ? "download"
+      : "preview";
 
   useEffect(() => {
     if (order) onOrder?.(order);
@@ -49,10 +61,10 @@ export function DownloadStates({
 
   return (
     <div>
-      <FlowHeader current={onDownloadStep ? "download" : "preview"} />
+      <FlowHeader current={headerStep} track={evaluation ? "evaluation" : "translation"} />
       <main
         className={
-          phase === "certifying"
+          phase === "certifying" && !evaluation
             ? "mx-auto w-full max-w-6xl px-4 pt-10 pb-16"
             : "mx-auto w-full max-w-[640px] px-4 pt-10 md:pt-16"
         }
@@ -71,12 +83,26 @@ export function DownloadStates({
           <FlowStatus title="We couldn't load this order" body={error} />
         ) : !order ? (
           <FlowStatus title="No order yet" body="Start a translation to get a download." />
+        ) : phase === "certifying" && evaluation ? (
+          <EvaluationReview order={order} />
         ) : phase === "certifying" ? (
           <Certifying order={order} token={token} email={email} />
         ) : (
           <Ready order={order} token={token} email={email} />
         )}
       </main>
+    </div>
+  );
+}
+
+function EvaluationReview({ order }: { order: CustomerOrder }) {
+  return (
+    <div data-testid="download-phase" data-phase="review" className="text-center">
+      <p className="preview-kicker blue">Order {order.orderId}</p>
+      <h1 className="mt-3 text-[28px] font-bold leading-tight tracking-[-0.5px] md:text-[32px]">In review</h1>
+      <p data-testid="evaluation-review" className="mt-3 text-base text-ink-muted">
+        {EVALUATION_REVIEW_COPY}
+      </p>
     </div>
   );
 }

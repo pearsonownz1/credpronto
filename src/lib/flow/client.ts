@@ -363,12 +363,13 @@ const mockClient: FlowClient = {
       if (!documentId || !fieldKey) continue;
       confirmations.push({ documentId, fieldKey, originalValue: null, confirmedValue: value });
     }
+    const evaluationOrder = current.orderType === "evaluation" || current.service != null;
     const next: CustomerOrder = {
       ...current,
-      status: "processing",
+      status: evaluationOrder ? "confirmed" : "processing",
       sourceLanguage: body.sourceLanguage,
       languageConfirmed: true,
-      progress: { ...current.progress, step: "translating" },
+      progress: { ...current.progress, step: evaluationOrder ? "done" : "translating" },
       confirmations,
     };
     writeMockOrder(next);
@@ -428,6 +429,7 @@ const mockClient: FlowClient = {
       (id): id is CustomerOrder["addons"][number] =>
         id === "notarization" || id === "mail" || (id === "expedited" && offersExpedited(current)),
     );
+    const evaluationOrder = current.orderType === "evaluation" || current.service != null;
     writeMockOrder({
       ...current,
       addons,
@@ -436,11 +438,11 @@ const mockClient: FlowClient = {
         : addons.includes("mail")
           ? current.shippingAddress
           : null,
-      status: "approved",
+      status: evaluationOrder ? "paid" : "approved",
       payment: { status: "paid_test" },
-      delivery: { status: "approved" },
+      delivery: evaluationOrder ? { status: "pending" } : { status: "approved" },
       paidAt: new Date().toISOString(),
-      fulfillment: "released",
+      fulfillment: evaluationOrder ? "awaiting_review" : "released",
     });
     writeToken(token || MOCK_TOKEN);
     return {

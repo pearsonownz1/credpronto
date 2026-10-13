@@ -6,6 +6,7 @@ import { FlowApiError, getFlowClient } from "@/lib/flow/client";
 import { formatMoney, pageLabel } from "@/lib/flow/pricing";
 import {
   checkoutFailureMessage,
+  isCustomerEvaluation,
   languageLine,
   servicePriceLines,
   totalLabel,
@@ -22,10 +23,11 @@ export function CheckoutView({ token: pathToken }: { token?: string }) {
   const token = useStoredToken(pathToken);
   const email = useStoredEmail();
   const { order, error, loading } = useCustomerOrder(token, "once");
+  const evaluation = order != null && isCustomerEvaluation(order);
 
   return (
     <div>
-      <FlowHeader current="preview" />
+      <FlowHeader current={evaluation ? "confirm" : "preview"} track={evaluation ? "evaluation" : "translation"} />
       <main>
         {loading && !order ? (
           <FlowStatus title="Loading checkout…" body="" />
@@ -69,7 +71,9 @@ function CheckoutForm({
     postalCode: order.shippingAddress?.postalCode ?? "",
   });
 
-  const notReady = order.status !== "preview_ready";
+  const notReady = evaluationOrder
+    ? order.status !== "confirmed" && order.status !== "preview_ready"
+    : order.status !== "preview_ready";
   const evaluation = evaluationOrder;
   const options = withoutExpedited(order.addonOptions, true);
   const service = serviceCents(order);
@@ -142,7 +146,7 @@ function CheckoutForm({
         </h1>
         <p className="mt-2 mb-6 text-[15px] text-ink-muted">
           {evaluation
-            ? "You’ve reviewed the report. Pay once. Staff sign off before it is released."
+            ? "Pay once. An evaluator reviews your documents after payment, usually within minutes."
             : "You’ve reviewed it. Pay once and download right away."}
         </p>
         <label className="block">
@@ -246,7 +250,7 @@ function CheckoutForm({
         {notReady ? (
           <p data-testid="checkout-waiting" className="mt-4 text-sm text-ink-muted">
             {evaluation
-              ? "Your preview isn't ready yet. You can pay as soon as the report is ready to review."
+              ? "Confirm the credential details before you pay."
               : "Your preview isn't ready yet. You can pay as soon as the translation is ready to review."}
           </p>
         ) : null}
@@ -279,7 +283,9 @@ function CheckoutForm({
             <div className="text-[13px] text-ink-muted">
               {languageLine(order)} · {pageLabel(order.billablePages ?? 0)}
             </div>
-            <div className="mt-1 text-[12.5px] text-[var(--cp-ok)]">✓ Reviewed</div>
+            <div className="mt-1 text-[12.5px] text-[var(--cp-ok)]">
+              {evaluation ? "✓ Ready to pay" : "✓ Reviewed"}
+            </div>
           </div>
         </div>
         <div className="mt-3.5">

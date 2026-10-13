@@ -1,4 +1,4 @@
-export type FlowStep = "upload" | "quote" | "confirm" | "preview" | "download";
+export type FlowStep = "upload" | "quote" | "confirm" | "preview" | "review" | "download";
 
 export type FlowFileKind = "pdf" | "image";
 

@@ -3,7 +3,7 @@
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 import { trackPreviewReady } from "@/lib/analytics/gtag-events";
-import { downloadPhase, orderHubStep } from "@/lib/flow/present";
+import { downloadPhase, isCustomerEvaluation, orderHubStep } from "@/lib/flow/present";
 import { writeToken } from "@/lib/flow/session";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { GoogleAdsConversion } from "@/components/google-ads-conversion";
@@ -61,13 +61,22 @@ export function OrderHub() {
   useEffect(() => {
     if (!token) return;
     if (view === "cancel") {
+      if (!current) return;
+      if (isCustomerEvaluation(current)) {
+        router.replace(`/checkout?token=${encodeURIComponent(token)}`);
+        return;
+      }
       router.replace(`/preview/${encodeURIComponent(token)}?canceled=1`);
+      return;
+    }
+    if (view === "checkout") {
+      router.replace(`/checkout?token=${encodeURIComponent(token)}`);
       return;
     }
     if (view === "preview" && order) {
       router.replace(`/preview/${encodeURIComponent(token)}`);
     }
-  }, [view, token, router, order]);
+  }, [view, token, router, order, current]);
 
   let body: ReactNode;
   if (view === "cancel") {
@@ -93,6 +102,8 @@ export function OrderHub() {
     );
   } else if (view === "preview") {
     body = <FlowStatus title="Opening your preview…" body="" />;
+  } else if (view === "checkout") {
+    body = <FlowStatus title="Opening payment…" body="" />;
   } else if (view === "quote") {
     body = <QuoteView token={token} onOrder={setLatest} />;
   } else {

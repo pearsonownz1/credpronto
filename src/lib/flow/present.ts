@@ -527,6 +527,10 @@ export const CONFIRMING_PAYMENT_COPY = "Confirming payment";
 export const CONFIRMING_PAYMENT_DETAIL =
   "Stripe sent you back before the payment showed on this order. This page keeps checking.";
 
+/** Paid evaluation, before a person uploads the finished PDF. */
+export const EVALUATION_REVIEW_COPY =
+  "An evaluator is reviewing your documents, usually within minutes, and we'll email you when it's ready.";
+
 /** Heading while a paid order is still awaiting release. */
 export const QUICK_CHECK_COPY = "Quick final check";
 
@@ -587,7 +591,15 @@ export function downloadPhase(order: {
   return "certifying";
 }
 
-export type OrderHubStep = "download" | "preview" | "quote" | "processing" | "cancel";
+export type OrderHubStep = "download" | "preview" | "quote" | "processing" | "cancel" | "checkout";
+
+export function isCustomerEvaluation(order: {
+  orderType?: string | null;
+  service?: string | null;
+  serviceType?: string | null;
+}): boolean {
+  return order.orderType === "evaluation" || order.serviceType === "evaluation" || order.service != null;
+}
 
 /** Which screen `/order/[token]` shows for a checkout return or order status. */
 export function orderHubStep(
@@ -597,10 +609,16 @@ export function orderHubStep(
     delayed?: boolean;
     reviewReason?: string | null;
     fulfillment?: "released" | "awaiting_review" | null;
+    orderType?: string | null;
+    service?: string | null;
+    serviceType?: string | null;
   } | null,
 ): OrderHubStep {
   if (checkout === "success") return "download";
-  if (checkout === "cancel") return "cancel";
+  if (checkout === "cancel") {
+    if (order && isCustomerEvaluation(order)) return "checkout";
+    return "cancel";
+  }
   if (order?.fulfillment === "released" || order?.fulfillment === "awaiting_review") {
     return "download";
   }
@@ -610,6 +628,13 @@ export function orderHubStep(
     status === "delivered"
   ) {
     return "download";
+  }
+  if (
+    (status === "confirmed" || status === "preview_ready") &&
+    order &&
+    isCustomerEvaluation(order)
+  ) {
+    return "checkout";
   }
   if (status === "preview_ready") return "processing";
   if (

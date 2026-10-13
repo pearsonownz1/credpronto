@@ -94,12 +94,16 @@ export function orderStepHref(order: {
   status: string;
   id?: string | null;
   orderToken?: string | null;
+  serviceType?: string | null;
 }): string | null {
   const token = order.orderToken?.trim() || null;
   const orderId = order.id?.trim() || null;
   const key = token || (orderId && isOrderId(orderId) ? orderId : null);
   if (!key) return null;
   const id = encodeURIComponent(key);
+  if (order.serviceType === "evaluation" && (order.status === "preview_ready" || order.status === "confirmed")) {
+    return `/checkout?token=${id}`;
+  }
   if (order.status === "preview_ready") return `/preview/${id}`;
   if (order.status === "quoted") return `/confirm?token=${id}`;
   return `/order/${id}`;
@@ -125,6 +129,15 @@ export function presentOrder(order: CustomerOrder, now = Date.now()): OrderPrese
     case "needs_review":
       return { ...base, tab: "translating", chip: { label: "Uploaded", tone: "neutral" }, action: NONE };
     case "confirmed":
+      if (order.serviceType === "evaluation") {
+        return {
+          ...base,
+          tab: "needs_check",
+          chip: { label: "Ready to pay", tone: "warn" },
+          action: { kind: "confirm", label: "Pay", emphasis: "primary", href: rowHref },
+        };
+      }
+      return { ...base, tab: "translating", chip: { label: "Translating", tone: "neutral" }, action: NONE };
     case "correction_requested":
     case "failed":
       return { ...base, tab: "translating", chip: { label: "Translating", tone: "neutral" }, action: NONE };
@@ -150,6 +163,14 @@ export function presentOrder(order: CustomerOrder, now = Date.now()): OrderPrese
         },
       };
     case "preview_ready":
+      if (order.serviceType === "evaluation") {
+        return {
+          ...base,
+          tab: "needs_check",
+          chip: { label: "Ready to pay", tone: "blue" },
+          action: { kind: "review", label: "Pay", emphasis: "primary", href: rowHref },
+        };
+      }
       return {
         ...base,
         tab: "preview_ready",
@@ -163,6 +184,14 @@ export function presentOrder(order: CustomerOrder, now = Date.now()): OrderPrese
       };
     case "paid":
     case "approved":
+      if (order.serviceType === "evaluation") {
+        return {
+          ...base,
+          tab: "staff_review",
+          chip: { label: "In review", tone: "violet" },
+          action: { kind: "waiting", label: "In review", emphasis: "muted", href: null },
+        };
+      }
       return {
         ...base,
         tab: "staff_review",

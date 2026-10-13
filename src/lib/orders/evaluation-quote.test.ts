@@ -78,7 +78,7 @@ describe("evaluation quote", () => {
     vi.restoreAllMocks();
   });
 
-  it("waits for confirm before preparing the report", () => {
+  it("does not prepare a preview for a diploma or course-by-course order", () => {
     expect(shouldPrepareEvaluationReport({ service: null, status: "confirmed", languageConfirmed: true })).toBe(
       false,
     );
@@ -86,16 +86,13 @@ describe("evaluation quote", () => {
       false,
     );
     expect(shouldPrepareEvaluationReport({ service: "diploma", status: "confirmed", languageConfirmed: true })).toBe(
-      true,
+      false,
     );
-    expect(shouldPrepareEvaluationReport({ service: "diploma", status: "processing", languageConfirmed: true })).toBe(
-      true,
-    );
+    expect(
+      shouldPrepareEvaluationReport({ service: "course_by_course", status: "processing", languageConfirmed: true }),
+    ).toBe(false);
     expect(
       shouldPrepareEvaluationReport({ service: "diploma", status: "failed", languageConfirmed: true }),
-    ).toBe(true);
-    expect(
-      shouldPrepareEvaluationReport({ service: "diploma", status: "failed", languageConfirmed: false }),
     ).toBe(false);
   });
 

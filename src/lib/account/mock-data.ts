@@ -180,6 +180,51 @@ export const MOCK_ADMIN_ORDERS: AdminOrder[] = [
     fulfillment: null,
   },
   {
+    id: "CP-24920",
+    status: "paid",
+    serviceType: "evaluation",
+    sourceLanguage: "es",
+    billablePages: 3,
+    totalCents: 1995,
+    currency: "usd",
+    createdAt: "2026-10-12T16:00:00.000Z",
+    reviewReason: null,
+    email: "ada@example.com",
+    expedited: false,
+    paidAt: null,
+    fulfillment: "awaiting_review",
+  },
+  {
+    id: "CP-24921",
+    status: "paid",
+    serviceType: "evaluation",
+    sourceLanguage: "fr",
+    billablePages: 8,
+    totalCents: 14900,
+    currency: "usd",
+    createdAt: "2026-10-12T18:00:00.000Z",
+    reviewReason: null,
+    email: "marie@example.com",
+    expedited: false,
+    paidAt: null,
+    fulfillment: "awaiting_review",
+  },
+  {
+    id: "CP-24922",
+    status: "delivered",
+    serviceType: "evaluation",
+    sourceLanguage: "es",
+    billablePages: 1,
+    totalCents: 1995,
+    currency: "usd",
+    createdAt: "2026-10-01T12:00:00.000Z",
+    reviewReason: null,
+    email: MOCK_CUSTOMER_EMAIL,
+    expedited: false,
+    paidAt: "2026-10-01T12:10:00.000Z",
+    fulfillment: "released",
+  },
+  {
     id: "CP-24611",
     status: "delivered",
     serviceType: "translation",
@@ -200,6 +245,8 @@ export const MOCK_ADMIN_ORDERS: AdminOrder[] = [
 const FRESH_PAID_WAIT_MS: Record<string, number> = {
   "CP-24902": 3 * 60_000,
   "CP-24901": 70_000,
+  "CP-24920": 3 * 60_000,
+  "CP-24921": 70_000,
 };
 
 function withFreshPaidAt(order: AdminOrder, now: number): AdminOrder {
@@ -208,12 +255,36 @@ function withFreshPaidAt(order: AdminOrder, now: number): AdminOrder {
   return { ...order, paidAt: new Date(now - wait).toISOString() };
 }
 
-export function mockAdminList(query: {
-  status?: string | null;
-  reviewReason?: string | null;
-  limit?: number;
-  offset?: number;
-}): AdminList {
+const MOCK_EVALUATION_SERVICE: Record<string, "diploma" | "course_by_course"> = {
+  "CP-24920": "diploma",
+  "CP-24921": "course_by_course",
+  "CP-24922": "diploma",
+};
+
+/** Paid mock rows shaped for the evaluation queue helper. Translations have no service. */
+export function mockEvaluationSources(now = Date.now()): Array<{
+  id: string;
+  service: "diploma" | "course_by_course" | null;
+  email: string | null;
+  paidAt: string | null;
+}> {
+  return mockAdminList({ status: "paid", limit: 100 }, now).orders.map((order) => ({
+    id: order.id,
+    service: MOCK_EVALUATION_SERVICE[order.id] ?? null,
+    email: order.email,
+    paidAt: order.paidAt,
+  }));
+}
+
+export function mockAdminList(
+  query: {
+    status?: string | null;
+    reviewReason?: string | null;
+    limit?: number;
+    offset?: number;
+  },
+  now = Date.now(),
+): AdminList {
   const status = query.status ?? null;
   const reviewReason = query.reviewReason ?? null;
   const filtered = MOCK_ADMIN_ORDERS.filter((order) => {
@@ -223,7 +294,6 @@ export function mockAdminList(query: {
   });
   const offset = query.offset ?? 0;
   const limit = query.limit ?? 50;
-  const now = Date.now();
   const ordered = expeditedFirst(filtered.map((order) => withFreshPaidAt(order, now)));
   return {
     orders: ordered.slice(offset, offset + limit),
@@ -234,6 +304,8 @@ export function mockAdminList(query: {
 export function mockStaffDetail(id: string): StaffDetail | null {
   const summary = MOCK_ADMIN_ORDERS.find((order) => order.id === id);
   if (!summary) return null;
+  const fresh = withFreshPaidAt(summary, Date.now());
+  const evaluation = summary.serviceType === "evaluation";
   return {
     id: summary.id,
     status: summary.status,
@@ -245,13 +317,27 @@ export function mockStaffDetail(id: string): StaffDetail | null {
     currency: summary.currency,
     createdAt: summary.createdAt,
     reviewReason: summary.reviewReason,
-    service: null,
+    service: evaluation ? (MOCK_EVALUATION_SERVICE[id] ?? "diploma") : null,
     equivalencyCredentials: [],
     edge: null,
-    filename: "birth-certificate.pdf",
+    filename: evaluation ? "diploma.pdf" : "birth-certificate.pdf",
     originalUrl: "/samples/birth-certificate-es.pdf",
-    translationUrl: "/samples/birth-certificate-en.pdf",
-    pages: [
+    translationUrl: evaluation ? null : "/samples/birth-certificate-en.pdf",
+    originals: evaluation
+      ? [
+          { filename: "diploma.pdf", url: "/samples/birth-certificate-es.pdf", pages: 1 },
+          { filename: "transcript.pdf", url: "/samples/birth-certificate-es.pdf", pages: summary.billablePages },
+        ]
+      : [
+          {
+            filename: "birth-certificate.pdf",
+            url: "/samples/birth-certificate-es.pdf",
+            pages: summary.billablePages,
+          },
+        ],
+    pages: evaluation
+      ? []
+      : [
       {
         id: `${id}-p1`,
         documentId: `${id}-doc`,
@@ -282,7 +368,7 @@ export function mockStaffDetail(id: string): StaffDetail | null {
         : [],
     payment:
       summary.status === "paid" || summary.status === "delivered"
-        ? { status: "paid", paidAt: summary.createdAt }
+        ? { status: "paid", paidAt: fresh.paidAt ?? summary.createdAt }
         : null,
     delivery:
       summary.status === "delivered"

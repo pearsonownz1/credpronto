@@ -1,3 +1,4 @@
+import type { EvaluationQueueOrder } from "@/lib/orders/evaluation-review";
 import { fulfillmentState } from "@/lib/orders/release-decision";
 import { sourceTextForDisplay } from "@/lib/orders/source-text";
 import type {
@@ -111,6 +112,43 @@ export function parseAdminList(body: unknown): AdminList | null {
   };
 }
 
+export function parseEvaluationQueue(body: unknown): {
+  orders: EvaluationQueueOrder[];
+  page: { limit: number; offset: number; total: number };
+} | null {
+  if (!body || typeof body !== "object" || !Array.isArray((body as { orders?: unknown }).orders)) return null;
+  const orders = (body as { orders: unknown[] }).orders.map(parseEvaluationQueueOrder);
+  if (orders.some((order) => order == null)) return null;
+  const page = (body as { page?: unknown }).page;
+  const pageRow = page && typeof page === "object" ? (page as Record<string, unknown>) : {};
+  const list = orders as EvaluationQueueOrder[];
+  return {
+    orders: list,
+    page: {
+      limit: amount(pageRow.limit) ?? list.length,
+      offset: amount(pageRow.offset) ?? 0,
+      total: amount(pageRow.total) ?? list.length,
+    },
+  };
+}
+
+function parseEvaluationQueueOrder(value: unknown): EvaluationQueueOrder | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  const id = text(row.id);
+  const type = row.type === "diploma" || row.type === "course_by_course" ? row.type : null;
+  const paidAt = text(row.paidAt);
+  const waitMinutes = amount(row.waitMinutes);
+  if (!id || !type || !paidAt || waitMinutes == null || !Number.isInteger(waitMinutes) || waitMinutes < 0) return null;
+  return {
+    id,
+    type,
+    customerEmail: text(row.customerEmail),
+    paidAt,
+    waitMinutes,
+  };
+}
+
 function parseQa(value: unknown): QaReport | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Record<string, unknown>;
@@ -178,6 +216,18 @@ function equivalencyCredentials(value: unknown): StaffDetail["equivalencyCredent
   });
 }
 
+function listedOriginals(value: unknown, fallback: StaffDetail["originals"]): StaffDetail["originals"] {
+  if (!Array.isArray(value)) return fallback;
+  const listed = value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const item = entry as Record<string, unknown>;
+    const filename = text(item.filename);
+    if (!filename) return [];
+    return [{ filename, url: text(item.url), pages: amount(item.pages) }];
+  });
+  return listed.length > 0 ? listed : fallback;
+}
+
 export function parseStaffDetail(body: unknown): StaffDetail | null {
   if (!body || typeof body !== "object") return null;
   const row = body as Record<string, unknown>;
@@ -188,12 +238,21 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
 
   const documents = Array.isArray(row.documents) ? row.documents : [];
   const pages: StaffPage[] = [];
+  const originals: StaffDetail["originals"] = [];
   let filename = "Document";
   documents.forEach((document, index) => {
     if (!document || typeof document !== "object") return;
     const doc = document as Record<string, unknown>;
     const documentId = text(doc.id) ?? `document-${index + 1}`;
-    if (index === 0 && text(doc.filename)) filename = text(doc.filename) as string;
+    const documentName = text(doc.filename);
+    if (index === 0 && documentName) filename = documentName;
+    if (documentName) {
+      originals.push({
+        filename: documentName,
+        url: text(doc.originalUrl),
+        pages: amount(doc.pageCount),
+      });
+    }
     const docPages = Array.isArray(doc.pages) ? doc.pages : [];
     for (const page of docPages) {
       if (!page || typeof page !== "object") continue;
@@ -247,6 +306,7 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
     edge: parseEdge(row.edge),
     filename,
     pages,
+    originals: listedOriginals(row.originals, originals),
     corrections,
     payment: payment && text(payment.status) ? { status: text(payment.status) as string, paidAt: text(payment.paidAt) } : null,
     delivery:

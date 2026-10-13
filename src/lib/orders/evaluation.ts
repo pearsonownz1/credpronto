@@ -785,19 +785,21 @@ export async function completeEvaluation(
   }
 }
 
-/** Quote and confirm come before the report. Analysis stops here; confirm starts the report. */
+/**
+ * Evaluations do not build a preview. A person uploads the finished PDF after payment.
+ * The arguments stay so older callers compile; the result is always false.
+ */
 export function shouldPrepareEvaluationReport(order: {
   service: OrderRecord["service"];
   status: string;
   languageConfirmed: boolean;
 }): boolean {
-  if (!order.service) return false;
-  if (order.status === "confirmed" || order.status === "processing") return true;
-  return order.status === "failed" && order.languageConfirmed;
+  void order;
+  return false;
 }
 
 /**
- * Price an evaluation and leave it quoted. The report is rendered after confirm.
+ * Price an evaluation and leave it quoted. The finished PDF is uploaded after payment.
  * Translation cents stay 0 unless the customer already opted in.
  */
 export async function startEvaluationQuote(

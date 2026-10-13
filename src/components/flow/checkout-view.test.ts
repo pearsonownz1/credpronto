@@ -79,6 +79,9 @@ describe("evaluation checkout", () => {
     expect(html).toContain("Evaluation report");
     expect(html).toContain("CredPronto Certification Team");
     expect(html).toContain("Pay $19.95");
+    expect(html).not.toContain("reviewed the report");
+    expect(html).toContain('data-step="review"');
+    expect(html).not.toContain('data-step="preview"');
     expect(html).not.toContain("Expedited");
     expect(html).not.toContain('data-testid="addon-expedited"');
     expect(state.order.addonOptions.map((option) => option.id)).toEqual(["notarization", "mail"]);

@@ -73,6 +73,8 @@ describe("service checkboxes", () => {
     expect(diploma).not.toMatch(/data-testid="choice-translation"[^>]*checked=""/);
     expect(diploma).not.toMatch(/data-testid="choice-course_by_course"[^>]*checked=""/);
     expect(diploma).toContain('data-testid="degree-count"');
+    expect(diploma).toContain("Email for your order");
+    expect(diploma).not.toContain("Email for your preview link");
 
     const course = html(null, "course_by_course");
     expect(course).toMatch(/data-testid="choice-course_by_course"[^>]*checked=""/);

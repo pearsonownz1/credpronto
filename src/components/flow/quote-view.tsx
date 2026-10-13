@@ -8,6 +8,7 @@ import {
   billablePriceLabel,
   canOpenConfirm,
   canSetSourceLanguage,
+  isCustomerEvaluation,
   displayedPageRule,
   fileCountLabel,
   languageChoices,
@@ -55,7 +56,7 @@ export function QuoteView({
 
   return (
     <div>
-      <FlowHeader current="quote" />
+      <FlowHeader current="quote" track={order && isCustomerEvaluation(order) ? "evaluation" : "translation"} />
       <main>
         {loading && !order ? (
           covering ? (
@@ -331,12 +332,18 @@ export function QuoteBody({
             </p>
           ) : null}
           <SummaryRow label={evaluation ? "Evaluation report" : "Certification"} value="Included" />
-          <SummaryRow
-            label="Preview"
-            value="Free"
-            valueClass="font-semibold text-[var(--cp-ok)]"
-          />
-          <QuoteTurnaround />
+          {evaluation ? (
+            <SummaryRow label="Review" value="After you pay" />
+          ) : (
+            <>
+              <SummaryRow
+                label="Preview"
+                value="Free"
+                valueClass="font-semibold text-[var(--cp-ok)]"
+              />
+              <QuoteTurnaround />
+            </>
+          )}
           <SummaryRow
             testId="quote-total"
             label={qualityHold ? "Price" : "Total if you buy"}
@@ -382,8 +389,9 @@ export function QuoteBody({
               </Link>
             ) : sameLanguage ? null : (
               <p className="mt-4 text-[13.5px] text-ink-muted">
-                We’ll confirm the language before the free preview starts. You don’t need to do
-                anything else right now.
+                {evaluation
+                  ? "We’ll confirm the language before you can pay. You don’t need to do anything else right now."
+                  : "We’ll confirm the language before the free preview starts. You don’t need to do anything else right now."}
               </p>
             )}
           </>
@@ -392,7 +400,7 @@ export function QuoteBody({
           <Checks
             items={
               evaluation
-                ? ["Pay only after you’ve seen it", "Staff sign off before release", "Free corrections"]
+                ? ["Pay from this quote", "An evaluator reviews it after you pay", "We'll email you when it's ready"]
                 : ["Pay only after you’ve seen it", "Ready in 3 minutes", "Free corrections"]
             }
           />

@@ -1,6 +1,7 @@
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { EVALUATION_REVIEW_COPY } from "@/lib/flow/present";
 import { sampleCustomerOrder } from "@/lib/flow/sample-order";
 import type { CustomerOrder } from "@/lib/orders/view";
 
@@ -72,6 +73,28 @@ describe("download page", () => {
     expect(html).not.toContain('data-testid="download-certified"');
     expect(html).not.toContain('data-testid="download-certification"');
     expect(html).not.toContain("Certified translation");
+  });
+
+  it("shows the evaluator wait and switches the step to Review", () => {
+    state.order = readyOrder({
+      status: "paid",
+      payment: { status: "paid" },
+      delivery: { status: "pending" },
+      fulfillment: "awaiting_review",
+      orderType: "evaluation",
+      service: "diploma",
+      degreeCount: 1,
+      evaluationCents: 1995,
+      translationCents: 0,
+      totalCents: 1995,
+    });
+    const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
+    expect(html).toContain(EVALUATION_REVIEW_COPY.replaceAll("'", "&#x27;"));
+    expect(html).toContain('data-testid="evaluation-review"');
+    expect(html).toContain('data-state="current" data-step="review"');
+    expect(html).not.toContain("Quick final check");
+    expect(html).not.toContain('data-testid="paid-preview"');
+    expect(html).not.toContain('data-step="preview"');
   });
 
   it("keeps the certified translation and certification page for a translation", () => {

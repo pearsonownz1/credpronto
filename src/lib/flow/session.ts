@@ -2,7 +2,8 @@ export const TOKEN_KEY = "credpronto-order-token";
 export const EMAIL_KEY = "credpronto-order-email";
 export const ORDER_EVENT = "credpronto-order";
 
-export const MOCK_TOKEN = "mock-token";
+/** Demo order link. Long enough to pass the public token shape check. */
+export const MOCK_TOKEN = "mock-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 export function readToken(): string | null {
   if (typeof window === "undefined") return null;
