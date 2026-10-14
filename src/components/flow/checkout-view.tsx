@@ -277,10 +277,16 @@ function CheckoutForm({
             <div className="flow-lines absolute inset-2" />
           </div>
           <div className="text-sm">
-            <b>{order.documents[0]?.filename ?? "Document"}</b>
-            <div className="text-[13px] text-ink-muted">
-              {languageLine(order)} · {pageLabel(order.billablePages ?? 0)}
-            </div>
+            {evaluation ? (
+              <EvaluationFiles documents={order.documents} />
+            ) : (
+              <>
+                <b>{order.documents[0]?.filename ?? "Document"}</b>
+                <div className="text-[13px] text-ink-muted">
+                  {languageLine(order)} · {pageLabel(order.billablePages ?? 0)}
+                </div>
+              </>
+            )}
             <div className="mt-1 text-[12.5px] text-[var(--cp-ok)]">
               {evaluation ? "✓ Ready to pay" : "✓ Reviewed"}
             </div>
@@ -335,5 +341,18 @@ function CheckoutForm({
         </div>
       </div>
     </FlowColumns>
+  );
+}
+
+function EvaluationFiles({ documents }: { documents: CustomerOrder["documents"] }) {
+  const files = documents.length > 0 ? documents : [{ id: "document", filename: "Document" }];
+  return (
+    <>
+      {files.map((document) => (
+        <b key={document.id} className="block break-words" data-testid="checkout-file">
+          {document.filename}
+        </b>
+      ))}
+    </>
   );
 }

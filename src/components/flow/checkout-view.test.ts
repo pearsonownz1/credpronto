@@ -91,8 +91,10 @@ describe("evaluation checkout", () => {
     expect(html).not.toContain("per page");
     expect(html).not.toContain("$29.90");
     expect(html).not.toContain("Certificate of accuracy");
-    expect(html).toContain("1 page");
-    expect(html).not.toContain("1 pages");
+    expect(html).toContain("birth-certificate.pdf");
+    expect(html).not.toContain("We'll confirm the language");
+    expect(html).not.toContain("1 page");
+    expect(html).not.toContain("0 pages");
   });
 
   it("lets a draft evaluation pay the flat fee", () => {
@@ -112,6 +114,8 @@ describe("evaluation checkout", () => {
     expect(html).toContain("Certified translation");
     expect(html).toContain("1 billable page");
     expect(html).toContain("Pay $29.90");
+    expect(html).toContain("birth-certificate.pdf");
+    expect(html).not.toContain("We'll confirm the language");
     expect(html).not.toContain("1 pages");
   });
 
@@ -131,6 +135,9 @@ describe("evaluation checkout", () => {
     expect(html).not.toContain("per page");
     expect(html).toContain("$17.95 per order");
     expect(html).toContain("$12.95 per order");
+    expect(html).toContain("acta-nacimiento.pdf");
+    expect(html).toContain("Spanish → English");
+    expect(html).toContain("2 pages");
 
     state.order = {
       ...checkoutOrder(false),
@@ -143,6 +150,43 @@ describe("evaluation checkout", () => {
     const evaluation = renderToStaticMarkup(createElement(CheckoutView, { token: "token-1" }));
     expect(evaluation).not.toContain("Expedited");
     expect(evaluation).not.toContain('data-testid="addon-expedited"');
-    expect(evaluation).toContain("1 page");
+    expect(evaluation).toContain("birth-certificate.pdf");
+    expect(evaluation).not.toContain("1 page");
+    expect(evaluation).not.toContain("We'll confirm the language");
+  });
+
+  it("lists each evaluation file by name when language and pages are still unknown", () => {
+    state.order = {
+      ...checkoutOrder(false),
+      sourceLanguage: null,
+      billablePages: 0,
+      documents: [
+        {
+          id: "diploma",
+          filename: "diploma.pdf",
+          pageCount: null,
+          detectedLanguage: null,
+          confidence: null,
+          uploadPosition: 1,
+          appliedPosition: 1,
+        },
+        {
+          id: "transcript",
+          filename: "transcript.pdf",
+          pageCount: null,
+          detectedLanguage: null,
+          confidence: null,
+          uploadPosition: 2,
+          appliedPosition: 2,
+        },
+      ],
+    };
+    const html = renderToStaticMarkup(createElement(CheckoutView, { token: "token-1" }));
+    expect(html).toContain("diploma.pdf");
+    expect(html).toContain("transcript.pdf");
+    expect(html).toContain("$19.95");
+    expect(html).not.toContain("We'll confirm the language");
+    expect(html).not.toContain("0 pages");
+    expect(html).not.toContain("1 page");
   });
 });
