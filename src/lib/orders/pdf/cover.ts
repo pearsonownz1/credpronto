@@ -223,9 +223,11 @@ export async function drawCertificationPage(doc: PDFDocument, input: RenderInput
   const page = doc.addPage([PAGE_W, PAGE_H]);
   const signature = await embedSignature(doc, loadTintedOwnerSignature());
   const brand = await embedSignature(doc, loadBrandLogo());
+  const ata = await embedSignature(doc, loadAtaLogo());
   if (!brand) throw new Error("CredPronto logo did not embed");
+  if (!ata) throw new Error("ATA logo did not embed");
   if (!signature) throw new Error("Signature did not embed");
-  let y = drawHeader(page, faces, cover, brand);
+  let y = drawHeader(page, faces, cover, brand, ata);
   y = drawTitle(page, faces, cover, y);
   y = drawSummary(page, faces, cover, y);
   y = drawOrderBox(page, faces, cover, y);
@@ -374,7 +376,7 @@ function drawWrapped(
   return y;
 }
 
-function drawHeader(page: PDFPage, faces: Faces, cover: ResolvedCover, brand: PDFImage): number {
+function drawHeader(page: PDFPage, faces: Faces, cover: ResolvedCover, brand: PDFImage, ata: PDFImage): number {
   const contentTop = PAGE_H - 40;
   const brandHeight = 22;
   const brandWidth = brandHeight * (brand.width / brand.height);
@@ -392,8 +394,13 @@ function drawHeader(page: PDFPage, faces: Faces, cover: ResolvedCover, brand: PD
   }
 
   const right = PAGE_W - MARGIN_X;
+  const ataHeight = 24;
+  const ataWidth = ataHeight * (ata.width / ata.height);
+  const ataBottom = contentTop - ataHeight;
+  page.drawImage(ata, { x: right - ataWidth, y: ataBottom, width: ataWidth, height: ataHeight });
+
   const lines = [`Order ${cover.orderId}`, "Certified translation", `Issued ${cover.issued}`];
-  let y = contentTop - 8;
+  let y = ataBottom - 14;
   for (const line of lines) {
     const size = 8;
     const width = textWidth(line, size, false, faces);

@@ -90,9 +90,9 @@ describe("cover brand", () => {
     const text = await visibleText(pdf);
     expect(text).not.toContain("Ada Lovelace");
     const source = pdfSource(pdf);
-    // 278 is the signature. 868 is the association logo, which stays off this page.
+    // 278 is the signature. 868 is the association logo, which stays on this page.
     expect(source).toContain("/Width 278");
-    expect(source).not.toContain("/Width 868");
+    expect(source).toContain("/Width 868");
     expectClean(text, await metaOf(pdf), SIGN_ROLE_TRANSLATOR);
   });
 
