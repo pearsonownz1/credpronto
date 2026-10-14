@@ -5,6 +5,7 @@ import { BRAND_ADDRESS, BRAND_FOOTER, BRAND_LOCALITY, BRAND_SIGNER, BRAND_STREET
 import { languageLabel } from "../languages";
 import { faceForCodePoint, fontFace, stableFontkit, type FontFace, type FontFaceId } from "./font";
 import { wrapLines, type CoverDocument, type RenderInput } from "./layout";
+import { loadTintedOwnerSignature, ownerSignatureBlockHeight, SIGN_ROLE_TRANSLATOR, signOffLayout } from "./signature";
 
 export const COVER_ADDRESS_LINES = [BRAND_STREET, BRAND_LOCALITY] as const;
 export const COVER_ADDRESS = BRAND_ADDRESS;
@@ -65,8 +66,8 @@ type Faces = {
 export const COVER_FALLBACK_SIGNER = BRAND_SIGNER;
 
 /**
- * Signer shown on the cover. Always the team.
- * A staff name, a configured translator, or an email is never printed.
+ * Kept for callers. A staff name, a configured translator, or an email is never printed.
+ * The cover draws the owner signature and the Certified Translator role instead.
  */
 export function coverTranslatorName(approverName?: string | null, configuredName?: string | null): string {
   void approverName;
@@ -220,17 +221,16 @@ export async function drawCertificationPage(doc: PDFDocument, input: RenderInput
   ].join("\n");
   const faces = await embedFaces(doc, sample);
   const page = doc.addPage([PAGE_W, PAGE_H]);
-  const signature = await embedSignature(doc, cover.signature);
+  const signature = await embedSignature(doc, loadTintedOwnerSignature());
   const brand = await embedSignature(doc, loadBrandLogo());
-  const ata = await embedSignature(doc, loadAtaLogo());
   if (!brand) throw new Error("CredPronto logo did not embed");
-  if (!ata) throw new Error("ATA logo did not embed");
-  let y = drawHeader(page, faces, cover, brand, ata);
+  if (!signature) throw new Error("Signature did not embed");
+  let y = drawHeader(page, faces, cover, brand);
   y = drawTitle(page, faces, cover, y);
   y = drawSummary(page, faces, cover, y);
   y = drawOrderBox(page, faces, cover, y);
   const footerClearance = 50;
-  const signatureBlock = 54;
+  const signatureBlock = ownerSignatureBlockHeight(signature);
   const statementGap = 16;
   let statementSize = 8.5;
   let measured = measureStatements(faces, cover.statements, statementSize);
@@ -374,7 +374,7 @@ function drawWrapped(
   return y;
 }
 
-function drawHeader(page: PDFPage, faces: Faces, cover: ResolvedCover, brand: PDFImage, ata: PDFImage): number {
+function drawHeader(page: PDFPage, faces: Faces, cover: ResolvedCover, brand: PDFImage): number {
   const contentTop = PAGE_H - 40;
   const brandHeight = 22;
   const brandWidth = brandHeight * (brand.width / brand.height);
@@ -392,13 +392,8 @@ function drawHeader(page: PDFPage, faces: Faces, cover: ResolvedCover, brand: PD
   }
 
   const right = PAGE_W - MARGIN_X;
-  const ataHeight = 24;
-  const ataWidth = ataHeight * (ata.width / ata.height);
-  const ataBottom = contentTop - ataHeight;
-  page.drawImage(ata, { x: right - ataWidth, y: ataBottom, width: ataWidth, height: ataHeight });
-
   const lines = [`Order ${cover.orderId}`, "Certified translation", `Issued ${cover.issued}`];
-  let y = ataBottom - 14;
+  let y = contentTop - 8;
   for (const line of lines) {
     const size = 8;
     const width = textWidth(line, size, false, faces);
@@ -595,37 +590,32 @@ function drawSignature(
   page: PDFPage,
   faces: Faces,
   cover: ResolvedCover,
-  signature: PDFImage | null,
+  signature: PDFImage,
   y: number,
 ): void {
-  const gap = 24;
-  const leftWidth = CONTENT_W * 0.58;
-  const rightX = MARGIN_X + leftWidth + gap;
-  const lineY = y - 22;
-  if (signature) {
-    const maxWidth = leftWidth - 8;
-    const maxHeight = 22;
-    const scale = Math.min(maxWidth / signature.width, maxHeight / signature.height, 1);
-    const width = signature.width * scale;
-    const height = signature.height * scale;
-    page.drawImage(signature, { x: MARGIN_X, y: lineY + 3, width, height });
-  }
+  const layout = signOffLayout({
+    image: signature,
+    top: y,
+    left: MARGIN_X,
+    contentWidth: CONTENT_W,
+    pageRight: PAGE_W - MARGIN_X,
+  });
+  page.drawImage(signature, layout.image);
   page.drawLine({
-    start: { x: MARGIN_X, y: lineY },
-    end: { x: MARGIN_X + leftWidth, y: lineY },
-    thickness: 0.8,
+    start: { x: MARGIN_X, y: layout.lineY },
+    end: { x: layout.leftLineEnd, y: layout.lineY },
+    thickness: 0.6,
     color: INK,
   });
-  drawWrapped(page, cover.translatorName, MARGIN_X, lineY - 12, 8, MUTED, false, leftWidth, faces);
-
-  drawText(page, cover.issued, rightX, lineY + 6, 10, INK, false, faces);
+  drawText(page, SIGN_ROLE_TRANSLATOR, MARGIN_X, layout.roleY, 8, MUTED, false, faces);
+  drawText(page, cover.issued, layout.rightX, layout.dateY, 10, INK, false, faces);
   page.drawLine({
-    start: { x: rightX, y: lineY },
-    end: { x: PAGE_W - MARGIN_X, y: lineY },
-    thickness: 0.8,
+    start: { x: layout.rightX, y: layout.lineY },
+    end: { x: layout.rightLineEnd, y: layout.lineY },
+    thickness: 0.6,
     color: INK,
   });
-  drawText(page, "Date", rightX, lineY - 12, 8, MUTED, false, faces);
+  drawText(page, "Date", layout.rightX, layout.roleY, 8, MUTED, false, faces);
 }
 
 function drawRight(

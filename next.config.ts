@@ -37,6 +37,7 @@ const nextConfig: NextConfig = {
       "./src/lib/orders/pdf/NotoSansSymbols2-Regular.ttf",
       "./src/lib/orders/pdf/ata-logo.png",
       "./src/lib/orders/pdf/credpronto-logo.png",
+      "./src/lib/orders/pdf/signature.png",
       "./node_modules/@embedpdf/pdfium/**",
       "./node_modules/sharp/**",
       "./node_modules/@img/sharp-linux-x64/**",

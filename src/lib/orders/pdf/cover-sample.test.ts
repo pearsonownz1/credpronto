@@ -16,7 +16,8 @@ describe("homepage cover sample", () => {
     expect(text).toContain("Alex Example");
     expect(text).toContain("EXAMPLE-000");
     expect(text).toContain("example-birth-certificate.pdf");
-    expect(text).toContain("CredPronto Certification Team");
+    expect(text).toContain("Certified Translator");
+    expect(text).not.toContain("CredPronto Certification Team");
     expect(text).not.toContain("Example Translator");
     expect(text).toContain(COVER_ADDRESS.split(",")[0]);
     expect(text).toContain("2520 Venture Oaks Way");

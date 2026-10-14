@@ -1,5 +1,5 @@
 import { PDFDocument, StandardFonts, degrees, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
-import { BRAND_FOOTER, BRAND_SIGNER } from "../brand";
+import { BRAND_FOOTER } from "../brand";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT, PREVIEW_WATERMARK, PREVIEW_WATERMARK_OPACITY, previewWatermarkRgb } from "../constants";
 import { usEquivalency } from "../grades";
 import type { DiplomaCredential, EvaluationResult } from "../types";
@@ -7,6 +7,7 @@ import { loadAtaLogo, loadBrandLogo } from "./cover";
 import { faceForCodePoint, fontFace, stableFontkit, type FontFaceId } from "./font";
 import { wrapLines } from "./layout";
 import { applyCredProntoPdfMetadata } from "./metadata";
+import { loadTintedOwnerSignature, ownerSignatureBlockHeight, SIGN_ROLE_EVALUATOR, signOffLayout } from "./signature";
 
 const BLUE = rgb(31 / 255, 94 / 255, 255 / 255);
 const BLUE_LIGHT = rgb(234 / 255, 240 / 255, 255 / 255);
@@ -182,12 +183,39 @@ function fit(kit: Kit, text: string, size: number, weight: Weight, maxWidth: num
   return `${cut}…`;
 }
 
-type Logos = { brand: PDFImage; ata: PDFImage };
+type Logos = { brand: PDFImage; ata: PDFImage; signature: PDFImage };
 
 async function loadLogos(doc: PDFDocument): Promise<Logos> {
   const brand = await doc.embedPng(loadBrandLogo());
   const ata = await doc.embedPng(loadAtaLogo());
-  return { brand, ata };
+  const signature = await doc.embedPng(loadTintedOwnerSignature());
+  return { brand, ata, signature };
+}
+
+function drawSignOff(page: PDFPage, kit: Kit, signature: PDFImage, issued: string, top: number): void {
+  const layout = signOffLayout({
+    image: signature,
+    top,
+    left: MARGIN,
+    contentWidth: CONTENT_W,
+    pageRight: LETTER_WIDTH_PT - MARGIN,
+  });
+  page.drawImage(signature, layout.image);
+  page.drawLine({
+    start: { x: MARGIN, y: layout.lineY },
+    end: { x: layout.leftLineEnd, y: layout.lineY },
+    thickness: 0.6,
+    color: INK,
+  });
+  kit.draw(page, SIGN_ROLE_EVALUATOR, MARGIN, layout.roleY, 8, MUTED, "regular");
+  kit.draw(page, issued, layout.rightX, layout.dateY, 10, INK, "regular");
+  page.drawLine({
+    start: { x: layout.rightX, y: layout.lineY },
+    end: { x: layout.rightLineEnd, y: layout.lineY },
+    thickness: 0.6,
+    color: INK,
+  });
+  kit.draw(page, "Date", layout.rightX, layout.roleY, 8, MUTED, "regular");
 }
 
 function drawHeader(page: PDFPage, kit: Kit, meta: EvaluationReportMeta, kind: string, logos: Logos): number {
@@ -237,7 +265,6 @@ function drawFooter(page: PDFPage, kit: Kit): void {
     thickness: 0.6,
     color: LINE,
   });
-  kit.draw(page, BRAND_SIGNER, MARGIN, ruleY + 8, 8, INK, "bold");
   let size = 8;
   let width = kit.width(BRAND_FOOTER, size, "regular");
   while (width > CONTENT_W && size > 6) {
@@ -253,7 +280,7 @@ function stampFooters(doc: PDFDocument, kit: Kit): void {
 }
 
 function kitSample(result: unknown, meta: EvaluationReportMeta): string {
-  return `${JSON.stringify(result)} ${meta.reportId} ${meta.issued} ${EVALUATION_ADVISORY} ${BRAND_FOOTER} ${BRAND_SIGNER}`;
+  return `${JSON.stringify(result)} ${meta.reportId} ${meta.issued} ${EVALUATION_ADVISORY} ${BRAND_FOOTER} ${SIGN_ROLE_EVALUATOR} Date`;
 }
 
 async function finish(doc: PDFDocument, kit: Kit, watermark: boolean): Promise<Uint8Array> {
@@ -304,7 +331,7 @@ function drawFacts(
   return bottom - 12;
 }
 
-function diplomaPage(page: PDFPage, kit: Kit, credential: DiplomaCredential, meta: EvaluationReportMeta, logos: Logos): void {
+function diplomaPage(page: PDFPage, kit: Kit, credential: DiplomaCredential, meta: EvaluationReportMeta, logos: Logos): number {
   let y = drawHeader(page, kit, meta, "Diploma evaluation", logos);
   kit.draw(page, "Educational Credential Evaluation", MARGIN, y, 16, INK, "bold");
   y -= 18;
@@ -352,6 +379,7 @@ function diplomaPage(page: PDFPage, kit: Kit, credential: DiplomaCredential, met
     kit.draw(page, line, MARGIN, y - 8, 8, MUTED, "regular");
     y -= 11;
   }
+  return y;
 }
 
 const COURSE_COLUMNS = [
@@ -446,8 +474,14 @@ async function renderDiploma(
   const kit = await makeKit(doc, kitSample(result, meta));
   const credentials = result.credentials.length > 0 ? result.credentials : [];
   for (const credential of credentials) {
-    const page = doc.addPage([LETTER_WIDTH_PT, LETTER_HEIGHT_PT]);
-    diplomaPage(page, kit, credential, meta, logos);
+    let page = doc.addPage([LETTER_WIDTH_PT, LETTER_HEIGHT_PT]);
+    let y = diplomaPage(page, kit, credential, meta, logos);
+    const needed = ownerSignatureBlockHeight(logos.signature) + 8;
+    if (y - needed < FOOTER_CLEARANCE) {
+      page = doc.addPage([LETTER_WIDTH_PT, LETTER_HEIGHT_PT]);
+      y = drawHeader(page, kit, meta, "Diploma evaluation", logos);
+    }
+    drawSignOff(page, kit, logos.signature, meta.issued, y);
   }
   if (doc.getPageCount() === 0) doc.addPage([LETTER_WIDTH_PT, LETTER_HEIGHT_PT]);
   return finish(doc, kit, watermark);
@@ -576,6 +610,13 @@ async function renderCourses(
     kit.draw(cursor.page, line, MARGIN, cursor.y, 8, MUTED, "regular");
     cursor.y -= 11;
   }
+
+  const signOff = ownerSignatureBlockHeight(logos.signature) + 8;
+  if (cursor.y - signOff < FOOTER_CLEARANCE) {
+    cursor.page = cursor.doc.addPage([LETTER_WIDTH_PT, LETTER_HEIGHT_PT]);
+    cursor.y = drawHeader(cursor.page, kit, meta, "Course-by-course evaluation", logos);
+  }
+  drawSignOff(cursor.page, kit, logos.signature, meta.issued, cursor.y);
 
   return finish(doc, kit, watermark);
 }

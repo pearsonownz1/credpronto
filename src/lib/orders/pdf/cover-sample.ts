@@ -2,7 +2,7 @@ import type { RenderInput } from "./layout";
 
 /**
  * Public homepage sample. Names and the order id are fake.
- * The cover prints the CredPronto logo, the ATA member logo, and the Sacramento footer.
+ * The cover prints the CredPronto logo, the owner signature, and the Sacramento footer.
  */
 export const SAMPLE_COVER_INPUT: RenderInput = {
   orderId: "EXAMPLE-000",
