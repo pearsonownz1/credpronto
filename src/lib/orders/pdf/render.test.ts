@@ -83,12 +83,13 @@ describe("translated pdf renders", () => {
     const certificationText = certification.text.replace(/\s+/g, " ");
     expect(certificationText).toContain(CERTIFICATION_STATEMENTS[0]);
     expect(certificationText).toContain(CERTIFICATION_STATEMENTS[1]);
-    expect(certificationText).toContain("CredPronto Certification Team");
+    expect(certificationText).toContain("Certified Translator");
+    expect(certificationText).toContain("Date");
+    expect(certificationText).not.toContain("CredPronto Certification Team");
     expect(certificationText).toContain(
       "CredPronto · credpronto.com · 2520 Venture Oaks Way, Suite 120, Sacramento, CA 95833",
     );
     expect(certificationText).not.toContain("Intended use");
-    expect(certificationText).not.toContain("Certified Translator");
     expect(certification.text).toContain("order-1");
     expect(certification.text).toContain("Page 1 of 2");
     expect(certification.text).toContain("Order order-1 · Page 1 of 2");

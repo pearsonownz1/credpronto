@@ -90,9 +90,10 @@ describe("evaluation PDFs", () => {
     expect(label).toBeLessThan(equivalency);
     expect(clean).toContain("DOCUMENTS REVIEWED");
     expect(clean).toContain("fr_diplome-licence.pdf");
-    expect(clean).toContain("CredPronto Certification Team");
+    expect(clean).toContain("Credential Evaluator");
+    expect(clean).toContain("Date");
+    expect(clean).not.toContain("CredPronto Certification Team");
     expect(clean).toContain("CredPronto · credpronto.com · 2520 Venture Oaks Way, Suite 120, Sacramento, CA 95833");
-    expect(clean).not.toContain("Credential Evaluator");
     expect(clean).not.toContain(PREVIEW_WATERMARK);
     const painted = pdfOperators(files.clean);
     const equivalencyAt = painted.indexOf("Bachelor");
@@ -125,6 +126,8 @@ describe("evaluation PDFs", () => {
     expect(clean.slice(totals)).toContain("3.70");
     expect(scale).toBeGreaterThan(totals);
     expect(clean.slice(scale)).toContain("20-point scale");
+    expect(clean).toContain("Credential Evaluator");
+    expect(clean).not.toContain("CredPronto Certification Team");
     const preview = await textOf(files.preview);
     expect(preview).toContain(PREVIEW_WATERMARK);
     expect(await textOf(files.clean)).not.toContain(PREVIEW_WATERMARK);
@@ -158,7 +161,8 @@ describe("evaluation PDFs", () => {
     expect(clean).toContain("Licence");
     expect(clean).toContain("France");
     expect(clean).toContain("Bachelor's degree");
-    expect(clean).toContain("CredPronto Certification Team");
+    expect(clean).toContain("Credential Evaluator");
+    expect(clean).not.toContain("CredPronto Certification Team");
     expect(clean).toContain("2520 Venture Oaks Way, Suite 120, Sacramento, CA 95833");
     expect(clean).not.toMatch(/\bEDGE\b/);
     expect(clean).not.toMatch(/\bconfidence\b/i);

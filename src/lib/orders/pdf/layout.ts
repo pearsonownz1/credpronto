@@ -53,9 +53,9 @@ export type RenderInput = {
   targetLanguage?: string | null;
   clientName?: string | null;
   documents?: CoverDocument[];
-  /** Kept for callers. The cover signer line is always CredPronto Certification Team. */
+  /** Kept for callers. The cover does not print this name. */
   translatorName?: string | null;
-  /** PNG or JPEG of the translator signature. Omitted when none is on file. */
+  /** Ignored on the cover. The printed signature is the owner asset. */
   signature?: Uint8Array | null;
 };
 

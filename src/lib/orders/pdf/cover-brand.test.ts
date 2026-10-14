@@ -2,6 +2,7 @@ import { extractText, getDocumentProxy } from "unpdf";
 import { PDFDocument } from "pdf-lib";
 import { describe, expect, it } from "vitest";
 import { BRAND_FOOTER, BRAND_NAME, BRAND_SIGNER } from "../brand";
+import { SIGN_ROLE_EVALUATOR, SIGN_ROLE_TRANSLATOR } from "./signature";
 import type { EvaluationResult } from "../types";
 import { renderEvaluationPdfs } from "./evaluation";
 import { renderCertificationPdf } from "./render";
@@ -43,16 +44,25 @@ async function visibleText(bytes: Uint8Array): Promise<string> {
   return Array.isArray(extracted.text) ? extracted.text.join("\n") : extracted.text;
 }
 
-function expectClean(text: string, meta: { author?: string; creator?: string; producer?: string; title?: string }) {
+function expectClean(
+  text: string,
+  meta: { author?: string; creator?: string; producer?: string; title?: string },
+  role: string,
+) {
   const haystack = [text, meta.author, meta.creator, meta.producer, meta.title].join("\n").toLowerCase();
   for (const term of BANNED) {
     expect(haystack).not.toContain(term.toLowerCase());
   }
-  expect(text).toContain(BRAND_SIGNER);
+  expect(text).toContain(role);
+  expect(text).not.toContain(BRAND_SIGNER);
   expect(text).toContain(BRAND_FOOTER);
   expect(meta.author).toBe(BRAND_NAME);
   expect(meta.creator).toBe(BRAND_NAME);
   expect(meta.producer).toBe(BRAND_NAME);
+}
+
+function pdfSource(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString("latin1");
 }
 
 async function metaOf(bytes: Uint8Array) {
@@ -79,12 +89,20 @@ describe("cover brand", () => {
     });
     const text = await visibleText(pdf);
     expect(text).not.toContain("Ada Lovelace");
-    expectClean(text, await metaOf(pdf));
+    const source = pdfSource(pdf);
+    // 278 is the signature. 868 is the association logo, which stays on this page.
+    expect(source).toContain("/Width 278");
+    expect(source).toContain("/Width 868");
+    expectClean(text, await metaOf(pdf), SIGN_ROLE_TRANSLATOR);
   });
 
   it("renders an evaluation cover without legacy brand strings", async () => {
     const files = await renderEvaluationPdfs(diploma);
     const text = await visibleText(files.clean);
-    expectClean(text, await metaOf(files.clean));
+    const source = pdfSource(files.clean);
+    // The evaluation keeps the association logo and adds the signature.
+    expect(source).toContain("/Width 278");
+    expect(source).toContain("/Width 868");
+    expectClean(text, await metaOf(files.clean), SIGN_ROLE_EVALUATOR);
   });
 });
