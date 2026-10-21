@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { flowUsesMock, getFlowClient } from "@/lib/flow/client";
-import { previewIsReady, previewWork } from "@/lib/flow/preview-progress";
+import { TRANSLATION_REVIEW_COPY, previewIsReady, previewWork } from "@/lib/flow/preview-progress";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
 import { FlowStatus } from "./status";
@@ -74,7 +74,7 @@ export function ProcessingView({
           <>
             <p className="preview-kicker blue">Order {order.orderId}</p>
             <p data-testid="preview-held" className="mt-3 text-base text-ink">
-              {REVIEW_MESSAGE}
+              {TRANSLATION_REVIEW_COPY}
             </p>
           </>
         ) : (
@@ -154,9 +154,6 @@ export function ProcessingView({
     </div>
   );
 }
-
-const REVIEW_MESSAGE =
-  "A translator is reviewing your document. We'll email you when it's ready.";
 
 function useTranslatingElapsed(active: boolean) {
   const [elapsed, setElapsed] = useState(0);

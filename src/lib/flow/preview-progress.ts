@@ -10,13 +10,18 @@ export const PREVIEW_WORK_STEPS = [
 export type PreviewWorkStepId = (typeof PREVIEW_WORK_STEPS)[number]["id"];
 
 export type PreviewWork = {
-  phase: "working" | "ready";
-  /** Bar width. Stays below 100 until the preview exists. */
+  phase: "working" | "ready" | "review";
+  /** Bar width. Stays below 100 until the preview exists. Unused while `phase` is `review`. */
   percent: number;
   displayPercent: number;
   label: string;
   steps: Array<{ id: PreviewWorkStepId; label: string; state: "done" | "current" | "pending" }>;
 };
+
+/** Shown when staff are holding a finished translation. No time estimate and no person's name. */
+export const TRANSLATION_REVIEW_TITLE = "A translator is reviewing your document";
+export const TRANSLATION_REVIEW_DETAIL = "We'll email you when it's ready.";
+export const TRANSLATION_REVIEW_COPY = `${TRANSLATION_REVIEW_TITLE}. ${TRANSLATION_REVIEW_DETAIL}`;
 
 /** One interval for the whole wait. No backoff. */
 export const PREVIEW_POLL_MS = 3_000;
@@ -56,7 +61,7 @@ function orderProgressStep(order: PreviewReadyOrder): string | null {
  */
 export function previewIsReady(order: PreviewReadyOrder | null | undefined): boolean {
   if (!order) return false;
-  // A timed-out translation is `needs_review` with step `done` and no preview.
+  // Staff review holds the preview. Step `done` is not a customer preview yet.
   if (order.status === "needs_review") return false;
   if (order.status === "preview_ready") return true;
   return orderProgressStep(order) === "done";
@@ -184,6 +189,8 @@ function currentStep(progressStep: string | null | undefined): Exclude<PreviewWo
 /**
  * Progress for the preview step. The bar follows the API `progress` fields and
  * reaches 100 only once the preview is ready (`preview_ready` or step `done`).
+ * `needs_review` stops the bar: the translation can be finished while staff
+ * still hold the preview, and that hold must not sit at the 98 cap.
  */
 export function previewWork(input: {
   status: string;
@@ -195,6 +202,19 @@ export function previewWork(input: {
   pagesTranslateTotal?: number | null;
   translatingElapsedMs?: number;
 }): PreviewWork {
+  if (input.status === "needs_review") {
+    return {
+      phase: "review",
+      percent: 0,
+      displayPercent: 0,
+      label: TRANSLATION_REVIEW_COPY,
+      steps: PREVIEW_WORK_STEPS.map((step) => ({
+        ...step,
+        state: step.id === "ready" ? ("pending" as const) : ("done" as const),
+      })),
+    };
+  }
+
   const translatingLabel = translatingStatusLabel(input);
   const steps = PREVIEW_WORK_STEPS.map((step) =>
     step.id === "translating" ? { ...step, label: translatingLabel } : step,

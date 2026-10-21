@@ -5,6 +5,7 @@ import {
   QUICK_CHECK_COPY,
   QUICK_CHECK_DETAIL,
 } from "@/lib/flow/present";
+import { TRANSLATION_REVIEW_COPY } from "@/lib/flow/preview-progress";
 import { orderLiveMessage } from "./order-announcement";
 
 const order = {
@@ -157,6 +158,33 @@ describe("order live message", () => {
           billablePages: 2,
           totalCents: 1990,
           delayed: true,
+          progress: { step: "done" },
+        },
+      }),
+    ).toBe(TRANSLATION_REVIEW_COPY);
+    expect(TRANSLATION_REVIEW_COPY).not.toMatch(/\d+\s*(minute|hour)/i);
+    expect(
+      orderLiveMessage({
+        loading: false,
+        order: {
+          status: "needs_review",
+          billablePages: 2,
+          totalCents: 1990,
+          delayed: false,
+          reviewReason: "translation_timeout",
+          progress: { step: "done" },
+        },
+      }),
+    ).toBe(TRANSLATION_REVIEW_COPY);
+    expect(
+      orderLiveMessage({
+        loading: false,
+        order: {
+          status: "needs_review",
+          billablePages: 2,
+          totalCents: 1990,
+          delayed: true,
+          orderType: "evaluation",
           progress: { step: "done" },
         },
       }),

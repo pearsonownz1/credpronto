@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   PREVIEW_POLL_MS,
   TRANSLATING_FLOOR,
+  TRANSLATION_REVIEW_COPY,
   previewIsReady,
   previewPollContinues,
   previewPollDelay,
@@ -168,11 +169,41 @@ describe("preview step progress", () => {
     expect(previewIsReady({ status: "preview_ready", progress: { step: "translating" } })).toBe(true);
     expect(previewIsReady({ status: "approved", progress: { step: "translating" } })).toBe(false);
     expect(previewIsReady({ status: "needs_review", progress: { step: "done" } })).toBe(false);
-    const held = previewWork({ status: "needs_review", progressStep: "done" });
-    expect(held.phase).toBe("working");
-    expect(held.displayPercent).toBe(92);
-    expect(held.displayPercent).not.toBe(75);
-    expect(held.steps.find((step) => step.id === "translating")?.state).toBe("current");
+    expect(previewIsReady({ status: "correction_requested", progressStep: "done" })).toBe(true);
+    const held = previewWork({
+      status: "needs_review",
+      progressStep: "done",
+      pagesDone: 9,
+      pagesTranslateTotal: 9,
+      translatingElapsedMs: 600_000,
+    });
+    expect(held.phase).toBe("review");
+    expect(held.label).toBe("A translator is reviewing your document. We'll email you when it's ready.");
+    expect(held.label).toBe(TRANSLATION_REVIEW_COPY);
+    expect(held.label).not.toMatch(/\d+\s*(minute|hour|day)/i);
+    expect(held.percent).toBe(0);
+    expect(held.displayPercent).not.toBe(98);
+    expect(held.displayPercent).not.toBe(100);
+    expect(held.steps.some((step) => step.state === "current")).toBe(false);
+    expect(held.steps.find((step) => step.id === "translating")?.state).toBe("done");
+    expect(held.steps.find((step) => step.id === "ready")?.state).toBe("pending");
+    const stillTranslating = previewWork({
+      status: "needs_review",
+      progressStep: "translating",
+      translatingElapsedMs: 120_000,
+    });
+    expect(stillTranslating.phase).toBe("review");
+    expect(stillTranslating.displayPercent).not.toBe(98);
+    const evaluationHold = previewWork({
+      status: "needs_review",
+      orderType: "evaluation",
+      progressStep: "done",
+      pagesDone: 2,
+      pagesTranslateTotal: 2,
+    });
+    expect(evaluationHold.phase).toBe("review");
+    expect(evaluationHold.label).toBe(TRANSLATION_REVIEW_COPY);
+    expect(evaluationHold.displayPercent).not.toBe(98);
     const ready = previewWork({ status: "processing", progressStep: "done" });
     expect(ready.phase).toBe("ready");
     expect(ready.displayPercent).toBe(100);
