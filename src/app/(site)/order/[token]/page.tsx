@@ -1,11 +1,12 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
 import { OrderHub } from "@/components/flow/order-hub";
 import { OrderLoadingFallback } from "@/components/flow/reading-handoff";
 import { waitsForCheckoutOrder } from "@/lib/orders/checkout-return";
 import { viewerOwnsOrder } from "@/lib/orders/owner-order";
+import { readyPreviewDestination } from "@/lib/orders/preview-redirect";
 import { publicOrderExists } from "@/lib/orders/public-order-server";
 import { isOrderId, isOrderToken } from "@/lib/orders/token";
 import { ROBOTS_NOINDEX } from "@/lib/seo";
@@ -34,6 +35,10 @@ export default async function OrderPage({
   } else if (!isOrderToken(token) || (!waitsForCheckoutOrder(checkout) && !(await publicOrderExists(token)))) {
     notFound();
   }
+
+  // Email links land here. A finished preview skips the "view preview" stop.
+  const previewPath = await readyPreviewDestination(token, checkout);
+  if (previewPath) redirect(previewPath);
 
   return (
     <Suspense fallback={<OrderLoadingFallback />}>

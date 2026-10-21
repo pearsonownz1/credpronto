@@ -29,7 +29,6 @@ export function ProcessingView({
   useEffect(() => {
     if (order) onOrder?.(order);
   }, [order, onOrder]);
-  const mock = flowUsesMock();
   const evaluation = order?.orderType === "evaluation";
   const work = order
     ? previewWork({
@@ -44,11 +43,17 @@ export function ProcessingView({
       })
     : null;
 
-  async function openPreview() {
-    if (mock) await getFlowClient().markPreviewReady(token);
-    const showReport = !mock || order?.orderType === "evaluation";
-    router.push(showReport ? `/preview/${encodeURIComponent(token)}` : "/checkout");
-  }
+  useEffect(() => {
+    if (!ready || !token) return;
+    let cancelled = false;
+    void (async () => {
+      if (flowUsesMock()) await getFlowClient().markPreviewReady(token);
+      if (!cancelled) router.replace(`/preview/${encodeURIComponent(token)}`);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, token, router]);
 
   return (
     <div>
@@ -60,94 +65,79 @@ export function ProcessingView({
           <FlowStatus title="We couldn't load this order" body={error} />
         ) : !order || !work ? (
           <FlowStatus title="No order yet" body="Upload a document to start." />
+        ) : ready ? (
+          <FlowStatus title="Opening your preview…" body="" />
         ) : (
           <>
             <p className="preview-kicker blue">Order {order.orderId}</p>
             <h1 className="mt-3 text-[32px] font-bold tracking-[-0.6px] md:text-4xl">
-              {ready
-                ? "Your preview is ready"
-                : evaluation
-                  ? "Preparing your evaluation"
-                  : "Translating your document"}
+              {evaluation ? "Preparing your evaluation" : "Translating your document"}
             </h1>
-            {ready ? (
+            <p className={`mt-2.5 text-base text-ink-muted ${takingLong ? "mb-2" : "mb-8"}`}>
+              {evaluation
+                ? "We'll email you when the report is ready."
+                : "Usually ready in 3 minutes. We'll email you when your preview is ready."}
+            </p>
+            {takingLong ? (
+              <p data-testid="translation-delayed" className="mb-8 text-base font-semibold text-ink">
+                {"Taking longer than usual, we're on it."}
+              </p>
+            ) : null}
+            <div className="mx-auto w-full max-w-[520px] text-left">
+              <div className="mb-2 flex items-baseline justify-between gap-4 text-[13px]">
+                <span className="font-medium text-ink" data-testid="preview-label">
+                  {work.label}
+                </span>
+                <span className="shrink-0 font-medium text-ink tabular-nums" data-testid="preview-percent">
+                  {work.displayPercent}%
+                </span>
+              </div>
+              <div
+                role="progressbar"
+                aria-valuenow={work.displayPercent}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuetext={`${work.displayPercent}%`}
+                aria-label={work.label}
+                data-testid="progress-bar"
+                className="h-2 overflow-hidden rounded-[2px] bg-line"
+              >
+                <div className="h-full bg-primary" style={{ width: `${work.percent}%` }} />
+              </div>
+              <ol data-testid="preview-steps" className="mt-6 list-none space-y-2.5 p-0">
+                {work.steps.map((step) => (
+                  <li
+                    key={step.id}
+                    data-testid={`preview-step-${step.id}`}
+                    data-state={step.state}
+                    aria-current={step.state === "current" ? "step" : undefined}
+                    className={`flex items-center gap-3 text-[14px] leading-5 ${
+                      step.state === "pending" ? "text-ink-muted" : "text-ink"
+                    } ${step.state === "current" ? "font-medium" : ""}`}
+                  >
+                    <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                      <StepMark state={step.state} />
+                    </span>
+                    {step.label}
+                  </li>
+                ))}
+              </ol>
+            </div>
+            <p className="mt-6 text-[13.5px] text-ink-muted">
+              {evaluation ? "Need another file on this order? " : "Need more pages translated? "}
+              <Link href="/translate" data-testid="add-documents" className="font-semibold text-primary">
+                Add documents to this order
+              </Link>
+            </p>
+            {order.status === "failed" ? (
               <button
                 type="button"
-                data-testid="view-preview"
-                onClick={() => void openPreview()}
-                className={buttonClasses("primary", "mt-8 h-[52px] px-10 text-[16px]")}
+                onClick={() => void getFlowClient().process(token).then(() => reload())}
+                className={buttonClasses("secondary", "mt-4 h-11 px-4")}
               >
-                View preview
+                Try again
               </button>
-            ) : (
-              <>
-                <p className={`mt-2.5 text-base text-ink-muted ${takingLong ? "mb-2" : "mb-8"}`}>
-                  {evaluation
-                    ? "We'll email you when the report is ready."
-                    : "Usually ready in 3 minutes. We'll email you when your preview is ready."}
-                </p>
-                {takingLong ? (
-                  <p data-testid="translation-delayed" className="mb-8 text-base font-semibold text-ink">
-                    {"Taking longer than usual, we're on it."}
-                  </p>
-                ) : null}
-                <div className="mx-auto w-full max-w-[520px] text-left">
-                  <div className="mb-2 flex items-baseline justify-between gap-4 text-[13px]">
-                    <span className="font-medium text-ink" data-testid="preview-label">
-                      {work.label}
-                    </span>
-                    <span className="shrink-0 font-medium text-ink tabular-nums" data-testid="preview-percent">
-                      {work.displayPercent}%
-                    </span>
-                  </div>
-                  <div
-                    role="progressbar"
-                    aria-valuenow={work.displayPercent}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuetext={`${work.displayPercent}%`}
-                    aria-label={work.label}
-                    data-testid="progress-bar"
-                    className="h-2 overflow-hidden rounded-[2px] bg-line"
-                  >
-                    <div className="h-full bg-primary" style={{ width: `${work.percent}%` }} />
-                  </div>
-                  <ol data-testid="preview-steps" className="mt-6 list-none space-y-2.5 p-0">
-                    {work.steps.map((step) => (
-                      <li
-                        key={step.id}
-                        data-testid={`preview-step-${step.id}`}
-                        data-state={step.state}
-                        aria-current={step.state === "current" ? "step" : undefined}
-                        className={`flex items-center gap-3 text-[14px] leading-5 ${
-                          step.state === "pending" ? "text-ink-muted" : "text-ink"
-                        } ${step.state === "current" ? "font-medium" : ""}`}
-                      >
-                        <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-                          <StepMark state={step.state} />
-                        </span>
-                        {step.label}
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-                <p className="mt-6 text-[13.5px] text-ink-muted">
-                  {evaluation ? "Need another file on this order? " : "Need more pages translated? "}
-                  <Link href="/translate" data-testid="add-documents" className="font-semibold text-primary">
-                    Add documents to this order
-                  </Link>
-                </p>
-                {order.status === "failed" ? (
-                  <button
-                    type="button"
-                    onClick={() => void getFlowClient().process(token).then(() => reload())}
-                    className={buttonClasses("secondary", "mt-4 h-11 px-4")}
-                  >
-                    Try again
-                  </button>
-                ) : null}
-              </>
-            )}
+            ) : null}
           </>
         )}
       </main>

@@ -114,31 +114,22 @@ export async function walkCustomerFlow(
     sessionStorage.setItem(key, JSON.stringify(order));
   });
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Your preview is ready" }).filter({ visible: true })).toBeVisible();
-  await expect(shown(page, "preview-steps")).toHaveCount(0);
-  await expect(shown(page, "view-preview")).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/preview/${MOCK_TOKEN}$`));
+  await expect(page.getByRole("heading", { name: "Your preview is ready" })).toHaveCount(0);
+  await expect(page.getByTestId("view-preview")).toHaveCount(0);
   await check();
 
-  await shown(page, "view-preview").click();
-  await expect(page).toHaveURL(/\/checkout$/);
-  await expect(shown(page, "email")).toHaveValue("maria.ruiz@email.com");
-  await expect(shown(page, "order-total")).toContainText("$19.90");
-  await expect(shown(page, "pay-button")).toContainText("Pay $19.90");
-  await expect(shown(page, "flow-stepper").locator("[data-state=current]")).toContainText(
-    "Preview",
-  );
-  await check();
-
-  await shown(page, "pay-button").click();
+  await expect(shown(page, "buy-download")).toBeVisible();
+  await shown(page, "buy-download").click();
   await expect(page).toHaveURL(new RegExp(`/order/${MOCK_TOKEN}\\?checkout=success$`));
   await expect(shown(page, "download-certified")).toBeVisible();
   await expect(shown(page, "download-certified")).toHaveAttribute(
     "download",
-    "birth-certificate-EN-certified.pdf",
+    "acta-nacimiento-IMG_4021-EN-certified.pdf",
   );
   await expect(shown(page, "download-certification")).toHaveAttribute(
     "download",
-    "certification.pdf",
+    "acta-nacimiento-IMG_4021-certificate.pdf",
   );
   await expect(shown(page, "email-note")).toContainText("maria.ruiz@email.com");
   await expect(shown(page, "email-note")).toContainText("CP-24817");

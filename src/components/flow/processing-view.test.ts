@@ -11,7 +11,7 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: () => undefined }),
+  useRouter: () => ({ push: () => undefined, replace: () => undefined }),
 }));
 
 vi.mock("./use-order", () => ({
@@ -87,28 +87,31 @@ describe("processing view", () => {
     state.progressStep = "translating";
   });
 
-  it("shows the preview button when progress.step is done, before the status field catches up", () => {
+  it("leaves the progress screen as soon as the preview step is done", () => {
     state.delayed = false;
     state.status = "processing";
     state.previewVersion = null;
     state.progressStep = "done";
     const markup = html();
-    expect(markup).toContain("Your preview is ready");
-    expect(markup).toContain('data-testid="view-preview"');
+    expect(markup).toContain("Opening your preview");
+    expect(markup).not.toContain("Your preview is ready");
+    expect(markup).not.toContain('data-testid="view-preview"');
+    expect(markup).not.toContain("View preview");
     expect(markup).not.toContain('data-testid="preview-steps"');
     expect(markup).not.toContain("Translating and laying out");
     state.progressStep = "translating";
   });
 
-  it("shows the preview button only after the preview exists", () => {
+  it("leaves the progress screen when the preview status is ready", () => {
     state.delayed = false;
     state.status = "preview_ready";
     state.previewVersion = null;
     state.progressStep = "translating";
     const markup = html();
-    expect(markup).toContain("Your preview is ready");
-    expect(markup).toContain('data-testid="view-preview"');
-    expect(markup).toContain("View preview");
+    expect(markup).toContain("Opening your preview");
+    expect(markup).not.toContain("Your preview is ready");
+    expect(markup).not.toContain('data-testid="view-preview"');
+    expect(markup).not.toContain("View preview");
     expect(markup).not.toContain("Usually ready in 3 minutes");
     expect(markup).not.toContain('data-testid="preview-steps"');
     expect(markup).not.toContain('data-testid="progress-bar"');

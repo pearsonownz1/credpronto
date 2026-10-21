@@ -9,6 +9,7 @@ import {
 } from "@/lib/orders/languages";
 import { skipPageNote, sumQuotedBillable } from "@/lib/orders/skip-pages";
 import { translationSpeedLine } from "@/lib/orders/speed-line";
+import { previewIsReady, type PreviewReadyOrder } from "@/lib/flow/preview-progress";
 import type { EvaluationLine } from "@/lib/orders/types";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import {
@@ -647,6 +648,28 @@ export function orderHubStep(
     return "quote";
   }
   return "processing";
+}
+
+/**
+ * Preview page for an order whose watermarked preview already exists.
+ * Null while `/order/[token]` should keep its quote, payment, or progress screen.
+ */
+export function readyPreviewPath(
+  token: string,
+  checkout: string | null | undefined,
+  order: PreviewReadyOrder & {
+    delayed?: boolean;
+    reviewReason?: string | null;
+    fulfillment?: "released" | "awaiting_review" | null;
+    orderType?: string | null;
+    service?: string | null;
+    serviceType?: string | null;
+  },
+): string | null {
+  if (!token) return null;
+  if (orderHubStep(checkout, order.status, order) !== "processing") return null;
+  if (!previewIsReady(order)) return null;
+  return `/preview/${encodeURIComponent(token)}`;
 }
 
 export function checkoutFailureMessage(status: number, message: string): string | null {
