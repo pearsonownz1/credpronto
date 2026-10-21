@@ -244,7 +244,8 @@ export function UploadCard({
       ) : null}
       <form noValidate onSubmit={onSubmit}>
         <fieldset data-testid="order-choice" className="mb-4">
-          <legend className="mb-1.5 text-[13px] font-semibold">What do you need?</legend>
+          <legend className="text-[13px] font-semibold">What do you need?</legend>
+          <p className="mt-1 mb-2 text-xs text-ink-muted">Pick a translation, an evaluation, or both.</p>
           <div className="grid gap-2">
             {PRODUCTS.map((item) => {
               const selected = checks[item.key];
