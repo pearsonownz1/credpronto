@@ -454,7 +454,12 @@ export async function clearOrderColumn(
   fail(error);
 }
 
-/** Paid orders still waiting on a person, old enough for the urgent backstop. */
+/**
+ * Paid orders still waiting on a person, old enough for the urgent backstop.
+ * A credential evaluation that already received the first staff email is left out.
+ * Staff upload that report later; the two-minute reminder is only for translations.
+ * An evaluation with no first email stays in the list so this cron can still send it.
+ */
 export async function listStaffAlertCandidates(db: Db, paidBefore: string): Promise<OrderRecord[]> {
   const { data, error } = await db
     .from("orders")
@@ -463,6 +468,7 @@ export async function listStaffAlertCandidates(db: Db, paidBefore: string): Prom
     .not("paid_at", "is", null)
     .lte("paid_at", paidBefore)
     .is("staff_urgent_alert_sent_at", null)
+    .or("service.is.null,staff_alert_sent_at.is.null")
     .order("paid_at", { ascending: true })
     .limit(40);
   fail(error);

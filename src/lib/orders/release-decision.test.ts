@@ -84,6 +84,7 @@ describe("auto release", () => {
     const paid = Date.parse(PAID);
     expect(urgentAlertDue({ ...base, now: paid + URGENT_ALERT_DELAY_MS - 1 })).toBe(false);
     expect(urgentAlertDue({ ...base, now: paid + URGENT_ALERT_DELAY_MS })).toBe(true);
+    expect(urgentAlertDue({ ...base, service: null, now: paid + URGENT_ALERT_DELAY_MS })).toBe(true);
     expect(urgentAlertDue({ ...base, status: "delivered", now: paid + URGENT_ALERT_DELAY_MS })).toBe(false);
     expect(urgentAlertDue({ ...base, staffAlertSentAt: null, now: paid + URGENT_ALERT_DELAY_MS })).toBe(false);
     expect(
@@ -93,6 +94,8 @@ describe("auto release", () => {
         now: paid + URGENT_ALERT_DELAY_MS,
       }),
     ).toBe(false);
+    expect(urgentAlertDue({ ...base, service: "diploma", now: paid + URGENT_ALERT_DELAY_MS })).toBe(false);
+    expect(urgentAlertDue({ ...base, service: "course_by_course", now: paid + URGENT_ALERT_DELAY_MS })).toBe(false);
     expect(URGENT_ALERT_DELAY_MS).toBe(120_000);
   });
 });
@@ -184,5 +187,8 @@ describe("paid staff migration and cron", () => {
     );
     expect(route).toMatch(/CRON_SECRET/);
     expect(route).toMatch(/runStaffAlertBackstop/);
+
+    const candidates = readFileSync(path.join(process.cwd(), "src/lib/orders/db.ts"), "utf8");
+    expect(candidates).toMatch(/service\.is\.null,staff_alert_sent_at\.is\.null/);
   });
 });

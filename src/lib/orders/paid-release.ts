@@ -87,7 +87,8 @@ export async function settlePaidOrder(
 
   const sent = await sendFirstStaffAlert(db, stamped);
   await notifyEvaluationPaidAlert(db, stamped);
-  if (sent && options.scheduleUrgent !== false) {
+  // Evaluations stay with staff until the report is uploaded. Do not arm the two-minute reminder.
+  if (sent && options.scheduleUrgent !== false && !stamped.service) {
     const schedule = options.scheduleUrgent ?? scheduleDefault;
     await schedule(order.id);
   }

@@ -5,7 +5,7 @@ import * as db from "./db";
 import * as email from "./email";
 import * as finalEmail from "./final-email";
 import { EVAL_ALERT_SIGNATURE_HEADER } from "./eval-alert-webhook";
-import { settlePaidOrder } from "./paid-release";
+import { runStaffAlertBackstop, settlePaidOrder } from "./paid-release";
 import type { Db } from "./storage";
 import type { DeliveryRecord, DocumentRecord, OrderRecord, PageRecord, PaymentRecord } from "./types";
 import * as webhooks from "./webhook-delivery";
@@ -204,6 +204,91 @@ describe("settlePaidOrder", () => {
     });
     expect(certification.stampApprovedCover).not.toHaveBeenCalled();
     expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
+  });
+
+  it("emails staff once for a paid evaluation with translation and does not arm the urgent reminder", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue(
+      order({
+        serviceType: "evaluation",
+        orderType: "evaluation",
+        service: "diploma",
+        degreeCount: 1,
+        includeTranslation: true,
+        evaluationCents: 1995,
+        translationCents: 995,
+        unitPriceCents: 995,
+        totalCents: 2990,
+        billablePages: 1,
+        sourceLanguage: null,
+        finalTranslationPath: null,
+        certificationPath: null,
+        languageConfirmed: false,
+        progress: { step: "uploaded", pagesRead: 0, pagesTotal: 0 },
+      }),
+    );
+    vi.spyOn(db, "listQaRuns").mockResolvedValue([]);
+    const schedule = vi.fn();
+
+    const result = await settlePaidOrder(dbHandle, orderId, { scheduleUrgent: schedule });
+
+    expect(result.fulfillment).toBe("awaiting_review");
+    expect(email.sendStaffOrderAlert).toHaveBeenCalledTimes(1);
+    expect(email.sendStaffOrderAlert).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({ urgent: false, orderId, serviceType: "evaluation" }),
+    );
+    expect(schedule).not.toHaveBeenCalled();
+  });
+
+  it("does not send the urgent reminder for an evaluation the cron already told staff about", async () => {
+    const paidAt = "2026-10-21T10:23:25.358Z";
+    const evaluation = order({
+      serviceType: "evaluation",
+      orderType: "evaluation",
+      service: "course_by_course",
+      degreeCount: 2,
+      includeTranslation: true,
+      evaluationCents: 7990,
+      translationCents: 995,
+      unitPriceCents: 995,
+      totalCents: 8985,
+      billablePages: 1,
+      finalTranslationPath: null,
+      certificationPath: null,
+      languageConfirmed: false,
+      paidAt,
+      staffAlertSentAt: "2026-10-21T10:23:25.809Z",
+      progress: { step: "uploaded", pagesRead: 0, pagesTotal: 0 },
+    });
+    vi.spyOn(db, "listStaffAlertCandidates").mockResolvedValue([evaluation]);
+    vi.spyOn(db, "getOrderById").mockResolvedValue(evaluation);
+    vi.spyOn(db, "listQaRuns").mockResolvedValue([]);
+
+    const result = await runStaffAlertBackstop(dbHandle, Date.parse(paidAt) + 3 * 60 * 1000);
+
+    expect(result.urgent).toEqual([]);
+    expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
+  });
+
+  it("still sends the urgent reminder for a flagged translation", async () => {
+    const paidAt = "2026-10-12T00:05:00.000Z";
+    const flagged = order({
+      staffAlertSentAt: "2026-10-12T00:06:00.000Z",
+      paidAt,
+    });
+    vi.spyOn(db, "listStaffAlertCandidates").mockResolvedValue([flagged]);
+    vi.spyOn(db, "getOrderById").mockResolvedValue(flagged);
+    vi.spyOn(db, "listQaRuns").mockResolvedValue([
+      { id: "qa-1", orderId, attempt: 1, status: "pass", score: 81, issues: [], createdAt: "2026-10-12T00:04:00.000Z" },
+    ]);
+
+    const result = await runStaffAlertBackstop(dbHandle, Date.parse(paidAt) + 3 * 60 * 1000);
+
+    expect(result.urgent).toEqual([orderId]);
+    expect(email.sendStaffOrderAlert).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({ urgent: true, orderId }),
+    );
   });
 
   it("posts one signed evaluation.paid alert when the order is paid", async () => {
