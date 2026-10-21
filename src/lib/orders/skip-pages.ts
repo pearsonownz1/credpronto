@@ -1,4 +1,4 @@
-import { evaluationCheckoutTotal } from "./evaluation-price";
+import { evaluationPricePatch, MAX_DEGREE_COUNT, rejectCustomerPageCount } from "./evaluation-price";
 import { HttpError } from "./errors";
 import type { EvaluationService } from "./types";
 
@@ -24,6 +24,8 @@ export type QuotePatch = {
   targetLanguage?: string;
   /** Evaluation orders only. Certified translation is charged only when this is true. */
   includeTranslation?: boolean;
+  /** Credentials to price. Integer from 1 to 5. Pages are not accepted. */
+  degreeCount?: number;
 };
 
 export function parseQuotePatch(body: unknown): QuotePatch {
@@ -31,6 +33,7 @@ export function parseQuotePatch(body: unknown): QuotePatch {
     throw new HttpError("Expected a JSON object.", 400);
   }
   const row = body as Record<string, unknown>;
+  rejectCustomerPageCount(row);
   const patch: QuotePatch = {};
   if ("skipPages" in row) {
     if (!Array.isArray(row.skipPages)) {
@@ -57,7 +60,19 @@ export function parseQuotePatch(body: unknown): QuotePatch {
     }
     patch.includeTranslation = row.includeTranslation;
   }
-  if (patch.skipPages == null && patch.targetLanguage == null && patch.includeTranslation == null) {
+  if ("degreeCount" in row) {
+    const degreeCount = typeof row.degreeCount === "number" ? row.degreeCount : Number(row.degreeCount);
+    if (!Number.isInteger(degreeCount) || degreeCount < 1 || degreeCount > MAX_DEGREE_COUNT) {
+      throw new HttpError(`degreeCount must be an integer from 1 to ${MAX_DEGREE_COUNT}`, 400);
+    }
+    patch.degreeCount = degreeCount;
+  }
+  if (
+    patch.skipPages == null &&
+    patch.targetLanguage == null &&
+    patch.includeTranslation == null &&
+    patch.degreeCount == null
+  ) {
     throw new HttpError("Nothing to update.", 400);
   }
   return patch;
@@ -74,9 +89,16 @@ export function quotePriceAfterSkip(
     includeTranslation?: boolean;
   },
   billablePages: number,
-): { billablePages: number; translationCents: number | null; totalCents: number; includeTranslation: boolean } {
+): {
+  billablePages: number;
+  evaluationCents: number | null;
+  translationCents: number | null;
+  totalCents: number;
+  includeTranslation: boolean;
+  unitPriceCents: number;
+} {
   if (order.service && order.degreeCount != null) {
-    const priced = evaluationCheckoutTotal({
+    const priced = evaluationPricePatch({
       service: order.service,
       degreeCount: order.degreeCount,
       sourceLanguage: order.sourceLanguage,
@@ -86,24 +108,30 @@ export function quotePriceAfterSkip(
     });
     return {
       billablePages,
-      translationCents: priced.translationCents,
-      totalCents: priced.totalCents,
-      includeTranslation: priced.includeTranslation,
+      evaluationCents: priced.evaluation_cents,
+      translationCents: priced.translation_cents,
+      totalCents: priced.total_cents,
+      includeTranslation: priced.include_translation,
+      unitPriceCents: priced.unit_price_cents,
     };
   }
   if (order.service) {
     return {
       billablePages,
+      evaluationCents: order.evaluationCents,
       translationCents: 0,
       includeTranslation: false,
       totalCents: (order.evaluationCents ?? 0) + order.addonCents,
+      unitPriceCents: order.unitPriceCents,
     };
   }
   return {
     billablePages,
+    evaluationCents: null,
     translationCents: null,
     includeTranslation: false,
     totalCents: billablePages * order.unitPriceCents + order.addonCents,
+    unitPriceCents: order.unitPriceCents,
   };
 }
 

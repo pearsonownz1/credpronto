@@ -52,6 +52,9 @@ describe("upload order choice", () => {
     expect(uploadChoiceFromChecks({ translation: false, diploma: false, courseByCourse: false }, 1)).toBeNull();
     expect(uploadChoiceFromChecks({ translation: false, diploma: true, courseByCourse: true }, 1)).toBeNull();
     expect(uploadChoiceFromChecks({ translation: false, diploma: true, courseByCourse: false }, 0)).toBeNull();
+    expect(uploadChoiceFromChecks({ translation: true, diploma: true, courseByCourse: false }, 6)).toBeNull();
+    const five = uploadChoiceFromChecks({ translation: false, diploma: false, courseByCourse: true }, 5);
+    expect(five?.orderType === "evaluation" ? five.degreeCount : null).toBe(5);
   });
 
   it("accepts only the two evaluation services", () => {

@@ -27,7 +27,7 @@ import { sendFinalCustomerEmail } from "./final-email";
 import { fulfillmentFor, parseTrackingNumber } from "./fulfillment";
 import { HttpError } from "./errors";
 import { normalizeLanguage } from "./languages";
-import { evaluationCheckoutTotal } from "./evaluation-price";
+import { evaluationPricePatch } from "./evaluation-price";
 import { publishCourseEquivalency, publishDiplomaEquivalency, retryEvaluation } from "./evaluation";
 import { staffEdgeView } from "./edge";
 import { awaitingEquivalencyPublish, approvalBlockReason } from "./equivalency";
@@ -312,7 +312,7 @@ export async function resolveReview(orderId: string, body: unknown) {
       const updated = await getOrderById(db, order.id);
       return { status: updated?.status ?? ("needs_review" as const), sourceLanguage: language };
     }
-    const priced = evaluationCheckoutTotal({
+    const priced = evaluationPricePatch({
       service: order.service,
       degreeCount: order.degreeCount,
       sourceLanguage: language,
@@ -326,10 +326,7 @@ export async function resolveReview(orderId: string, body: unknown) {
       language_confirmed: true,
       review_reason: null,
       eta_at: null,
-      evaluation_cents: priced.evaluationCents,
-      translation_cents: priced.translationCents,
-      include_translation: priced.includeTranslation,
-      total_cents: priced.totalCents,
+      ...priced,
     });
     return { status: "preview_ready" as const, sourceLanguage: language };
   }

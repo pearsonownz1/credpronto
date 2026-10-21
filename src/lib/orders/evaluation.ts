@@ -18,7 +18,7 @@ import {
 } from "./db";
 import { sendPreviewReady } from "./email";
 import { AiUnavailableError, HttpError } from "./errors";
-import { evaluationCheckoutTotal, needsBundledTranslation } from "./evaluation-price";
+import { evaluationPricePatch, needsBundledTranslation } from "./evaluation-price";
 import { etaFromNow } from "./quote";
 import {
   EQUIVALENCY_QA_RESEARCH,
@@ -232,6 +232,8 @@ export async function publishDiplomaEquivalency(
   const files = await renderEvaluationPdfs(next, {
     reportId: evaluationReportId(order.id),
     issued: evaluationIssuedLabel(order.createdAt),
+    degreeCount: order.degreeCount,
+    detectedPages: order.billablePages,
   });
   const cleanPath = `${order.id}/evaluation-v${version}.pdf`;
   await uploadObject(db, FINALS_BUCKET, cleanPath, files.clean, "application/pdf");
@@ -263,6 +265,8 @@ export async function publishCourseEquivalency(db: Db, order: OrderRecord, equiv
   const files = await renderEvaluationPdfs(next, {
     reportId: evaluationReportId(order.id),
     issued: evaluationIssuedLabel(order.createdAt),
+    degreeCount: order.degreeCount,
+    detectedPages: order.billablePages,
   });
   const cleanPath = `${order.id}/evaluation-v${version}.pdf`;
   await uploadObject(db, FINALS_BUCKET, cleanPath, files.clean, "application/pdf");
@@ -671,7 +675,7 @@ export async function completeEvaluation(
 
   const quoteFor = (source: string | null) =>
     source
-      ? evaluationCheckoutTotal({
+      ? evaluationPricePatch({
           service,
           degreeCount,
           sourceLanguage: source,
@@ -692,10 +696,11 @@ export async function completeEvaluation(
       combined_original_path: input.combinedPath,
       page_order_basis: input.pageOrderBasis,
       page_order: input.pageOrder,
-      evaluation_cents: quote?.evaluationCents ?? null,
-      translation_cents: quote?.translationCents ?? null,
-      ...(quote ? { include_translation: quote.includeTranslation } : {}),
-      total_cents: quote?.totalCents ?? null,
+      ...(quote ?? {
+        evaluation_cents: null,
+        translation_cents: null,
+        total_cents: null,
+      }),
     });
   };
 
@@ -735,6 +740,8 @@ export async function completeEvaluation(
     const files = await renderEvaluationPdfs(result, {
       reportId: evaluationReportId(order.id),
       issued: evaluationIssuedLabel(order.createdAt),
+      degreeCount: order.degreeCount,
+      detectedPages: input.billablePages,
     });
     const stored: EvaluationResult = { ...result, pageCount: files.pageCount };
     await uploadObject(db, PREVIEWS_BUCKET, reportPath, files.preview, "application/pdf");
@@ -749,10 +756,11 @@ export async function completeEvaluation(
       combined_original_path: input.combinedPath,
       page_order_basis: input.pageOrderBasis,
       page_order: input.pageOrder,
-      evaluation_cents: quote?.evaluationCents ?? null,
-      translation_cents: quote?.translationCents ?? null,
-      ...(quote ? { include_translation: quote.includeTranslation } : {}),
-      total_cents: quote?.totalCents ?? null,
+      ...(quote ?? {
+        evaluation_cents: null,
+        translation_cents: null,
+        total_cents: null,
+      }),
       evaluation_result: stored,
       ...storedEdgeMatch(built),
     });
@@ -770,8 +778,8 @@ export async function completeEvaluation(
         targetLanguage: order.targetLanguage,
         documentCount: input.filenames.length,
         pageCount: input.billablePages,
-        totalCents: quote?.totalCents ?? null,
-        includesTranslation: (quote?.translationCents ?? 0) > 0,
+        totalCents: quote?.total_cents ?? null,
+        includesTranslation: (quote?.translation_cents ?? 0) > 0,
       });
     }
   } catch (error) {
@@ -812,7 +820,7 @@ export async function startEvaluationQuote(
   }
   const language = input.languagesDisagree ? null : input.sourceLanguage;
   const ready = !input.imageQuality && languageConfirmed(input, language);
-  const priced = evaluationCheckoutTotal({
+  const priced = evaluationPricePatch({
     service: order.service,
     degreeCount: order.degreeCount,
     sourceLanguage: language,
@@ -830,12 +838,9 @@ export async function startEvaluationQuote(
     combined_original_path: input.combinedPath,
     page_order_basis: input.pageOrderBasis,
     page_order: input.pageOrder,
-    evaluation_cents: priced.evaluationCents,
-    translation_cents: priced.translationCents,
-    include_translation: priced.includeTranslation,
-    total_cents: priced.totalCents,
+    ...priced,
   });
-  return { status, totalCents: priced.totalCents, billablePages: input.billablePages };
+  return { status, totalCents: priced.total_cents, billablePages: input.billablePages };
 }
 
 export async function retryEvaluation(db: Db, order: OrderRecord, sourceLanguage: string): Promise<void> {

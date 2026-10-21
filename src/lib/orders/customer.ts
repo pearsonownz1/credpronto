@@ -5,7 +5,7 @@ import { checkoutBlockReason } from "./equivalency";
 import { downloadGate } from "./access";
 import { checkoutPreviewImageUrl } from "./checkout-image";
 import { checkoutLineProduct, checkoutProductDescription } from "./checkout-preview";
-import { checkoutPriceLines, evaluationCheckoutTotal, evaluationPrice } from "./evaluation-price";
+import { checkoutPriceLines, checkoutServiceCharge, evaluationPricePatch } from "./evaluation-price";
 import { deliveryFileTarget } from "./delivery-file";
 import {
   DOWNLOAD_URL_SECONDS,
@@ -145,7 +145,16 @@ export async function patchOrderQuote(token: string, body: unknown): Promise<Cus
     includeTranslation = patch.includeTranslation;
   }
 
-  if (patch.skipPages || patch.includeTranslation != null) {
+  let degreeCount = order.degreeCount;
+  if (patch.degreeCount != null) {
+    if (order.service !== "diploma" && order.service !== "course_by_course") {
+      throw new HttpError("This order has no evaluation.", 400);
+    }
+    degreeCount = patch.degreeCount;
+    orderPatch.degree_count = degreeCount;
+  }
+
+  if (patch.skipPages || patch.includeTranslation != null || patch.degreeCount != null) {
     const documents = await listDocuments(db, order.id);
     const pages = [...(await listPages(db, documents.map((document) => document.id)))].sort((a, b) =>
       compareCombinedPages(documents, a, b),
@@ -168,12 +177,14 @@ export async function patchOrderQuote(token: string, body: unknown): Promise<Cus
       );
     }
     const priced = quotePriceAfterSkip(
-      { ...order, includeTranslation },
+      { ...order, includeTranslation, degreeCount },
       billablePages,
     );
     orderPatch.billable_pages = priced.billablePages;
     orderPatch.total_cents = priced.totalCents;
+    orderPatch.unit_price_cents = priced.unitPriceCents;
     if (priced.translationCents != null) orderPatch.translation_cents = priced.translationCents;
+    if (priced.evaluationCents != null) orderPatch.evaluation_cents = priced.evaluationCents;
     if (order.service) orderPatch.include_translation = priced.includeTranslation;
   }
 
@@ -231,18 +242,17 @@ export async function confirmOrder(token: string, body: unknown): Promise<Custom
   if (fields.length > 0) await confirmFields(db, order.id, fields);
   const pricePatch: Record<string, unknown> = {};
   if (evaluation && order.service && order.degreeCount != null) {
-    const priced = evaluationCheckoutTotal({
-      service: order.service,
-      degreeCount: order.degreeCount,
-      sourceLanguage: language,
-      billablePages: order.billablePages ?? 0,
-      includeTranslation: payload.includeTranslation ?? order.includeTranslation,
-      addonCents: order.addonCents,
-    });
-    pricePatch.evaluation_cents = priced.evaluationCents;
-    pricePatch.translation_cents = priced.translationCents;
-    pricePatch.include_translation = priced.includeTranslation;
-    pricePatch.total_cents = priced.totalCents;
+    Object.assign(
+      pricePatch,
+      evaluationPricePatch({
+        service: order.service,
+        degreeCount: order.degreeCount,
+        sourceLanguage: language,
+        billablePages: order.billablePages ?? 0,
+        includeTranslation: payload.includeTranslation ?? order.includeTranslation,
+        addonCents: order.addonCents,
+      }),
+    );
   }
   await updateOrder(db, order.id, {
     status: "confirmed",
@@ -422,20 +432,22 @@ export async function startCheckout(token: string, body: unknown = {}) {
   if (blocked) throw new HttpError(blocked, 409);
   if (await settledPayment(db, order.id)) throw new HttpError("This order is already paid", 409);
   const selection = parseCheckoutBody(body, order.billablePages, order);
-  const flat = evaluationPrice({ ...order, addonCents: 0 });
-  const base = flat?.evaluationCents ?? serviceCents(order);
+  const charge = checkoutServiceCharge(order);
+  const base = charge?.serviceCents ?? serviceCents(order);
   if (base == null) throw new HttpError("This order is not ready to pay", 409);
   const total = base + selection.addonCents;
-  if (flat) {
+  if (charge) {
     await updateOrder(db, order.id, {
-      unit_price_cents: flat.unitPriceCents,
-      evaluation_cents: flat.evaluationCents,
-      translation_cents: 0,
-      total_cents: flat.evaluationCents + order.addonCents,
+      unit_price_cents: charge.unitPriceCents,
+      evaluation_cents: charge.evaluationCents,
+      translation_cents: charge.translationCents,
+      include_translation: charge.includeTranslation,
+      total_cents: charge.serviceCents + order.addonCents,
     });
-    order.unitPriceCents = flat.unitPriceCents;
-    order.evaluationCents = flat.evaluationCents;
-    order.translationCents = 0;
+    order.unitPriceCents = charge.unitPriceCents;
+    order.evaluationCents = charge.evaluationCents;
+    order.translationCents = charge.translationCents;
+    order.includeTranslation = charge.includeTranslation;
     order.totalCents = total;
   }
   await replaceOrderAddons(db, order.id, {

@@ -321,7 +321,7 @@ Optional services selected at checkout. The prices live on the order and quote r
 
 `per: "order"` charges `unitCents` once. `addonOptions[].totalCents` is that charge for this order. Quote and order responses still include `expeditedUnit` for older clients.
 
-`GET /api/orders/[token]` is the order and the quote. It includes `addonOptions` (the add-ons offered for that order), `expeditedUnit` (`"order"`), `addons` (the selected ids, or `[]`), `shippingAddress` (`null` until mail is selected), and `totalCents`. `totalCents` is the service price plus the selected add-on totals. With nothing selected it stays the translation price (`billablePages * unitPriceCents`) or the evaluation price (`evaluationCents + translationCents`).
+`GET /api/orders/[token]` is the order and the quote. It includes `addonOptions` (the add-ons offered for that order), `expeditedUnit` (`"order"`), `addons` (the selected ids, or `[]`), `shippingAddress` (`null` until mail is selected), and `totalCents`. `totalCents` is the service price plus the selected add-on totals. With nothing selected it stays the translation price (`billablePages * 995`) or, on an evaluation, `evaluationCents + translationCents`. `billablePages` is the detected page count for `Pages: N`. `unitPriceCents` on an evaluation is the per-degree rate, not the page rate.
 
 ```json
 {
@@ -594,10 +594,12 @@ An evaluation is an order whose `orderType` is `evaluation`. `service` is `diplo
 | --- | --- | --- |
 | `orderType` | no | `translation` (default) or `evaluation` |
 | `service` | yes when `orderType` is `evaluation` | `diploma` or `course_by_course` |
-| `degreeCount` | yes when `orderType` is `evaluation` | Integer ≥ 1. The number of degrees to price |
-| `includeTranslation` | no | `true` when an evaluation should also include a certified translation. Omit it, or send `false`, to price the evaluation alone. A translation order ignores this field. |
+| `degreeCount` | yes when `orderType` is `evaluation` | Integer from 1 to 5. The number of credentials to price at the flat per-degree rate. |
+| `includeTranslation` | no | `true` when Translation is ticked together with an evaluation. Omit it, or send `false`, to price the evaluation alone. A translation order ignores this field. |
 
-`400` when an evaluation is missing `service` or `degreeCount`, when `service` is not one of those two values, or when `includeTranslation` is present and not `true` or `false`.
+Do not send a page count. `pages`, `pageCount`, `billablePages`, `detectedPages`, and `requestedPages` are rejected with `400` `{ "error": "Pages are counted from the upload." }`.
+
+`400` when an evaluation is missing `service` or `degreeCount`, when `degreeCount` is not an integer from 1 to 5, when `service` is not one of those two values, or when `includeTranslation` is present and not `true` or `false`. Diploma and course-by-course are mutually exclusive: send one `service`.
 
 `GET /api/orders/[token]` echoes the choice on every status:
 
@@ -613,34 +615,49 @@ An evaluation is an order whose `orderType` is `evaluation`. `service` is `diplo
 
 ### Price
 
-Amounts are integer cents. A credential evaluation is the flat fee for the chosen type. Customer price fields do not use the $9.95 translation page rate.
+Amounts are integer cents. A credential evaluation is `degreeCount` times the flat per-degree rate. There is no separate extra-credential rate. A certified translation, when the customer ticks it and the source is not English, is `billablePages` times `995`. `billablePages` is the detected page count. The upload screen shows it read-only as `Pages: N`. The customer does not send it.
 
-| `service` | `unitPriceCents` |
+| `service` | Per degree (`unitPriceCents` on the evaluation line) |
 | --- | --- |
 | `diploma` | `1995` ($19.95) |
 | `course_by_course` | `3995` ($39.95) |
 
-`evaluationCents` is `degreeCount` times that unit. It is stored when the order is created, together with `translationCents` `0`, `totalCents` equal to `evaluationCents`, and `unitPriceCents` of `1995` or `3995`. `GET /api/orders/[token]` reports those amounts on every status, including `draft`. `translationCents` is `0`, `translationOfferCents` is null, and `lineItems` has only the evaluation line. `includeTranslation` on the customer payload is false. Checkout charges `evaluationCents` plus any add-ons.
+`GET /api/orders/[token]` is the quote. On an evaluation, `unitPriceCents` is the per-degree rate (`1995` or `3995`). The translation line's `unitAmountCents` is `995`. `evaluationCents` is `degreeCount` times the per-degree rate. `translationCents` is `0` until translation is included and pages have been detected on a non-English source, then `billablePages * 995`. `totalCents` is `evaluationCents + translationCents + addonCents`. `lineItems` lists the evaluation and, when `translationCents` is greater than 0, the translation. `translationOfferCents` is the detected-page translation price when the customer can still add it, and null once it is included or the source is English.
+
+`PATCH /api/orders/[token]` while `quoted` or `needs_review` accepts `{ "degreeCount": 2 }` (integer 1–5) and `{ "includeTranslation": true }`. It does not accept a page count. The response is the same order payload, with `billablePages` unchanged except when `skipPages` drops sides that are already not billable.
+
+Checkout is one Stripe Checkout session. Its line items are the evaluation (`quantity` = `degreeCount`, `unit_amount` = `1995` or `3995`) and, when charged, `Certified translation` (`quantity` = `billablePages`, `unit_amount` = `995`), plus any add-ons. The receipt uses those same stored counts. The certification page prints `Pages` from `billablePages` and `Credentials` from `degreeCount` when that order has them. The generated evaluation report prints the same two counts.
 
 ```json
 {
+  "billablePages": 2,
+  "degreeCount": 2,
   "unitPriceCents": 1995,
-  "evaluationCents": 1995,
-  "translationCents": 0,
-  "totalCents": 1995,
+  "evaluationCents": 3990,
+  "translationCents": 1990,
+  "includeTranslation": true,
+  "translationOfferCents": null,
+  "totalCents": 5980,
   "lineItems": [
     {
       "kind": "evaluation",
       "description": "Diploma evaluation",
-      "quantity": 1,
+      "quantity": 2,
       "unitAmountCents": 1995,
-      "amountCents": 1995
+      "amountCents": 3990
+    },
+    {
+      "kind": "translation",
+      "description": "Certified translation",
+      "quantity": 2,
+      "unitAmountCents": 995,
+      "amountCents": 1990
     }
   ]
 }
 ```
 
-A course-by-course evaluation uses the description `Course-by-course evaluation` and `unitAmountCents` `3995`.
+A course-by-course evaluation uses the description `Course-by-course evaluation` and `unitAmountCents` `3995`. An evaluation without translation omits the translation line and leaves `translationCents` at `0`.
 
 ### Flow
 

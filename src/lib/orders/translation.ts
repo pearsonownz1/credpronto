@@ -523,6 +523,8 @@ export async function runTranslationAssemble(
           documents: coverDocuments(documents, pages, translatedCounts),
           translatorName: coverTranslatorName(null),
           signature: coverSignature(null, configuredSignature),
+          pricedPages: order.billablePages,
+          degreeCount: order.degreeCount,
         });
         const translationPath = await storeCertifiedTranslation(db, {
           orderId: input.orderId,

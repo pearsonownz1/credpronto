@@ -171,9 +171,10 @@ describe("customer order", () => {
     expect(order.expeditedUnit).toBe("order");
     expect(order.evaluationCents).toBe(1995);
     expect(order.degreeCount).toBe(1);
+    expect(order.billablePages).toBe(1);
     expect(order.unitPriceCents).toBe(1995);
-    expect(order.translationCents).toBe(0);
-    expect(order.totalCents).toBe(1995);
+    expect(order.translationCents).toBe(995);
+    expect(order.totalCents).toBe(2990);
     expect(order.lineItems).toEqual([
       {
         kind: "evaluation",
@@ -182,11 +183,17 @@ describe("customer order", () => {
         unitAmountCents: 1995,
         amountCents: 1995,
       },
+      {
+        kind: "translation",
+        description: "Certified translation",
+        quantity: 1,
+        unitAmountCents: 995,
+        amountCents: 995,
+      },
     ]);
-    expect(order.includeTranslation).toBe(false);
+    expect(order.includeTranslation).toBe(true);
     expect(order.translationOfferCents).toBeNull();
     expect(order.unitPriceCents).not.toBe(995);
-    expect(order.lineItems.some((item) => item.unitAmountCents === 995)).toBe(false);
     expect(order.evaluation).toBeNull();
     expect(order.progress.step).not.toBe("delivered");
     expect(order).not.toHaveProperty("edge");
@@ -324,7 +331,8 @@ describe("customer order", () => {
       email: "ada@example.com",
     });
     expect(order.includeTranslation).toBe(false);
-    expect(order.translationOfferCents).toBeNull();
+    expect(order.billablePages).toBe(1);
+    expect(order.translationOfferCents).toBe(995);
     expect(order.unitPriceCents).toBe(1995);
     expect(order.totalCents).toBe(1995);
     expect(order.lineItems.map((item) => item.kind)).toEqual(["evaluation"]);
