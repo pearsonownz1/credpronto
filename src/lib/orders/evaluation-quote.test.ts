@@ -233,6 +233,38 @@ describe("evaluation confirm", () => {
     await expect(confirmOrder(token, { sourceLanguage: "es" })).rejects.toThrow(/every document/);
   });
 
+  it("reprices a quote from services, and from service plus includeTranslation", async () => {
+    vi.spyOn(db, "requireOrderByHash").mockResolvedValue(evaluationOrder());
+    await patchOrderQuote(token, { services: ["translation", "diploma", "course_by_course"], degreeCount: 2 });
+    expect(db.updateOrder).toHaveBeenCalledWith(
+      expect.anything(),
+      "order-1",
+      expect.objectContaining({
+        services: ["translation", "diploma", "course_by_course"],
+        service: null,
+        degree_count: 2,
+        include_translation: true,
+        evaluation_cents: 2 * (1995 + 3995),
+        translation_cents: 995,
+        total_cents: 2 * (1995 + 3995) + 995,
+      }),
+    );
+
+    await patchOrderQuote(token, { service: "diploma", includeTranslation: false });
+    expect(db.updateOrder).toHaveBeenLastCalledWith(
+      expect.anything(),
+      "order-1",
+      expect.objectContaining({
+        services: ["diploma"],
+        service: "diploma",
+        include_translation: false,
+        evaluation_cents: 1995,
+        translation_cents: 0,
+        total_cents: 1995,
+      }),
+    );
+  });
+
   it("reprices the quote when the customer opts in", async () => {
     vi.spyOn(db, "requireOrderByHash").mockResolvedValue(evaluationOrder());
     await patchOrderQuote(token, { includeTranslation: true });

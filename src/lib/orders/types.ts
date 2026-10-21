@@ -151,6 +151,15 @@ export type OrderRecord = {
   externalRef: string | null;
   orderType: OrderType;
   service: EvaluationService | null;
+  /**
+   * Every selected upload service. Null on rows created before the column existed;
+   * those rows are derived from `service` and `includeTranslation`.
+   */
+  services?: Array<"translation" | "diploma" | "course_by_course"> | null;
+  /** Staff PDFs already stored for each evaluation on a combined order. */
+  serviceFiles?: Partial<Record<EvaluationService, string>> | null;
+  /** One result per selected evaluation when both diploma and course-by-course were ordered. */
+  evaluationResults?: EvaluationResult[] | null;
   degreeCount: number | null;
   evaluationCents: number | null;
   translationCents: number | null;

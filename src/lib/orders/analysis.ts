@@ -31,6 +31,7 @@ import {
 import { buildCombinedOriginal, type SourceFile } from "./pdf/combine";
 import { pdfPageTexts } from "./pdf-text";
 import { startEvaluationQuote } from "./evaluation";
+import { orderHasEvaluation } from "./service-selection";
 import { decideQuote, etaFromNow } from "./quote";
 import { humanReviewReason } from "./review-reason";
 import { notifyOrder } from "./webhook-delivery";
@@ -569,7 +570,7 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
     });
 
     await replaceExtractedConfirmations(db, orderId, extractedFields);
-    if (order.service && order.degreeCount != null) {
+    if (orderHasEvaluation(order) && order.degreeCount != null) {
       const quoted = await startEvaluationQuote(db, order, {
         sourceLanguage: distinct.length === 1 ? distinct[0] : null,
         confidence: confidences.length > 0 ? Math.min(...confidences) : null,

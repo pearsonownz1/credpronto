@@ -18,10 +18,11 @@ export type UploadServiceQuote = {
   degreeCount: number;
   /** Null when translation is off, or on but the page count is not known yet. */
   translationCents: number | null;
-  /** Null when that evaluation is off. */
+  /** Null when diploma evaluation is off. */
   diplomaCents: number | null;
+  /** Null when course-by-course evaluation is off. */
   courseCents: number | null;
-  /** Null when neither evaluation is selected. Sum when both are selected. */
+  /** Null when neither evaluation is selected. Sum of the selected evaluation fees. */
   evaluationCents: number | null;
   /** Null while a selected translation is still waiting on a page count. */
   totalCents: number | null;

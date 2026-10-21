@@ -327,6 +327,7 @@ export function UploadCard({
                   : item.id === "diploma"
                     ? quote.diplomaCents
                     : quote.courseCents;
+              const showDegrees = selected && item.id !== SERVICE_IDS.translation;
               const price = selected && amount != null ? formatMoney(amount) : item.price;
               return (
                 <div
@@ -365,7 +366,7 @@ export function UploadCard({
                       {pageCount == null ? "Pages: counting…" : `Pages: ${pageCount}`}
                     </span>
                   ) : null}
-                  {item.id !== "translation" && selected ? (
+                  {showDegrees ? (
                     <DegreeStepper count={quote.degreeCount} onChange={(next) => setDegrees(String(next))} />
                   ) : null}
                   <span data-testid={`choice-price-${item.id}`} className="ml-auto shrink-0 text-[14px] font-semibold tabular-nums">

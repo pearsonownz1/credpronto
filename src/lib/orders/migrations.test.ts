@@ -152,6 +152,19 @@ describe("auth migrations", () => {
     expect(sql.toLowerCase()).not.toMatch(/add value/);
   });
 
+  it("adds order services without rewriting existing rows", () => {
+    const sql = readFileSync(path.join(migrationsDir, "20261021180000_order_services.sql"), "utf8");
+    const lower = sql.toLowerCase();
+    expect(sql).toMatch(/add column if not exists services text\[\]/);
+    expect(sql).toMatch(/add column if not exists service_files jsonb/);
+    expect(sql).toMatch(/add column if not exists evaluation_results jsonb/);
+    expect(lower).not.toMatch(/\bupdate\b/);
+    expect(lower).not.toMatch(/\binsert\b/);
+    expect(lower).not.toMatch(/\bdelete\b/);
+    expect(lower).not.toMatch(/create type/);
+    expect(lower).not.toMatch(/add value/);
+  });
+
   it("lets an order owner read original uploads", () => {
     const sql = readFileSync(path.join(migrationsDir, "20261021150000_customer_originals_read.sql"), "utf8");
     expect(sql).toMatch(/customer_read_own_originals/);

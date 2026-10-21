@@ -1,17 +1,16 @@
 import { addonOptions, offersExpedited } from "@/lib/orders/addons";
 import { UNIT_PRICE_CENTS } from "@/lib/orders/constants";
 import {
-  evaluationCheckoutTotal,
-  evaluationQuote,
   evaluationUnitCents,
   lineItemsForOrder,
   translationOfferCents,
 } from "@/lib/orders/evaluation-price";
+import { evaluationKinds, priceServices } from "@/lib/orders/service-selection";
 import { languagesEqual } from "@/lib/orders/languages";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import { FlowApiError, requestFailedMessage } from "./api-error";
 import { uploadOrderFiles } from "./direct-upload";
-import type { UploadChoice } from "./order-choice";
+import { serviceRequestFromOrder, type ServiceRequest, type UploadChoice } from "./order-choice";
 import { quoteCounts } from "./present";
 import { sampleCustomerOrder } from "./sample-order";
 import {
@@ -76,7 +75,7 @@ export type FlowClient = {
   ): Promise<{ id: string; status: string }>;
   checkout(
     token: string,
-    body?: {
+    body?: Partial<ServiceRequest> & {
       addons?: string[];
       shippingAddress?: {
         name: string;
@@ -97,7 +96,7 @@ export type FlowClient = {
   updateTargetLanguage(token: string, targetLanguage: string): Promise<CustomerOrder>;
   updateQuote(
     token: string,
-    body: { targetLanguage?: string; includeTranslation?: boolean },
+    body: Partial<ServiceRequest> & { targetLanguage?: string },
   ): Promise<CustomerOrder>;
   /** Mock walk-through moves a quoted order to preview_ready before checkout. */
   markPreviewReady(token: string): Promise<void>;
@@ -232,43 +231,45 @@ function withEvaluationChoice(
   choice: Extract<UploadChoice, { orderType: "evaluation" }>,
 ): CustomerOrder {
   const billablePages = base.billablePages ?? 0;
-  const priced = evaluationCheckoutTotal({
-    service: choice.service,
+  const services =
+    choice.services ??
+    (choice.service
+      ? choice.includeTranslation
+        ? ["translation", choice.service]
+        : [choice.service]
+      : []);
+  const priced = priceServices({
+    services,
     degreeCount: choice.degreeCount,
     sourceLanguage: base.sourceLanguage,
     billablePages,
-    includeTranslation: choice.includeTranslation,
   });
-  const quote = evaluationQuote({
-    service: choice.service,
-    degreeCount: choice.degreeCount,
-    sourceLanguage: base.sourceLanguage,
-    billablePages,
-    includeTranslation: priced.includeTranslation,
-  });
+  if (!priced) return base;
+  const primary = evaluationKinds(priced.services)[0] ?? null;
   return {
     ...base,
     orderType: "evaluation",
-    service: choice.service,
+    service: priced.service,
+    services: priced.services,
     degreeCount: choice.degreeCount,
-    evaluationCents: quote.evaluationCents,
-    translationCents: quote.translationCents,
-    includeTranslation: choice.includeTranslation,
-    unitPriceCents: evaluationUnitCents(choice.service),
-    translationOfferCents: choice.includeTranslation
+    evaluationCents: priced.evaluationCents,
+    translationCents: priced.translationCents,
+    includeTranslation: priced.includeTranslation,
+    unitPriceCents: primary ? evaluationUnitCents(primary) : priced.unitPriceCents,
+    translationOfferCents: priced.includeTranslation
       ? null
       : translationOfferCents({
-          service: choice.service,
+          service: primary,
           sourceLanguage: base.sourceLanguage,
           billablePages,
           unitPriceCents: UNIT_PRICE_CENTS,
         }),
-    totalCents: quote.totalCents,
-    lineItems: quote.lineItems,
+    totalCents: priced.totalCents,
+    lineItems: priced.lineItems,
     addonOptions: addonOptions(billablePages, {
       orderType: "evaluation",
       serviceType: "evaluation",
-      service: choice.service,
+      service: priced.service,
     }),
   };
 }
@@ -453,6 +454,53 @@ const mockClient: FlowClient = {
       ...(body.targetLanguage ? { targetLanguage: body.targetLanguage } : {}),
     };
     const billablePages = quoteCounts(next).billable;
+    const selectionChanged = body.services != null || body.includeTranslation != null || body.service != null;
+    if (selectionChanged) {
+      const request = serviceRequestFromOrder(
+        {
+          services: body.services ?? next.services,
+          service: body.service ?? next.service,
+          includeTranslation: next.includeTranslation,
+          degreeCount: body.degreeCount != null ? Number(body.degreeCount) : next.degreeCount,
+          orderType: body.orderType ?? next.orderType,
+        },
+        body.includeTranslation != null ? { includeTranslation: body.includeTranslation } : undefined,
+      );
+      const degreeCount = request.degreeCount != null ? Number(request.degreeCount) : null;
+      const priced = priceServices({
+        services: request.services,
+        degreeCount: request.orderType === "evaluation" ? degreeCount : null,
+        sourceLanguage: next.sourceLanguage,
+        billablePages,
+        chargeUnknownLanguage: true,
+      });
+      if (priced) {
+        const saved: CustomerOrder = {
+          ...next,
+          orderType: priced.orderType,
+          services: priced.services,
+          service: priced.service,
+          degreeCount: priced.degreeCount,
+          includeTranslation: priced.includeTranslation,
+          evaluationCents: priced.orderType === "evaluation" ? priced.evaluationCents : null,
+          translationCents: priced.orderType === "evaluation" ? priced.translationCents : null,
+          billablePages,
+          totalCents: priced.totalCents,
+          unitPriceCents: priced.unitPriceCents,
+          lineItems: priced.lineItems,
+          translationOfferCents: priced.includeTranslation
+            ? null
+            : translationOfferCents({
+                service: priced.service,
+                sourceLanguage: next.sourceLanguage,
+                billablePages,
+                unitPriceCents: UNIT_PRICE_CENTS,
+              }),
+        };
+        writeMockOrder(saved);
+        return saved;
+      }
+    }
     const evaluationOrder = next.orderType === "evaluation" || next.service != null;
     const wantsTranslation = body.includeTranslation ?? next.includeTranslation;
     const translationCents = evaluationOrder
@@ -480,10 +528,13 @@ const mockClient: FlowClient = {
               unitPriceCents: UNIT_PRICE_CENTS,
             }),
       ...(translationCents != null ? { translationCents } : {}),
-      ...(evaluationOrder && next.service && next.degreeCount != null && next.evaluationCents != null
+      ...(evaluationOrder && next.degreeCount != null && next.evaluationCents != null
         ? {
             lineItems: lineItemsForOrder({
               service: next.service,
+              services: next.services,
+              includeTranslation,
+              sourceLanguage: next.sourceLanguage,
               degreeCount: next.degreeCount,
               evaluationCents: next.evaluationCents,
               translationCents,

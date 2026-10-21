@@ -18,7 +18,9 @@ import {
 } from "./db";
 import { sendPreviewReady } from "./email";
 import { AiUnavailableError, HttpError } from "./errors";
-import { evaluationPricePatch, needsBundledTranslation } from "./evaluation-price";
+import { needsBundledTranslation } from "./evaluation-price";
+import { orderEvaluationKinds, orderHasEvaluation, selectionPricePatch } from "./service-selection";
+import { concatPdfs } from "./pdf/merge";
 import { etaFromNow } from "./quote";
 import {
   EQUIVALENCY_QA_RESEARCH,
@@ -668,6 +670,11 @@ export async function completeEvaluation(
   order: OrderRecord,
   input: EvaluationContext,
 ): Promise<void> {
+  const kinds = orderEvaluationKinds(order);
+  if (kinds.length > 1) {
+    await completeSelectedEvaluations(db, order, input, kinds);
+    return;
+  }
   if (!order.service || order.degreeCount == null) return;
   const service = order.service;
   const degreeCount = order.degreeCount;
@@ -675,12 +682,15 @@ export async function completeEvaluation(
 
   const quoteFor = (source: string | null) =>
     source
-      ? evaluationPricePatch({
+      ? selectionPricePatch({
+          services: order.services,
           service,
+          includeTranslation: order.includeTranslation,
+          orderType: order.orderType,
+          serviceType: order.serviceType,
           degreeCount,
           sourceLanguage: source,
           billablePages: input.billablePages,
-          includeTranslation: order.includeTranslation,
           addonCents: order.addonCents,
         })
       : null;
@@ -794,6 +804,146 @@ export async function completeEvaluation(
 }
 
 /**
+ * Diploma and course-by-course on the same order. Each report is built, then
+ * the previews are stored as one PDF. The price is the sum of both fees.
+ */
+async function completeSelectedEvaluations(
+  db: Db,
+  order: OrderRecord,
+  input: EvaluationContext,
+  kinds: Array<"diploma" | "course_by_course">,
+): Promise<void> {
+  if (order.degreeCount == null) return;
+  const degreeCount = order.degreeCount;
+  const language = input.languagesDisagree ? null : input.sourceLanguage;
+  const quoteFor = (source: string | null) =>
+    source
+      ? selectionPricePatch({
+          services: order.services,
+          service: order.service,
+          includeTranslation: order.includeTranslation,
+          orderType: order.orderType,
+          serviceType: order.serviceType,
+          degreeCount,
+          sourceLanguage: source,
+          billablePages: input.billablePages,
+          addonCents: order.addonCents,
+        })
+      : null;
+  const hold = async (reason: string, pricedLanguage: string | null) => {
+    const quote = quoteFor(pricedLanguage);
+    await updateOrder(db, order.id, {
+      status: "needs_review",
+      review_reason: reason,
+      eta_at: null,
+      source_language: pricedLanguage,
+      billable_pages: input.billablePages,
+      combined_original_path: input.combinedPath,
+      page_order_basis: input.pageOrderBasis,
+      page_order: input.pageOrder,
+      ...(quote ?? { evaluation_cents: null, translation_cents: null, total_cents: null }),
+    });
+  };
+  if (input.imageQuality) {
+    await hold(IMAGE_QUALITY_REASON, language);
+    return;
+  }
+  if (!languageConfirmed(input, language)) {
+    await hold(LANGUAGE_REASON, language);
+    return;
+  }
+
+  const version = await nextPreviewVersion(db, order.id);
+  const { reportPath } = evaluationPreviewObjects(order.id, version);
+  const inserted = await insertPreview(db, { orderId: order.id, version, previewPath: reportPath });
+  if (inserted === "exists") return;
+
+  try {
+    const previews: Uint8Array[] = [];
+    const results: EvaluationResult[] = [];
+    let route: EquivalencyRoute = "qa_research";
+    let edge: ReturnType<typeof storedEdgeMatch> = storedEdgeMatch({
+      edgeCredentialId: null,
+      edgeGradingScaleId: null,
+      edgeMatchMethod: null,
+    });
+    for (const service of kinds) {
+      const extracted =
+        service === "diploma" ? await extractDiploma(input.pageText) : await extractCourses(input.pageText);
+      const built = await buildEvaluatedResult(
+        db,
+        service,
+        extracted,
+        degreeCount,
+        input.filenames,
+        order.edgeCredentialId,
+      );
+      edge = storedEdgeMatch(built);
+      if (built.route === "qa_review") route = "qa_review";
+      if (!built.result) {
+        await markPreview(db, order.id, version, "failed");
+        await hold(UNMAPPED_REASON, language);
+        await updateOrder(db, order.id, edge);
+        return;
+      }
+      const files = await renderEvaluationPdfs(built.result, {
+        reportId: evaluationReportId(order.id),
+        issued: evaluationIssuedLabel(order.createdAt),
+        degreeCount,
+        detectedPages: input.billablePages,
+      });
+      previews.push(files.preview);
+      results.push({ ...built.result, pageCount: files.pageCount });
+    }
+    const preview = previews.length === 1 ? previews[0]! : await concatPdfs(previews);
+    const primary = results.find((result) => result.kind === "diploma") ?? results[0] ?? null;
+    await uploadObject(db, PREVIEWS_BUCKET, reportPath, preview, "application/pdf");
+    const quote = quoteFor(language);
+    await updateOrder(db, order.id, {
+      status: "preview_ready",
+      review_reason: route === "qa_review" ? EQUIVALENCY_QA_REVIEW : EQUIVALENCY_QA_RESEARCH,
+      eta_at: null,
+      source_language: language,
+      language_confirmed: true,
+      billable_pages: input.billablePages,
+      combined_original_path: input.combinedPath,
+      page_order_basis: input.pageOrderBasis,
+      page_order: input.pageOrder,
+      ...(quote ?? { evaluation_cents: null, translation_cents: null, total_cents: null }),
+      ...(primary ? { evaluation_result: primary } : {}),
+      evaluation_results: results,
+      ...edge,
+    });
+    await markPreview(db, order.id, version, "ready");
+    if (order.includeTranslation) await storeTranslationPreview(db, order, version, language);
+    await insertEvent(db, order.id, "preview_ready", { version, services: kinds });
+    const { notifyLifecycle } = await import("./webhook-delivery");
+    await notifyLifecycle(db, order.id, "order.preview_ready");
+    const email = await customerEmail(db, order.customerId);
+    if (email) {
+      await sendPreviewReady(email, {
+        token: input.token,
+        orderId: order.id,
+        sourceLanguage: language,
+        targetLanguage: order.targetLanguage,
+        documentCount: input.filenames.length,
+        pageCount: input.billablePages,
+        totalCents: quote?.total_cents ?? null,
+        includesTranslation: (quote?.translation_cents ?? 0) > 0,
+      });
+    }
+  } catch (error) {
+    await markPreview(db, order.id, version, "failed");
+    if (error instanceof AiUnavailableError) {
+      await hold(READ_REASON, language);
+      return;
+    }
+    const message = error instanceof Error ? error.message : READ_REASON;
+    await hold(message, language);
+  }
+}
+
+/**
  * Evaluations do not build a preview. A person uploads the finished PDF after payment.
  * The arguments stay so older callers compile; the result is always false.
  */
@@ -815,19 +965,25 @@ export async function startEvaluationQuote(
   order: OrderRecord,
   input: EvaluationContext,
 ): Promise<{ status: "quoted" | "needs_review"; totalCents: number | null; billablePages: number }> {
-  if (!order.service || order.degreeCount == null) {
+  if (!orderHasEvaluation(order) || order.degreeCount == null) {
     return { status: "needs_review", totalCents: null, billablePages: input.billablePages };
   }
   const language = input.languagesDisagree ? null : input.sourceLanguage;
   const ready = !input.imageQuality && languageConfirmed(input, language);
-  const priced = evaluationPricePatch({
+  const priced = selectionPricePatch({
+    services: order.services,
     service: order.service,
+    includeTranslation: order.includeTranslation,
+    orderType: order.orderType,
+    serviceType: order.serviceType,
     degreeCount: order.degreeCount,
     sourceLanguage: language,
     billablePages: input.billablePages,
-    includeTranslation: order.includeTranslation,
     addonCents: order.addonCents,
   });
+  if (!priced) {
+    return { status: "needs_review", totalCents: null, billablePages: input.billablePages };
+  }
   const status = ready ? "quoted" : "needs_review";
   await updateOrder(db, order.id, {
     status,

@@ -39,6 +39,18 @@ describe("upload service quote", () => {
       evaluationCents: 3 * COURSE_BY_COURSE_CENTS,
       totalCents: 4 * UNIT_PRICE_CENTS + 3 * COURSE_BY_COURSE_CENTS,
     });
+    expect(
+      uploadServiceQuote({
+        checks: { translation: false, diploma: true, courseByCourse: true },
+        degreeCount: 2,
+        pageCount: null,
+      }),
+    ).toMatchObject({
+      diplomaCents: 2 * DIPLOMA_EVALUATION_CENTS,
+      courseCents: 2 * COURSE_BY_COURSE_CENTS,
+      evaluationCents: 2 * (DIPLOMA_EVALUATION_CENTS + COURSE_BY_COURSE_CENTS),
+      totalCents: 2 * (DIPLOMA_EVALUATION_CENTS + COURSE_BY_COURSE_CENTS),
+    });
   });
 
   it("adds every checked service, including both evaluations", () => {

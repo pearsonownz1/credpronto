@@ -137,10 +137,17 @@ describe("evaluation quote", () => {
       service: null,
       degreeCount: null,
       includeTranslation: false,
+      services: ["translation"],
     });
     expect(
       parseOrderChoice({ orderType: "evaluation", service: "diploma", degreeCount: "2" }),
-    ).toEqual({ orderType: "evaluation", service: "diploma", degreeCount: 2, includeTranslation: false });
+    ).toEqual({
+      orderType: "evaluation",
+      service: "diploma",
+      degreeCount: 2,
+      includeTranslation: false,
+      services: ["diploma"],
+    });
     expect(
       parseOrderChoice({
         orderType: "evaluation",
@@ -153,6 +160,7 @@ describe("evaluation quote", () => {
       service: "course_by_course",
       degreeCount: 1,
       includeTranslation: true,
+      services: ["translation", "course_by_course"],
     });
     expect(
       parseOrderChoice({ orderType: "translation", service: null, degreeCount: null, includeTranslation: "true" }),
@@ -161,6 +169,7 @@ describe("evaluation quote", () => {
       service: null,
       degreeCount: null,
       includeTranslation: false,
+      services: ["translation"],
     });
     expect(() => parseOrderChoice({ orderType: "evaluation", service: "transcript", degreeCount: "1" })).toThrow(
       /diploma or course_by_course/,

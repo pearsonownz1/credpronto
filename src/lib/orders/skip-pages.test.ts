@@ -69,6 +69,15 @@ describe("quote patch", () => {
     expect(() => parseQuotePatch({ skipPages: [1.5] })).toThrow(/page indexes/);
     expect(() => parseQuotePatch({ includeTranslation: "yes" })).toThrow(/includeTranslation must be true or false/);
     expect(parseQuotePatch({ includeTranslation: true })).toEqual({ includeTranslation: true });
+    expect(parseQuotePatch({ services: ["translation", "diploma", "course_by_course"] })).toEqual({
+      services: ["translation", "diploma", "course_by_course"],
+    });
+    expect(parseQuotePatch({ service: "diploma", includeTranslation: false })).toEqual({
+      service: "diploma",
+      includeTranslation: false,
+    });
+    expect(() => parseQuotePatch({ services: ["rush"] })).toThrow(/translation, diploma, or course_by_course/);
+    expect(() => parseQuotePatch({ services: ["diploma"], totalCents: 1995 })).toThrow(/calculated by the server/);
     expect(parseQuotePatch({ degreeCount: 5 })).toEqual({ degreeCount: 5 });
     expect(() => parseQuotePatch({ degreeCount: 6 })).toThrow(/1 to 5/);
     expect(() => parseQuotePatch({ degreeCount: 2, pages: 4 })).toThrow(/counted from the upload/);
