@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createUser, generateLink, signInWithPassword, emailHasAccount, attachOrderToken, finishAuthenticatedUser } =
+const { createUser, generateLink, signInWithPassword, emailHasAccount, finishAuthenticatedUser, finishInstantSignup } =
   vi.hoisted(() => ({
     createUser: vi.fn(),
     generateLink: vi.fn(),
     signInWithPassword: vi.fn(),
     emailHasAccount: vi.fn(),
-    attachOrderToken: vi.fn(),
     finishAuthenticatedUser: vi.fn(),
+    finishInstantSignup: vi.fn(),
   }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -20,16 +20,9 @@ vi.mock("@/lib/auth/email-link", async () => {
   return { ...actual, emailHasAccount };
 });
 
-vi.mock("@/lib/auth/order-link", () => ({
-  attachOrderToken,
-}));
-
 vi.mock("@/lib/auth/finish", () => ({
   finishAuthenticatedUser,
-}));
-
-vi.mock("@/lib/orders/storage", () => ({
-  serviceDb: () => ({ kind: "service" }),
+  finishInstantSignup,
 }));
 
 import { createClient, createServiceClient } from "@/lib/supabase/server";
@@ -56,13 +49,13 @@ beforeEach(() => {
   generateLink.mockReset();
   signInWithPassword.mockReset();
   emailHasAccount.mockReset();
-  attachOrderToken.mockReset();
   finishAuthenticatedUser.mockReset();
+  finishInstantSignup.mockReset();
   vi.mocked(createClient).mockClear();
   vi.mocked(createServiceClient).mockClear();
   emailHasAccount.mockResolvedValue(false);
-  attachOrderToken.mockResolvedValue(null);
   finishAuthenticatedUser.mockResolvedValue(["order-1"]);
+  finishInstantSignup.mockResolvedValue(["token-order"]);
   createUser.mockResolvedValue({ data: { user: confirmedUser }, error: null });
   signInWithPassword.mockResolvedValue({
     data: { user: confirmedUser, session: { access_token: "session-token" } },
@@ -85,8 +78,8 @@ describe("POST /api/auth/password sign-up", () => {
     expect(payload).toEqual({
       userId: "user-1",
       session: true,
-      claimedOrderIds: ["order-1"],
-      emailVerified: true,
+      claimedOrderIds: ["token-order"],
+      emailVerified: false,
       next: "/translate",
     });
     expect(JSON.stringify(payload)).not.toContain("Check your email");
@@ -94,6 +87,7 @@ describe("POST /api/auth/password sign-up", () => {
       email: "ada@example.com",
       password: "password1",
       email_confirm: true,
+      app_metadata: { email_verified: false },
       user_metadata: { full_name: "Ada Lovelace" },
     });
     expect(signInWithPassword).toHaveBeenCalledWith({
@@ -102,8 +96,8 @@ describe("POST /api/auth/password sign-up", () => {
     });
     expect(createClient).toHaveBeenCalledOnce();
     expect(generateLink).not.toHaveBeenCalled();
-    expect(attachOrderToken).toHaveBeenCalledWith({ kind: "service" }, "user-1", "order-token");
-    expect(finishAuthenticatedUser).toHaveBeenCalledWith(confirmedUser, "order-token");
+    expect(finishInstantSignup).toHaveBeenCalledWith("user-1", "order-token");
+    expect(finishAuthenticatedUser).not.toHaveBeenCalled();
   });
 
   it("returns a same-origin next path and attaches the guest order it names", async () => {
@@ -116,8 +110,8 @@ describe("POST /api/auth/password sign-up", () => {
     });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ session: true, next: `/confirm?token=${token}` });
-    expect(attachOrderToken).toHaveBeenCalledWith({ kind: "service" }, "user-1", token);
-    expect(finishAuthenticatedUser).toHaveBeenCalledWith(confirmedUser, token);
+    expect(finishInstantSignup).toHaveBeenCalledWith("user-1", token);
+    expect(finishAuthenticatedUser).not.toHaveBeenCalled();
   });
 
   it("drops an off-origin next path and does not take an order token from it", async () => {
@@ -130,7 +124,8 @@ describe("POST /api/auth/password sign-up", () => {
     });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ next: "/translate" });
-    expect(attachOrderToken).toHaveBeenCalledWith({ kind: "service" }, "user-1", null);
+    expect(finishInstantSignup).toHaveBeenCalledWith("user-1", null);
+    expect(finishAuthenticatedUser).not.toHaveBeenCalled();
   });
 
   it("keeps an explicit order token ahead of the one in next", async () => {
@@ -143,7 +138,8 @@ describe("POST /api/auth/password sign-up", () => {
       orderToken: bodyToken,
       next: `/preview/${nextToken}`,
     });
-    expect(attachOrderToken).toHaveBeenCalledWith({ kind: "service" }, "user-1", bodyToken);
+    expect(finishInstantSignup).toHaveBeenCalledWith("user-1", bodyToken);
+    expect(finishAuthenticatedUser).not.toHaveBeenCalled();
   });
 
   it("omits user metadata when no name is sent", async () => {
@@ -152,6 +148,7 @@ describe("POST /api/auth/password sign-up", () => {
       email: "ada@example.com",
       password: "password1",
       email_confirm: true,
+      app_metadata: { email_verified: false },
     });
   });
 
