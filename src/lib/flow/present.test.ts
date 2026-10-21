@@ -114,12 +114,7 @@ function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
     paidAt: patch.paidAt ?? null,
     fulfillment: patch.fulfillment ?? null,
     evaluationStatus: patch.evaluationStatus ?? null,
-    evaluationStatusAt: patch.evaluationStatusAt ?? {
-      under_review: null,
-      performing_evaluation: null,
-      performing_layout: null,
-      evaluation_complete: null,
-    },
+    evaluationStatusAt: patch.evaluationStatusAt ?? {},
     documentTitle: patch.documentTitle ?? "Document",
   };
 }

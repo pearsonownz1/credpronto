@@ -102,7 +102,6 @@ function mapOrder(row: Row): OrderRecord {
     createdAt: str(row.created_at) ?? new Date().toISOString(),
     updatedAt: str(row.updated_at) ?? str(row.created_at) ?? new Date().toISOString(),
     paidAt: str(row.paid_at),
-    evaluationStatus: str(row.evaluation_status),
     underReviewAt: str(row.under_review_at),
     performingEvaluationAt: str(row.performing_evaluation_at),
     performingLayoutAt: str(row.performing_layout_at),
