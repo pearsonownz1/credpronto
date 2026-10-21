@@ -1,11 +1,13 @@
-import { orderPricePaid, shortOrderId } from "./present";
+import { orderPricePaid, orderStepHref, shortOrderId } from "./present";
 
 export type AccountOrderStatus = "paid" | "in review" | "ready";
 
 export type AccountRow = {
   id: string;
-  /** First eight characters. The row key and links keep the full id. */
+  /** First eight characters. The row key keeps the full id. */
   orderNumber: string;
+  /** Same destination as the rest of the row. Null when this order cannot be opened. */
+  href: string | null;
   /** Price from the order's existing cent fields, like $9.95. */
   price: string;
   documentName: string;
@@ -65,6 +67,7 @@ export function accountRows(
     totalCents: number | null;
     unitPriceCents?: number | null;
     billablePages?: number | null;
+    orderToken?: string | null;
     includeTranslation?: boolean;
     translationReady?: boolean;
   }[],
@@ -78,6 +81,7 @@ export function accountRows(
     rows.push({
       id: order.id,
       orderNumber: shortOrderId(order.id),
+      href: orderStepHref(order),
       price: orderPricePaid(order),
       documentName: name,
       status: accountOrderStatus(order),

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AccountDownload } from "@/components/account/account-download";
 import { signOut } from "@/lib/account/actions";
 import { accountRows } from "@/lib/account/order-row";
@@ -31,11 +32,24 @@ export function AccountOrders({ orders }: { orders: CustomerOrder[] }) {
               <li
                 key={row.id}
                 data-testid={`account-order-${row.id}`}
-                className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line px-4 py-3 first:border-t-0"
+                className="relative flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line px-4 py-3 first:border-t-0"
               >
-                <span data-testid={`account-number-${row.id}`} className="font-mono text-[12.5px]">
-                  {row.orderNumber}
-                </span>
+                {row.href ? (
+                  <Link href={row.href} tabIndex={-1} aria-hidden className="absolute inset-0 z-0" />
+                ) : null}
+                {row.href ? (
+                  <Link
+                    href={row.href}
+                    data-testid={`account-number-${row.id}`}
+                    className="relative z-10 font-mono text-[12.5px]"
+                  >
+                    {row.orderNumber}
+                  </Link>
+                ) : (
+                  <span data-testid={`account-number-${row.id}`} className="font-mono text-[12.5px]">
+                    {row.orderNumber}
+                  </span>
+                )}
                 <span className="min-w-0 flex-1 font-semibold break-words">{row.documentName}</span>
                 <span data-testid={`account-status-${row.id}`} className="text-sm text-ink-muted">
                   {row.status}
@@ -44,7 +58,11 @@ export function AccountOrders({ orders }: { orders: CustomerOrder[] }) {
                 <span data-testid={`account-price-${row.id}`} className="text-sm">
                   {row.price}
                 </span>
-                {row.downloadFile ? <AccountDownload orderId={row.id} file={row.downloadFile} /> : null}
+                {row.downloadFile ? (
+                  <span className="relative z-10">
+                    <AccountDownload orderId={row.id} file={row.downloadFile} />
+                  </span>
+                ) : null}
               </li>
             ))}
           </ul>

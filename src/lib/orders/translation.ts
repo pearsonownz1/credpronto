@@ -327,7 +327,15 @@ async function restoreCollapsedLayout(input: {
   if (!plan) {
     const blocks = ensurePortrait(input.blocks, portrait);
     const kind = input.kind ?? (blocks.some((block) => block.type === "photo") ? "certificate" : undefined);
-    return { blocks: completeLetterFromSource(blocks, input.sourceText), kind };
+    return {
+      blocks: reconcileIdentifiers({
+        sourceText: input.sourceText,
+        blocks: completeLetterFromSource(blocks, input.sourceText),
+        sourceLanguage: input.sourceLanguage,
+        dateFormat: input.dateFormat,
+      }),
+      kind,
+    };
   }
 
   const settle = (blocks: RenderBlock[]) =>
