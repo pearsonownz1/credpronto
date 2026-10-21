@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { getAccount } from "@/lib/account/session";
 import { Logo } from "./mark";
+import { buttonClasses } from "./ui";
 
 const SECTIONS = [
   { id: "translations", label: "Translations", href: "/" },
@@ -13,6 +14,11 @@ const RESOURCES = [
   { href: "/guides", label: "Guides" },
   { href: "/faq", label: "FAQ" },
 ] as const;
+
+const getStartedClass = buttonClasses(
+  "primary",
+  "h-[38px] whitespace-nowrap px-3 text-[13px] md:px-[18px] md:text-sm",
+);
 
 function SignInLink() {
   return (
@@ -91,6 +97,9 @@ export function MarketingHeader({
           <Suspense fallback={<SignInLink />}>
             <MarketingAccountLinks />
           </Suspense>
+          <Link href="/translate" data-testid="nav-get-started" className={getStartedClass}>
+            Get started
+          </Link>
         </div>
       </header>
       <div className="px-4 pb-3 md:hidden">

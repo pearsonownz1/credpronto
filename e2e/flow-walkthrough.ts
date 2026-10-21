@@ -29,7 +29,7 @@ export async function walkCustomerFlow(
   await expect(page.getByTestId("upload-drop")).toHaveCount(0);
   await expect(page.getByTestId("nav-log-in").filter({ visible: true })).toBeVisible();
   await expect(page.getByTestId("nav-create-account")).toHaveCount(0);
-  await expect(page.getByTestId("nav-get-started")).toHaveCount(0);
+  await expect(page.getByTestId("nav-get-started").filter({ visible: true })).toHaveAttribute("href", "/translate");
   await expect(page.getByTestId("home-get-started").filter({ visible: true })).toHaveAttribute("href", "/translate");
   await expect(page.getByTestId("translation-preview")).toBeVisible();
   await expect(
@@ -41,7 +41,7 @@ export async function walkCustomerFlow(
   await expect(page.getByText(/USCIS accepts/i)).toHaveCount(0);
   await check();
 
-  await page.getByTestId("home-get-started").filter({ visible: true }).click();
+  await page.getByTestId("nav-get-started").filter({ visible: true }).click();
   await expect(page).toHaveURL(/\/translate$/);
   await expect(shown(page, "upload-drop")).toBeVisible();
   await expect(shown(page, "email")).toHaveValue("maria.ruiz@email.com");
