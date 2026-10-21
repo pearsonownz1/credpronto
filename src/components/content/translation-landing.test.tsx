@@ -24,8 +24,14 @@ describe("translation landing", () => {
     expect(html).toContain("8 CFR 103.2(b)(3)");
     expect(html).toContain('href="/translate"');
     expect(html).toContain("Get started");
-    expect(html).toContain("PREVIEW");
     expect(html).toContain("data-testid=\"translation-preview\"");
+    expect(html).toContain("hero-docs.png");
+    expect(html).toContain('width="1583"');
+    expect(html).toContain('height="1088"');
+    expect(html).toContain('rel="preload"');
+    expect(html).toContain(
+      "CredPronto side-by-side preview of a Turkish tax letter and its certified English translation",
+    );
     expect(html).toContain("USCIS accepted");
     expect(html).toContain("Preview before you pay");
     expect(html).toContain("Certified PDF by email");

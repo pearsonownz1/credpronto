@@ -31,7 +31,11 @@ export async function walkCustomerFlow(
   await expect(page.getByTestId("nav-get-started")).toBeVisible();
   await expect(page.getByTestId("home-get-started")).toBeVisible();
   await expect(page.getByTestId("translation-preview")).toBeVisible();
-  await expect(page.getByTestId("translation-preview")).toContainText("PREVIEW");
+  await expect(
+    page.getByRole("img", {
+      name: "CredPronto side-by-side preview of a Turkish tax letter and its certified English translation",
+    }),
+  ).toBeVisible();
   await expect(page.getByRole("heading", { name: "How it works" })).toBeVisible();
   await expect(page.getByText(/USCIS accepts/i)).toHaveCount(0);
   await check();
