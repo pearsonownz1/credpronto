@@ -22,7 +22,7 @@ import { startCheckout } from "./customer";
 import * as db from "./db";
 import { customerServiceQuote } from "./evaluation-price";
 import * as storage from "./storage";
-import type { OrderRecord, PaymentRecord } from "./types";
+import type { DocumentRecord, OrderRecord, PaymentRecord } from "./types";
 
 const token = "cLhjpSz7HaGJYb94lLxcJnKvKki_G00FSpsQnZu5dm8";
 
@@ -200,6 +200,87 @@ describe("checkout session matches the quote", () => {
         unit_price_cents: 1995,
       }),
     );
+  });
+
+  it("charges a combined order from document pages before language detection", async () => {
+    const documents: DocumentRecord[] = [
+      {
+        id: "doc-1",
+        orderId: "order-1",
+        originalPath: "order-1/diploma.pdf",
+        filename: "diploma.pdf",
+        mime: "application/pdf",
+        size: 100,
+        pageCount: 1,
+        status: "uploaded",
+        detectedLanguage: null,
+        confidence: null,
+        position: 1,
+        appliedPosition: 1,
+      },
+    ];
+    vi.mocked(db.listDocuments).mockResolvedValue(documents);
+    const current = order({
+      status: "draft",
+      includeTranslation: true,
+      sourceLanguage: null,
+      languageConfirmed: false,
+      billablePages: null,
+      translationCents: 0,
+      totalCents: 1995,
+    });
+    const quote = customerServiceQuote({ ...current, documents });
+    vi.mocked(db.requireOrderByHash).mockResolvedValue(current);
+    await startCheckout(token, {});
+    const created = await stripeApi.create.mock.results.at(-1)?.value;
+    expect(quote.totalCents).toBe(2990);
+    expect(created.amount_total).toBe(quote.totalCents);
+    expect(db.updateOrder).toHaveBeenCalledWith(
+      expect.anything(),
+      "order-1",
+      expect.objectContaining({
+        billable_pages: 1,
+        evaluation_cents: 1995,
+        translation_cents: 995,
+        include_translation: true,
+        total_cents: 2990,
+        unit_price_cents: 995,
+      }),
+    );
+  });
+
+  it("charges course-by-course from the stored page count when language is still unknown", async () => {
+    const current = order({
+      status: "draft",
+      service: "course_by_course",
+      degreeCount: 2,
+      evaluationCents: 7990,
+      unitPriceCents: 3995,
+      totalCents: 7990,
+      includeTranslation: true,
+      sourceLanguage: null,
+      languageConfirmed: false,
+      billablePages: 1,
+      translationCents: 0,
+    });
+    const quote = customerServiceQuote(current);
+    vi.mocked(db.requireOrderByHash).mockResolvedValue(current);
+    await startCheckout(token, {});
+    const created = await stripeApi.create.mock.results.at(-1)?.value;
+    expect(quote.totalCents).toBe(8985);
+    expect(created.amount_total).toBe(quote.totalCents);
+  });
+
+  it("still charges an evaluation-only order when language and pages are unknown", async () => {
+    const current = order({
+      status: "draft",
+      sourceLanguage: null,
+      languageConfirmed: false,
+      billablePages: null,
+    });
+    const { quote, amountTotal } = await paidSession(current);
+    expect(quote.totalCents).toBe(1995);
+    expect(amountTotal).toBe(quote.totalCents);
   });
 
   it("keeps a translation-only session equal to the quote", async () => {

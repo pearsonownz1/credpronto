@@ -116,21 +116,42 @@ export function needsBundledTranslation(sourceLanguage: string | null): boolean 
 }
 
 /**
- * Combined orders cannot be charged until the detected language and page count exist.
- * Paying earlier used to store the evaluation fee alone and drop the translation.
+ * Page count already stored on the order, or on its documents.
+ * The upload quote uses this count. Checkout must not wait for another recount.
+ */
+export function knownBillablePages(order: {
+  billablePages?: number | null;
+  documents?: ReadonlyArray<{ pageCount?: number | null }>;
+}): number | null {
+  if (typeof order.billablePages === "number" && order.billablePages > 0) return order.billablePages;
+  let sum = 0;
+  let found = false;
+  for (const document of order.documents ?? []) {
+    if (typeof document.pageCount !== "number" || document.pageCount < 1) continue;
+    sum += document.pageCount;
+    found = true;
+  }
+  if (found) return sum;
+  return typeof order.billablePages === "number" ? order.billablePages : null;
+}
+
+/**
+ * Combined orders still need a page count before pay.
+ * A count already on the order or its documents is enough. Unknown language is not a recount.
+ * English evaluations are ready without a translation line.
  */
 export function checkoutQuotePending(order: {
   service?: string | null;
   includeTranslation?: boolean;
   sourceLanguage?: string | null;
   billablePages?: number | null;
+  documents?: ReadonlyArray<{ pageCount?: number | null }>;
 }): boolean {
   if (order.service !== "diploma" && order.service !== "course_by_course") return false;
   if (order.includeTranslation !== true) return false;
-  if (!needsBundledTranslation(order.sourceLanguage ?? null)) {
-    return normalizeLanguage(order.sourceLanguage ?? null) == null;
-  }
-  return (order.billablePages ?? 0) < 1;
+  if (normalizeLanguage(order.sourceLanguage ?? null) === "en") return false;
+  const pages = knownBillablePages(order);
+  return pages == null || pages < 1;
 }
 
 export function evaluationQuote(input: {
@@ -148,10 +169,9 @@ export function evaluationQuote(input: {
 } {
   const unitAmountCents = evaluationUnitCents(input.service);
   const evaluationCents = evaluationFeeCents(input.service, input.degreeCount);
+  const language = normalizeLanguage(input.sourceLanguage);
   const translationCents =
-    input.includeTranslation && needsBundledTranslation(input.sourceLanguage)
-      ? input.billablePages * UNIT_PRICE_CENTS
-      : 0;
+    input.includeTranslation && language !== "en" ? input.billablePages * UNIT_PRICE_CENTS : 0;
   const lineItems: EvaluationLine[] = [
     {
       kind: "evaluation",
@@ -186,13 +206,19 @@ export function evaluationCheckoutTotal(input: {
   billablePages: number;
   includeTranslation: boolean;
   addonCents?: number;
+  /** Checkout prices an opted-in translation before language detection. English stays off. */
+  chargeUnknownLanguage?: boolean;
 }): {
   evaluationCents: number;
   translationCents: number;
   includeTranslation: boolean;
   totalCents: number;
 } {
-  const includeTranslation = input.includeTranslation && needsBundledTranslation(input.sourceLanguage);
+  const language = normalizeLanguage(input.sourceLanguage);
+  const includeTranslation =
+    input.includeTranslation &&
+    language !== "en" &&
+    (language != null || input.chargeUnknownLanguage === true);
   const quote = evaluationQuote({ ...input, includeTranslation });
   return {
     evaluationCents: quote.evaluationCents,
@@ -215,6 +241,7 @@ export function evaluationPricePatch(input: {
   billablePages: number;
   includeTranslation: boolean;
   addonCents?: number;
+  chargeUnknownLanguage?: boolean;
 }): {
   evaluation_cents: number;
   translation_cents: number;
@@ -255,6 +282,7 @@ export function checkoutServiceCharge(order: {
     sourceLanguage: order.sourceLanguage,
     billablePages: order.billablePages ?? 0,
     includeTranslation: order.includeTranslation,
+    chargeUnknownLanguage: true,
   });
   return {
     evaluationCents: patch.evaluation_cents,
@@ -280,6 +308,7 @@ export function customerServiceQuote(order: {
   includeTranslation?: boolean;
   addonCents?: number;
   totalCents?: number | null;
+  documents?: ReadonlyArray<{ pageCount?: number | null }>;
 }): {
   evaluation: boolean;
   evaluationCents: number | null;
@@ -290,7 +319,7 @@ export function customerServiceQuote(order: {
   translationOfferCents: number | null;
   billablePages: number | null;
 } {
-  const billablePages = order.billablePages ?? null;
+  const billablePages = knownBillablePages(order);
   const flat = evaluationPrice({
     service: order.service,
     degreeCount: order.degreeCount,
@@ -315,11 +344,10 @@ export function customerServiceQuote(order: {
     includeTranslation: optedIn,
     sourceLanguage: order.sourceLanguage,
     billablePages,
+    documents: order.documents,
   });
-  const translationCents =
-    optedIn && needsBundledTranslation(order.sourceLanguage ?? null) && pages > 0
-      ? pages * UNIT_PRICE_CENTS
-      : 0;
+  const language = normalizeLanguage(order.sourceLanguage ?? null);
+  const translationCents = optedIn && language !== "en" && pages > 0 ? pages * UNIT_PRICE_CENTS : 0;
   return {
     evaluation: true,
     evaluationCents: flat.evaluationCents,
