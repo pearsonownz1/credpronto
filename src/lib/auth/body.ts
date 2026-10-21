@@ -22,3 +22,11 @@ export function readNext(body: unknown): string | null {
   const next = (body as { next?: unknown }).next;
   return typeof next === "string" ? next : null;
 }
+
+export function readOrderToken(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  const token = (body as { orderToken?: unknown }).orderToken;
+  if (typeof token !== "string") return null;
+  const trimmed = token.trim();
+  return trimmed ? trimmed : null;
+}

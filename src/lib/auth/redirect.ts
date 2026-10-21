@@ -1,3 +1,29 @@
+import { isOrderToken } from "@/lib/orders/token";
+
+const EMAIL_OTP_TYPES = new Set(["signup", "invite", "magiclink", "recovery", "email", "email_change"]);
+
+export type EmailOtpType = "signup" | "invite" | "magiclink" | "recovery" | "email" | "email_change";
+
+export function isEmailOtpType(type: string): type is EmailOtpType {
+  return EMAIL_OTP_TYPES.has(type);
+}
+
+/**
+ * Email links land here with token_hash. verifyOtp does not need the browser
+ * that requested the link, so the same link works on another device.
+ */
+export function confirmUrl(
+  origin: string,
+  input: { tokenHash: string; type: string; next?: string | null; orderToken?: string | null },
+): string {
+  const url = new URL("/auth/confirm", origin.replace(/\/$/, ""));
+  url.searchParams.set("token_hash", input.tokenHash);
+  url.searchParams.set("type", input.type);
+  url.searchParams.set("next", safeNextPath(input.next, "/account"));
+  if (input.orderToken && isOrderToken(input.orderToken)) url.searchParams.set("order", input.orderToken);
+  return url.toString();
+}
+
 /** Relative in-app path. Rejects protocol-relative and absolute URLs. */
 export function safeNextPath(value: string | null | undefined, fallback = "/"): string {
   if (!value) return fallback;

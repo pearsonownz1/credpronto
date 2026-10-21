@@ -9,6 +9,7 @@ import {
   ROBOTS_NOINDEX,
   SITE_ORIGIN,
   TRANSLATE_CANONICAL,
+  authRedirects,
   blogRedirects,
   privateCrawlHeaders,
 } from "./seo";
@@ -57,6 +58,10 @@ describe("crawl policy", () => {
       { source: "/blog", destination: "/guides", statusCode: 301 },
       { source: "/blog/:slug", destination: "/guides/:slug", statusCode: 301 },
     ]);
+  });
+
+  it("redirects /login to /sign-in with 301", () => {
+    expect(authRedirects()).toEqual([{ source: "/login", destination: "/sign-in", statusCode: 301 }]);
   });
 
   it("sets X-Robots-Tag on every preview and order path, including errors", () => {

@@ -1,8 +1,6 @@
-import { claimOrdersForUser } from "@/lib/auth/claim";
-import { requestOrigin, safeNextPath } from "@/lib/auth/redirect";
-import { emailIsVerified } from "@/lib/auth/session";
+import { finishAuthenticatedUser } from "@/lib/auth/finish";
+import { isEmailOtpType, requestOrigin, safeNextPath } from "@/lib/auth/redirect";
 import { createClient } from "@/lib/supabase/server";
-import { serviceDb } from "@/lib/orders/storage";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
@@ -14,6 +12,7 @@ export async function GET(request: Request) {
   const code = url.searchParams.get("code");
   const tokenHash = url.searchParams.get("token_hash");
   const type = url.searchParams.get("type");
+  const orderToken = url.searchParams.get("order");
 
   if (code) {
     const exchanged = await supabase.auth.exchangeCodeForSession(code);
@@ -26,17 +25,7 @@ export async function GET(request: Request) {
   }
 
   const { data } = await supabase.auth.getUser();
-  if (data.user) {
-    await claimOrdersForUser(serviceDb(), {
-      id: data.user.id,
-      email: data.user.email ?? null,
-      emailVerified: emailIsVerified(data.user),
-    });
-  }
+  if (data.user) await finishAuthenticatedUser(data.user, orderToken);
 
   return NextResponse.redirect(`${origin}${next}`);
-}
-
-function isEmailOtpType(type: string): type is "signup" | "invite" | "magiclink" | "recovery" | "email" | "email_change" {
-  return type === "signup" || type === "invite" || type === "magiclink" || type === "recovery" || type === "email" || type === "email_change";
 }

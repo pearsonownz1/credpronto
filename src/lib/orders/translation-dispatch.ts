@@ -94,13 +94,20 @@ async function runTranslationInline(
   throw new Error(`Unknown translation path ${path}`);
 }
 
-/** Starts another function and returns when that function accepts the work. */
+/**
+ * Starts another function and returns when that function accepts the work.
+ * `fresh` posts even from inside a page or assemble. A QA retranslation needs
+ * its own maxDuration. Running it in the function that just finished the
+ * previous page claims the job, then the platform kills that function, and
+ * the order stays on Translating.
+ */
 export async function dispatchTranslation(
   path: string,
   body: TranslationPageRequest | TranslationAssembleRequest,
   inline: TranslationInlineRunner = runTranslationInline,
+  options?: { fresh?: boolean },
 ): Promise<void> {
-  if (translationContinuesInProcess()) {
+  if (!options?.fresh && translationContinuesInProcess()) {
     await inline(path, body);
     return;
   }

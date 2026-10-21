@@ -142,6 +142,28 @@ export function receiptLineItems(input: {
   return lines;
 }
 
+export function renderAuthLinkEmail(input: { confirmUrl: string; purpose: "signup" | "magiclink" }): RenderedEmail {
+  const signup = input.purpose === "signup";
+  const heading = signup ? "Confirm your account" : "Your sign-in link";
+  const intro = signup
+    ? "Your CredPronto account is ready. Confirm your email to track this order. This link works on any device."
+    : "Use this link to sign in to CredPronto. It works on any device.";
+  const label = signup ? "Confirm email" : "Sign in";
+  const html = layout({
+    preheader: intro,
+    body: `${badge(signup ? "Account" : "Sign in", "#EEF3FF", "#1F5EFF")}
+<h1 style="margin:14px 0 8px;font-size:24px;letter-spacing:-.4px;line-height:1.25">${escapeHtml(heading)}</h1>
+<p style="margin:0;color:#5B6575">${escapeHtml(intro)}</p>
+${button(label, input.confirmUrl)}`,
+  });
+  const text = [heading, "", intro, "", `${label}: ${input.confirmUrl}`].join("\n");
+  return {
+    subject: signup ? "Confirm your CredPronto account" : "Your CredPronto sign-in link",
+    text,
+    html,
+  };
+}
+
 export function renderOrderReceivedEmail(input: OrderReceivedEmail): RenderedEmail {
   const name = emailGreetingName(input.customerName);
   const heading = name ? `We're on it, ${name}.` : "We're on it.";

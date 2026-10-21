@@ -931,6 +931,23 @@ export function blocksFromModel(input: {
   return [{ type: "paragraph", text: " " }];
 }
 
+/**
+ * A line-broken birth certificate is a form. When the model returns only the
+ * certification sentence, the labeled reading still has the names and numbers.
+ * A translation that already includes those values is left alone.
+ */
+export function formBlocksWhenCollapsed(sourceText: string, modelBlocks: RenderBlock[]): RenderBlock[] | null {
+  const structured = structurePage(sourceText);
+  const values = structured
+    .flatMap((block) => (block.type === "fields" ? block.rows.map((row) => row.value.trim()) : []))
+    .filter((value) => value.length >= 3 && /[\p{L}\p{N}]/u.test(value));
+  if (values.length < 4) return null;
+  const model = blocksToParagraphs(modelBlocks).join("\n").toLocaleLowerCase("en");
+  const kept = values.filter((value) => model.includes(value.toLocaleLowerCase("en")));
+  if (kept.length * 2 >= values.length) return null;
+  return structured;
+}
+
 export function blocksToParagraphs(blocks: RenderBlock[]): string[] {
   const lines: string[] = [];
   for (const block of blocks) {

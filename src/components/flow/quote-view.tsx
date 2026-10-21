@@ -29,6 +29,7 @@ import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FilePreview, inlineSourceUrl, type ViewerPage } from "./file-preview";
 import { FlowHeader } from "./flow-header";
+import { OrderAccountCard } from "./order-account-card";
 import { useReadingHandoff } from "./reading-handoff";
 import { ReadingFiles } from "./reading-files";
 import { FlowStatus } from "./status";
@@ -38,13 +39,17 @@ import { Checks, FlowColumns, Summary, SummaryRow, buttonClasses, fieldClass } f
 export function QuoteView({
   token: pathToken,
   onOrder,
+  signedIn = true,
 }: {
   token?: string;
   onOrder?: (order: CustomerOrder) => void;
+  signedIn?: boolean;
 }) {
   const router = useRouter();
   const token = useStoredToken(pathToken);
   const { order, error, loading, reload } = useCustomerOrder(token, "while-working");
+  const [signedUp, setSignedUp] = useState(false);
+  const hasAccount = signedIn || signedUp;
   const { covering, reportOrder, endHandoff } = useReadingHandoff();
   const evaluationOrder = order != null && isCustomerEvaluation(order);
 
@@ -109,7 +114,16 @@ export function QuoteView({
             }
           />
         ) : (
-          <QuoteBody order={order} token={token} onReplaced={reload} />
+          <QuoteBody
+            order={order}
+            token={token}
+            onReplaced={reload}
+            showAccount={!hasAccount}
+            onSignedIn={() => {
+              setSignedUp(true);
+              router.refresh();
+            }}
+          />
         )}
       </main>
     </div>
@@ -120,10 +134,14 @@ export function QuoteBody({
   order,
   token,
   onReplaced,
+  showAccount = false,
+  onSignedIn,
 }: {
   order: CustomerOrder;
   token: string;
   onReplaced: () => void;
+  showAccount?: boolean;
+  onSignedIn?: () => void;
 }) {
   const [patch, setPatch] = useState<{ source: CustomerOrder; order: CustomerOrder } | null>(null);
   const live = patch?.source === order ? patch.order : order;
@@ -390,6 +408,12 @@ export function QuoteBody({
               >
                 {notice}
               </p>
+            ) : null}
+            {showAccount && showContinue ? (
+              <OrderAccountCard
+                orderToken={token}
+                onSignedIn={() => onSignedIn?.()}
+              />
             ) : null}
             {showContinue ? (
               <Link

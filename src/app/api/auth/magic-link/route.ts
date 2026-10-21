@@ -1,27 +1,41 @@
-import { readEmail, readJson, readNext } from "@/lib/auth/body";
-import { callbackUrl, requestOrigin } from "@/lib/auth/redirect";
-import { json, run } from "@/lib/orders/http";
+import { readEmail, readJson, readNext, readOrderToken } from "@/lib/auth/body";
+import { emailHasAccount, generateConfirmLink } from "@/lib/auth/email-link";
+import { attachOrderToken } from "@/lib/auth/order-link";
+import { requestOrigin } from "@/lib/auth/redirect";
 import { HttpError } from "@/lib/orders/errors";
-import { createClient } from "@/lib/supabase/server";
+import { json, run } from "@/lib/orders/http";
+import { sendAuthLink } from "@/lib/orders/email";
+import { renderAuthLinkEmail } from "@/lib/orders/email-templates";
+import { serviceDb } from "@/lib/orders/storage";
 
 export async function POST(request: Request) {
   return run(async () => {
     const body = await readJson(request);
     const email = readEmail(body);
-    let supabase: Awaited<ReturnType<typeof createClient>>;
+    const orderToken = readOrderToken(body);
+    const origin = requestOrigin(request);
+
+    let exists = true;
     try {
-      supabase = await createClient();
-    } catch {
-      throw new HttpError("Auth is not configured", 503);
+      exists = await emailHasAccount(email);
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 503) throw error;
+      exists = true;
     }
 
-    const { error } = await supabase.auth.signInWithOtp({
+    const link = await generateConfirmLink({
       email,
-      options: {
-        emailRedirectTo: callbackUrl(requestOrigin(request), readNext(body)),
-      },
+      purpose: "magiclink",
+      origin,
+      next: readNext(body) ?? "/account",
+      orderToken,
     });
-    if (error) throw new HttpError(error.message, 400);
+
+    if (!exists) await attachOrderToken(serviceDb(), link.userId, orderToken);
+
+    const rendered = renderAuthLinkEmail({ confirmUrl: link.confirmUrl, purpose: "magiclink" });
+    const mailed = await sendAuthLink(email, rendered);
+    if (!mailed.sent) throw new HttpError("We couldn't send the email", 503);
     return json({ sent: true });
   });
 }

@@ -29,6 +29,20 @@ describe("dashboard server auth", () => {
     expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
 
+  it("sends a signed-out /account request to sign-in", async () => {
+    vi.stubEnv("CREDPRONTO_MOCK", "");
+    vi.stubEnv("NEXT_PUBLIC_CREDPRONTO_MOCK", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
+
+    const response = await proxy(new NextRequest("http://127.0.0.1:3000/account"));
+
+    expect(response.status).toBe(307);
+    const location = new URL(response.headers.get("location") ?? "");
+    expect(location.pathname).toBe("/sign-in");
+    expect(location.searchParams.get("next")).toBe("/account");
+  });
+
   it("sends /dashboard to sign-in with that return path", async () => {
     vi.stubEnv("CREDPRONTO_MOCK", "");
     vi.stubEnv("NEXT_PUBLIC_CREDPRONTO_MOCK", "");

@@ -188,6 +188,26 @@ describe("translation dispatch", () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(inline).toHaveBeenCalledTimes(5);
+
+    fetchMock.mockClear();
+    inline.mockClear();
+    fetchMock.mockImplementation(async () => new Response("{}", { status: 202 }));
+    await withTranslationDispatch(async () => {
+      await dispatchTranslation(
+        TRANSLATION_PAGE_PATH,
+        { orderId: "order-1", version: 2, jobId: "job-next" },
+        inline,
+        { fresh: true },
+      );
+    });
+    expect(inline).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://preview.example.vercel.app/api/internal/translation/page",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ orderId: "order-1", version: 2, jobId: "job-next" }),
+      }),
+    );
     const pending = [
       { id: "running-a", status: "running" as const },
       { id: "running-b", status: "running" as const },

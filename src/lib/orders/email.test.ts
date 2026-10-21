@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { BRAND_NAME } from "./brand";
-import { buildContactEmail, deliveryReadyMessage, emailFromHeader } from "./email";
+import { accountLink, buildContactEmail, deliveryReadyMessage, emailFromHeader } from "./email";
+
+describe("account link", () => {
+  it("uses the signed-in order list", () => {
+    expect(accountLink()).toMatch(/\/account$/);
+  });
+});
 
 describe("email from header", () => {
   it("uses the CredPronto display name and keeps the mailbox", () => {

@@ -435,7 +435,12 @@ export async function bumpTranslationProgress(
   }
 }
 
-export async function fillTranslationSlots(db: Db, orderId: string, version: number): Promise<void> {
+export async function fillTranslationSlots(
+  db: Db,
+  orderId: string,
+  version: number,
+  options?: { fresh?: boolean },
+): Promise<void> {
   const run = await getTranslationRun(db, orderId, version);
   if (!run || run.status !== "running") return;
   const [{ pages }, jobs] = await Promise.all([
@@ -448,7 +453,7 @@ export async function fillTranslationSlots(db: Db, orderId: string, version: num
   const batch = jobsToDispatch(eligible, dispatchConcurrency(running, translationContinuesInProcess()));
   await Promise.all(
     batch.map((job) =>
-      dispatchTranslation(TRANSLATION_PAGE_PATH, { orderId, version, jobId: job.id }),
+      dispatchTranslation(TRANSLATION_PAGE_PATH, { orderId, version, jobId: job.id }, undefined, options),
     ),
   );
 }
@@ -529,15 +534,18 @@ export async function beginTranslation(
     targetLanguage: order.targetLanguage,
   });
   const preview = await insertPreview(db, { orderId: order.id, version, previewPath });
+  // A round started from assemble is already inside the previous page's function.
+  // That function is near maxDuration, so the new pages have to be their own invocation.
+  const fresh = translationContinuesInProcess();
   if (preview === "exists") {
-    await fillTranslationSlots(db, order.id, version);
+    await fillTranslationSlots(db, order.id, version, { fresh });
     return;
   }
   if (billable.length === 0) {
     await dispatchAssemble(order.id, version);
     return;
   }
-  await fillTranslationSlots(db, order.id, version);
+  await fillTranslationSlots(db, order.id, version, { fresh });
 }
 
 /**

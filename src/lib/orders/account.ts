@@ -3,6 +3,7 @@ import type { AuthUser } from "@/lib/auth/session";
 import { paymentStatusForCustomer, summarizeCustomerOrder } from "./account-summary";
 import {
   listDeliveriesForOrders,
+  listDocumentFilenames,
   listOwnedOrderRows,
   listPaymentsForOrders,
   listReadyPreviewOrderIds,
@@ -13,17 +14,18 @@ export async function listMyOrders(db: Db, user: AuthUser) {
   await claimOrdersForUser(db, user);
   const orders = await listOwnedOrderRows(db, user.id);
   const ids = orders.map((order) => order.id);
-  const [previewIds, payments, deliveries] = await Promise.all([
+  const [previewIds, payments, deliveries, filenames] = await Promise.all([
     listReadyPreviewOrderIds(db, ids),
     listPaymentsForOrders(db, ids),
     listDeliveriesForOrders(db, ids),
+    listDocumentFilenames(db, ids),
   ]);
 
   return {
     orders: orders.map((order) => {
       const orderPayments = payments.filter((payment) => payment.orderId === order.id);
       const delivery = deliveries.find((row) => row.orderId === order.id) ?? null;
-      return summarizeCustomerOrder({
+      const summary = summarizeCustomerOrder({
         id: order.id,
         status: order.status,
         serviceType: order.serviceType,
@@ -41,6 +43,8 @@ export async function listMyOrders(db: Db, user: AuthUser) {
         ),
         deliveryStatus: delivery?.status ?? null,
       });
+      const documentName = filenames.get(order.id)?.filter(Boolean).join(", ") || null;
+      return { ...summary, documentName };
     }),
   };
 }

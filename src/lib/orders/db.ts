@@ -1501,6 +1501,28 @@ export type OwnedOrderRow = {
   createdAt: string;
 };
 
+export async function listDocumentFilenames(db: Db, orderIds: string[]): Promise<Map<string, string[]>> {
+  const names = new Map<string, string[]>();
+  if (orderIds.length === 0) return names;
+  const { data, error } = await db.from("documents").select("order_id, filename, position").in("order_id", orderIds);
+  fail(error);
+  const grouped = new Map<string, { filename: string; position: number }[]>();
+  for (const row of (data ?? []) as Row[]) {
+    const id = String(row.order_id);
+    const list = grouped.get(id) ?? [];
+    list.push({ filename: String(row.filename), position: num(row.position) ?? 0 });
+    grouped.set(id, list);
+  }
+  for (const [id, list] of grouped) {
+    list.sort((a, b) => a.position - b.position || a.filename.localeCompare(b.filename));
+    names.set(
+      id,
+      list.map((item) => item.filename),
+    );
+  }
+  return names;
+}
+
 export async function listOwnedOrderRows(db: Db, userId: string): Promise<OwnedOrderRow[]> {
   const { data, error } = await db
     .from("orders")

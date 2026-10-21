@@ -71,6 +71,21 @@ function checkoutOrder(includeTranslation: boolean): CustomerOrder {
 }
 
 describe("evaluation checkout", () => {
+  it("asks a guest to create an account before the pay button", () => {
+    state.order = checkoutOrder(false);
+    const html = renderToStaticMarkup(createElement(CheckoutView, { token: "token-1", signedIn: false }));
+    expect(html).toContain("Create your account to track your order");
+    expect(html).toContain('data-testid="pay-button"');
+    expect(html.indexOf('data-testid="account-card"')).toBeLessThan(html.indexOf('data-testid="pay-button"'));
+  });
+
+  it("leaves the pay button in place for a signed-in customer", () => {
+    state.order = checkoutOrder(false);
+    const html = renderToStaticMarkup(createElement(CheckoutView, { token: "token-1", signedIn: true }));
+    expect(html).not.toContain('data-testid="account-card"');
+    expect(html).toContain('data-testid="pay-button"');
+  });
+
   it("shows $19.95 and the evaluation report before the customer opts in", () => {
     state.order = checkoutOrder(false);
     const html = renderToStaticMarkup(createElement(CheckoutView, { token: "token-1" }));

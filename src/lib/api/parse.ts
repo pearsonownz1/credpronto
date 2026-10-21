@@ -52,6 +52,7 @@ export function parseCustomerOrder(value: unknown): CustomerOrder | null {
     previewAvailable: flag(row.previewAvailable),
     paymentStatus: text(row.paymentStatus),
     downloadAvailable: flag(row.downloadAvailable),
+    documentName: text(row.documentName),
     documentsLabel: text(row.documentsLabel),
     sourceLanguage: text(row.sourceLanguage),
     targetLanguage: text(row.targetLanguage),

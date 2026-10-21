@@ -1,4 +1,5 @@
 import { pinyin } from "pinyin-pro";
+import { isElectronicSignatureToken } from "./pdf/structure";
 
 export const QA_ISSUE_TYPES = ["name", "date", "number", "missing_text", "layout", "other"] as const;
 export const QA_SEVERITIES = ["high", "medium", "low"] as const;
@@ -163,10 +164,32 @@ function foldName(value: string): string {
   return collapse(value).normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 }
 
+/** A birth certificate prints the given name and the surnames on separate lines. */
+function wordsInOrder(haystack: string, name: string): boolean {
+  const words = name.split(" ").filter((word) => word.length > 1);
+  if (words.length < 2) return false;
+  let from = 0;
+  for (const word of words) {
+    const at = haystack.indexOf(word, from);
+    if (at < 0) return false;
+    from = at + word.length;
+  }
+  return true;
+}
+
 function nameFound(translation: string, name: string): boolean {
   const wanted = foldName(name);
-  if (wanted && foldName(translation).includes(wanted)) return true;
+  const folded = foldName(translation);
+  if (wanted && (folded.includes(wanted) || wordsInOrder(folded, wanted))) return true;
   return romanizedForms(name).some((form) => includesLoose(translation, form));
+}
+
+/** Digit runs that exist only inside an electronic signature are not record numbers. */
+function digitsOutsideSignature(source: string): string {
+  return source
+    .split("\n")
+    .map((line) => (isElectronicSignatureToken(line) ? "" : line))
+    .join("\n");
 }
 
 function parseChineseNumber(raw: string): number | null {
@@ -332,7 +355,7 @@ export function assessTranslation(input: {
         ),
       );
     }
-    for (const number of new Set(digitRuns(source))) {
+    for (const number of new Set(digitRuns(digitsOutsideSignature(source)))) {
       if (!translation.includes(number)) {
         issues.push(
           issue(

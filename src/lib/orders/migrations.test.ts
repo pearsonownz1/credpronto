@@ -151,4 +151,16 @@ describe("auth migrations", () => {
     expect(sql.toLowerCase()).not.toMatch(/create type/);
     expect(sql.toLowerCase()).not.toMatch(/add value/);
   });
+
+  it("lets an order owner read original uploads", () => {
+    const sql = readFileSync(path.join(migrationsDir, "20261021150000_customer_originals_read.sql"), "utf8");
+    expect(sql).toMatch(/customer_read_own_originals/);
+    expect(sql).toMatch(/bucket_id = 'originals'/);
+    expect(sql).toMatch(/private\.owns_order\(private\.object_order_id\(name\)\)/);
+    expect(sql).toMatch(/for select to authenticated/);
+    expect(sql.toLowerCase()).not.toMatch(/to anon/);
+    expect(sql.toLowerCase()).not.toMatch(/for insert/);
+    expect(sql.toLowerCase()).not.toMatch(/for update/);
+    expect(sql.toLowerCase()).not.toMatch(/for delete/);
+  });
 });

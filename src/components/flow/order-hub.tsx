@@ -16,7 +16,7 @@ import { useReadingHandoff } from "./reading-handoff";
 import { FlowStatus } from "./status";
 import { useCustomerOrder } from "./use-order";
 
-export function OrderHub() {
+export function OrderHub({ signedIn = true }: { signedIn?: boolean }) {
   const params = useParams<{ token: string }>();
   const search = useSearchParams();
   const router = useRouter();
@@ -106,7 +106,7 @@ export function OrderHub() {
   } else if (view === "checkout") {
     body = <FlowStatus title="Opening payment…" body="" />;
   } else if (view === "quote") {
-    body = <QuoteView token={token} onOrder={setLatest} />;
+    body = <QuoteView token={token} onOrder={setLatest} signedIn={signedIn} />;
   } else {
     body = <ProcessingView token={token} onOrder={reportPreviewReady} />;
   }

@@ -1,7 +1,7 @@
 import { PDFDocument, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import { degrees } from "pdf-lib";
 import { PREVIEW_WATERMARK, PREVIEW_WATERMARK_OPACITY, previewWatermarkRgb } from "../constants";
-import { documentKind, planDocument, type PlanRect, type PlanStyle, type PlanText } from "./document-layout";
+import { documentKind, paintedPlanText, planDocument, type PlanRect, type PlanStyle, type PlanText } from "./document-layout";
 import { faceForCodePoint, fontFace, serifFace, stableFontkit, type FontFace, type FontFaceId } from "./font";
 import {
   assertContiguousPages,
@@ -18,10 +18,17 @@ import { blocksToParagraphs, finalizeBlocks, structurePage } from "./structure";
 
 export type { RenderInput, RenderPage } from "./layout";
 
+export type PaintedPageText = {
+  number: number;
+  text: string;
+};
+
 export type RenderedFiles = {
   cleanTranslation: Uint8Array;
   watermarkedPreview: Uint8Array;
   certification: Uint8Array;
+  /** Text drawn on each translation page. QA scores this, not the unread block list. */
+  pageTexts: PaintedPageText[];
 };
 
 const INK = rgb(0.1, 0.1, 0.12);
@@ -195,11 +202,12 @@ function layoutBlocks(
     } else if (noted) {
       paintLines(noted, margin, Math.max(8, size - 0.5), MUTED, true, maxWidth);
       y -= 5;
-    } else if (block.type === "fields") {
+    } else if (block.type === "fields" || block.type === "kv") {
+      const rows = block.type === "fields" ? block.rows : [{ label: block.label, value: block.value }];
       const labelSize = Math.max(7.5, size - 1);
       const valueSize = size;
       const lineHeight = Math.max(labelSize, valueSize) * 1.28;
-      for (const row of block.rows) {
+      for (const row of rows) {
         const labels = wrapLines(row.label, (line) => measure(line, labelSize, false), labelWidth);
         const values = wrapLines(row.value || " ", (line) => measure(line, valueSize, false), valueWidth);
         const count = Math.max(labels.length, values.length, 1);
@@ -391,20 +399,21 @@ function drawBody(
     serif: SerifFaces | null;
     image: PDFImage | null;
   },
-): void {
+): string {
   const { widthPt, heightPt } = pageSize(pageSpec);
   const margin = Math.min(48, widthPt * 0.08, heightPt * 0.08);
   const maxWidth = Math.max(40, widthPt - margin * 2);
   const blocks = blocksFor(pageSpec);
   const footer = options.certified ? 48 : Math.max(28, margin * 0.7);
   const kind = documentKind({ ...pageSpec, blocks });
+  let painted = "";
   if (kind) {
     const measure = (text: string, size: number, style: PlanStyle) =>
       widthPlanned(text, size, style, options.serif, faces.upright, faces.italic);
     const hasPhoto = Boolean(options.image);
     let size = 12;
     let plan = planDocument({ kind, blocks, width: widthPt, height: heightPt, footer, size, measure, hasPhoto });
-    while (plan.overflow && size > 10) {
+    while (plan.overflow && size > 8) {
       size -= 0.5;
       plan = planDocument({ kind, blocks, width: widthPt, height: heightPt, footer, size, measure, hasPhoto });
     }
@@ -422,6 +431,7 @@ function drawBody(
       if (item.y < 12) continue;
       drawPlannedText(page, item, options.serif, faces.upright, faces.italic);
     }
+    painted = paintedPlanText(plan);
   } else {
     let chosen: Paint[] = [];
     let size = 11;
@@ -432,10 +442,11 @@ function drawBody(
       if (laid.bottom >= footer || size === 8) break;
       size -= 0.5;
     }
-    for (const paint of chosen) {
-      if (paint.y < 12) continue;
+    const visible = chosen.filter((paint) => paint.y >= 12);
+    for (const paint of visible) {
       drawStyled(page, paint.text, paint.x, paint.y, paint.size, paint.color, paint.italic, faces.upright, faces.italic);
     }
+    painted = visible.map((paint) => paint.text).join(" ");
   }
 
   if (options.certified) {
@@ -445,7 +456,7 @@ function drawBody(
       pageCount: options.translationPages + 1,
       width: widthPt,
     });
-    return;
+    return painted;
   }
   page.drawText(`Page ${pageSpec.combinedPageNumber} of ${options.translationPages}`, {
     x: margin,
@@ -454,9 +465,13 @@ function drawBody(
     font: faces.regular,
     color: MUTED,
   });
+  return painted;
 }
 
-async function renderTranslationPdf(input: RenderInput, watermark: boolean): Promise<Uint8Array> {
+async function renderTranslationPdf(
+  input: RenderInput,
+  watermark: boolean,
+): Promise<{ bytes: Uint8Array; pageTexts: PaintedPageText[] }> {
   assertContiguousPages(input.pages);
   const ordered = [...input.pages].sort((a, b) => a.combinedPageNumber - b.combinedPageNumber);
   const doc = await PDFDocument.create();
@@ -475,22 +490,24 @@ async function renderTranslationPdf(input: RenderInput, watermark: boolean): Pro
     }
   }
 
+  const pageTexts: PaintedPageText[] = [];
   ordered.forEach((pageSpec, index) => {
     const { widthPt, heightPt } = pageSize(pageSpec);
     const page = doc.addPage([widthPt, heightPt]);
     const pageFaces = faces;
-    drawBody(page, pageFaces, { ...pageSpec, blocks: pageBlocks[index] }, {
+    const text = drawBody(page, pageFaces, { ...pageSpec, blocks: pageBlocks[index] }, {
       orderId: input.orderId,
       translationPages: ordered.length,
       certified: !watermark,
       serif,
       image: images.get(index) ?? null,
     });
+    pageTexts.push({ number: pageSpec.combinedPageNumber, text });
     if (watermark) drawWatermark(page, faces.regular, widthPt, heightPt);
   });
 
   applyCredProntoPdfMetadata(doc);
-  return doc.save();
+  return { bytes: await doc.save(), pageTexts };
 }
 
 export async function renderCertificationPdf(input: RenderInput): Promise<Uint8Array> {
@@ -537,7 +554,12 @@ export async function renderOrderPdfs(input: RenderInput): Promise<RenderedFiles
   const [cleanPass, previewPass] = translationRenderPasses();
   const certification = await renderCertificationPdf(input);
   const cleanBody = await renderTranslationPdf(input, cleanPass.watermark);
-  const cleanTranslation = cleanPass.includeCertification ? await prependPdf(certification, cleanBody) : cleanBody;
+  const cleanTranslation = cleanPass.includeCertification ? await prependPdf(certification, cleanBody.bytes) : cleanBody.bytes;
   const watermarkedPreview = await renderTranslationPdf(input, previewPass.watermark);
-  return { cleanTranslation, watermarkedPreview, certification };
+  return {
+    cleanTranslation,
+    watermarkedPreview: watermarkedPreview.bytes,
+    certification,
+    pageTexts: cleanBody.pageTexts,
+  };
 }
