@@ -189,4 +189,70 @@ describe("evaluation checkout", () => {
     expect(html).not.toContain("0 pages");
     expect(html).not.toContain("1 page");
   });
+
+  it("shows the translation line from the upload page count without waiting for a recount", () => {
+    const diploma = checkoutOrder(true);
+    const stuck: CustomerOrder = {
+      ...diploma,
+      status: "draft",
+      sourceLanguage: null,
+      languageConfirmed: false,
+      billablePages: null,
+      translationCents: 0,
+      totalCents: 1995,
+      includeTranslation: true,
+      lineItems: checkoutOrder(false).lineItems,
+      documents: [
+        {
+          id: "diploma",
+          filename: "diploma.pdf",
+          pageCount: 1,
+          detectedLanguage: null,
+          confidence: null,
+          uploadPosition: 1,
+          appliedPosition: 1,
+        },
+      ],
+    };
+
+    state.order = stuck;
+    const fromDocuments = renderToStaticMarkup(createElement(CheckoutView, { token: "token-1" }));
+    expect(fromDocuments).toContain("Buy your credential evaluation");
+    expect(fromDocuments).toContain("Certified translation");
+    expect(fromDocuments).toContain("$29.90");
+    expect(fromDocuments).toContain("Pay $29.90");
+    expect(fromDocuments).not.toContain("We're still counting pages.");
+    expect(fromDocuments).not.toContain("Counting pages…");
+    expect(fromDocuments).not.toContain("Pending");
+
+    state.order = {
+      ...stuck,
+      billablePages: 1,
+      documents: [{ ...stuck.documents[0], pageCount: null }],
+    };
+    const fromOrder = renderToStaticMarkup(createElement(CheckoutView, { token: "token-1" }));
+    expect(fromOrder).toContain("Certified translation");
+    expect(fromOrder).toContain("Pay $29.90");
+    expect(fromOrder).not.toContain("Counting pages…");
+
+    state.order = {
+      ...stuck,
+      service: "course_by_course",
+      degreeCount: 2,
+      evaluationCents: 7990,
+      unitPriceCents: 3995,
+      totalCents: 7990,
+    };
+    const course = renderToStaticMarkup(createElement(CheckoutView, { token: "token-1" }));
+    expect(course).toContain("Certified translation");
+    expect(course).toContain("$89.85");
+    expect(course).toContain("Pay $89.85");
+    expect(course).not.toContain("Counting pages…");
+
+    state.order = { ...stuck, sourceLanguage: "en", billablePages: 1 };
+    const english = renderToStaticMarkup(createElement(CheckoutView, { token: "token-1" }));
+    expect(english).toContain("Pay $19.95");
+    expect(english).not.toContain("Certified translation");
+    expect(english).not.toContain("Counting pages…");
+  });
 });

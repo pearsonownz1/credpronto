@@ -12,7 +12,7 @@ import {
   totalLabel,
 } from "@/lib/flow/present";
 import { US_STATE_CODES, addonUnitPhrase, chargeCents, serviceCents, withoutExpedited } from "@/lib/orders/addons";
-import { checkoutQuotePending } from "@/lib/orders/evaluation-price";
+import { checkoutQuotePending, customerServiceQuote, lineItemsForOrder } from "@/lib/orders/evaluation-price";
 import type { AddonId, ShippingAddress } from "@/lib/orders/types";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
@@ -73,14 +73,44 @@ function CheckoutForm({
     postalCode: order.shippingAddress?.postalCode ?? "",
   });
 
+  const quote = customerServiceQuote({
+    service: order.service,
+    degreeCount: order.degreeCount,
+    sourceLanguage: order.sourceLanguage,
+    billablePages: order.billablePages,
+    documents: order.documents,
+    unitPriceCents: order.unitPriceCents,
+    evaluationCents: order.evaluationCents,
+    translationCents: order.translationCents,
+    includeTranslation: order.includeTranslation,
+    addonCents: 0,
+    totalCents: order.totalCents,
+  });
+  const shown = quote.evaluation
+    ? {
+        ...order,
+        billablePages: quote.billablePages,
+        evaluationCents: quote.evaluationCents,
+        translationCents: quote.translationCents,
+        includeTranslation: quote.includeTranslation,
+        totalCents: quote.totalCents,
+        lineItems: lineItemsForOrder({
+          service: order.service,
+          degreeCount: order.degreeCount,
+          evaluationCents: quote.evaluationCents,
+          translationCents: quote.translationCents,
+          billablePages: quote.billablePages,
+        }),
+      }
+    : order;
   const notReady = evaluationOrder ? false : order.status !== "preview_ready";
   const evaluation = evaluationOrder;
-  const counting = checkoutQuotePending(order);
+  const counting = checkoutQuotePending(shown);
   const options = withoutExpedited(order.addonOptions, true);
-  const service = counting ? null : serviceCents(order);
+  const service = counting ? null : serviceCents(shown);
   const due = chargeCents(service, options, selected);
   const mail = selected.includes("mail");
-  const priceLines = servicePriceLines(order);
+  const priceLines = servicePriceLines(shown);
 
   function toggle(id: AddonId) {
     setSelected((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
@@ -275,7 +305,7 @@ function CheckoutForm({
           onClick={() => void pay()}
           className={buttonClasses("primary", "mt-[22px] h-[52px] w-full text-base disabled:opacity-60")}
         >
-          {pending ? "Opening checkout…" : counting ? "Counting pages…" : `Pay ${due != null ? formatMoney(due) : totalLabel(order.totalCents)}`}
+          {pending ? "Opening checkout…" : counting ? "Counting pages…" : `Pay ${due != null ? formatMoney(due) : totalLabel(shown.totalCents)}`}
         </button>
         <p className="mt-2.5 text-center text-xs text-ink-muted">
           <span aria-hidden>🔒 </span>
@@ -336,7 +366,7 @@ function CheckoutForm({
             <SummaryRow
               testId="order-total"
               label="Total"
-              value={due != null ? formatMoney(due) : totalLabel(order.totalCents)}
+              value={due != null ? formatMoney(due) : totalLabel(shown.totalCents)}
               emphasize
             />
           </Summary>

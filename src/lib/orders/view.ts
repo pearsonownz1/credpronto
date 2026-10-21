@@ -165,7 +165,7 @@ export function toCustomerOrder(input: {
     }),
     documentNames: documents.map((document) => document.filename),
   }).title;
-  const quoted = customerServiceQuote(input.order);
+  const quoted = customerServiceQuote({ ...input.order, documents: input.documents });
   const evaluationCents = quoted.evaluationCents;
   const translationCents = quoted.translationCents;
   const unitPriceCents = quoted.unitPriceCents;
@@ -253,7 +253,7 @@ export function toCustomerOrder(input: {
       degreeCount: input.order.degreeCount,
       evaluationCents,
       translationCents,
-      billablePages: input.order.billablePages,
+      billablePages: quoted.billablePages,
     }),
     evaluation: customerEvaluation(
       input.order,

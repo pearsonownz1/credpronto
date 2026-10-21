@@ -13,12 +13,14 @@ import {
   listTranslations,
 } from "./db";
 import { recordTranslationFailure, translateOrder } from "./translation";
+import { withQuotedPages } from "./stored-pages";
 import { toCustomerOrder, type CustomerOrder } from "./view";
 import { serviceDb, type Db } from "./storage";
 import type { OrderRecord } from "./types";
 
 export async function loadCustomerOrder(db: Db, order: OrderRecord): Promise<CustomerOrder> {
-  const documents = await listDocuments(db, order.id);
+  const priced = await withQuotedPages(db, order);
+  const documents = await listDocuments(db, priced.id);
   const documentIds = documents.map((document) => document.id);
   const [pages, confirmations, preview, payment, delivery, email, addons, translationReadyAt, translations] =
     await Promise.all([
@@ -34,7 +36,7 @@ export async function loadCustomerOrder(db: Db, order: OrderRecord): Promise<Cus
     ]);
 
   return toCustomerOrder({
-    order,
+    order: priced,
     documents,
     pages,
     confirmations,

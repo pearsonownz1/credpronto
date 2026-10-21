@@ -13,6 +13,7 @@ import {
   evaluationPricePatch,
 } from "./evaluation-price";
 import { deliveryFileTarget } from "./delivery-file";
+import { withQuotedPages } from "./stored-pages";
 import {
   DOWNLOAD_URL_SECONDS,
   FINALS_BUCKET,
@@ -433,7 +434,8 @@ function serviceStripeLines(input: {
 }
 
 export async function startCheckout(token: string, body: unknown = {}) {
-  const { db, order } = await orderForToken(token);
+  const { db, order: stored } = await orderForToken(token);
+  const order = await withQuotedPages(db, stored);
   const blocked = checkoutBlockReason(order);
   if (blocked) throw new HttpError(blocked, 409);
   if (await settledPayment(db, order.id)) throw new HttpError("This order is already paid", 409);
@@ -453,6 +455,7 @@ export async function startCheckout(token: string, body: unknown = {}) {
       translation_cents: charge.translationCents,
       include_translation: charge.includeTranslation,
       total_cents: charge.serviceCents + order.addonCents,
+      ...(order.billablePages != null ? { billable_pages: order.billablePages } : {}),
     });
     order.unitPriceCents = charge.unitPriceCents;
     order.evaluationCents = charge.evaluationCents;
