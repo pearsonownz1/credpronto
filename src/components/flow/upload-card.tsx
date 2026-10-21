@@ -390,7 +390,8 @@ export function UploadCard({
           </p>
           {checks.diploma || checks.courseByCourse ? (
             <p className="mt-2 text-xs text-ink-muted">
-              {TRANSLATION_ADDON} Staff sign off before the report is released.
+              {checks.translation ? null : <>{TRANSLATION_ADDON} </>}
+              Staff sign off before the report is released.
             </p>
           ) : null}
         </fieldset>
