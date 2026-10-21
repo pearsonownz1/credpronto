@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -58,6 +59,22 @@ describe("quote email field", () => {
 });
 
 describe("service checkboxes", () => {
+  it("draws square checkboxes with a check mark instead of radio bullets", () => {
+    const css = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
+    const rule = css.slice(css.indexOf(".service-check {"), css.indexOf(".service-check:hover"));
+    expect(rule).toContain("appearance: none");
+    expect(rule).toContain("border-radius: 2px");
+    expect(rule).toContain("background: #ffffff");
+    expect(css).toContain(".service-check:checked + .service-check-mark");
+    expect(css).toMatch(/\.service-check:checked\s*\{[^}]*background:\s*var\(--cp-primary\)/);
+
+    const markup = html(null);
+    expect(markup.match(/class="service-check"/g)).toHaveLength(3);
+    expect(markup.match(/class="service-check-mark"/g)).toHaveLength(3);
+    expect(markup).toContain('aria-hidden="true"');
+    expect(markup).not.toContain("rounded-full");
+  });
+
   it("checks translation by default and leaves the evaluations off", () => {
     const markup = html(null);
     expect(markup).toContain("What do you need?");
