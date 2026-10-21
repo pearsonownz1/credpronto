@@ -24,6 +24,7 @@ import { evaluationServiceDescription } from "@/lib/orders/evaluation-price";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
 import { FlowStatus } from "./status";
+import { WrongEmailLink } from "./wrong-email-link";
 import { useCustomerOrder, useStoredEmail, useStoredToken } from "./use-order";
 import {
   Field,
@@ -43,7 +44,13 @@ type DocFields = {
   date_format: string;
 };
 
-export function ConfirmView({ token: pathToken }: { token?: string }) {
+export function ConfirmView({
+  token: pathToken,
+  accountEmail = null,
+}: {
+  token?: string;
+  accountEmail?: string | null;
+}) {
   const params = useSearchParams();
   const token = useStoredToken(pathToken ?? params.get("token"));
   const { order, error, loading } = useCustomerOrder(token, "once");
@@ -81,7 +88,7 @@ export function ConfirmView({ token: pathToken }: { token?: string }) {
             }
           />
         ) : (
-          <ConfirmForm token={token} order={order} />
+          <ConfirmForm token={token} order={order} accountEmail={accountEmail} />
         )}
       </main>
     </div>
@@ -111,10 +118,20 @@ function dateReading(order: CustomerOrder, documentId: string, key: string) {
   return storedConfirmation(row?.confirmedValue, row?.originalValue);
 }
 
-function ConfirmForm({ token, order }: { token: string; order: CustomerOrder }) {
+function ConfirmForm({
+  token,
+  order,
+  accountEmail,
+}: {
+  token: string;
+  order: CustomerOrder;
+  accountEmail: string | null;
+}) {
   const router = useRouter();
   const params = useSearchParams();
-  const email = useStoredEmail();
+  const storedEmail = useStoredEmail();
+  const [signedInEmail, setSignedInEmail] = useState(accountEmail?.trim() || "");
+  const email = signedInEmail || storedEmail;
   const multiple = order.documents.length > 1;
   const language = params.get("lang") || order.sourceLanguage || "es";
   const target = params.get("target") || order.targetLanguage;
@@ -297,10 +314,13 @@ function ConfirmForm({ token, order }: { token: string; order: CustomerOrder }) 
         >
           {pending ? "Starting…" : "Start my free preview"}
         </button>
-        <p className="mt-3 text-[12.5px] leading-normal text-ink-muted">
-          We’ll email {email ? <b className="text-ink">{email}</b> : "you"} when it’s ready.
-          You can close this tab.
-        </p>
+        <div className="mt-3 text-[12.5px] leading-normal text-ink-muted">
+          <p>
+            We’ll email {email ? <b className="text-ink">{email}</b> : "you"} when it’s ready.
+            You can close this tab.
+          </p>
+          {signedInEmail ? <WrongEmailLink email={signedInEmail} onConfirmed={setSignedInEmail} /> : null}
+        </div>
       </div>
     </FlowColumns>
   );

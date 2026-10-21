@@ -27,10 +27,10 @@ export async function walkCustomerFlow(
     page.getByRole("heading", { level: 1, name: /Certified translations accepted by USCIS/ }),
   ).toBeVisible();
   await expect(page.getByTestId("upload-drop")).toHaveCount(0);
-  await expect(page.getByTestId("nav-log-in")).toBeVisible();
+  await expect(page.getByTestId("nav-log-in").filter({ visible: true })).toBeVisible();
   await expect(page.getByTestId("nav-create-account")).toHaveCount(0);
-  await expect(page.getByTestId("nav-get-started")).toHaveAttribute("href", "/translate");
-  await expect(page.getByTestId("home-get-started")).toHaveAttribute("href", "/translate");
+  await expect(page.getByTestId("nav-get-started").filter({ visible: true })).toHaveAttribute("href", "/translate");
+  await expect(page.getByTestId("home-get-started").filter({ visible: true })).toHaveAttribute("href", "/translate");
   await expect(page.getByTestId("translation-preview")).toBeVisible();
   await expect(
     page.getByRole("img", {
@@ -41,11 +41,12 @@ export async function walkCustomerFlow(
   await expect(page.getByText(/USCIS accepts/i)).toHaveCount(0);
   await check();
 
-  await page.getByTestId("nav-get-started").click();
+  await page.getByTestId("nav-get-started").filter({ visible: true }).click();
   await expect(page).toHaveURL(/\/translate$/);
   await expect(shown(page, "upload-drop")).toBeVisible();
   await expect(shown(page, "email")).toHaveValue("maria.ruiz@email.com");
   await expect(shown(page, "preview-email")).toHaveCount(0);
+  await expect(shown(page, "fix-email")).toHaveCount(0);
   await expect(shown(page, "file-list")).toContainText("acta-nacimiento.pdf");
   await expect(shown(page, "file-list")).toContainText("IMG_4021.HEIC");
   await expect(shown(page, "flow-stepper").locator("[data-state=current]")).toContainText(
@@ -104,6 +105,15 @@ export async function walkCustomerFlow(
     "Guadalajara, Jalisco, Mexico",
   );
   await expect(page.getByLabel("Date format · acta-nacimiento.pdf")).toHaveValue("MM/DD/YYYY");
+  await expect(page.getByText("We’ll email").filter({ visible: true })).toContainText("maria.ruiz@email.com");
+  await shown(page, "fix-email").click();
+  const accountEmail = page.getByLabel("Account email").filter({ visible: true });
+  await expect(accountEmail).toHaveValue("maria.ruiz@email.com");
+  await accountEmail.fill("not-an-email");
+  await page.getByRole("button", { name: "Update email" }).filter({ visible: true }).click();
+  await expect(page.getByRole("alert").filter({ visible: true, hasText: "Enter a valid email." })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).filter({ visible: true }).click();
+  await expect(shown(page, "fix-email")).toBeVisible();
   await check();
 
   await shown(page, "start-preview").click();

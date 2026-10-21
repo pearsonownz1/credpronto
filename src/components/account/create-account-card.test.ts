@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { CreateAccountCard, passwordFromForm } from "./create-account-card";
+import { CreateAccountCard, passwordFromForm, passwordLine } from "./create-account-card";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: () => undefined, refresh: () => undefined }),
@@ -28,7 +28,9 @@ describe("create account card", () => {
     expect(html).toContain("Email");
     expect(html).toContain("Password");
     expect(html).toContain("8+ characters");
+    expect(html).toContain("text-ink-muted");
     expect(html).not.toContain("Looks good");
+    expect(html).not.toContain("Use 8 or more characters.");
     expect(html).not.toContain("Check your email to confirm your account. Then sign in.");
     expect(html).toContain('value="ada@example.com"');
     expect(html).not.toContain("readOnly");
@@ -41,6 +43,23 @@ describe("create account card", () => {
     expect(html).toContain('aria-label="Show password"');
     expect(html).not.toContain("Continue with Google");
     expect(html).not.toMatch(/>\s*Continue\s*</);
+  });
+});
+
+describe("passwordLine", () => {
+  it("keeps the muted hint under 8 until a short submit", () => {
+    expect(passwordLine(0, false)).toBe("muted");
+    expect(passwordLine(7, false)).toBe("muted");
+    expect(passwordLine(7, true)).toBe("short");
+    expect(passwordLine(8, true)).toBe("good");
+    expect(passwordLine(10, false)).toBe("good");
+  });
+
+  it("shows the server error instead of the length hint", () => {
+    const message = "Email not confirmed";
+    expect(passwordLine(0, false, message)).toBe("server");
+    expect(passwordLine(12, false, message)).toBe("server");
+    expect(passwordLine(4, true, "password must be at least 8 characters")).toBe("server");
   });
 });
 

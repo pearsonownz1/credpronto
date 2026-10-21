@@ -1,3 +1,4 @@
+import { promoteVerifiedEmail } from "@/lib/auth/email-trust";
 import { finishAuthenticatedUser } from "@/lib/auth/finish";
 import { isEmailOtpType, requestOrigin, safeNextPath } from "@/lib/auth/redirect";
 import { createClient } from "@/lib/supabase/server";
@@ -25,7 +26,17 @@ export async function GET(request: Request) {
   }
 
   const { data } = await supabase.auth.getUser();
-  if (data.user) await finishAuthenticatedUser(data.user, orderToken);
+  if (data.user) {
+    let user = data.user;
+    if (tokenHash && type && isEmailOtpType(type)) {
+      try {
+        user = await promoteVerifiedEmail(user);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : "could not record email verification");
+      }
+    }
+    await finishAuthenticatedUser(user, orderToken);
+  }
 
   return NextResponse.redirect(`${origin}${next}`);
 }

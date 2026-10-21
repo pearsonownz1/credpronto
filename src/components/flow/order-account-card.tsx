@@ -54,7 +54,7 @@ export function OrderAccountCard({
     setPending(true);
     setError(null);
     setMessage(null);
-    const result = await browserJson<{ session?: boolean; emailSent?: boolean }>("/api/auth/password", {
+    const result = await browserJson<{ session?: boolean }>("/api/auth/password", {
       method: "POST",
       body: JSON.stringify({
         email,
@@ -78,11 +78,7 @@ export function OrderAccountCard({
       onSignedIn();
       return;
     }
-    setMessage(
-      result.data.emailSent === false
-        ? "We saved your account, but the email did not send. Use the magic link to finish."
-        : "Check your email to confirm your account. The link works on any device.",
-    );
+    setError("Could not sign in.");
   }
 
   function onMagicSubmit(event: FormEvent<HTMLFormElement>) {

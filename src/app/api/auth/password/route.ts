@@ -1,15 +1,12 @@
 import { readEmail, readJson, readNext, readOrderToken } from "@/lib/auth/body";
-import { emailHasAccount, generateConfirmLink, isExistingAccountError } from "@/lib/auth/email-link";
-import { finishAuthenticatedUser } from "@/lib/auth/finish";
-import { attachOrderToken } from "@/lib/auth/order-link";
-import { requestOrigin } from "@/lib/auth/redirect";
+import { emailHasAccount, isExistingAccountError } from "@/lib/auth/email-link";
+import { INSTANT_SIGNUP_APP_METADATA } from "@/lib/auth/email-trust";
+import { finishAuthenticatedUser, finishInstantSignup } from "@/lib/auth/finish";
+import { continueAfterSignup, orderTokenFromNext } from "@/lib/auth/redirect";
 import { emailIsVerified } from "@/lib/auth/session";
 import { HttpError } from "@/lib/orders/errors";
 import { json, run } from "@/lib/orders/http";
-import { sendAuthLink } from "@/lib/orders/email";
-import { renderAuthLinkEmail } from "@/lib/orders/email-templates";
-import { serviceDb } from "@/lib/orders/storage";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 
 export async function POST(request: Request) {
   return run(async () => {
@@ -23,8 +20,8 @@ export async function POST(request: Request) {
     const mode = (body as { mode?: unknown }).mode === "sign-up" ? "sign-up" : "sign-in";
     const rawName = (body as { name?: unknown }).name;
     const name = typeof rawName === "string" ? rawName.trim() : "";
-    const orderToken = readOrderToken(body);
-    const origin = requestOrigin(request);
+    const requestedNext = readNext(body);
+    const orderToken = readOrderToken(body) ?? orderTokenFromNext(requestedNext);
 
     let supabase: Awaited<ReturnType<typeof createClient>>;
     try {
@@ -43,38 +40,38 @@ export async function POST(request: Request) {
       }
       if (exists) throw new HttpError("Log in", 409, "account_exists");
 
-      let link: { userId: string; confirmUrl: string };
+      let admin: ReturnType<typeof createServiceClient>["auth"]["admin"];
       try {
-        link = await generateConfirmLink({
-          email,
-          purpose: "signup",
-          password,
-          name: name || undefined,
-          origin,
-          next: readNext(body) ?? "/account",
-          orderToken,
-        });
-      } catch (error) {
-        if (error instanceof HttpError) throw error;
-        if (isExistingAccountError(error as { message?: string })) throw new HttpError("Log in", 409, "account_exists");
-        throw error;
+        admin = createServiceClient().auth.admin;
+      } catch {
+        throw new HttpError("Auth is not configured", 503);
       }
 
-      await attachOrderToken(serviceDb(), link.userId, orderToken);
-      const rendered = renderAuthLinkEmail({ confirmUrl: link.confirmUrl, purpose: "signup" });
-      const mailed = await sendAuthLink(email, rendered);
+      const created = await admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        app_metadata: INSTANT_SIGNUP_APP_METADATA,
+        ...(name ? { user_metadata: { full_name: name } } : {}),
+      });
+      if (created.error || !created.data.user) {
+        if (isExistingAccountError(created.error)) throw new HttpError("Log in", 409, "account_exists");
+        throw new HttpError(created.error?.message || "Could not create the account", 400);
+      }
 
+      // email_confirm lets them in immediately. It is not proof of the inbox, so
+      // only the order token is linked. Email claiming waits for a magic link or confirm OTP.
+      const claimed = await finishInstantSignup(created.data.user.id, orderToken).catch(() => []);
       const signed = await supabase.auth.signInWithPassword({ email, password });
-      const session = Boolean(signed.data.session && signed.data.user);
-      const claimed =
-        session && signed.data.user
-          ? await finishAuthenticatedUser(signed.data.user, orderToken).catch(() => [])
-          : [];
+      if (signed.error || !signed.data.session || !signed.data.user) {
+        throw new HttpError(signed.error?.message || "Could not sign in", 401);
+      }
       return json({
-        userId: link.userId,
-        session,
+        userId: signed.data.user.id,
+        session: true,
         claimedOrderIds: claimed,
-        emailSent: mailed.sent,
+        emailVerified: false,
+        next: continueAfterSignup(requestedNext),
       });
     }
 

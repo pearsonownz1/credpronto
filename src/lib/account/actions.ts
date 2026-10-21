@@ -20,7 +20,9 @@ export async function mockPasswordAuth(_state: AuthFormState, formData: FormData
   if (!isMockMode()) return { error: "Mock sign-in is not enabled." };
   const email = emailOf(formData);
   const password = String(formData.get("password") ?? "");
-  const next = safeNextPath(String(formData.get("next") ?? ""), "/dashboard");
+  const requested = String(formData.get("next") ?? "");
+  const fallback = String(formData.get("mode") ?? "") === "sign-up" ? "/translate" : "/dashboard";
+  const next = safeNextPath(requested, fallback);
   if (!isEmail(email)) return { error: "Enter a valid email." };
   if (password.length < 8) return { error: "Password must be at least 8 characters." };
   const account = mockAccountFor(email);

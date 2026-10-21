@@ -12,14 +12,25 @@ type Identity = {
   identity_data?: Record<string, unknown> | null;
 };
 
-/** Magic link, confirmed password, and Google (email_verified) all count. */
+/**
+ * Magic link, confirm-flow, and Google (email_verified) count.
+ * Instant sign-up sets email_confirm so Supabase looks confirmed, and records
+ * app_metadata.email_verified false until a real email proof clears it.
+ */
+function markedUnverified(metadata: object | null | undefined): boolean {
+  if (!metadata || !("email_verified" in metadata)) return false;
+  return metadata.email_verified === false;
+}
+
 export function emailIsVerified(user: {
   email?: string | null;
   email_confirmed_at?: string | null;
   confirmed_at?: string | null;
+  app_metadata?: object | null;
   identities?: Identity[] | null;
 }): boolean {
   if (!user.email) return false;
+  if (markedUnverified(user.app_metadata)) return false;
   if (user.email_confirmed_at || user.confirmed_at) return true;
   return (user.identities ?? []).some((identity) => identity.identity_data?.email_verified === true);
 }
@@ -29,6 +40,7 @@ function authUser(user: {
   email?: string | null;
   email_confirmed_at?: string | null;
   confirmed_at?: string | null;
+  app_metadata?: object | null;
   identities?: Identity[] | null;
 }): AuthUser {
   return {
