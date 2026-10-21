@@ -1,5 +1,6 @@
 import { UNIT_PRICE_CENTS } from "./constants";
 import { HttpError } from "./errors";
+import { normalizeLanguage } from "./languages";
 import type { EvaluationLine, EvaluationResult, EvaluationService } from "./types";
 
 export const DIPLOMA_UNIT_CENTS = 1995;
@@ -110,7 +111,26 @@ function parseIncludeTranslation(value: string | null | undefined): boolean {
 
 /** A non-English source can take an optional certified translation. It is not added unless the customer opts in. */
 export function needsBundledTranslation(sourceLanguage: string | null): boolean {
-  return sourceLanguage != null && sourceLanguage !== "en";
+  const language = normalizeLanguage(sourceLanguage);
+  return language != null && language !== "en";
+}
+
+/**
+ * Combined orders cannot be charged until the detected language and page count exist.
+ * Paying earlier used to store the evaluation fee alone and drop the translation.
+ */
+export function checkoutQuotePending(order: {
+  service?: string | null;
+  includeTranslation?: boolean;
+  sourceLanguage?: string | null;
+  billablePages?: number | null;
+}): boolean {
+  if (order.service !== "diploma" && order.service !== "course_by_course") return false;
+  if (order.includeTranslation !== true) return false;
+  if (!needsBundledTranslation(order.sourceLanguage ?? null)) {
+    return normalizeLanguage(order.sourceLanguage ?? null) == null;
+  }
+  return (order.billablePages ?? 0) < 1;
 }
 
 export function evaluationQuote(input: {
@@ -289,14 +309,24 @@ export function customerServiceQuote(order: {
     };
   }
   const optedIn = order.includeTranslation === true;
-  const translationCents = optedIn ? (order.translationCents ?? 0) : 0;
+  const pages = billablePages ?? 0;
+  const pending = checkoutQuotePending({
+    service: order.service,
+    includeTranslation: optedIn,
+    sourceLanguage: order.sourceLanguage,
+    billablePages,
+  });
+  const translationCents =
+    optedIn && needsBundledTranslation(order.sourceLanguage ?? null) && pages > 0
+      ? pages * UNIT_PRICE_CENTS
+      : 0;
   return {
     evaluation: true,
     evaluationCents: flat.evaluationCents,
     translationCents,
     includeTranslation: optedIn,
     unitPriceCents: flat.unitPriceCents,
-    totalCents: flat.evaluationCents + translationCents + (order.addonCents ?? 0),
+    totalCents: pending ? null : flat.evaluationCents + translationCents + (order.addonCents ?? 0),
     translationOfferCents: optedIn
       ? null
       : translationOfferCents({
