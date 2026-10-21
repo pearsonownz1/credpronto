@@ -5,7 +5,9 @@ import {
   evaluationKinds,
   parseCatalogServices,
   priceServices,
+  readServicesField,
   resolveServices,
+  servicesWithTranslation,
   type CatalogService,
 } from "./service-selection";
 import type { EvaluationLine, EvaluationResult, EvaluationService } from "./types";
@@ -196,6 +198,96 @@ function parseExplicitServices(fields: {
     includeTranslation,
     services,
   };
+}
+
+/**
+ * `services` is the upload contract: any non-empty subset of
+ * `translation`, `diploma`, and `course_by_course`.
+ * When `services` is omitted, `service` plus `includeTranslation` still selects one evaluation.
+ * A client total is not read.
+ */
+export function serviceChoiceFromBody(
+  body: unknown,
+  fallback: {
+    service?: string | null;
+    services?: readonly string[] | null;
+    includeTranslation?: boolean | null;
+    degreeCount?: number | null;
+    orderType?: string | null;
+    serviceType?: string | null;
+  },
+): {
+  orderType: "translation" | "evaluation";
+  service: EvaluationService | null;
+  degreeCount: number | null;
+  includeTranslation: boolean;
+  services: CatalogService[];
+} | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+  const record = body as Record<string, unknown>;
+  const servicesPresent = "services" in record && record.services != null && record.services !== "";
+  const servicePresent = "service" in record && record.service != null && record.service !== "";
+  const includePresent =
+    "includeTranslation" in record && record.includeTranslation != null && record.includeTranslation !== "";
+  const degreePresent = "degreeCount" in record && record.degreeCount != null && record.degreeCount !== "";
+  if (!servicesPresent && !servicePresent && !includePresent && !degreePresent) return null;
+
+  const degreeCount = degreePresent
+    ? degreeText(record.degreeCount)
+    : fallback.degreeCount == null
+      ? null
+      : String(fallback.degreeCount);
+  const includeFlag = includePresent ? includeFlagText(record.includeTranslation) : null;
+
+  if (servicesPresent) {
+    return parseOrderChoice({
+      orderType: null,
+      service: servicePresent ? textValue(record.service) : null,
+      degreeCount,
+      includeTranslation: includeFlag,
+      services: parseCatalogServices(readServicesField(record.services)),
+    });
+  }
+
+  const include = includePresent ? includeFlag === "true" : fallback.includeTranslation === true;
+  const service = servicePresent ? textValue(record.service) : (fallback.service ?? null);
+  if (service === "diploma" || service === "course_by_course") {
+    return parseOrderChoice({
+      orderType: "evaluation",
+      service,
+      degreeCount,
+      includeTranslation: include ? "true" : "false",
+      services: include ? ["translation", service] : [service],
+    });
+  }
+  if (!servicePresent && (includePresent || degreePresent)) {
+    return parseOrderChoice({
+      orderType: null,
+      service: null,
+      degreeCount,
+      includeTranslation: include ? "true" : "false",
+      services: servicesWithTranslation(resolveServices(fallback), include),
+    });
+  }
+  throw new HttpError("service must be diploma or course_by_course", 400);
+}
+
+function textValue(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function includeFlagText(value: unknown): string {
+  if (value === true || value === "true") return "true";
+  if (value === false || value === "false") return "false";
+  throw new HttpError("includeTranslation must be true or false.", 400);
+}
+
+function degreeText(value: unknown): string {
+  if (typeof value === "number" && Number.isInteger(value)) return String(value);
+  if (typeof value === "string" && value.trim()) return value.trim();
+  throw new HttpError(`degreeCount must be an integer from 1 to ${MAX_DEGREE_COUNT}`, 400);
 }
 
 function parseDegreeCount(value: string | null): number {

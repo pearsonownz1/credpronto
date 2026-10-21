@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { addonStripeLines, parseCheckoutBody, serviceCents } from "./addons";
+import { rejectCustomerTotal } from "./direct-upload";
 import { checkoutBlockReason } from "./equivalency";
 import { downloadGate } from "./access";
 import { checkoutPreviewImageUrl } from "./checkout-image";
@@ -10,6 +11,7 @@ import {
   checkoutQuotePending,
   checkoutServiceCharge,
   customerServiceQuote,
+  serviceChoiceFromBody,
 } from "./evaluation-price";
 import { orderHasEvaluation, resolveServices, selectionPricePatch, servicesWithTranslation } from "./service-selection";
 import { bundleTranslationFile, deliveryFileTarget } from "./delivery-file";
@@ -146,7 +148,7 @@ export async function patchOrderQuote(token: string, body: unknown): Promise<Cus
   }
 
   let includeTranslation = order.includeTranslation;
-  if (patch.includeTranslation != null) {
+  if (patch.includeTranslation != null && patch.services == null && patch.service == null) {
     if (!orderHasEvaluation(order) || order.degreeCount == null) {
       throw new HttpError("This order has no optional translation.", 400);
     }
@@ -154,7 +156,7 @@ export async function patchOrderQuote(token: string, body: unknown): Promise<Cus
   }
 
   let degreeCount = order.degreeCount;
-  if (patch.degreeCount != null) {
+  if (patch.degreeCount != null && patch.services == null && patch.service == null) {
     if (!orderHasEvaluation(order)) {
       throw new HttpError("This order has no evaluation.", 400);
     }
@@ -162,7 +164,31 @@ export async function patchOrderQuote(token: string, body: unknown): Promise<Cus
     orderPatch.degree_count = degreeCount;
   }
 
-  if (patch.skipPages || patch.includeTranslation != null || patch.degreeCount != null) {
+  const choice =
+    patch.services || patch.service
+      ? serviceChoiceFromBody(
+          {
+            ...(patch.services ? { services: patch.services } : {}),
+            ...(patch.service ? { service: patch.service } : {}),
+            ...(patch.includeTranslation != null ? { includeTranslation: patch.includeTranslation } : {}),
+            ...(patch.degreeCount != null ? { degreeCount: patch.degreeCount } : {}),
+          },
+          order,
+        )
+      : null;
+  const pricedOrder = choice
+    ? {
+        ...order,
+        services: choice.services,
+        service: choice.service,
+        degreeCount: choice.degreeCount,
+        includeTranslation: choice.includeTranslation,
+        orderType: choice.orderType,
+        serviceType: choice.orderType,
+      }
+    : { ...order, includeTranslation, degreeCount };
+
+  if (patch.skipPages || patch.includeTranslation != null || patch.degreeCount != null || choice) {
     const documents = await listDocuments(db, order.id);
     const pages = [...(await listPages(db, documents.map((document) => document.id)))].sort((a, b) =>
       compareCombinedPages(documents, a, b),
@@ -184,21 +210,29 @@ export async function patchOrderQuote(token: string, body: unknown): Promise<Cus
         })),
       );
     }
-    const priced = quotePriceAfterSkip(
-      { ...order, includeTranslation, degreeCount },
-      billablePages,
-    );
+    const priced = quotePriceAfterSkip(pricedOrder, billablePages);
     orderPatch.billable_pages = priced.billablePages;
     orderPatch.total_cents = priced.totalCents;
     orderPatch.unit_price_cents = priced.unitPriceCents;
-    if (priced.translationCents != null) orderPatch.translation_cents = priced.translationCents;
-    if (priced.evaluationCents != null) orderPatch.evaluation_cents = priced.evaluationCents;
-    if (orderHasEvaluation(order)) {
-      orderPatch.include_translation = priced.includeTranslation;
-      orderPatch.services = servicesWithTranslation(
-        resolveServices({ ...order, includeTranslation }),
-        priced.includeTranslation,
-      );
+    if (choice) {
+      orderPatch.services = choice.services;
+      orderPatch.service = choice.service;
+      orderPatch.degree_count = choice.degreeCount;
+      orderPatch.order_type = choice.orderType;
+      orderPatch.service_type = choice.orderType;
+      orderPatch.include_translation = choice.includeTranslation;
+      orderPatch.evaluation_cents = choice.orderType === "evaluation" ? priced.evaluationCents : null;
+      orderPatch.translation_cents = choice.orderType === "evaluation" ? priced.translationCents : null;
+    } else {
+      if (priced.translationCents != null) orderPatch.translation_cents = priced.translationCents;
+      if (priced.evaluationCents != null) orderPatch.evaluation_cents = priced.evaluationCents;
+      if (orderHasEvaluation(pricedOrder)) {
+        orderPatch.include_translation = priced.includeTranslation;
+        orderPatch.services = servicesWithTranslation(
+          resolveServices(pricedOrder),
+          priced.includeTranslation,
+        );
+      }
     }
   }
 
@@ -489,7 +523,35 @@ function serviceStripeLines(input: {
 
 export async function startCheckout(token: string, body: unknown = {}) {
   const { db, order: stored } = await orderForToken(token);
-  const order = await withQuotedPages(db, stored);
+  if (body && typeof body === "object" && !Array.isArray(body)) {
+    rejectCustomerTotal(body as Record<string, unknown>);
+  }
+  const choice = serviceChoiceFromBody(body, stored);
+  let order = stored;
+  if (choice) {
+    order = {
+      ...stored,
+      services: choice.services,
+      service: choice.service,
+      degreeCount: choice.degreeCount,
+      includeTranslation: choice.includeTranslation,
+      orderType: choice.orderType,
+      serviceType: choice.orderType,
+      ...(choice.orderType === "translation" ? { evaluationCents: null, translationCents: null } : {}),
+    };
+  }
+  order = await withQuotedPages(db, order);
+  if (choice) {
+    await updateOrder(db, order.id, {
+      services: choice.services,
+      service: choice.service,
+      degree_count: choice.degreeCount,
+      include_translation: choice.includeTranslation,
+      order_type: choice.orderType,
+      service_type: choice.orderType,
+      ...(choice.orderType === "translation" ? { evaluation_cents: null, translation_cents: null } : {}),
+    });
+  }
   const blocked = checkoutBlockReason(order);
   if (blocked) throw new HttpError(blocked, 409);
   if (await settledPayment(db, order.id)) throw new HttpError("This order is already paid", 409);

@@ -43,6 +43,27 @@ export function isCatalogService(value: string): value is CatalogService {
   return CATALOG_SET.has(value);
 }
 
+/** A JSON array or a comma-separated string. Empty and unknown ids are rejected by `parseCatalogServices`. */
+export function readServicesField(value: unknown): string[] {
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  }
+  if (!Array.isArray(value)) {
+    throw new HttpError("services must be a list of translation, diploma, and course_by_course", 400);
+  }
+  const names: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string" || !item.trim()) {
+      throw new HttpError("services must be a list of translation, diploma, and course_by_course", 400);
+    }
+    names.push(item.trim());
+  }
+  return names;
+}
+
 /** Rejects an empty list and any name outside the three upload services. */
 export function parseCatalogServices(values: readonly string[]): CatalogService[] {
   const names = values.map((value) => value.trim()).filter((value) => value.length > 0);

@@ -1,10 +1,14 @@
+import { rejectCustomerTotal } from "./direct-upload";
 import { evaluationPricePatch, MAX_DEGREE_COUNT, rejectCustomerPageCount } from "./evaluation-price";
 import { HttpError } from "./errors";
 import {
   orderHasEvaluation,
+  parseCatalogServices,
+  readServicesField,
   resolveServices,
   selectionPricePatch,
   servicesWithTranslation,
+  type CatalogService,
 } from "./service-selection";
 import type { EvaluationService } from "./types";
 
@@ -32,6 +36,13 @@ export type QuotePatch = {
   includeTranslation?: boolean;
   /** Credentials to price. Integer from 1 to 5. Pages are not accepted. */
   degreeCount?: number;
+  /**
+   * Any non-empty subset of `translation`, `diploma`, and `course_by_course`.
+   * When set, this replaces `service` and `includeTranslation`.
+   */
+  services?: CatalogService[];
+  /** Legacy single evaluation. Used only when `services` is omitted. */
+  service?: EvaluationService;
 };
 
 export function parseQuotePatch(body: unknown): QuotePatch {
@@ -40,7 +51,17 @@ export function parseQuotePatch(body: unknown): QuotePatch {
   }
   const row = body as Record<string, unknown>;
   rejectCustomerPageCount(row);
+  rejectCustomerTotal(row);
   const patch: QuotePatch = {};
+  if ("services" in row && row.services != null && row.services !== "") {
+    patch.services = parseCatalogServices(readServicesField(row.services));
+  }
+  if ("service" in row && row.service != null && row.service !== "") {
+    if (row.service !== "diploma" && row.service !== "course_by_course") {
+      throw new HttpError("service must be diploma or course_by_course", 400);
+    }
+    patch.service = row.service;
+  }
   if ("skipPages" in row) {
     if (!Array.isArray(row.skipPages)) {
       throw new HttpError("skipPages must be a list of page indexes.", 400);
@@ -77,7 +98,9 @@ export function parseQuotePatch(body: unknown): QuotePatch {
     patch.skipPages == null &&
     patch.targetLanguage == null &&
     patch.includeTranslation == null &&
-    patch.degreeCount == null
+    patch.degreeCount == null &&
+    patch.services == null &&
+    patch.service == null
   ) {
     throw new HttpError("Nothing to update.", 400);
   }

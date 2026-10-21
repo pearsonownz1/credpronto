@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { UNIT_PRICE_CENTS } from "./constants";
-import { rejectCustomerTotal } from "./direct-upload";
+import { parseDirectOrder, rejectCustomerTotal } from "./direct-upload";
 import {
   COURSE_BY_COURSE_UNIT_CENTS,
   DIPLOMA_UNIT_CENTS,
   parseOrderChoice,
   rejectCustomerPageCount,
+  serviceChoiceFromBody,
 } from "./evaluation-price";
 import { HttpError } from "./errors";
 import { priceServices, type CatalogService } from "./service-selection";
@@ -183,5 +184,78 @@ describe("service selection price", () => {
     expect(() => rejectCustomerTotal({ amount: 19.95 })).toThrow(/calculated by the server/);
     expect(() => rejectCustomerPageCount({ pages: 4 })).toThrow(/counted from the upload/);
     expect(() => rejectCustomerTotal({ email: "ada@example.com" })).not.toThrow();
+  });
+});
+
+const SERVICE_IDS = ["translation", "diploma", "course_by_course"] as const;
+
+describe("services contract", () => {
+  const fallback = { service: "diploma" as const, degreeCount: 1, includeTranslation: false };
+
+  it("accepts every non-empty subset of translation, diploma, and course_by_course", () => {
+    const subsets: Array<Array<(typeof SERVICE_IDS)[number]>> = [];
+    for (let mask = 1; mask < 8; mask += 1) {
+      subsets.push(SERVICE_IDS.filter((_, index) => (mask & (1 << index)) !== 0));
+    }
+    expect(subsets).toHaveLength(7);
+    for (const services of subsets) {
+      const needsDegree = services.some((service) => service !== "translation");
+      const choice = serviceChoiceFromBody(
+        { services, ...(needsDegree ? { degreeCount: 2 } : {}) },
+        { service: null, degreeCount: null, includeTranslation: false },
+      );
+      expect(choice?.services).toEqual(services);
+      expect(choice?.includeTranslation).toBe(needsDegree && services.includes("translation"));
+      expect(choice?.service).toBe(needsDegree && services.filter((service) => service !== "translation").length === 1
+        ? services.find((service) => service !== "translation")
+        : null);
+    }
+  });
+
+  it("keeps service and includeTranslation when services is omitted", () => {
+    expect(serviceChoiceFromBody({ service: "course_by_course", includeTranslation: true, degreeCount: 2 }, fallback)).toEqual({
+      orderType: "evaluation",
+      service: "course_by_course",
+      degreeCount: 2,
+      includeTranslation: true,
+      services: ["translation", "course_by_course"],
+    });
+    expect(serviceChoiceFromBody({ service: "diploma", includeTranslation: false, degreeCount: "1" }, fallback)).toMatchObject({
+      services: ["diploma"],
+      includeTranslation: false,
+      service: "diploma",
+    });
+    expect(serviceChoiceFromBody({ addons: ["notarization"] }, fallback)).toBeNull();
+  });
+
+  it("rejects an empty list, an unknown id, a mismatched flag, and a client total", () => {
+    expect(() => serviceChoiceFromBody({ services: [] }, fallback)).toThrow(/Choose a service/);
+    expect(() => serviceChoiceFromBody({ services: ["expert_letter"] }, fallback)).toThrow(
+      /translation, diploma, or course_by_course/,
+    );
+    expect(() =>
+      serviceChoiceFromBody({ services: ["diploma"], includeTranslation: true, degreeCount: 1 }, fallback),
+    ).toThrow(/does not match/);
+    expect(() => rejectCustomerTotal({ totalCents: 2990, services: ["translation", "diploma"] })).toThrow(
+      /calculated by the server/,
+    );
+    const sessionId = "11111111-1111-4111-8111-111111111111";
+    const path = `${sessionId}/22222222-2222-4222-8222-000000000001/diploma.pdf`;
+    expect(
+      parseDirectOrder({
+        sessionId,
+        files: [{ path, filename: "diploma.pdf", mime: "application/pdf", size: 10 }],
+        services: ["translation", "diploma", "course_by_course"],
+        degreeCount: 1,
+      }).services,
+    ).toEqual(["translation", "diploma", "course_by_course"]);
+    expect(() =>
+      parseDirectOrder({
+        sessionId,
+        files: [{ path, filename: "diploma.pdf", mime: "application/pdf", size: 10 }],
+        services: ["diploma"],
+        totalCents: 1995,
+      }),
+    ).toThrow(/calculated by the server/);
   });
 });

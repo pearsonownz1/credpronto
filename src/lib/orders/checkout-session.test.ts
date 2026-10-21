@@ -201,6 +201,45 @@ describe("checkout session matches the quote", () => {
     expect(combined.params.line_items).toHaveLength(3);
   });
 
+  it("prices the services sent at checkout and rejects a client total", async () => {
+    const current = order({
+      service: "diploma",
+      services: ["diploma"],
+      degreeCount: 1,
+      evaluationCents: 1995,
+      totalCents: 1995,
+      includeTranslation: false,
+    });
+    await expect(
+      startCheckout(token, { services: ["diploma", "course_by_course"], degreeCount: 2, totalCents: 1 }),
+    ).rejects.toThrow(/calculated by the server/);
+
+    const both = await paidSession(current, { services: ["diploma", "course_by_course"], degreeCount: 2 });
+    expect(both.amountTotal).toBe(2 * (1995 + 3995));
+    expect(db.updateOrder).toHaveBeenCalledWith(
+      expect.anything(),
+      "order-1",
+      expect.objectContaining({
+        services: ["diploma", "course_by_course"],
+        service: null,
+        degree_count: 2,
+        include_translation: false,
+      }),
+    );
+
+    const legacy = await paidSession(current, { service: "course_by_course", includeTranslation: false, degreeCount: 1 });
+    expect(legacy.amountTotal).toBe(3995);
+    expect(db.updateOrder).toHaveBeenCalledWith(
+      expect.anything(),
+      "order-1",
+      expect.objectContaining({
+        services: ["course_by_course"],
+        service: "course_by_course",
+        include_translation: false,
+      }),
+    );
+  });
+
   it("charges course-by-course for two degrees plus one detected page", async () => {
     const current = order({
       status: "preview_ready",
