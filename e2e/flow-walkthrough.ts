@@ -28,7 +28,7 @@ export async function walkCustomerFlow(
   ).toBeVisible();
   await expect(page.getByTestId("upload-drop")).toHaveCount(0);
   await expect(page.getByTestId("nav-log-in")).toBeVisible();
-  await expect(page.getByTestId("nav-create-account")).toBeVisible();
+  await expect(page.getByTestId("nav-create-account")).toHaveCount(0);
   await expect(page.getByTestId("nav-get-started")).toHaveAttribute("href", "/sign-up?next=%2Ftranslate");
   await expect(page.getByTestId("home-get-started")).toHaveAttribute("href", "/sign-up?next=%2Ftranslate");
   await expect(page.getByTestId("translation-preview")).toBeVisible();
