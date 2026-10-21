@@ -13,7 +13,7 @@ import {
   type Db,
 } from "./db";
 import { inReadingOrder } from "./page-order";
-import type { RenderBlock } from "./pdf/layout";
+import { pageKind, type PageKind, type RenderBlock } from "./pdf/layout";
 import { blocksToParagraphs } from "./pdf/structure";
 import type { QaIssue } from "./qa";
 import type { ConfirmationRecord, CorrectionRecord, OrderRecord, PageRecord } from "./types";
@@ -44,6 +44,7 @@ export type TranslationRunStatus = "running" | "assembling" | "ready" | "failed"
 export type PageJobOutput = {
   blocks: RenderBlock[];
   paragraphs: string[];
+  kind?: PageKind;
 };
 
 export type PageJobRecord = {
@@ -97,11 +98,28 @@ function parseQaIssues(value: unknown): QaIssue[] {
   });
 }
 
-const BLOCK_TYPES = new Set(["heading", "paragraph", "fields", "seal", "signature", "note"]);
+const BLOCK_TYPES = new Set([
+  "heading",
+  "paragraph",
+  "fields",
+  "seal",
+  "signature",
+  "note",
+  "kv",
+  "address",
+  "table",
+  "stamp",
+  "logo",
+  "photo",
+  "box",
+  "list",
+  "handwritten",
+  "illegible",
+]);
 
 export function parsePageJobOutput(value: unknown): PageJobOutput | null {
   if (!value || typeof value !== "object") return null;
-  const row = value as { blocks?: unknown; paragraphs?: unknown };
+  const row = value as { blocks?: unknown; paragraphs?: unknown; kind?: unknown };
   if (!Array.isArray(row.blocks)) return null;
   const blocks = row.blocks.filter((block): block is RenderBlock => {
     if (!block || typeof block !== "object") return false;
@@ -111,7 +129,12 @@ export function parsePageJobOutput(value: unknown): PageJobOutput | null {
   const paragraphs = Array.isArray(row.paragraphs)
     ? row.paragraphs.filter((item): item is string => typeof item === "string")
     : blocksToParagraphs(blocks);
-  return { blocks, paragraphs: paragraphs.length > 0 ? paragraphs : blocksToParagraphs(blocks) };
+  const kind = pageKind(row.kind);
+  return {
+    blocks,
+    paragraphs: paragraphs.length > 0 ? paragraphs : blocksToParagraphs(blocks),
+    ...(kind ? { kind } : {}),
+  };
 }
 
 function mapRun(row: Row): TranslationRunRecord {

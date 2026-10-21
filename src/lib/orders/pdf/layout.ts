@@ -22,13 +22,40 @@ export type FieldRow = {
   value: string;
 };
 
+export type BlockAlign = "left" | "center" | "right" | "justify";
+export type BlockColumn = "left" | "right" | "full";
+/** letter and certificate keep the source arrangement. form is the labeled-field layout. */
+export type PageKind = "letter" | "certificate" | "form";
+
+export function blockAlign(value: unknown): BlockAlign | undefined {
+  return value === "left" || value === "center" || value === "right" || value === "justify" ? value : undefined;
+}
+
+export function blockColumn(value: unknown): BlockColumn | undefined {
+  return value === "left" || value === "right" || value === "full" ? value : undefined;
+}
+
+export function pageKind(value: unknown): PageKind | undefined {
+  return value === "letter" || value === "certificate" || value === "form" ? value : undefined;
+}
+
 export type RenderBlock =
-  | { type: "heading"; text: string; level?: 1 | 2 }
-  | { type: "paragraph"; text: string }
+  | { type: "heading"; text: string; level?: 1 | 2; align?: BlockAlign; bold?: boolean; caps?: boolean }
+  | { type: "paragraph"; text: string; align?: BlockAlign; bold?: boolean; underline?: boolean; caps?: boolean }
   | { type: "fields"; rows: FieldRow[] }
-  | { type: "seal"; text: string }
-  | { type: "signature"; electronic: boolean }
-  | { type: "note"; text: string };
+  | { type: "kv"; label: string; value: string; bold?: boolean }
+  | { type: "address"; lines: string[]; align?: BlockAlign; bold?: boolean }
+  | { type: "table"; rows: string[][]; header?: boolean }
+  | { type: "signature"; electronic: boolean; column?: BlockColumn; lines?: string[] }
+  | { type: "seal"; text: string; column?: BlockColumn }
+  | { type: "stamp"; text: string; column?: BlockColumn }
+  | { type: "logo"; text: string }
+  | { type: "photo"; caption?: string }
+  | { type: "box"; label: string; value: string; column?: BlockColumn }
+  | { type: "list"; ordered?: boolean; label?: string; items: string[] }
+  | { type: "note"; text: string }
+  | { type: "handwritten"; text: string }
+  | { type: "illegible" };
 
 export type RenderPage = {
   combinedPageNumber: number;
@@ -36,6 +63,9 @@ export type RenderPage = {
   heightPt: number;
   paragraphs: string[];
   blocks?: RenderBlock[];
+  kind?: PageKind;
+  /** Cropped holder portrait. Drawn when the page has a photo block. */
+  photoPng?: Uint8Array | null;
 };
 
 export type CoverDocument = {

@@ -1,10 +1,14 @@
 import { z } from "zod";
 import { generateObject, translationModelId } from "./ai";
+import { ORIGINALS_BUCKET } from "./constants";
 import { inReadingOrder } from "./page-order";
 import { CONFIRMATION_FIELD_KEYS } from "./fields";
-import type { RenderBlock, RenderPage } from "./pdf/layout";
+import { pageKind, type PageKind, type RenderBlock, type RenderPage } from "./pdf/layout";
 import { coverClientName, coverDocuments, coverSignature, coverTranslatorName, loadTranslatorSignature } from "./pdf/cover";
 import { storeCertifiedTranslation } from "./final-file";
+import { documentKind } from "./pdf/document-layout";
+import { verifyIdentifiers } from "./pdf/identifiers";
+import { cropHolderPhoto } from "./pdf/photo";
 import { renderOrderPdfs } from "./pdf/render";
 import { blocksFromModel, blocksToParagraphs, type ModelBlock } from "./pdf/structure";
 import {
@@ -61,20 +65,32 @@ import {
 } from "./translation-jobs";
 import { isSkippedTranslationPage, pageTranslationPhrases, passThroughBlocks, pagesToTranslate } from "./translation-pages";
 import { staffAlertRecipients } from "./release-decision";
-import { uploadObject } from "./storage";
+import { downloadObject, uploadObject } from "./storage";
 import type { ConfirmationRecord, CorrectionRecord, PageRecord } from "./types";
 
 const modelBlockSchema = z.object({
   type: z.string(),
-  text: z.string().optional(),
-  level: z.number().optional(),
-  electronic: z.boolean().optional(),
-  rows: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
-  lines: z.array(z.string()).optional(),
+  text: z.string().nullish(),
+  level: z.number().nullish(),
+  electronic: z.boolean().nullish(),
+  rows: z.array(z.object({ label: z.string(), value: z.string() })).nullish(),
+  lines: z.array(z.string()).nullish(),
+  align: z.string().nullish(),
+  column: z.string().nullish(),
+  bold: z.boolean().nullish(),
+  underline: z.boolean().nullish(),
+  caps: z.boolean().nullish(),
+  label: z.string().nullish(),
+  value: z.string().nullish(),
+  items: z.array(z.string()).nullish(),
+  ordered: z.boolean().nullish(),
+  cells: z.array(z.array(z.string())).nullish(),
+  caption: z.string().nullish(),
 });
 
 const modelPageSchema = z.object({
   pageNumber: z.number(),
+  kind: z.string().nullish(),
   blocks: z.array(modelBlockSchema).optional(),
   lines: z.array(z.string()).optional(),
   paragraphs: z.array(z.string()).optional(),
@@ -86,17 +102,55 @@ const translationSchema = z.object({
 
 type ModelPage = {
   pageNumber: number;
+  kind?: string | null;
   blocks?: ModelBlock[];
   lines?: string[];
   paragraphs?: string[];
 };
 
+const LAYOUT_INSTRUCTIONS = `Also set kind to "letter", "certificate", or "form".
+A letter has a letterhead, an address, a subject line, prose, and a sign-off. A certificate or license has a centered title, boxed numbers, a portrait, seals, and a signature. A form is a list of labeled fields. Keep a form on type "fields". Do not turn a form into a letter or a certificate.
+
+For a letter or a certificate, return blocks in reading order. One source page is one translated page.
+- heading: a title. align center on a certificate. bold true on the main title. caps true when the source title is in capitals.
+- paragraph: prose. align justify for a letter body. Wrap source bold in **double asterisks** and source underline in __double underscores__. caps true when the source paragraph is in capitals.
+- address: the postal lines.
+- kv: one label and one value, such as Document No. and 74. These are not a table.
+- box: a bordered number. label, value, and column left or right.
+- list: attachments. ordered true. items are the lines. label is the heading, such as Attachment.
+- logo: the letterhead name only, such as OYAK BANK. Do not transcribe the artwork.
+- photo: the holder's portrait. caption is Holder's photo. Do not describe the face.
+- signature: a handwritten signature. electronic false. column left or right when two signatures sit side by side. lines are the printed name and title under the ink, with ** around a bold name. Do not copy the ink.
+- seal: a round seal. text is a short place name, or empty when the place cannot be read. column left or right when two seals sit on opposite sides.
+- stamp: a rectangular stamp. text is the short wording, or empty.
+- handwritten: a handwritten note that is not a signature.
+- illegible: a mark that cannot be read.
+- table: a real grid. cells are rows of strings.
+
+Copy every number and ID exactly. Keep diacritics in names. Turkish, Spanish, French, German, and Portuguese dates are day/month/year on the source. Print every date as MM/DD/YYYY, so 31/1/2006 is 01/31/2006 and 7. 9. 1989 is 09/07/1989.`;
+
 function pageHasContent(blocks: RenderBlock[]): boolean {
   return blocks.some((block) => {
-    if (block.type === "paragraph" || block.type === "note" || block.type === "heading") return block.text.trim().length > 0;
+    if (block.type === "paragraph" || block.type === "note" || block.type === "heading" || block.type === "logo" || block.type === "stamp" || block.type === "handwritten") {
+      return block.text.trim().length > 0;
+    }
     if (block.type === "fields") return block.rows.some((row) => row.label.trim() || row.value.trim());
-    return true;
+    if (block.type === "kv" || block.type === "box") return Boolean(block.label.trim() || block.value.trim());
+    if (block.type === "address") return block.lines.some((line) => line.trim().length > 0);
+    if (block.type === "list") return block.items.some((item) => item.trim().length > 0) || Boolean(block.label?.trim());
+    if (block.type === "table") return block.rows.some((row) => row.some((cell) => cell.trim().length > 0));
+    if (block.type === "seal") return true;
+    if (block.type === "signature" || block.type === "photo" || block.type === "illegible") return true;
+    return false;
   });
+}
+
+function kindFor(page: ModelPage, blocks: RenderBlock[]): PageKind | undefined {
+  return pageKind(page.kind) ?? documentKind({ blocks }) ?? undefined;
+}
+
+function strictDateFormat(fields: ConfirmationRecord[]): "MM/DD/YYYY" | "DD/MM/YYYY" {
+  return dateFormatOf(fields) === "DD/MM/YYYY" ? "DD/MM/YYYY" : "MM/DD/YYYY";
 }
 
 function confirmedBlock(fields: ConfirmationRecord[]): string {
@@ -112,20 +166,27 @@ function dateFormatOf(fields: ConfirmationRecord[]): string {
   return format || "MM/DD/YYYY";
 }
 
-function alignPages(expected: number[], returned: ModelPage[]): Array<{ pageNumber: number; blocks: RenderBlock[] }> | null {
-  const byNumber = new Map<number, RenderBlock[]>();
+function alignPages(
+  expected: number[],
+  returned: ModelPage[],
+): Array<{ pageNumber: number; blocks: RenderBlock[]; kind?: PageKind }> | null {
+  const byNumber = new Map<number, { blocks: RenderBlock[]; kind?: PageKind }>();
   for (const page of returned) {
     const blocks = blocksFromModel(page);
-    if (pageHasContent(blocks)) byNumber.set(Math.round(page.pageNumber), blocks);
+    if (pageHasContent(blocks)) byNumber.set(Math.round(page.pageNumber), { blocks, kind: kindFor(page, blocks) });
   }
   if (expected.every((number) => byNumber.has(number))) {
-    return expected.map((number) => ({ pageNumber: number, blocks: byNumber.get(number) ?? [] }));
+    return expected.map((number) => {
+      const found = byNumber.get(number);
+      return { pageNumber: number, blocks: found?.blocks ?? [], kind: found?.kind };
+    });
   }
   if (returned.length === expected.length && returned.every((page) => pageHasContent(blocksFromModel(page)))) {
-    return expected.map((number, index) => ({
-      pageNumber: number,
-      blocks: blocksFromModel(returned[index] ?? {}),
-    }));
+    return expected.map((number, index) => {
+      const page = returned[index] ?? {};
+      const blocks = blocksFromModel(page);
+      return { pageNumber: number, blocks, kind: kindFor(page, blocks) };
+    });
   }
   return null;
 }
@@ -185,6 +246,7 @@ For a handwritten signature, use type "signature" with electronic false.
 For an electronic signature, firma electrónica, or a long unbroken signature token, use type "signature" with electronic true. Do not copy the signature string.
 
 For a section title, use type "heading".
+${LAYOUT_INSTRUCTIONS}
 ${pageText}`;
 
   const expected = input.pages.map((page) => page.number);
@@ -198,8 +260,8 @@ ${pageText}`;
         [{ role: "user", content: [{ type: "text", text: prompt }] }],
         deadline,
       );
-      last = result.pages;
-      const aligned = alignPages(expected, result.pages);
+      last = result.pages as ModelPage[];
+      const aligned = alignPages(expected, last);
       if (aligned) return aligned;
     } catch (error) {
       if (!isTemporaryTranslationError(error) || attempt === 1 || deadline.aborted) throw error;
@@ -219,7 +281,7 @@ async function translateOnePage(input: {
   page: PageRecord & { number: number };
   corrections: CorrectionRecord[];
   qaIssues: QaIssue[];
-}): Promise<RenderBlock[]> {
+}): Promise<{ blocks: RenderBlock[]; kind?: PageKind }> {
   const notes = input.corrections
     .filter((correction) => correction.pageNumber === input.page.number)
     .map((correction) => {
@@ -257,6 +319,7 @@ For a handwritten signature, use type "signature" with electronic false.
 For an electronic signature, firma electrónica, or a long unbroken signature token, use type "signature" with electronic true. Do not copy the signature string.
 
 For a section title, use type "heading".
+${LAYOUT_INSTRUCTIONS}
 Page ${input.page.number}:
 ${(input.page.ocrText ?? "").slice(0, 6000)}`;
 
@@ -270,11 +333,17 @@ ${(input.page.ocrText ?? "").slice(0, 6000)}`;
     ),
     deadline,
   );
-  const page = "pages" in result ? result.pages[0] : result;
+  const page = ("pages" in result ? result.pages[0] : result) as ModelPage | undefined;
   if (!page) throw new HttpError("The translation did not return the page.", 502);
   const aligned = alignPages([input.page.number], [page]);
   if (!aligned?.[0]) throw new HttpError("The translation did not return the page.", 502);
-  return aligned[0].blocks;
+  const verified = await verifyIdentifiers({
+    sourceText: input.page.ocrText ?? "",
+    blocks: aligned[0].blocks,
+    sourceLanguage: input.sourceLanguage,
+    dateFormat: strictDateFormat(input.fields),
+  });
+  return { blocks: verified, kind: aligned[0].kind };
 }
 
 /** Write a terminal status when a translation is still Processing or waiting on the first preview. */
@@ -367,7 +436,7 @@ export async function runTranslationPage(
       if (await releaseSkippedPageJob(db, claimed)) return;
       throw new HttpError("The page is not ready to translate.", 409);
     }
-    const blocks = await translateOnePage({
+    const translated = await translateOnePage({
       filename: work.filename,
       sourceLanguage: work.order.sourceLanguage,
       targetLanguage: work.order.targetLanguage,
@@ -376,7 +445,11 @@ export async function runTranslationPage(
       corrections: work.corrections,
       qaIssues: work.qaIssues,
     });
-    const output: PageJobOutput = { blocks, paragraphs: blocksToParagraphs(blocks) };
+    const output: PageJobOutput = {
+      blocks: translated.blocks,
+      paragraphs: blocksToParagraphs(translated.blocks),
+      ...(translated.kind ? { kind: translated.kind } : {}),
+    };
     await completePageJob(db, claimed, output);
   } catch (error) {
     await failPageJob(db, claimed, error);
@@ -466,6 +539,7 @@ export async function runTranslationAssemble(
 
         const renderedPages: RenderPage[] = [];
         const translatedCounts = new Map<string, number>();
+        const translatedText = new Map<string, string>();
         const model = translationModelId();
         for (const document of documents) {
           const documentPages = pages.filter((page) => page.documentId === document.id);
@@ -476,11 +550,12 @@ export async function runTranslationAssemble(
                 page,
                 blocks,
                 paragraphs: blocksToParagraphs(blocks),
+                kind: undefined as PageKind | undefined,
               };
             }
             const job = ready.get(page.id);
             if (!job?.output) throw new HttpError("The translation did not return every page.", 502);
-            return { page, blocks: job.output.blocks, paragraphs: job.output.paragraphs };
+            return { page, blocks: job.output.blocks, paragraphs: job.output.paragraphs, kind: job.output.kind };
           });
           await insertTranslation(db, {
             documentId: document.id,
@@ -493,17 +568,22 @@ export async function runTranslationAssemble(
                 combinedPageNumber: page.page.number,
                 paragraphs: page.paragraphs,
                 blocks: page.blocks,
+                ...(page.kind ? { kind: page.kind } : {}),
               })),
             },
           });
           translatedCounts.set(document.id, documentPages.length);
+          translatedText.set(document.id, stored.map((page) => page.paragraphs.join("\n")).join("\n"));
           for (const page of stored) {
+            const kind = page.kind ?? documentKind({ blocks: page.blocks }) ?? undefined;
             renderedPages.push({
               combinedPageNumber: page.page.number,
               widthPt: page.page.widthPt ?? 612,
               heightPt: page.page.heightPt ?? 792,
               paragraphs: page.paragraphs,
               blocks: page.blocks,
+              ...(kind ? { kind } : {}),
+              photoPng: await holderPhoto(db, document, page.blocks),
             });
           }
         }
@@ -520,7 +600,7 @@ export async function runTranslationAssemble(
           date: today,
           pages: renderedPages,
           clientName: coverClientName(confirmations, clientEmail),
-          documents: coverDocuments(documents, pages, translatedCounts),
+          documents: coverDocuments(documents, pages, translatedCounts, translatedText),
           translatorName: coverTranslatorName(null),
           signature: coverSignature(null, configuredSignature),
           pricedPages: order.billablePages,
@@ -674,6 +754,7 @@ export async function watermarkedTranslationPreview(
   const clientEmail = await customerEmail(db, input.customerId);
   const renderedPages: RenderPage[] = [];
   const translatedCounts = new Map<string, number>();
+  const translatedText = new Map<string, string>();
   for (const document of documents) {
     const documentPages = pages.filter((page) => page.documentId === document.id);
     if (documentPages.length === 0) continue;
@@ -688,18 +769,26 @@ export async function watermarkedTranslationPreview(
           qaIssues: [],
         })
       : [];
-    const byNumber = new Map(translated.map((page) => [page.pageNumber, page.blocks]));
+    const byNumber = new Map(translated.map((page) => [page.pageNumber, page]));
     translatedCounts.set(document.id, documentPages.length);
+    const paragraphsForDocument: string[] = [];
     for (const page of documentPages) {
-      const blocks = byNumber.get(page.number) ?? passThroughBlocks(page.ocrText);
+      const found = byNumber.get(page.number);
+      const blocks = found?.blocks ?? passThroughBlocks(page.ocrText);
+      const paragraphs = blocksToParagraphs(blocks);
+      paragraphsForDocument.push(paragraphs.join("\n"));
+      const kind = found?.kind ?? documentKind({ blocks }) ?? undefined;
       renderedPages.push({
         combinedPageNumber: page.number,
         widthPt: page.widthPt ?? 612,
         heightPt: page.heightPt ?? 792,
-        paragraphs: blocksToParagraphs(blocks),
+        paragraphs,
         blocks,
+        ...(kind ? { kind } : {}),
+        photoPng: await holderPhoto(db, document, blocks),
       });
     }
+    translatedText.set(document.id, paragraphsForDocument.join("\n"));
   }
   if (renderedPages.length === 0) throw new Error("The original pages are not ready to translate.");
 
@@ -711,9 +800,24 @@ export async function watermarkedTranslationPreview(
     date: new Date().toISOString().slice(0, 10),
     pages: renderedPages,
     clientName: coverClientName(confirmations, clientEmail),
-    documents: coverDocuments(documents, pages, translatedCounts),
+    documents: coverDocuments(documents, pages, translatedCounts, translatedText),
     translatorName: coverTranslatorName(null),
     signature: coverSignature(null, configuredSignature),
   });
   return files.watermarkedPreview;
+}
+
+async function holderPhoto(
+  db: Db,
+  document: { mime: string | null; originalPath: string },
+  blocks: RenderBlock[],
+): Promise<Uint8Array | null> {
+  if (!blocks.some((block) => block.type === "photo")) return null;
+  if (!document.mime?.startsWith("image/") || !document.originalPath) return null;
+  try {
+    const bytes = await downloadObject(db, ORIGINALS_BUCKET, document.originalPath);
+    return await cropHolderPhoto(bytes);
+  } catch {
+    return null;
+  }
 }

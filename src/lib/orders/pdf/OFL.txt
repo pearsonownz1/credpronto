@@ -4,7 +4,10 @@ Copyright 2014-2021 Adobe, with Reserved Font Name 'Source'. Copyright 2012 Goog
 
 Bundled faces, all under the SIL Open Font License below:
 NotoSans-Regular.ttf, NotoSans-Italic.ttf, NotoSansSymbols2-Regular.ttf,
-NotoSansSC-Regular.ttf, NotoSansJP-Regular.ttf, NotoSansKR-Regular.ttf.
+NotoSansSC-Regular.ttf, NotoSansJP-Regular.ttf, NotoSansKR-Regular.ttf,
+LiberationSerif-Regular.ttf, LiberationSerif-Bold.ttf
+(Liberation Serif: Digitized data copyright (c) 2010 Google Corporation,
+with Reserved Font Name Liberation. The files are unmodified.)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

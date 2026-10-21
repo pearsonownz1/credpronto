@@ -131,16 +131,58 @@ export function coverClientName(
   return "Client";
 }
 
+function foldDocumentText(value: string): string {
+  return value
+    .replace(/İ/g, "i")
+    .replace(/I/g, "ı")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .replace(/ı/g, "i");
+}
+
+function isCaptureFilename(filename: string): boolean {
+  const base = filename.trim().split(/[/\\]/).pop() ?? filename.trim();
+  return /screenshot|whatsapp|^img[_-]?\d|^dsc[_-]?\d|^pxl[_-]?\d|^scan[_-]?\d|^photo[_-]?\d|^image[_-]?\d|^camera/i.test(base);
+}
+
+/** Document type printed on the cover. A capture filename is never shown as the name. */
+export function documentDisplayName(filename: string, text: string): string {
+  const hay = foldDocumentText(text);
+  if (/出生医学证明|medical certificate of birth/.test(hay)) return "Medical Certificate of Birth";
+  if (/avukatlik ruhsat|attorney at law license|attorney's license|attorneys license|barolar birligi/.test(hay)) {
+    return "Attorney at Law License";
+  }
+  if (/atama islemi|appointment procedure|bas hukuk musaviri|chief legal counsel/.test(hay)) return "Appointment Letter";
+  if (/acta de nacimiento|\bbirth certificate\b/.test(hay)) return "Birth Certificate";
+  if (isCaptureFilename(filename)) return "Document";
+  const trimmed = filename.trim();
+  return trimmed || "Document";
+}
+
 export function coverDocuments(
   documents: Array<{ id: string; filename: string }>,
-  sourcePages: Array<{ documentId: string }>,
+  sourcePages: Array<{ documentId: string; ocrText?: string | null }>,
   translatedCounts?: Map<string, number>,
+  translatedText?: Map<string, string>,
 ): CoverDocument[] {
   return documents.map((document) => {
-    const source = sourcePages.filter((page) => page.documentId === document.id).length;
+    const pages = sourcePages.filter((page) => page.documentId === document.id);
+    const source = pages.length;
     const translated = translatedCounts?.get(document.id) ?? source;
-    return { name: document.filename, sourcePages: source, translatedPages: translated };
+    const ocr = pages.map((page) => page.ocrText ?? "").join("\n");
+    const extra = translatedText?.get(document.id) ?? "";
+    return {
+      name: documentDisplayName(document.filename, `${ocr}\n${extra}`),
+      sourcePages: source,
+      translatedPages: translated,
+    };
   });
+}
+
+/** First eight characters. Translation-page footers only. */
+export function shortOrderNumber(orderId: string): string {
+  return orderId.trim().slice(0, 8);
 }
 
 export function formatCoverDate(iso: string): string {
@@ -213,7 +255,7 @@ export function drawFinalFooter(
     thickness: 0.6,
     color: LINE,
   });
-  const text = `Order ${input.orderId} · Page ${input.pageNumber} of ${input.pageCount}`;
+  const text = `Order ${shortOrderNumber(input.orderId)} · Page ${input.pageNumber} of ${input.pageCount}`;
   const textWidth = font.widthOfTextAtSize(text, size);
   page.drawText(text, {
     x: Math.max(margin, input.width - margin - textWidth),

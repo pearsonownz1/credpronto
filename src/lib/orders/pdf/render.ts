@@ -1,7 +1,8 @@
-import { PDFDocument, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { PDFDocument, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import { degrees } from "pdf-lib";
 import { PREVIEW_WATERMARK, PREVIEW_WATERMARK_OPACITY, previewWatermarkRgb } from "../constants";
-import { faceForCodePoint, fontFace, stableFontkit, type FontFace, type FontFaceId } from "./font";
+import { documentKind, planDocument, type PlanRect, type PlanStyle, type PlanText } from "./document-layout";
+import { faceForCodePoint, fontFace, serifFace, stableFontkit, type FontFace, type FontFaceId } from "./font";
 import {
   assertContiguousPages,
   pageSize,
@@ -218,6 +219,149 @@ function layoutBlocks(
   return { paints, bottom: y };
 }
 
+type SerifFaces = {
+  regular: PDFFont;
+  bold: PDFFont;
+  regularFace: FontFace;
+  boldFace: FontFace;
+};
+
+function roundedPath(width: number, height: number, radius: number): string {
+  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+  return [
+    `M ${r} 0`,
+    `H ${width - r}`,
+    `A ${r} ${r} 0 0 1 ${width} ${r}`,
+    `V ${height - r}`,
+    `A ${r} ${r} 0 0 1 ${width - r} ${height}`,
+    `H ${r}`,
+    `A ${r} ${r} 0 0 1 0 ${height - r}`,
+    `V ${r}`,
+    `A ${r} ${r} 0 0 1 ${r} 0`,
+    `Z`,
+  ].join(" ");
+}
+
+function drawRounded(page: PDFPage, rect: PlanRect): void {
+  page.drawSvgPath(roundedPath(rect.w, rect.h, rect.radius), {
+    x: rect.x,
+    y: rect.y + rect.h,
+    borderColor: INK,
+    borderWidth: rect.stroke,
+  });
+}
+
+async function embedSerif(doc: PDFDocument): Promise<SerifFaces> {
+  const regularFace = serifFace(false);
+  const boldFace = serifFace(true);
+  return {
+    regularFace,
+    boldFace,
+    regular: await doc.embedFont(regularFace.bytes, { subset: true }),
+    bold: await doc.embedFont(boldFace.bytes, { subset: true }),
+  };
+}
+
+function serifFontFor(
+  char: string,
+  bold: boolean,
+  serif: SerifFaces | null,
+  upright: ReadyFace[],
+  italicFace: ReadyFace | null,
+): PDFFont | null {
+  const codePoint = char.codePointAt(0) ?? 0;
+  if (codePoint < 32) return null;
+  if (serif) {
+    const face = bold ? serif.boldFace : serif.regularFace;
+    if (face.hasGlyph(codePoint)) return bold ? serif.bold : serif.regular;
+  }
+  return fontFor(char, false, upright, italicFace);
+}
+
+function widthPlanned(
+  text: string,
+  size: number,
+  style: PlanStyle,
+  serif: SerifFaces | null,
+  upright: ReadyFace[],
+  italicFace: ReadyFace | null,
+): number {
+  if (!style.serif) return widthOf(text, size, Boolean(style.italic), upright, italicFace);
+  let total = 0;
+  let buffer = "";
+  let font: PDFFont | null = null;
+  const flush = () => {
+    if (buffer && font) total += font.widthOfTextAtSize(buffer, size);
+    buffer = "";
+  };
+  for (const char of Array.from(text)) {
+    const next = serifFontFor(char, Boolean(style.bold), serif, upright, italicFace);
+    if (!next) continue;
+    if (next !== font) {
+      flush();
+      font = next;
+    }
+    buffer += char;
+  }
+  flush();
+  return total;
+}
+
+function drawRun(
+  page: PDFPage,
+  text: string,
+  x: number,
+  y: number,
+  size: number,
+  color: ReturnType<typeof rgb>,
+  fontForChar: (char: string) => PDFFont | null,
+): number {
+  let cursor = x;
+  let buffer = "";
+  let font: PDFFont | null = null;
+  const flush = () => {
+    if (!buffer || !font) return;
+    page.drawText(buffer, { x: cursor, y, size, font, color });
+    cursor += font.widthOfTextAtSize(buffer, size);
+    buffer = "";
+  };
+  for (const char of Array.from(text)) {
+    const next = fontForChar(char);
+    if (!next) continue;
+    if (next !== font) {
+      flush();
+      font = next;
+    }
+    buffer += char;
+  }
+  flush();
+  return cursor - x;
+}
+
+function drawPlannedText(
+  page: PDFPage,
+  item: PlanText,
+  serif: SerifFaces | null,
+  upright: ReadyFace[],
+  italicFace: ReadyFace | null,
+): void {
+  const color = item.color === "muted" ? MUTED : INK;
+  if (item.serif && serif) {
+    drawRun(page, item.text, item.x, item.y, item.size, color, (char) => serifFontFor(char, Boolean(item.bold), serif, upright, italicFace));
+  } else {
+    drawStyled(page, item.text, item.x, item.y, item.size, color, false, upright, italicFace);
+    if (item.bold) drawStyled(page, item.text, item.x + 0.28, item.y, item.size, color, false, upright, italicFace);
+  }
+  if (!item.underline) return;
+  const width = widthPlanned(item.text, item.size, item, serif, upright, italicFace);
+  page.drawLine({
+    start: { x: item.x, y: item.y - 1.4 },
+    end: { x: item.x + width, y: item.y - 1.4 },
+    thickness: 0.6,
+    color,
+  });
+}
+
 function drawWatermark(page: PDFPage, font: PDFFont, width: number, height: number): void {
   const size = 18;
   const color = previewWatermarkRgb();
@@ -240,26 +384,58 @@ function drawBody(
   page: PDFPage,
   faces: { upright: ReadyFace[]; italic: ReadyFace | null; regular: PDFFont },
   pageSpec: RenderPage,
-  options: { orderId: string; translationPages: number; certified: boolean },
+  options: {
+    orderId: string;
+    translationPages: number;
+    certified: boolean;
+    serif: SerifFaces | null;
+    image: PDFImage | null;
+  },
 ): void {
   const { widthPt, heightPt } = pageSize(pageSpec);
   const margin = Math.min(48, widthPt * 0.08, heightPt * 0.08);
   const maxWidth = Math.max(40, widthPt - margin * 2);
   const blocks = blocksFor(pageSpec);
   const footer = options.certified ? 48 : Math.max(28, margin * 0.7);
-  let chosen: Paint[] = [];
-  let size = 11;
-  while (size >= 8) {
-    const top = heightPt - margin - size;
-    const laid = layoutBlocks(blocks, faces.upright, faces.italic, size, margin, maxWidth, top);
-    chosen = laid.paints;
-    if (laid.bottom >= footer || size === 8) break;
-    size -= 0.5;
-  }
-
-  for (const paint of chosen) {
-    if (paint.y < 12) continue;
-    drawStyled(page, paint.text, paint.x, paint.y, paint.size, paint.color, paint.italic, faces.upright, faces.italic);
+  const kind = documentKind({ ...pageSpec, blocks });
+  if (kind) {
+    const measure = (text: string, size: number, style: PlanStyle) =>
+      widthPlanned(text, size, style, options.serif, faces.upright, faces.italic);
+    const hasPhoto = Boolean(options.image);
+    let size = 12;
+    let plan = planDocument({ kind, blocks, width: widthPt, height: heightPt, footer, size, measure, hasPhoto });
+    while (plan.overflow && size > 10) {
+      size -= 0.5;
+      plan = planDocument({ kind, blocks, width: widthPt, height: heightPt, footer, size, measure, hasPhoto });
+    }
+    if (plan.frame) drawRounded(page, plan.frame);
+    for (const box of plan.boxes) drawRounded(page, box);
+    if (plan.image && options.image) {
+      page.drawImage(options.image, {
+        x: plan.image.x,
+        y: plan.image.y,
+        width: plan.image.w,
+        height: plan.image.h,
+      });
+    }
+    for (const item of plan.texts) {
+      if (item.y < 12) continue;
+      drawPlannedText(page, item, options.serif, faces.upright, faces.italic);
+    }
+  } else {
+    let chosen: Paint[] = [];
+    let size = 11;
+    while (size >= 8) {
+      const top = heightPt - margin - size;
+      const laid = layoutBlocks(blocks, faces.upright, faces.italic, size, margin, maxWidth, top);
+      chosen = laid.paints;
+      if (laid.bottom >= footer || size === 8) break;
+      size -= 0.5;
+    }
+    for (const paint of chosen) {
+      if (paint.y < 12) continue;
+      drawStyled(page, paint.text, paint.x, paint.y, paint.size, paint.color, paint.italic, faces.upright, faces.italic);
+    }
   }
 
   if (options.certified) {
@@ -286,6 +462,18 @@ async function renderTranslationPdf(input: RenderInput, watermark: boolean): Pro
   const doc = await PDFDocument.create();
   const pageBlocks = ordered.map((page) => blocksFor(page));
   const faces = await embedFaces(doc, pageBlocks.flat());
+  const needsSerif = ordered.some((page, index) => documentKind({ ...page, blocks: pageBlocks[index] }) === "certificate");
+  const serif = needsSerif ? await embedSerif(doc) : null;
+  const images = new Map<number, PDFImage>();
+  for (let index = 0; index < ordered.length; index += 1) {
+    const png = ordered[index]?.photoPng;
+    if (!png?.byteLength) continue;
+    try {
+      images.set(index, await doc.embedPng(png));
+    } catch {
+      images.delete(index);
+    }
+  }
 
   ordered.forEach((pageSpec, index) => {
     const { widthPt, heightPt } = pageSize(pageSpec);
@@ -295,6 +483,8 @@ async function renderTranslationPdf(input: RenderInput, watermark: boolean): Pro
       orderId: input.orderId,
       translationPages: ordered.length,
       certified: !watermark,
+      serif,
+      image: images.get(index) ?? null,
     });
     if (watermark) drawWatermark(page, faces.regular, widthPt, heightPt);
   });

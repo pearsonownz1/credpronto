@@ -6,7 +6,15 @@ type GlyphFont = {
   glyphForCodePoint(codePoint: number): { id: number; name?: string | null };
 };
 
-export type FontFaceId = "regular" | "italic" | "symbols" | "cjk-sc" | "cjk-jp" | "cjk-kr";
+export type FontFaceId =
+  | "regular"
+  | "italic"
+  | "symbols"
+  | "cjk-sc"
+  | "cjk-jp"
+  | "cjk-kr"
+  | "serif"
+  | "serif-bold";
 
 export type FontFace = {
   id: FontFaceId;
@@ -23,6 +31,8 @@ const FILES: Record<FontFaceId, string> = {
   "cjk-sc": "NotoSansSC-Regular.ttf",
   "cjk-jp": "NotoSansJP-Regular.ttf",
   "cjk-kr": "NotoSansKR-Regular.ttf",
+  serif: "LiberationSerif-Regular.ttf",
+  "serif-bold": "LiberationSerif-Bold.ttf",
 };
 
 /**
@@ -73,6 +83,11 @@ export function notoSansPath(): string {
 
 export function fontFace(id: FontFaceId): FontFace {
   return openFace(id);
+}
+
+/** Certificate pages. Missing glyphs fall back to the upright sans chain. */
+export function serifFace(bold: boolean): FontFace {
+  return openFace(bold ? "serif-bold" : "serif");
 }
 
 /**
