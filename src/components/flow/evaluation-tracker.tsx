@@ -38,7 +38,10 @@ function StepMark({ state }: { state: EvalStepState }) {
   if (state === "current") {
     return (
       <span className="flex size-5 items-center justify-center" aria-hidden>
-        <span className="eval-status-dot block size-2.5 rounded-full bg-[#1F5EFF]" />
+        <span className="relative size-2.5">
+          <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#1F5EFF] opacity-75 motion-reduce:animate-none" />
+          <span className="relative inline-flex size-2.5 rounded-full bg-[#1F5EFF]" />
+        </span>
       </span>
     );
   }

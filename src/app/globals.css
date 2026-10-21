@@ -209,30 +209,13 @@ body {
   }
 }
 
-@keyframes eval-status-pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(31, 94, 255, 0.45);
-  }
-  70% {
-    box-shadow: 0 0 0 8px rgba(31, 94, 255, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(31, 94, 255, 0);
-  }
-}
-
-.eval-status-dot {
-  animation: eval-status-pulse 1.6s ease-out infinite;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .reading-fill {
     transition: none;
   }
 
   .reading-shine,
-  .reading-spinner,
-  .eval-status-dot {
+  .reading-spinner {
     animation: none;
   }
 

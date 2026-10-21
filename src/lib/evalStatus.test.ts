@@ -175,11 +175,10 @@ describe("evaluation status polling", () => {
   });
 
   it("keeps the current step still when motion is reduced", () => {
-    const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-    expect(css).toMatch(/\.eval-status-dot\s*\{[^}]*animation:\s*eval-status-pulse/);
-    expect(css).toMatch(
-      /@media \(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*\.eval-status-dot\s*\{[^}]*animation:\s*none/,
-    );
+    const source = readFileSync(new URL("../components/flow/evaluation-tracker.tsx", import.meta.url), "utf8");
+    expect(source).toMatch(/animate-ping/);
+    expect(source).toMatch(/motion-reduce:animate-none/);
+    expect(source).toMatch(/bg-\[#1F5EFF\]/);
   });
 
   it("treats a released report or an approved delivery as the existing download", () => {

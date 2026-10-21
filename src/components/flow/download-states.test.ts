@@ -126,7 +126,9 @@ describe("download page", () => {
     expect(html).toContain("We&#x27;re checking your documents.");
     expect(html).toContain('data-step="under_review" data-state="current"');
     expect(html).toContain('data-step="performing_evaluation" data-state="upcoming"');
-    expect(html).toContain("eval-status-dot");
+    expect(html).toContain("animate-ping");
+    expect(html).toContain("motion-reduce:animate-none");
+    expect(html).toContain("bg-[#1F5EFF]");
     expect(html).not.toContain("In review");
     expect(html).not.toContain("%");
     expect(html).not.toContain('data-testid="download-evaluation"');
