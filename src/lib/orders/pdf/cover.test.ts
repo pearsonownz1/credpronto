@@ -59,6 +59,25 @@ describe("certification cover", () => {
       ],
     });
     expect(cover.summary).toBe("Spanish to English · 2 documents · 3 pages");
+    expect(cover.pricedPages).toBeNull();
+    expect(cover.degreeCount).toBeNull();
+    const priced = resolveCover({
+      orderId: "order-1",
+      sourceLanguage: "es",
+      targetLanguage: "en",
+      date: "2026-10-11",
+      pricedPages: 4,
+      degreeCount: 2,
+      documents: [{ name: "diploma.pdf", sourcePages: 3, translatedPages: 3 }],
+      pages: [
+        { combinedPageNumber: 1, widthPt: 612, heightPt: 792, paragraphs: ["a"] },
+        { combinedPageNumber: 2, widthPt: 612, heightPt: 792, paragraphs: ["b"] },
+        { combinedPageNumber: 3, widthPt: 612, heightPt: 792, paragraphs: ["c"] },
+      ],
+    });
+    expect(priced.summary).toBe("Spanish to English · 1 document · 4 pages");
+    expect(priced.pricedPages).toBe(4);
+    expect(priced.degreeCount).toBe(2);
     expect(cover.statements).toEqual(CERTIFICATION_STATEMENTS);
     expect(cover.statements[0]).toBe(
       "As an authorized representative of CredPronto, a professional translation services agency, I hereby certify that the above-mentioned document has been translated by an experienced, qualified and competent professional translator, fluent in the above-mentioned language pair and that, in my best judgment, the translated text truly reflects the content, meaning, and style of the original text and constitutes in every respect a complete and accurate translation of the original document. This document has not been translated for a family member, friend, or business associate.",

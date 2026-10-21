@@ -1,3 +1,4 @@
+import { MAX_DEGREE_COUNT } from "@/lib/orders/evaluation-price";
 import type { EvaluationService } from "@/lib/orders/types";
 
 /**
@@ -45,7 +46,7 @@ export function uploadChoiceFromChecks(checks: ServiceChecks, degreeCount: numbe
       : null;
   if (!service && !checks.translation) return null;
   if (!service) return { orderType: "translation" };
-  if (!Number.isInteger(degreeCount) || degreeCount < 1) return null;
+  if (!Number.isInteger(degreeCount) || degreeCount < 1 || degreeCount > MAX_DEGREE_COUNT) return null;
   return {
     orderType: "evaluation",
     service,

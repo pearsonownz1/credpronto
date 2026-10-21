@@ -133,6 +133,7 @@ describe("evaluation quote", () => {
         translation_cents: 995,
         include_translation: true,
         total_cents: 2990,
+        unit_price_cents: 995,
       }),
     );
   });
@@ -190,6 +191,7 @@ describe("evaluation confirm", () => {
         translation_cents: 995,
         include_translation: true,
         total_cents: 2990,
+        unit_price_cents: 995,
       }),
     );
   });
@@ -242,6 +244,7 @@ describe("evaluation confirm", () => {
         translation_cents: 995,
         include_translation: true,
         total_cents: 2990,
+        unit_price_cents: 995,
       }),
     );
   });

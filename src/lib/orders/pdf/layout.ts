@@ -53,6 +53,13 @@ export type RenderInput = {
   targetLanguage?: string | null;
   clientName?: string | null;
   documents?: CoverDocument[];
+  /**
+   * Detected billable page count stored on the order.
+   * The cover prints this as Pages so the certificate matches the receipt.
+   */
+  pricedPages?: number | null;
+  /** Credentials stored on the order. Printed when this translation is bundled with an evaluation. */
+  degreeCount?: number | null;
   /** Kept for callers. The cover does not print this name. */
   translatorName?: string | null;
   /** Ignored on the cover. The printed signature is the owner asset. */

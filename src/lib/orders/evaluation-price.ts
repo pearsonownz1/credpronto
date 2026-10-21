@@ -4,6 +4,27 @@ import type { EvaluationLine, EvaluationResult, EvaluationService } from "./type
 
 export const DIPLOMA_UNIT_CENTS = 1995;
 export const COURSE_BY_COURSE_UNIT_CENTS = 3995;
+/** New orders accept this many credentials. Older rows above the cap still price. */
+export const MAX_DEGREE_COUNT = 5;
+
+const CUSTOMER_PAGE_FIELDS = [
+  "pages",
+  "requestedPages",
+  "requested_pages",
+  "pageCount",
+  "billablePages",
+  "detectedPages",
+] as const;
+
+/** Customers do not send a page quantity. The quote counts pages from the upload. */
+export function rejectCustomerPageCount(record: Record<string, unknown>): void {
+  for (const field of CUSTOMER_PAGE_FIELDS) {
+    if (!(field in record)) continue;
+    const value = record[field];
+    if (value == null || value === "") continue;
+    throw new HttpError("Pages are counted from the upload.", 400);
+  }
+}
 
 /** Stored on a paid credential evaluation while staff prepare the report. */
 export const EVALUATION_REVIEW_REASON = "Credential evaluation is reviewed by staff.";
@@ -69,8 +90,8 @@ export function parseOrderChoice(fields: {
     throw new HttpError("service must be diploma or course_by_course", 400);
   }
   const degreeCount = Number(fields.degreeCount);
-  if (!Number.isInteger(degreeCount) || degreeCount < 1) {
-    throw new HttpError("degreeCount must be an integer of at least 1", 400);
+  if (!Number.isInteger(degreeCount) || degreeCount < 1 || degreeCount > MAX_DEGREE_COUNT) {
+    throw new HttpError(`degreeCount must be an integer from 1 to ${MAX_DEGREE_COUNT}`, 400);
   }
   return {
     orderType: "evaluation",
@@ -158,6 +179,133 @@ export function evaluationCheckoutTotal(input: {
     translationCents: quote.translationCents,
     includeTranslation,
     totalCents: quote.totalCents + (input.addonCents ?? 0),
+  };
+}
+
+/**
+ * Columns written when an evaluation is priced.
+ * `unit_price_cents` is the page rate only while a translation line is charged,
+ * so `translation_cents = billable_pages * unit_price_cents` still holds.
+ * With no translation line it is the per-degree rate.
+ */
+export function evaluationPricePatch(input: {
+  service: EvaluationService;
+  degreeCount: number;
+  sourceLanguage: string | null;
+  billablePages: number;
+  includeTranslation: boolean;
+  addonCents?: number;
+}): {
+  evaluation_cents: number;
+  translation_cents: number;
+  include_translation: boolean;
+  total_cents: number;
+  unit_price_cents: number;
+} {
+  const priced = evaluationCheckoutTotal(input);
+  return {
+    evaluation_cents: priced.evaluationCents,
+    translation_cents: priced.translationCents,
+    include_translation: priced.includeTranslation,
+    total_cents: priced.totalCents,
+    unit_price_cents:
+      priced.translationCents > 0 ? UNIT_PRICE_CENTS : evaluationUnitCents(input.service),
+  };
+}
+
+/** One checkout total: flat per-degree fee plus detected pages when translation is on. */
+export function checkoutServiceCharge(order: {
+  service: EvaluationService | string | null;
+  degreeCount: number | null;
+  sourceLanguage: string | null;
+  billablePages: number | null;
+  includeTranslation: boolean;
+}): {
+  evaluationCents: number;
+  translationCents: number;
+  includeTranslation: boolean;
+  unitPriceCents: number;
+  serviceCents: number;
+} | null {
+  if (order.service !== "diploma" && order.service !== "course_by_course") return null;
+  if (order.degreeCount == null || !Number.isInteger(order.degreeCount) || order.degreeCount < 1) return null;
+  const patch = evaluationPricePatch({
+    service: order.service,
+    degreeCount: order.degreeCount,
+    sourceLanguage: order.sourceLanguage,
+    billablePages: order.billablePages ?? 0,
+    includeTranslation: order.includeTranslation,
+  });
+  return {
+    evaluationCents: patch.evaluation_cents,
+    translationCents: patch.translation_cents,
+    includeTranslation: patch.include_translation,
+    unitPriceCents: patch.unit_price_cents,
+    serviceCents: patch.evaluation_cents + patch.translation_cents,
+  };
+}
+
+/**
+ * Customer quote amounts. `billablePages` is the detected page count (read-only).
+ * `unitPriceCents` on an evaluation is the per-degree rate. The translation line uses $9.95.
+ */
+export function customerServiceQuote(order: {
+  service: EvaluationService | string | null;
+  degreeCount?: number | null;
+  sourceLanguage?: string | null;
+  billablePages?: number | null;
+  unitPriceCents: number;
+  evaluationCents?: number | null;
+  translationCents?: number | null;
+  includeTranslation?: boolean;
+  addonCents?: number;
+  totalCents?: number | null;
+}): {
+  evaluation: boolean;
+  evaluationCents: number | null;
+  translationCents: number | null;
+  includeTranslation: boolean;
+  unitPriceCents: number;
+  totalCents: number | null;
+  translationOfferCents: number | null;
+  billablePages: number | null;
+} {
+  const billablePages = order.billablePages ?? null;
+  const flat = evaluationPrice({
+    service: order.service,
+    degreeCount: order.degreeCount,
+    addonCents: 0,
+  });
+  if (!flat || (order.service !== "diploma" && order.service !== "course_by_course")) {
+    return {
+      evaluation: false,
+      evaluationCents: order.evaluationCents ?? null,
+      translationCents: order.translationCents ?? null,
+      includeTranslation: false,
+      unitPriceCents: order.unitPriceCents,
+      totalCents: order.totalCents ?? null,
+      translationOfferCents: null,
+      billablePages,
+    };
+  }
+  const optedIn = order.includeTranslation === true;
+  const translationCents = optedIn ? (order.translationCents ?? 0) : 0;
+  return {
+    evaluation: true,
+    evaluationCents: flat.evaluationCents,
+    translationCents,
+    includeTranslation: optedIn,
+    unitPriceCents: flat.unitPriceCents,
+    totalCents: flat.evaluationCents + translationCents + (order.addonCents ?? 0),
+    translationOfferCents: optedIn
+      ? null
+      : translationOfferCents({
+          service: order.service,
+          sourceLanguage: order.sourceLanguage ?? null,
+          billablePages,
+          unitPriceCents: UNIT_PRICE_CENTS,
+        }),
+    billablePages,
   };
 }
 

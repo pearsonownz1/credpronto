@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   checkoutPriceLines,
+  checkoutServiceCharge,
   evaluationCheckoutTotal,
   evaluationFeeCents,
   evaluationQuote,
   lineItemsForOrder,
   parseEvaluationResult,
   parseOrderChoice,
+  rejectCustomerPageCount,
   translationOfferCents,
 } from "./evaluation-price";
 
@@ -166,6 +168,14 @@ describe("evaluation quote", () => {
     expect(() => parseOrderChoice({ orderType: "evaluation", service: "diploma", degreeCount: "0" })).toThrow(
       /degreeCount/,
     );
+    expect(() => parseOrderChoice({ orderType: "evaluation", service: "diploma", degreeCount: "6" })).toThrow(
+      /1 to 5/,
+    );
+    expect(parseOrderChoice({ orderType: "evaluation", service: "course_by_course", degreeCount: "5" }).degreeCount).toBe(
+      5,
+    );
+    expect(() => rejectCustomerPageCount({ pages: 2 })).toThrow(/counted from the upload/);
+    expect(() => rejectCustomerPageCount({ degreeCount: "2" })).not.toThrow();
     expect(() =>
       parseOrderChoice({
         orderType: "evaluation",
@@ -195,6 +205,49 @@ describe("evaluation quote", () => {
     expect(result?.kind).toBe("diploma");
     expect(parseEvaluationResult({ kind: "diploma", credentials: [{}] })).toBeNull();
     expect(parseEvaluationResult({ ...result, pageCount: 1 })?.pageCount).toBe(1);
+  });
+});
+
+describe("combined checkout charge", () => {
+  it("prices detected pages and each degree at the flat rate on one total", () => {
+    const charge = checkoutServiceCharge({
+      service: "diploma",
+      degreeCount: 3,
+      sourceLanguage: "es",
+      billablePages: 4,
+      includeTranslation: true,
+    });
+    expect(charge).toEqual({
+      evaluationCents: 5985,
+      translationCents: 3980,
+      includeTranslation: true,
+      unitPriceCents: 995,
+      serviceCents: 9965,
+    });
+    const lines = checkoutPriceLines({
+      service: "diploma",
+      degreeCount: 3,
+      evaluationCents: charge?.evaluationCents ?? 0,
+      translationCents: charge?.translationCents ?? 0,
+      billablePages: 4,
+      description: "Spanish to English",
+      imageUrl: null,
+    });
+    const sum = (lines ?? []).reduce((total, line) => total + line.quantity * line.unitAmountCents, 0);
+    expect(sum).toBe(charge?.serviceCents);
+    expect(lines?.map((line) => line.name)).toEqual(["Diploma evaluation", "Certified translation"]);
+  });
+
+  it("leaves an English evaluation as the degree fee only", () => {
+    expect(
+      checkoutServiceCharge({
+        service: "course_by_course",
+        degreeCount: 2,
+        sourceLanguage: "en",
+        billablePages: 3,
+        includeTranslation: true,
+      }),
+    ).toMatchObject({ evaluationCents: 7990, translationCents: 0, serviceCents: 7990, unitPriceCents: 3995 });
   });
 });
 

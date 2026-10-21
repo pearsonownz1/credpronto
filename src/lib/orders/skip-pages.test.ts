@@ -69,6 +69,9 @@ describe("quote patch", () => {
     expect(() => parseQuotePatch({ skipPages: [1.5] })).toThrow(/page indexes/);
     expect(() => parseQuotePatch({ includeTranslation: "yes" })).toThrow(/includeTranslation must be true or false/);
     expect(parseQuotePatch({ includeTranslation: true })).toEqual({ includeTranslation: true });
+    expect(parseQuotePatch({ degreeCount: 5 })).toEqual({ degreeCount: 5 });
+    expect(() => parseQuotePatch({ degreeCount: 6 })).toThrow(/1 to 5/);
+    expect(() => parseQuotePatch({ degreeCount: 2, pages: 4 })).toThrow(/counted from the upload/);
     expect(parseQuotePatch({ includeTranslation: false, skipPages: [0] })).toEqual({
       includeTranslation: false,
       skipPages: [0],
@@ -95,7 +98,14 @@ describe("price after skip", () => {
         },
         1,
       ),
-    ).toEqual({ billablePages: 1, translationCents: null, totalCents: 995, includeTranslation: false });
+    ).toEqual({
+      billablePages: 1,
+      evaluationCents: null,
+      translationCents: null,
+      totalCents: 995,
+      includeTranslation: false,
+      unitPriceCents: 995,
+    });
   });
 
   it("keeps the evaluation fee and drops the translation when every page is skipped", () => {
@@ -112,7 +122,14 @@ describe("price after skip", () => {
         },
         0,
       ),
-    ).toEqual({ billablePages: 0, translationCents: 0, totalCents: 1995, includeTranslation: true });
+    ).toEqual({
+      billablePages: 0,
+      evaluationCents: 1995,
+      translationCents: 0,
+      totalCents: 1995,
+      includeTranslation: true,
+      unitPriceCents: 1995,
+    });
   });
 
   it("leaves a one-page diploma at $19.95 when translation stays off", () => {
@@ -129,6 +146,13 @@ describe("price after skip", () => {
         },
         1,
       ),
-    ).toEqual({ billablePages: 1, translationCents: 0, totalCents: 1995, includeTranslation: false });
+    ).toEqual({
+      billablePages: 1,
+      evaluationCents: 1995,
+      translationCents: 0,
+      totalCents: 1995,
+      includeTranslation: false,
+      unitPriceCents: 1995,
+    });
   });
 });

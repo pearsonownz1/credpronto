@@ -1,7 +1,9 @@
 import { addonOptions, offersExpedited } from "@/lib/orders/addons";
+import { UNIT_PRICE_CENTS } from "@/lib/orders/constants";
 import {
   evaluationCheckoutTotal,
   evaluationQuote,
+  evaluationUnitCents,
   lineItemsForOrder,
   translationOfferCents,
 } from "@/lib/orders/evaluation-price";
@@ -249,12 +251,15 @@ function withEvaluationChoice(
     evaluationCents: quote.evaluationCents,
     translationCents: quote.translationCents,
     includeTranslation: priced.includeTranslation,
-    translationOfferCents: translationOfferCents({
-      service: choice.service,
-      sourceLanguage: base.sourceLanguage,
-      billablePages,
-      unitPriceCents: base.unitPriceCents,
-    }),
+    unitPriceCents: evaluationUnitCents(choice.service),
+    translationOfferCents: priced.includeTranslation
+      ? null
+      : translationOfferCents({
+          service: choice.service,
+          sourceLanguage: base.sourceLanguage,
+          billablePages,
+          unitPriceCents: UNIT_PRICE_CENTS,
+        }),
     totalCents: quote.totalCents,
     lineItems: quote.lineItems,
     addonOptions: addonOptions(billablePages, {
@@ -449,7 +454,7 @@ const mockClient: FlowClient = {
     const wantsTranslation = body.includeTranslation ?? next.includeTranslation;
     const translationCents = evaluationOrder
       ? wantsTranslation && next.sourceLanguage && next.sourceLanguage !== "en"
-        ? billablePages * next.unitPriceCents
+        ? billablePages * UNIT_PRICE_CENTS
         : 0
       : null;
     const includeTranslation = evaluationOrder ? (translationCents ?? 0) > 0 : next.includeTranslation;
@@ -462,12 +467,15 @@ const mockClient: FlowClient = {
       billablePages,
       totalCents,
       includeTranslation,
-      translationOfferCents: translationOfferCents({
-        service: next.service,
-        sourceLanguage: next.sourceLanguage,
-        billablePages,
-        unitPriceCents: next.unitPriceCents,
-      }),
+      translationOfferCents:
+        evaluationOrder && includeTranslation
+          ? null
+          : translationOfferCents({
+              service: next.service,
+              sourceLanguage: next.sourceLanguage,
+              billablePages,
+              unitPriceCents: UNIT_PRICE_CENTS,
+            }),
       ...(translationCents != null ? { translationCents } : {}),
       ...(evaluationOrder && next.service && next.degreeCount != null && next.evaluationCents != null
         ? {

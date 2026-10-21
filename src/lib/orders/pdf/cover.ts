@@ -46,6 +46,10 @@ export type ResolvedCover = {
   documents: CoverDocument[];
   sourceTotal: number;
   translatedTotal: number;
+  /** Detected page count from the order. Null when the cover should keep the source-page total only. */
+  pricedPages: number | null;
+  /** Stored credential count. Null on a translation that has no evaluation. */
+  degreeCount: number | null;
   translatorName: string;
   signature: Uint8Array | null;
   pageCount: number;
@@ -165,7 +169,16 @@ export function resolveCover(input: RenderInput): ResolvedCover {
   const translatorName = coverTranslatorName(input.translatorName);
   const pair = `${sourceLabel} to ${targetLabel}`;
   const documentLabel = documents.length === 1 ? "1 document" : `${documents.length} documents`;
-  const pageLabel = sourceTotal === 1 ? "1 page" : `${sourceTotal} pages`;
+  const pricedPages =
+    input.pricedPages != null && Number.isInteger(input.pricedPages) && input.pricedPages > 0
+      ? input.pricedPages
+      : null;
+  const degreeCount =
+    input.degreeCount != null && Number.isInteger(input.degreeCount) && input.degreeCount > 0
+      ? input.degreeCount
+      : null;
+  const shownPages = pricedPages ?? sourceTotal;
+  const pageLabel = shownPages === 1 ? "1 page" : `${shownPages} pages`;
   return {
     orderId: input.orderId,
     issued: formatCoverDate(input.date),
@@ -178,6 +191,8 @@ export function resolveCover(input: RenderInput): ResolvedCover {
     documents,
     sourceTotal,
     translatedTotal,
+    pricedPages,
+    degreeCount,
     translatorName,
     signature: input.signature?.byteLength ? input.signature : null,
     pageCount: input.pages.length + 1,
@@ -464,12 +479,16 @@ function drawSummary(page: PDFPage, faces: Faces, cover: ResolvedCover, y: numbe
 }
 
 function drawOrderBox(page: PDFPage, faces: Faces, cover: ResolvedCover, y: number): number {
-  const rows = [
+  const rows: Array<[string, string]> = [
     ["Order number", cover.orderId],
     ["Date", cover.issued],
     ["Client", cover.clientName],
     ["Language pair", cover.pair],
-  ] as const;
+  ];
+  if (cover.pricedPages != null) rows.push(["Pages", String(cover.pricedPages)]);
+  if (cover.degreeCount != null) {
+    rows.push(["Credentials", cover.degreeCount === 1 ? "1 credential" : `${cover.degreeCount} credentials`]);
+  }
   const header = 18;
   const rowHeight = 15;
   const height = header + 10 + rows.length * rowHeight;

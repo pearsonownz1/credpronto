@@ -27,6 +27,10 @@ export const EVALUATION_ADVISORY =
 export type EvaluationReportMeta = {
   reportId: string;
   issued: string;
+  /** Stored credential count. Printed so the report matches the receipt. */
+  degreeCount?: number | null;
+  /** Detected billable page count. Printed so the report matches the quote. */
+  detectedPages?: number | null;
 };
 
 const DEFAULT_META: EvaluationReportMeta = {
@@ -331,6 +335,17 @@ function drawFacts(
   return bottom - 12;
 }
 
+function orderCountRows(meta: EvaluationReportMeta): Array<[string, string]> {
+  const rows: Array<[string, string]> = [];
+  if (meta.degreeCount != null && meta.degreeCount > 0) {
+    rows.push(["Credentials", meta.degreeCount === 1 ? "1 credential" : `${meta.degreeCount} credentials`]);
+  }
+  if (meta.detectedPages != null && meta.detectedPages > 0) {
+    rows.push(["Pages", meta.detectedPages === 1 ? "1 page" : `${meta.detectedPages} pages`]);
+  }
+  return rows;
+}
+
 function diplomaPage(page: PDFPage, kit: Kit, credential: DiplomaCredential, meta: EvaluationReportMeta, logos: Logos): number {
   let y = drawHeader(page, kit, meta, "Diploma evaluation", logos);
   kit.draw(page, "Educational Credential Evaluation", MARGIN, y, 16, INK, "bold");
@@ -375,6 +390,8 @@ function diplomaPage(page: PDFPage, kit: Kit, credential: DiplomaCredential, met
     credential.documentsReviewed.map((name) => ["File", name]),
     y,
   );
+  const counts = orderCountRows(meta);
+  if (counts.length > 0) y = drawFacts(page, kit, "Order", counts, y);
   for (const line of kit.wrap(EVALUATION_ADVISORY, 8, "regular", CONTENT_W)) {
     kit.draw(page, line, MARGIN, y - 8, 8, MUTED, "regular");
     y -= 11;
@@ -509,6 +526,8 @@ async function renderCourses(
   const subject = `${result.applicant} · ${result.institution}, ${result.country}`;
   kit.draw(cursor.page, fit(kit, subject, 10, "regular", CONTENT_W), MARGIN, cursor.y, 10, MUTED, "regular");
   cursor.y -= 14;
+  const counts = orderCountRows(meta);
+  if (counts.length > 0) cursor.y = drawFacts(cursor.page, kit, "Order", counts, cursor.y);
 
   const boxH = 48;
   const gap = 8;

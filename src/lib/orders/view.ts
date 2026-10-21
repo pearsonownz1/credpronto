@@ -3,7 +3,7 @@ import { lineItemForStoredPage, pageRuleForLanguages, type PageLineItem } from "
 import { progressForOrder, type PublicOrderProgress } from "./reading-progress";
 import { isPreviewDelayed } from "./translation-watch";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
-import { evaluationPrice, lineItemsForOrder, translationOfferCents } from "./evaluation-price";
+import { customerServiceQuote, lineItemsForOrder } from "./evaluation-price";
 import { customerEvaluationResult, customerReviewReason } from "./equivalency";
 import { fulfillmentState, type FulfillmentState } from "./release-decision";
 import { detectDocumentTitle, deliveryDocumentName } from "./download-name";
@@ -70,6 +70,10 @@ export type CustomerOrder = {
   }>;
   /** Per-page quote lines. The order total is their billable units at $9.95. */
   pageLineItems: PageLineItem[];
+  /**
+   * Detected billable page count. Read-only: clients do not send a page quantity.
+   * Show this as "Pages: N". A translation line is this count times $9.95.
+   */
   billablePages: number | null;
   unitPriceCents: number;
   addons: AddonId[];
@@ -93,6 +97,7 @@ export type CustomerOrder = {
   delivery: { status: string } | null;
   orderType: OrderType;
   service: EvaluationService | null;
+  /** Credentials to evaluate. New orders accept an integer from 1 to 5. */
   degreeCount: number | null;
   evaluationCents: number | null;
   translationCents: number | null;
@@ -160,10 +165,10 @@ export function toCustomerOrder(input: {
     }),
     documentNames: documents.map((document) => document.filename),
   }).title;
-  const priced = evaluationPrice(input.order);
-  const evaluationCents = priced?.evaluationCents ?? input.order.evaluationCents;
-  const translationCents = priced ? 0 : input.order.translationCents;
-  const unitPriceCents = priced?.unitPriceCents ?? input.order.unitPriceCents;
+  const quoted = customerServiceQuote(input.order);
+  const evaluationCents = quoted.evaluationCents;
+  const translationCents = quoted.translationCents;
+  const unitPriceCents = quoted.unitPriceCents;
 
   return {
     orderId: input.order.id,
@@ -206,8 +211,8 @@ export function toCustomerOrder(input: {
       ...(typeof page.skip === "boolean" ? { skip: page.skip } : {}),
       ...(page.skipReason ? { skipReason: page.skipReason } : {}),
     })),
-    pageLineItems: priced ? [] : pageLineItems,
-    billablePages: input.order.billablePages,
+    pageLineItems: quoted.evaluation ? [] : pageLineItems,
+    billablePages: quoted.billablePages,
     unitPriceCents,
     addons: [...(input.addons ?? [])]
       .sort(
@@ -219,7 +224,7 @@ export function toCustomerOrder(input: {
     addonOptions: addonOptions(input.order.billablePages, input.order),
     expeditedUnit: EXPEDITED_UNIT,
     shippingAddress: input.order.shippingAddress,
-    totalCents: priced?.totalCents ?? input.order.totalCents,
+    totalCents: quoted.totalCents,
     currency: input.order.currency,
     pageRule: pageRuleForLanguages([
       input.order.sourceLanguage,
@@ -241,8 +246,8 @@ export function toCustomerOrder(input: {
     degreeCount: input.order.degreeCount,
     evaluationCents,
     translationCents,
-    includeTranslation: priced ? false : input.order.includeTranslation,
-    translationOfferCents: priced ? null : translationOfferCents(input.order),
+    includeTranslation: quoted.includeTranslation,
+    translationOfferCents: quoted.translationOfferCents,
     lineItems: lineItemsForOrder({
       service: input.order.service,
       degreeCount: input.order.degreeCount,

@@ -137,6 +137,8 @@ export async function editOrderTranslation(orderId: string, body: unknown) {
       documents: coverDocuments(documents, pages, translatedCounts),
       translatorName: coverTranslatorName(approver),
       signature: coverSignature(approver, loadTranslatorSignature()),
+      pricedPages: order.billablePages,
+      degreeCount: order.degreeCount,
     });
     const translationPath = await storeCertifiedTranslation(db, {
       orderId: order.id,

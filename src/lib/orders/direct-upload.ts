@@ -3,6 +3,7 @@ import { DIRECT_FILE_LIMIT_MESSAGE, MAX_DIRECT_FILE_BYTES, ORIGINALS_BUCKET } fr
 import { insertDocument, type Db } from "./db";
 import { HttpError } from "./errors";
 import { resolveUploadMime, safeFilename } from "./file-type";
+import { rejectCustomerPageCount } from "./evaluation-price";
 import { createSignedUpload, downloadObject, originalObjectInfo } from "./storage";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -161,6 +162,7 @@ export function parseDirectOrder(body: unknown): DirectOrderFields {
     throw new HttpError("Expected a JSON body", 400);
   }
   const record = body as Record<string, unknown>;
+  rejectCustomerPageCount(record);
   const sessionId = typeof record.sessionId === "string" ? record.sessionId.trim() : "";
   if (!UUID.test(sessionId)) throw new HttpError("Unknown upload", 400);
   const files = record.files;
