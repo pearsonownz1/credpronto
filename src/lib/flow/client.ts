@@ -66,7 +66,7 @@ export type FlowClient = {
     orderToken: string;
     orderId: string;
   }>;
-  getOrder(token: string): Promise<CustomerOrder>;
+  getOrder(token: string, init?: { signal?: AbortSignal }): Promise<CustomerOrder>;
   confirm(token: string, body: ConfirmInput): Promise<CustomerOrder>;
   process(token: string): Promise<CustomerOrder>;
   preview(token: string): Promise<PreviewResponse>;
@@ -134,8 +134,11 @@ const liveClient: FlowClient = {
   upload(input) {
     return uploadOrderFiles(input);
   },
-  getOrder(token) {
-    return request(`/api/orders/${encodeURIComponent(token)}`);
+  getOrder(token, init) {
+    return request(`/api/orders/${encodeURIComponent(token)}`, {
+      cache: "no-store",
+      signal: init?.signal,
+    });
   },
   confirm(token, body) {
     return request(`/api/orders/${encodeURIComponent(token)}/confirm`, {

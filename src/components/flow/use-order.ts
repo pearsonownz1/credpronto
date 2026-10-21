@@ -6,6 +6,12 @@ import { checkoutOrderRetryDelay } from "@/lib/orders/checkout-return";
 import { PREVIEW_POLL_MS, previewPollContinues } from "@/lib/flow/preview-progress";
 import { ORDER_STATUS_POLL_MS, downloadPhase, orderStatusPollDelay } from "@/lib/flow/present";
 import {
+  QUOTE_POLL_MS,
+  QUOTE_REQUEST_TIMEOUT_MS,
+  settleQuotePoll,
+  type QuotePollOrder,
+} from "@/lib/flow/quote-poll";
+import {
   EMAIL_KEY,
   MOCK_TOKEN,
   ORDER_EVENT,
@@ -44,8 +50,6 @@ export function useStoredEmail() {
   if (stored) return stored;
   return flowUsesMock() ? "maria.ruiz@email.com" : "";
 }
-
-const WORKING = new Set(["draft", "confirmed", "processing", "correction_requested"]);
 
 export function useCustomerOrder(
   token: string,
@@ -142,8 +146,6 @@ export function useCustomerOrder(
         if (mode === "until-download" || mode === "checkout") {
           const delay = orderStatusPollDelay(downloadPhase(next));
           if (delay != null) timer = window.setTimeout(load, delay);
-        } else if (mode === "while-working" && WORKING.has(next.status)) {
-          timer = window.setTimeout(load, 4000);
         }
       } catch (cause) {
         if (cancelled) return;
@@ -163,6 +165,72 @@ export function useCustomerOrder(
           error: cause instanceof Error ? cause.message : "Could not load this order",
         });
       }
+    }
+
+    if (mode === "while-working") {
+      // Interval, not a one-shot timeout chained off the first body. A cached
+      // or in-flight GET used to leave the quote on that first snapshot.
+      let latest: QuotePollOrder | null = null;
+      const started = Date.now();
+      let quoteStopped = false;
+      let quoteRunning = false;
+      let abort: AbortController | null = null;
+
+      const stopQuote = () => {
+        quoteStopped = true;
+        window.clearInterval(timer);
+        abort?.abort();
+      };
+
+      async function tick() {
+        if (cancelled || quoteStopped || quoteRunning) return;
+        quoteRunning = true;
+        abort = new AbortController();
+        const kill = window.setTimeout(() => abort?.abort(), QUOTE_REQUEST_TIMEOUT_MS);
+        try {
+          const next = await getFlowClient().getOrder(token, { signal: abort.signal });
+          if (cancelled || quoteStopped) return;
+          latest = next;
+          const settled = settleQuotePoll({
+            order: next,
+            elapsedMs: Date.now() - started,
+            error: null,
+          });
+          if (settled.kind === "error") {
+            setSnapshot({ token, order: null, error: settled.message });
+            stopQuote();
+            return;
+          }
+          if (settled.kind === "order") {
+            setSnapshot({ token, order: next, error: null });
+            if (settled.done) stopQuote();
+          }
+        } catch (cause) {
+          if (cancelled || quoteStopped) return;
+          const settled = settleQuotePoll({
+            order: latest,
+            elapsedMs: Date.now() - started,
+            error: {
+              status: cause instanceof FlowApiError ? cause.status : 0,
+              message: cause instanceof Error ? cause.message : "Could not load this order",
+            },
+          });
+          if (settled.kind === "error") {
+            setSnapshot({ token, order: null, error: settled.message });
+            stopQuote();
+          }
+        } finally {
+          window.clearTimeout(kill);
+          quoteRunning = false;
+        }
+      }
+
+      void tick();
+      timer = window.setInterval(() => void tick(), QUOTE_POLL_MS);
+      return () => {
+        cancelled = true;
+        stopQuote();
+      };
     }
 
     if (mode === "until-preview") {

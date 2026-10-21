@@ -4,6 +4,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 import { trackPreviewReady } from "@/lib/analytics/gtag-events";
 import { downloadPhase, isCustomerEvaluation, orderHubStep } from "@/lib/flow/present";
+import { quoteReadFinished } from "@/lib/flow/quote-poll";
 import { writeToken } from "@/lib/flow/session";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { GoogleAdsConversion } from "@/components/google-ads-conversion";
@@ -51,12 +52,12 @@ export function OrderHub() {
       if (!loading) endHandoff();
       return;
     }
-    if (order.status === "draft") {
+    if (!quoteReadFinished(order)) {
       reportOrder(order);
       return;
     }
-    if (view !== "quote") endHandoff();
-  }, [order, loading, covering, view, reportOrder, endHandoff]);
+    endHandoff();
+  }, [order, loading, covering, reportOrder, endHandoff]);
 
   useEffect(() => {
     if (!token) return;
