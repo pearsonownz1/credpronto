@@ -21,7 +21,7 @@ import {
   segmentSource,
   translatedProse,
 } from "./pdf/source-mirror";
-import { blocksFromModel, blocksToParagraphs, type ModelBlock } from "./pdf/structure";
+import { blocksFromModel, blocksToParagraphs, formBlocksWhenCollapsed, type ModelBlock } from "./pdf/structure";
 import {
   claimOrderColumn,
   clearOrderColumn,
@@ -485,17 +485,18 @@ ${(input.page.ocrText ?? "").slice(0, 6000)}`;
   if (!page) throw new HttpError("The translation did not return the page.", 502);
   const aligned = alignPages([input.page.number], [page]);
   if (!aligned?.[0]) throw new HttpError("The translation did not return the page.", 502);
+  const recovered = formBlocksWhenCollapsed(input.page.ocrText ?? "", aligned[0].blocks);
   const dateFormat = strictDateFormat(input.fields);
   const verified = await verifyIdentifiers({
     sourceText: input.page.ocrText ?? "",
-    blocks: aligned[0].blocks,
+    blocks: recovered ?? aligned[0].blocks,
     sourceLanguage: input.sourceLanguage,
     dateFormat,
   });
   return restoreCollapsedLayout({
     sourceText: input.page.ocrText ?? "",
     blocks: verified,
-    kind: aligned[0].kind,
+    kind: recovered ? "form" : aligned[0].kind,
     filename: input.filename,
     sourceLanguage: input.sourceLanguage,
     dateFormat,

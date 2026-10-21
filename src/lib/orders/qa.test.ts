@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { layoutNeedsRestore } from "./pdf/source-mirror";
+import { blocksToParagraphs, formBlocksWhenCollapsed } from "./pdf/structure";
 import { assessTranslation, QA_REVIEW_REASON, qaAttemptForRound, qaStatusForRun, qaWillRetry } from "./qa";
 
 const originalPages = [
@@ -157,5 +159,95 @@ describe("translation QA", () => {
     expect(missing.issues).toEqual([
       expect.objectContaining({ type: "name", severity: "medium", original: "张伟" }),
     ]);
+  });
+
+  it("scores a labeled birth certificate when the model kept only the certification", () => {
+    const source = `ESTADOS UNIDOS MEXICANOS
+ACTA DE NACIMIENTO
+Registro Civil del Estado de Jalisco · Copia certificada
+Identificador electrónico
+00000SAMPLE01482
+DATOS DEL REGISTRO
+ENTIDAD DE REGISTRO
+JALISCO
+MUNICIPIO DE REGISTRO
+SAN ISIDRO DEL VALLE (FICTICIO)
+OFICIALÍA
+0007
+FECHA DE REGISTRO
+19/09/1996
+LIBRO
+0003
+NÚMERO DE ACTA
+01482
+DATOS DE LA PERSONA REGISTRADA
+NOMBRE(S)
+VALERIA XIMENA
+PRIMER APELLIDO
+OLVERA
+SEGUNDO APELLIDO
+TOSTADO
+SEXO
+MUJER
+FECHA DE NACIMIENTO
+07/09/1996
+LUGAR DE NACIMIENTO
+SAN ISIDRO DEL VALLE, JALISCO, MÉXICO
+CLAVE ÚNICA DE REGISTRO DE POBLACIÓN (CURP)
+SAMP960907MJCLTL09
+DATOS DE FILIACIÓN DE LA PERSONA REGISTRADA
+PROGENITOR
+PADRE
+NOMBRE
+RUBÉN ALONSO OLVERA PADILLA
+EDAD
+31
+NACIONALIDAD
+MEXICANA
+CURP
+SAMP650212HJCLDB04
+PROGENITORA
+MADRE
+NOMBRE
+MARÍA DE LOURDES TOSTADO ÍÑIGUEZ
+EDAD
+28
+NACIONALIDAD
+MEXICANA
+CURP
+SAMP680530MJCSXR02
+ANOTACIONES MARGINALES
+SIN ANOTACIONES MARGINALES.
+El suscrito, Oficial del Registro Civil, CERTIFICA que la presente es copia fiel del acta que obra en el archivo de esta Oficialía.
+LIC. ARMANDO TREVIÑO CÁRDENAS (FICTICIO)
+FIRMA ELECTRÓNICA AVANZADA
+SAMPLExQ2FyZ29zIGZpY3RpY2lvcyBwYXJhIHBydWViYXMgZGUgQ3JlZFByb250bw0KTm8gZXMgdW4gZG9jdW1lbn
+RvIHJlYWwgbmkgdmFsaWRvIHBhcmEgdHJhbWl0ZXMgb2ZpY2lhbGVz/AbCdEf0123+SAMPLE==
+CADENA ORIGINAL
+||01482|SAMP960907MJCLTL09|JALISCO|0007|0003|19/09/1996|SAMPLE-NO-VALIDO||`;
+    const collapsed = [
+      {
+        type: "paragraph" as const,
+        text: "The undersigned, Civil Registry Officer, CERTIFIES that this is a true copy of the record on file in the archives of this Office.",
+      },
+    ];
+    const recovered = formBlocksWhenCollapsed(source, collapsed);
+    const text = blocksToParagraphs(recovered ?? []).join("\n");
+    const result = assessTranslation({
+      originalPages: [{ number: 1, text: source }],
+      translatedPages: [{ number: 1, text }],
+      confirmations: [
+        { fieldKey: "full_name", confirmedValue: "VALERIA XIMENA OLVERA TOSTADO" },
+        { fieldKey: "date_of_birth", confirmedValue: "07/09/1996" },
+        { fieldKey: "place_of_birth", confirmedValue: "SAN ISIDRO DEL VALLE, JALISCO, MÉXICO" },
+        { fieldKey: "parent_names", confirmedValue: "RUBÉN ALONSO OLVERA PADILLA; MARÍA DE LOURDES TOSTADO ÍÑIGUEZ" },
+        { fieldKey: "date_format", confirmedValue: "DD/MM/YYYY" },
+      ],
+    });
+    expect(recovered).not.toBeNull();
+    expect(layoutNeedsRestore(source, recovered ?? [])).toBeNull();
+    expect(formBlocksWhenCollapsed(source, recovered ?? [])).toBeNull();
+    expect(result.issues).toEqual([]);
+    expect(result.pass).toBe(true);
   });
 });
