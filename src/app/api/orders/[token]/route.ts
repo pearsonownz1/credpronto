@@ -4,7 +4,7 @@ import { getOrder, patchOrderQuote } from "@/lib/orders/customer";
 type Context = { params: Promise<{ token: string }> };
 
 export async function GET(_request: Request, context: Context) {
-  return run(async () => {
+  const response = await run(async () => {
     const started = performance.now();
     const { token } = await context.params;
     const body = await getOrder(token);
@@ -12,6 +12,9 @@ export async function GET(_request: Request, context: Context) {
     response.headers.set("Server-Timing", `order;dur=${Math.round(performance.now() - started)}`);
     return response;
   });
+  // The quote screen polls this URL. A stored GET kept the first reading snapshot.
+  response.headers.set("Cache-Control", "private, no-store");
+  return response;
 }
 
 export async function PATCH(request: Request, context: Context) {

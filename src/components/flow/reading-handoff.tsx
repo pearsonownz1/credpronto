@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { quoteReadFinished } from "@/lib/flow/quote-poll";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
 import { ReadingFiles } from "./reading-files";
@@ -71,7 +72,7 @@ export function ReadingHandoff({ children }: { children: ReactNode }) {
   const reportOrder = useCallback((order: CustomerOrder) => {
     setState((current) => {
       if (current.phase === "idle") return current;
-      if (order.status === "draft") return { ...current, phase: "reading", order };
+      if (!quoteReadFinished(order)) return { ...current, phase: "reading", order };
       return INITIAL;
     });
   }, []);

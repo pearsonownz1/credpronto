@@ -22,6 +22,7 @@ import {
   targetChoices,
   totalLabel,
 } from "@/lib/flow/present";
+import { quoteReadFinished } from "@/lib/flow/quote-poll";
 import { rememberDocument } from "@/lib/flow/upload-blobs";
 import { sumQuotedBillable } from "@/lib/orders/skip-pages";
 import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
@@ -49,7 +50,7 @@ export function QuoteView({
 
   useLayoutEffect(() => {
     if (!covering) return;
-    if (order?.status === "draft") reportOrder(order);
+    if (order && !quoteReadFinished(order)) reportOrder(order);
     else if (order || (!loading && error)) endHandoff();
   }, [order, loading, error, covering, reportOrder, endHandoff]);
 
@@ -95,7 +96,7 @@ export function QuoteView({
           />
         ) : evaluationOrder ? (
           <FlowStatus title="Opening payment…" body="" />
-        ) : order.status === "draft" ? (
+        ) : order.status === "draft" && !quoteReadFinished(order) ? (
           <ReadingFiles status={order.status} progress={order.progress} />
         ) : order.status === "failed" ? (
           <FlowStatus

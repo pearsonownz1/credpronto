@@ -13,6 +13,20 @@ function json(body: unknown, status = 200) {
   });
 }
 
+describe("order polling fetch", () => {
+  it("loads the order with a no-store GET so a poll cannot reuse the first body", async () => {
+    const fetchSpy = vi.fn(async () => json({ orderId: "order-1", status: "draft" }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await getFlowClient().getOrder("order token");
+
+    expect(fetchSpy).toHaveBeenCalledWith("/api/orders/order%20token", {
+      cache: "no-store",
+      signal: undefined,
+    });
+  });
+});
+
 describe("source file URL", () => {
   it("requests the signed original for a quote thumbnail", async () => {
     const fetchSpy = vi.fn(async () =>
