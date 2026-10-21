@@ -14,6 +14,7 @@ import { cropHolderPhoto } from "./pdf/photo";
 import { renderOrderPdfs } from "./pdf/render";
 import {
   blocksFromSegmentTranslations,
+  completeLetterFromSource,
   ensurePortrait,
   layoutNeedsRestore,
   projectLetter,
@@ -326,18 +327,21 @@ async function restoreCollapsedLayout(input: {
   if (!plan) {
     const blocks = ensurePortrait(input.blocks, portrait);
     const kind = input.kind ?? (blocks.some((block) => block.type === "photo") ? "certificate" : undefined);
-    return { blocks, kind };
+    return { blocks: completeLetterFromSource(blocks, input.sourceText), kind };
   }
+
+  const settle = (blocks: RenderBlock[]) =>
+    reconcileIdentifiers({
+      sourceText: input.sourceText,
+      blocks: completeLetterFromSource(blocks, input.sourceText),
+      sourceLanguage: input.sourceLanguage,
+      dateFormat: input.dateFormat,
+    });
 
   const finish = (blocks: RenderBlock[], via: LayoutFallback) => {
     reportLayout(via, { filename: input.filename, kind: plan.kind });
     return {
-      blocks: reconcileIdentifiers({
-        sourceText: input.sourceText,
-        blocks,
-        sourceLanguage: input.sourceLanguage,
-        dateFormat: input.dateFormat,
-      }),
+      blocks: settle(blocks),
       kind: plan.kind,
       layoutFallback: via,
     };
@@ -385,7 +389,7 @@ ${translatedProse(input.blocks).slice(0, 6000)}`,
     });
   }
   reportLayout("flat", { filename: input.filename, kind: plan.kind });
-  return { blocks: input.blocks, kind: input.kind ?? plan.kind, layoutFallback: "flat" };
+  return { blocks: settle(input.blocks), kind: input.kind ?? plan.kind, layoutFallback: "flat" };
 }
 
 async function restoreDocumentPages(

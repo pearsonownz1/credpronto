@@ -859,11 +859,14 @@ function layoutBlock(block: ModelBlock): RenderBlock[] | null {
   if (type === "handwritten") return [{ type: "handwritten", text: (block.text ?? "").trim() }];
   if (type === "illegible") return [{ type: "illegible" }];
   if (type === "signature" && (column || block.lines?.length)) {
+    const fromLines = (block.lines ?? []).map((line) => line.trim()).filter(Boolean);
+    const text = (block.text ?? "").trim();
+    const lines = fromLines.length > 0 ? fromLines : text && !/^(signature|firma)$/i.test(text) ? [text] : [];
     return [{
       type: "signature",
       electronic: block.electronic === true,
       column,
-      lines: block.lines?.map((line) => line.trim()).filter(Boolean),
+      ...(lines.length > 0 ? { lines } : {}),
     }];
   }
   if (type === "seal" && column) return [{ type: "seal", text: cleanSealText(block.text ?? ""), column }];

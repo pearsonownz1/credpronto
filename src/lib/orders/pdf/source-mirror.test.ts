@@ -4,7 +4,7 @@ import { planDocument, type PlanStyle } from "./document-layout";
 import { fontFace, serifFace, stableFontkit } from "./font";
 import { assessTranslation } from "../qa";
 import { blocksToParagraphs } from "./structure";
-import { blocksFromSegmentTranslations, joinedLetterParagraph, layoutNeedsRestore, projectLetter, segmentSource } from "./source-mirror";
+import { blocksFromSegmentTranslations, completeLetterFromSource, joinedLetterParagraph, layoutNeedsRestore, projectLetter, segmentSource } from "./source-mirror";
 
 const OYAK_OCR = `OYAK BANK
 
@@ -176,6 +176,31 @@ describe("source arrangement for a photo", () => {
     expect(planned.texts.some((item) => item.text.startsWith("6)"))).toBe(true);
     expect(planned.texts.some((item) => item.text === "Document No")).toBe(true);
     expect(planned.texts.some((item) => item.text === "Subject")).toBe(true);
+  });
+
+  it("puts the printed signatories back when the signature blocks have no names", () => {
+    const blocks = completeLetterFromSource(
+      [
+        { type: "kv", label: "Document No.", value: "74" },
+        { type: "paragraph", text: "The documents pertaining to Ms. Çiğdem DAYAN are attached." },
+        { type: "signature", electronic: false, column: "left" },
+        { type: "signature", electronic: false, column: "left" },
+      ],
+      OYAK_OCR,
+    );
+    expect(blocks.filter((block) => block.type === "signature")).toHaveLength(2);
+    const text = blocksToParagraphs(blocks).join("\n");
+    expect(text).toContain("E. Hakan Eminsoy");
+    expect(text).toContain("Nejat Bilginer");
+    expect(text).toContain("General Manager and");
+    expect(text).toContain("Deputy General Manager");
+    const qa = assessTranslation({
+      originalPages: [{ number: 1, text: "Evrak No : 74\nE. Hakan Eminsoy\nNejat Bilginer" }],
+      translatedPages: [{ number: 1, text }],
+      confirmations: [{ fieldKey: "full_name", confirmedValue: "Çiğdem DAYAN; E. Hakan Eminsoy; Nejat Bilginer" }],
+    });
+    expect(qa.issues).toEqual([]);
+    expect(qa.pass).toBe(true);
   });
 
   it("keeps the reference number and signatories when the enclosure list is plain lines", () => {

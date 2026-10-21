@@ -255,6 +255,14 @@ export function segmentSource(text: string, options?: { portrait?: boolean }): L
   return segmentCertificate(lines, Boolean(options?.portrait)) ?? segmentLetter(lines);
 }
 
+function letterProse(blocks: RenderBlock[]): string {
+  return translatedProse(blocks).replace(/\*/g, "");
+}
+
+function signatoryName(segment: SourceSegment): string {
+  return segment.text.split(/\n/)[0]?.trim() ?? "";
+}
+
 function letterCovered(blocks: RenderBlock[]): boolean {
   const structural = blocks.some((block) => {
     if (block.type === "kv" || block.type === "address" || block.type === "list" || block.type === "logo" || block.type === "signature") {
@@ -263,6 +271,43 @@ function letterCovered(blocks: RenderBlock[]): boolean {
     return block.type === "fields" && block.rows.length > 0;
   });
   return structural && blocks.length >= 3;
+}
+
+function translateRoleLine(line: string): string {
+  const trimmed = line.trim();
+  if (/^genel\s+m[üu]d[üu]r\s+yard[ıi]mc[ıi]s[ıi]\.?$/iu.test(trimmed)) return "Deputy General Manager";
+  if (/^genel\s+m[üu]d[üu]r\s+ve$/iu.test(trimmed)) return "General Manager and";
+  if (/^y[öo]netim\s+kurulu\s+[üu]yesi\.?$/iu.test(trimmed)) return "Member of the Board of Directors";
+  return trimmed;
+}
+
+/**
+ * The model can return a signature column and leave the printed name out.
+ * Copy that name from the source lines so QA does not send the page back.
+ */
+export function completeLetterFromSource(blocks: RenderBlock[], sourceText: string): RenderBlock[] {
+  const plan = segmentSource(sourceText);
+  if (!plan || plan.kind !== "letter") return blocks;
+  const prose = letterProse(blocks);
+  const missing = plan.segments.filter((segment) => {
+    if (segment.role !== "signature") return false;
+    const name = signatoryName(segment);
+    return Boolean(name) && indexOfFold(prose, name) < 0;
+  });
+  if (missing.length === 0) return blocks;
+  const kept = blocks.filter((block) => block.type !== "signature" || Boolean(block.lines?.some((line) => line.replace(/\*/g, "").trim())));
+  for (const segment of missing) {
+    const lines = segment.text.split(/\n/).map((line) => line.trim()).filter(Boolean);
+    const name = lines[0];
+    if (!name) continue;
+    kept.push({
+      type: "signature",
+      electronic: false,
+      column: segment.column,
+      lines: [`**${name}**`, ...lines.slice(1).map(translateRoleLine)],
+    });
+  }
+  return kept;
 }
 
 function certificateCovered(blocks: RenderBlock[]): boolean {

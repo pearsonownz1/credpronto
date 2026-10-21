@@ -4,6 +4,7 @@ import * as db from "./db";
 import * as email from "./email";
 import type { Db } from "./storage";
 import * as storage from "./storage";
+import { assessTranslation } from "./qa";
 import { runTranslationPage } from "./translation";
 import * as jobs from "./translation-jobs";
 import type { PageJobOutput, PageJobRecord, PageWork } from "./translation-jobs";
@@ -280,6 +281,45 @@ describe("photo translation layout", () => {
     expect(list?.type === "list" && list.items).toEqual(["Bankruptcy certificate.", "Concordat certificate."]);
   });
 
+  it("keeps the printed signatories when the model returns empty signature blocks", async () => {
+    vi.spyOn(ai, "generateObject").mockImplementation(async (_schema, messages) => {
+      const text = messageText([_schema, messages]);
+      if (text.includes("Check this certified translation")) return { fixes: [] };
+      if (text.includes("Translate each numbered part")) {
+        throw new Error("No object generated: could not parse the response.");
+      }
+      return {
+        pageNumber: 1,
+        kind: "letter",
+        blocks: [
+          { type: "logo", text: "OYAK BANK" },
+          { type: "paragraph", text: "Istanbul, 01/31/2006", align: "left" },
+          { type: "address", lines: ["Atatürk Bulvarı No: 191 06684", "Kavaklıdere / Ankara"] },
+          { type: "kv", label: "Document No.", value: "74" },
+          { type: "paragraph", text: "The documents pertaining to Ms. Çiğdem DAYAN are attached.", align: "justify" },
+          { type: "signature", electronic: false, column: "left" },
+          { type: "signature", electronic: false, column: "left" },
+        ],
+      };
+    });
+
+    await runTranslationPage({} as Db, { orderId, version: 1, jobId });
+
+    expect(saved?.layoutFallback).toBeUndefined();
+    const text = saved?.paragraphs.join("\n") ?? "";
+    expect(text).toContain("74");
+    expect(text).toContain("E. Hakan Eminsoy");
+    expect(text).toContain("Nejat Bilginer");
+    expect(text).not.toContain("[Signature]\n[Signature]\n[Signature]");
+    const qa = assessTranslation({
+      originalPages: [{ number: 1, text: work().page.ocrText ?? "" }],
+      translatedPages: [{ number: 1, text }],
+      confirmations: [{ fieldKey: "full_name", confirmedValue: "Çiğdem DAYAN; E. Hakan Eminsoy; Nejat Bilginer" }],
+    });
+    expect(qa.pass).toBe(true);
+    expect(qa.issues).toEqual([]);
+  });
+
   it("flags a flat paragraph when the source arrangement cannot be recovered", async () => {
     vi.spyOn(ai, "generateObject").mockImplementation(async (_schema, messages) => {
       const text = messageText([_schema, messages]);
@@ -291,7 +331,9 @@ describe("photo translation layout", () => {
     await runTranslationPage({} as Db, { orderId, version: 1, jobId });
 
     expect(saved?.layoutFallback).toBe("flat");
-    expect(saved?.blocks).toEqual([{ type: "paragraph", text: "Hello from the bank." }]);
+    expect(saved?.blocks[0]).toEqual({ type: "paragraph", text: "Hello from the bank." });
+    expect(saved?.paragraphs.join("\n")).toContain("E. Hakan Eminsoy");
+    expect(saved?.paragraphs.join("\n")).toContain("Nejat Bilginer");
     expect(console.warn).toHaveBeenCalledWith(
       "layout fallback: kept a flat paragraph",
       expect.objectContaining({ via: "flat", kind: "letter" }),
