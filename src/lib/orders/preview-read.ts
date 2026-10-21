@@ -1,5 +1,6 @@
 import { ORIGINALS_BUCKET, PREVIEW_URL_SECONDS, PREVIEWS_BUCKET } from "./constants";
-import { evaluationPrice } from "./evaluation-price";
+import { UNIT_PRICE_CENTS } from "./constants";
+import { evaluationPrice, isTranslationBundle } from "./evaluation-price";
 import {
   insertEvent,
   latestReadyPreview,
@@ -126,12 +127,15 @@ export async function getPreview(token: string): Promise<PreviewRead> {
     }),
   );
   const priced = evaluationPrice(order);
+  const bundle = isTranslationBundle(order);
+  const bundleTotal =
+    (order.evaluationCents ?? priced?.evaluationCents ?? 0) + (order.translationCents ?? 0);
   return {
     serverTiming: timing,
     body: {
       status: order.status,
-      totalCents: priced?.totalCents ?? order.totalCents,
-      unitPriceCents: priced?.unitPriceCents ?? order.unitPriceCents,
+      totalCents: bundle ? bundleTotal : priced?.totalCents ?? order.totalCents,
+      unitPriceCents: bundle ? UNIT_PRICE_CENTS : priced?.unitPriceCents ?? order.unitPriceCents,
       billablePages: order.billablePages,
       original: { url: originalUrl, pageCount: pages.length, pages },
       translation: {

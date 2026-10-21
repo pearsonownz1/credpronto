@@ -41,7 +41,9 @@ export function useQuoteUpload() {
       writeEmail(email);
       rememberUpload(result.orderToken, input.files);
       clearUploadDraft();
-      if (input.choice.orderType === "evaluation") {
+      const payFirst =
+        input.choice.orderType === "evaluation" && input.choice.includeTranslation !== true;
+      if (payFirst) {
         endHandoff();
         router.push(`/checkout?token=${encodeURIComponent(result.orderToken)}`);
         return;

@@ -42,6 +42,7 @@ export async function listMyOrders(db: Db, user: AuthUser) {
           })),
         ),
         deliveryStatus: delivery?.status ?? null,
+        includeTranslation: order.includeTranslation,
       });
       const documentName = filenames.get(order.id)?.filter(Boolean).join(", ") || null;
       return { ...summary, documentName };

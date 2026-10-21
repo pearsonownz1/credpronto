@@ -253,9 +253,9 @@ function withEvaluationChoice(
     degreeCount: choice.degreeCount,
     evaluationCents: quote.evaluationCents,
     translationCents: quote.translationCents,
-    includeTranslation: priced.includeTranslation,
+    includeTranslation: choice.includeTranslation,
     unitPriceCents: evaluationUnitCents(choice.service),
-    translationOfferCents: priced.includeTranslation
+    translationOfferCents: choice.includeTranslation
       ? null
       : translationOfferCents({
           service: choice.service,
@@ -460,7 +460,7 @@ const mockClient: FlowClient = {
         ? billablePages * UNIT_PRICE_CENTS
         : 0
       : null;
-    const includeTranslation = evaluationOrder ? (translationCents ?? 0) > 0 : next.includeTranslation;
+    const includeTranslation = evaluationOrder ? wantsTranslation : next.includeTranslation;
     const totalCents =
       evaluationOrder && next.evaluationCents != null
         ? next.evaluationCents + (translationCents ?? 0)

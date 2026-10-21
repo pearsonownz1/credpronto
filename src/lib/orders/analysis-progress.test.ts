@@ -261,6 +261,75 @@ describe("quote progress", () => {
     expect(queue).not.toHaveBeenCalled();
     expect(evaluation.startEvaluationQuote).toHaveBeenCalled();
   });
+
+  it("queues translation after a bundle quote", async () => {
+    const bytes = await twoPagePdf();
+    const document = {
+      id: "doc-1",
+      orderId,
+      originalPath: `${orderId}/upload.pdf`,
+      filename: "upload.pdf",
+      mime: "application/pdf",
+      position: 1,
+    } as DocumentRecord;
+    vi.spyOn(db, "getOrderById").mockResolvedValue({
+      id: orderId,
+      status: "draft",
+      languageConfirmed: false,
+      service: "diploma",
+      degreeCount: 1,
+      includeTranslation: true,
+      orderType: "evaluation",
+      serviceType: "evaluation",
+      targetLanguage: "en",
+    } as OrderRecord);
+    vi.spyOn(db, "claimDocuments").mockResolvedValue([document]);
+    vi.spyOn(db, "setOrderProgress").mockResolvedValue(undefined);
+    vi.spyOn(db, "replacePages").mockResolvedValue(undefined);
+    vi.spyOn(db, "updateDocument").mockResolvedValue(undefined);
+    vi.spyOn(db, "replaceExtractedConfirmations").mockResolvedValue(undefined);
+    vi.spyOn(db, "updateOrder").mockResolvedValue(true);
+    vi.spyOn(db, "hasEvent").mockResolvedValue(true);
+    vi.spyOn(db, "insertEvent").mockResolvedValue(undefined);
+    vi.spyOn(db, "markDocuments").mockResolvedValue(undefined);
+    vi.spyOn(storage, "downloadObject").mockResolvedValue(bytes);
+    vi.spyOn(storage, "uploadObject").mockResolvedValue(undefined);
+    vi.spyOn(webhooks, "notifyOrder").mockResolvedValue(undefined);
+    vi.spyOn(evaluation, "startEvaluationQuote").mockResolvedValue({
+      status: "quoted",
+      totalCents: 2990,
+      billablePages: 1,
+    });
+    const queue = vi.spyOn(translationJobs, "queueEarlyTranslation").mockResolvedValue(undefined);
+    vi.spyOn(ai, "generateObject").mockImplementation(async (_schema, messages) => {
+      const text = JSON.stringify(messages);
+      if (text.includes("text layers")) {
+        return {
+          pages: [1, 2].map((pageNumber) => ({
+            pageNumber,
+            logicalPage: 0,
+            orderHint: "",
+            orderConfidence: 0,
+            legibility: 1,
+            flags: [],
+          })),
+        };
+      }
+      return {
+        language: "es",
+        confidence: 0.95,
+        full_name: "Ada Lovelace",
+        date_of_birth: "",
+        parent_names: "",
+        place_of_birth: "",
+        date_format: "",
+      };
+    });
+
+    await analyzeOrder(dbHandle, orderId);
+    expect(evaluation.startEvaluationQuote).toHaveBeenCalled();
+    expect(queue).toHaveBeenCalledWith(dbHandle, orderId, null);
+  });
 });
 
 describe("thin text layer", () => {

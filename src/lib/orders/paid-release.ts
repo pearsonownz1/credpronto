@@ -1,5 +1,6 @@
 import { approvalBlockReason } from "./equivalency";
 import { EVALUATION_REVIEW_REASON } from "./evaluation-price";
+import { stampEvaluationUnderReview } from "./evaluation-status";
 import { stampApprovedCover } from "./certification";
 import {
   claimEvalPaidAlert,
@@ -89,6 +90,7 @@ export async function settlePaidOrder(
 
   const sent = await sendFirstStaffAlert(db, stamped);
   await notifyEvaluationPaidAlert(db, stamped);
+  if (stamped.service) await stampEvaluationUnderReview(db, stamped, paidAt);
   // Evaluations stay with staff until the report is uploaded. Do not arm the two-minute reminder.
   if (sent && options.scheduleUrgent !== false && !stamped.service) {
     const schedule = options.scheduleUrgent ?? scheduleDefault;

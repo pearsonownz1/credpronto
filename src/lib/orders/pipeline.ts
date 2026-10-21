@@ -56,8 +56,8 @@ export async function processOrder(orderId: string, token: string | null = null)
   const order = await getOrderById(db, orderId);
   if (!order) return;
 
-  // Staff reviews a credential evaluation after payment. Do not extract or build a preview.
-  if (order.service) return;
+  // Evaluation-only stays with staff after payment. A translation bundle still builds a preview.
+  if (order.service && !order.includeTranslation) return;
 
   if (order.status === "draft" || (order.status === "failed" && !order.languageConfirmed)) {
     await analyzeOrder(db, order.id, token);

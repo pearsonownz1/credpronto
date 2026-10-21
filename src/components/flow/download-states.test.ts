@@ -133,10 +133,11 @@ describe("download page", () => {
     expect(html).not.toContain("%");
     expect(html).not.toContain('data-testid="download-evaluation"');
     expect(html).toContain('data-testid="evaluation-review"');
-    expect(html).toContain('data-state="current" data-step="review"');
+    expect(html).toContain('data-state="current" data-step="download"');
+    expect(html).toContain('data-step="pay"');
+    expect(html).not.toContain('data-step="review"');
     expect(html).not.toContain("Quick final check");
     expect(html).not.toContain('data-testid="paid-preview"');
-    expect(html).not.toContain('data-step="preview"');
   });
 
   it("follows a stored evaluation status and keeps the download disabled until the file is ready", () => {

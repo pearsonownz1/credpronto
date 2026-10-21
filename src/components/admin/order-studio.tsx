@@ -10,6 +10,7 @@ import {
   addNote,
   assignEquivalency,
   approveOrder,
+  setEvaluationStatus,
   notarizeOrder,
   patchOrderTranslation,
   refundOrder,
@@ -242,6 +243,38 @@ export function OrderStudio({
             ) : null}
           </div>
         </div>
+        {detail.service &&
+        (detail.payment?.status === "paid" ||
+          detail.payment?.status === "paid_test" ||
+          status === "paid" ||
+          status === "approved" ||
+          status === "delivered") ? (
+          <label className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-semibold">Evaluation stage</span>
+            <select
+              data-testid="evaluation-status"
+              value={detail.evaluationStatus ?? ""}
+              disabled={pending !== null}
+              onChange={(event) => {
+                const next = event.target.value;
+                if (!next || next === detail.evaluationStatus) return;
+                void run("evaluation-status", async () => {
+                  const result = await setEvaluationStatus(detail.id, next);
+                  return result.ok
+                    ? { ok: true, message: "Evaluation stage saved. The customer was emailed." }
+                    : { ok: false, error: result.error };
+                });
+              }}
+              className="h-9 rounded-[var(--cp-radius)] border border-line bg-white px-2"
+            >
+              <option value="">Choose a stage</option>
+              <option value="under_review">Under review</option>
+              <option value="performing_evaluation">Performing evaluation</option>
+              <option value="performing_layout">Performing layout</option>
+              <option value="evaluation_complete">Evaluation complete</option>
+            </select>
+          </label>
+        ) : null}
         {detail.reviewReason ? (
           <p className="mt-3 rounded-[var(--cp-radius)] border border-[#f3d7a1] bg-[#fff8ee] px-3 py-2 text-sm">
             Needs review: {detail.reviewReason}

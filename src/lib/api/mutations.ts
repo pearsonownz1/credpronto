@@ -38,6 +38,14 @@ export async function resolveReview(id: string, sourceLanguage: string): Promise
   });
 }
 
+export async function setEvaluationStatus(id: string, status: string): Promise<ApiResult<unknown>> {
+  if (publicMockMode()) return { ok: true, status: 200, data: { evaluationStatus: status, emailed: false } };
+  return browserJson(`/api/admin/orders/${encodeURIComponent(id)}/evaluation-status`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
+}
+
 export async function approveOrder(id: string): Promise<ApiResult<unknown>> {
   if (publicMockMode()) {
     return { ok: true, status: 200, data: { status: "delivered", email: "skipped" } };

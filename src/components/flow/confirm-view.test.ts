@@ -112,6 +112,35 @@ describe("evaluation confirm", () => {
     expect(html).not.toContain('data-step="quote"');
     expect(html).not.toContain('data-step="preview"');
   });
+
+  it("shows the evaluation on its own line above the total for a bundle", () => {
+    const quote = evaluationQuote({
+      service: "diploma",
+      degreeCount: 1,
+      sourceLanguage: "es",
+      billablePages: 1,
+      includeTranslation: true,
+    });
+    flow.order = {
+      ...evaluationOrder(),
+      includeTranslation: true,
+      evaluationCents: quote.evaluationCents,
+      translationCents: quote.translationCents,
+      totalCents: quote.totalCents,
+      lineItems: quote.lineItems,
+    };
+    const html = renderToStaticMarkup(createElement(ConfirmView, { token: "tok" }));
+    const evaluationAt = html.indexOf('data-testid="evaluation-price"');
+    const totalAt = html.indexOf('data-testid="quote-total"');
+    expect(html).toContain("Diploma evaluation");
+    expect(html).toContain("$19.95");
+    expect(html).toContain("$29.90");
+    expect(evaluationAt).toBeGreaterThan(-1);
+    expect(totalAt).toBeGreaterThan(evaluationAt);
+    expect(html).toContain("Start my free preview");
+    expect(html).toContain('data-step="preview"');
+    expect(html).not.toContain("Opening payment…");
+  });
 });
 
 describe("translation date format", () => {

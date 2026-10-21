@@ -362,6 +362,13 @@ export function mockStaffDetail(id: string): StaffDetail | null {
           ? { status: "pending", approvedAt: null, deliveredAt: null }
           : null,
     expedited: summary.expedited,
+    evaluationStatus: null,
+    evaluationStatusAt: {
+      under_review: null,
+      performing_evaluation: null,
+      performing_layout: null,
+      evaluation_complete: null,
+    },
     fulfillment:
       id === "CP-24790"
         ? {

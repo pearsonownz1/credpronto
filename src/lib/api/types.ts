@@ -22,6 +22,8 @@ export type CustomerOrder = {
   targetLanguage?: string | null;
   orderToken?: string | null;
   etaAt?: string | null;
+  /** True when this evaluation also includes a certified translation. */
+  includeTranslation?: boolean;
 };
 
 export type AdminOrder = {
@@ -133,6 +135,14 @@ export type StaffDetail = {
   /** Absent until the order payload includes a QA report. */
   qa: QaReport | null;
   expedited: boolean;
+  /** Staff evaluation stage. Null until payment or a staff update sets one. */
+  evaluationStatus: "under_review" | "performing_evaluation" | "performing_layout" | "evaluation_complete" | null;
+  evaluationStatusAt: {
+    under_review: string | null;
+    performing_evaluation: string | null;
+    performing_layout: string | null;
+    evaluation_complete: string | null;
+  };
   fulfillment: {
     mail: {
       status: "pending" | "shipped";

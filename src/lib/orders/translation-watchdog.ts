@@ -10,7 +10,7 @@ import {
 
 type Row = Record<string, unknown>;
 
-const COLUMNS = "id, status, progress, updated_at, review_reason, service, order_type";
+const COLUMNS = "id, status, progress, updated_at, review_reason, service, order_type, include_translation";
 
 function mapWatchOrder(row: Row): WatchOrder {
   return {
@@ -22,6 +22,7 @@ function mapWatchOrder(row: Row): WatchOrder {
     service: typeof row.service === "string" ? row.service : null,
     orderType:
       row.order_type === "evaluation" || row.order_type === "expert_letter" ? row.order_type : "translation",
+    includeTranslation: row.include_translation === true,
   };
 }
 

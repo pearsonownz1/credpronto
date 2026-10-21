@@ -12,6 +12,7 @@ import {
   downloadPhase,
   downloadReadyCopy,
   isCustomerEvaluation,
+  isTranslationBundle,
   paidReviewEmailLine,
   totalLabel,
   type DownloadFileKind,
@@ -46,21 +47,26 @@ export function DownloadStates({
   const email = order?.email?.trim() || storedEmail;
   const confirming = pendingPayment ? phase !== "certifying" && phase !== "ready" : phase === "finalizing" && order != null;
   const onDownloadStep = confirming || phase === "certifying" || phase === "ready";
+  const bundle = order != null && isTranslationBundle(order);
   const evaluation = order != null && isCustomerEvaluation(order);
   const showEvalTracker =
     order != null &&
     evaluation &&
     !confirming &&
     (phase === "certifying" || (phase === "ready" && order.evaluationStatus === "evaluation_complete"));
-  const headerStep = evaluation
-    ? phase === "ready"
+  const headerStep = bundle
+    ? onDownloadStep
       ? "download"
-      : phase === "certifying"
-        ? "review"
-        : "confirm"
-    : onDownloadStep
-      ? "download"
-      : "preview";
+      : "pay"
+    : evaluation
+      ? phase === "ready"
+        ? "download"
+        : phase === "certifying"
+          ? "review"
+          : "confirm"
+      : onDownloadStep
+        ? "download"
+        : "preview";
 
   useEffect(() => {
     if (order) onOrder?.(order);
@@ -68,7 +74,10 @@ export function DownloadStates({
 
   return (
     <div>
-      <FlowHeader current={headerStep} track={evaluation ? "evaluation" : "translation"} />
+      <FlowHeader
+        current={headerStep}
+        track={bundle ? "bundle" : evaluation ? "evaluation" : "translation"}
+      />
       <main
         className={
           phase === "certifying" && !evaluation

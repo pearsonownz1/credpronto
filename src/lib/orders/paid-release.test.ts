@@ -202,6 +202,11 @@ describe("settlePaidOrder", () => {
     expect(db.updateOrder).toHaveBeenCalledWith(dbHandle, orderId, {
       review_reason: "Credential evaluation is reviewed by staff.",
     });
+    expect(db.updateOrder).toHaveBeenCalledWith(
+      dbHandle,
+      orderId,
+      expect.objectContaining({ evaluation_status: "under_review", under_review_at: expect.any(String) }),
+    );
     expect(certification.stampApprovedCover).not.toHaveBeenCalled();
     expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
   });

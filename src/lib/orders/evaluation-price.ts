@@ -46,6 +46,26 @@ export type EvaluationPrice = {
   totalCents: number;
 };
 
+/**
+ * Evaluation the customer also asked to translate.
+ * English still prices translation at $0, and the opt-in flag stays on so the
+ * order follows the preview path instead of paying first.
+ */
+export function isTranslationBundle(order: {
+  includeTranslation?: boolean | null;
+  service?: string | null;
+  orderType?: string | null;
+  serviceType?: string | null;
+}): boolean {
+  if (order.includeTranslation !== true) return false;
+  return (
+    order.service === "diploma" ||
+    order.service === "course_by_course" ||
+    order.orderType === "evaluation" ||
+    order.serviceType === "evaluation"
+  );
+}
+
 /** Flat diploma or course-by-course price. The translation page rate is not part of it. */
 export function evaluationPrice(order: {
   service: EvaluationService | string | null;
@@ -253,7 +273,7 @@ export function evaluationPricePatch(input: {
   return {
     evaluation_cents: priced.evaluationCents,
     translation_cents: priced.translationCents,
-    include_translation: priced.includeTranslation,
+    include_translation: input.includeTranslation,
     total_cents: priced.totalCents,
     unit_price_cents:
       priced.translationCents > 0 ? UNIT_PRICE_CENTS : evaluationUnitCents(input.service),

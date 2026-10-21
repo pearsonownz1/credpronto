@@ -26,6 +26,7 @@ export async function readyPreviewDestination(
       orderType: order.orderType,
       service: order.service,
       serviceType: order.serviceType,
+      includeTranslation: order.includeTranslation,
       fulfillment: fulfillmentState(order),
     });
   } catch {

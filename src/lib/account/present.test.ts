@@ -94,6 +94,10 @@ describe("customer order presentation", () => {
     expect(orderStepHref(quoted)).toBe("/checkout?token=tok");
     expect(presentOrder(quoted, NOW).action.label).toBe("Pay");
 
+    const bundle = { ...order("quoted"), serviceType: "evaluation", includeTranslation: true };
+    expect(orderStepHref(bundle)).toBe("/confirm?token=tok");
+    expect(presentOrder(bundle, NOW).chip.label).not.toBe("Ready to pay");
+
     const translation = order("quoted");
     expect(orderStepHref(translation)).toBe("/confirm?token=tok");
     expect(presentOrder(translation, NOW).action.label).toBe("Confirm details");

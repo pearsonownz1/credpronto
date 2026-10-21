@@ -117,6 +117,12 @@ describe("translation watchdog", () => {
       "ignore",
     );
     expect(translationWatchAction(order({ orderType: "evaluation", service: "diploma" }), NOW)).toBe("ignore");
+    expect(
+      translationWatchAction(
+        order({ orderType: "evaluation", service: "diploma", includeTranslation: true }),
+        NOW,
+      ),
+    ).toBe("retry");
     expect(translationWatchAction(order({ status: "paid", progress: { step: "done", pagesRead: 1, pagesTotal: 1 } }), NOW)).toBe(
       "ignore",
     );

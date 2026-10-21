@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { flowUsesMock, getFlowClient } from "@/lib/flow/client";
+import { isTranslationBundle } from "@/lib/flow/present";
 import { TRANSLATION_REVIEW_COPY, previewIsReady, previewWork } from "@/lib/flow/preview-progress";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
@@ -32,7 +33,8 @@ export function ProcessingView({
   useEffect(() => {
     if (order) onOrder?.(order);
   }, [order, onOrder]);
-  const evaluation = order?.orderType === "evaluation";
+  const bundle = order != null && isTranslationBundle(order);
+  const evaluation = order?.orderType === "evaluation" && !bundle;
   const work = order
     ? previewWork({
         status: order.status,
@@ -60,7 +62,7 @@ export function ProcessingView({
 
   return (
     <div>
-      <FlowHeader current="preview" />
+      <FlowHeader current="preview" track={bundle ? "bundle" : "translation"} />
       <main className="mx-auto w-full max-w-[620px] px-4 pt-12 text-center md:pt-20">
         {loading && !order ? (
           <FlowStatus title="Checking your order…" body="" />

@@ -129,6 +129,9 @@ describe("evaluation checkout", () => {
     expect(html).toContain("Certified translation");
     expect(html).toContain("1 billable page");
     expect(html).toContain("Pay $29.90");
+    expect(html).toContain('data-step="pay"');
+    expect(html).toContain('data-step="preview"');
+    expect(html).not.toContain('data-step="review"');
     expect(html).toContain("birth-certificate.pdf");
     expect(html).not.toContain("We'll confirm the language");
     expect(html).not.toContain("1 pages");

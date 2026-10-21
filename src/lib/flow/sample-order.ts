@@ -74,6 +74,8 @@ export function sampleCustomerOrder(): CustomerOrder {
     delayed: false,
     paidAt: null,
     fulfillment: null,
+    evaluationStatus: null,
+    evaluationStatusAt: {},
     documentTitle: "Acta nacimiento",
   };
 }

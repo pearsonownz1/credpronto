@@ -111,25 +111,35 @@ function languagePair(order: CustomerOrder): string {
   return `${languageLabel(order.sourceLanguage)} → ${languageLabel(target)}`;
 }
 
+function evaluationPaysFirst(order: {
+  status: string;
+  serviceType?: string | null;
+  includeTranslation?: boolean | null;
+}): boolean {
+  return (
+    order.serviceType === "evaluation" &&
+    order.includeTranslation !== true &&
+    order.status !== "paid" &&
+    order.status !== "approved" &&
+    order.status !== "delivered" &&
+    order.status !== "cancelled"
+  );
+}
+
 /** Where a dashboard row opens. Prefer the email token; otherwise the order id the list already returns. */
 export function orderStepHref(order: {
   status: string;
   id?: string | null;
   orderToken?: string | null;
   serviceType?: string | null;
+  includeTranslation?: boolean | null;
 }): string | null {
   const token = order.orderToken?.trim() || null;
   const orderId = order.id?.trim() || null;
   const key = token || (orderId && isOrderId(orderId) ? orderId : null);
   if (!key) return null;
   const id = encodeURIComponent(key);
-  if (
-    order.serviceType === "evaluation" &&
-    order.status !== "paid" &&
-    order.status !== "approved" &&
-    order.status !== "delivered" &&
-    order.status !== "cancelled"
-  ) {
+  if (evaluationPaysFirst(order)) {
     return `/checkout?token=${id}`;
   }
   if (order.status === "preview_ready") return `/preview/${id}`;
@@ -152,13 +162,7 @@ export function presentOrder(order: CustomerOrder, now = Date.now()): OrderPrese
     return { ...base, tab: "refunded", chip: { label: "Refunded", tone: "neutral" }, action: NONE };
   }
 
-  if (
-    order.serviceType === "evaluation" &&
-    order.status !== "paid" &&
-    order.status !== "approved" &&
-    order.status !== "delivered" &&
-    order.status !== "cancelled"
-  ) {
+  if (evaluationPaysFirst(order)) {
     return {
       ...base,
       tab: "needs_check",

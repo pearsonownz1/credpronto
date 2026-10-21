@@ -554,7 +554,7 @@ export async function beginTranslation(
  */
 export async function queueEarlyTranslation(db: Db, orderId: string, token: string | null): Promise<void> {
   const order = await getOrderById(db, orderId);
-  if (!order || isEvaluationOrder(order)) return;
+  if (!order || (isEvaluationOrder(order) && !order.includeTranslation)) return;
   if (order.status !== "quoted" || order.languageConfirmed) return;
   if (!order.sourceLanguage || !order.combinedOriginalPath) return;
 
