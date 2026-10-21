@@ -1512,6 +1512,7 @@ export type OwnedOrderRow = {
   currency: string;
   createdAt: string;
   includeTranslation: boolean;
+  finalTranslationPath: string | null;
 };
 
 export async function listDocumentFilenames(db: Db, orderIds: string[]): Promise<Map<string, string[]>> {
@@ -1540,7 +1541,7 @@ export async function listOwnedOrderRows(db: Db, userId: string): Promise<OwnedO
   const { data, error } = await db
     .from("orders")
     .select(
-      "id, status, service_type, service, degree_count, addon_cents, billable_pages, unit_price_cents, total_cents, currency, created_at, include_translation, translation_cents",
+      "id, status, service_type, service, degree_count, addon_cents, billable_pages, unit_price_cents, total_cents, currency, created_at, include_translation, translation_cents, final_translation_path",
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
@@ -1564,6 +1565,7 @@ export async function listOwnedOrderRows(db: Db, userId: string): Promise<OwnedO
       currency: str(row.currency) ?? "usd",
       createdAt: str(row.created_at) ?? new Date().toISOString(),
       includeTranslation,
+      finalTranslationPath: str(row.final_translation_path),
     };
   });
 }

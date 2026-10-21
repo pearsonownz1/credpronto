@@ -1,4 +1,5 @@
 import { downloadGate } from "./access";
+import { bundleTranslationReady } from "./final-file";
 
 export type CustomerPayment = {
   status: string;
@@ -26,6 +27,7 @@ export function summarizeCustomerOrder(input: {
   paymentStatus: string | null;
   deliveryStatus: string | null;
   includeTranslation?: boolean;
+  finalTranslationPath?: string | null;
 }) {
   const gate = downloadGate({
     paymentStatus: input.paymentStatus,
@@ -44,5 +46,11 @@ export function summarizeCustomerOrder(input: {
     paymentStatus: input.paymentStatus,
     downloadAvailable: gate.ok,
     includeTranslation: input.includeTranslation === true,
+    translationReady: bundleTranslationReady({
+      includeTranslation: input.includeTranslation,
+      status: input.status,
+      paymentStatus: input.paymentStatus,
+      finalTranslationPath: input.finalTranslationPath,
+    }),
   };
 }

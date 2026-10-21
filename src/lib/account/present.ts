@@ -215,12 +215,20 @@ export function presentOrder(order: CustomerOrder, now = Date.now()): OrderPrese
       };
     case "paid":
     case "approved":
-      if (order.serviceType === "evaluation") {
+      if (order.serviceType === "evaluation" && order.includeTranslation !== true) {
         return {
           ...base,
           tab: "staff_review",
           chip: { label: "In review", tone: "violet" },
           action: { kind: "waiting", label: "In review", emphasis: "muted", href: null },
+        };
+      }
+      if (order.includeTranslation === true && order.translationReady) {
+        return {
+          ...base,
+          tab: "staff_review",
+          chip: { label: "Paid", tone: "ok" },
+          action: { kind: "download", label: "Download", emphasis: "link", href: rowHref },
         };
       }
       return {
@@ -258,6 +266,15 @@ export function orderMatches(order: CustomerOrder, query: string, now = Date.now
     .join(" ")
     .toLowerCase()
     .includes(needle);
+}
+
+/** Settled orders, including a translation bundled with an evaluation. */
+export function receiptOrders(orders: readonly CustomerOrder[]): CustomerOrder[] {
+  return orders.filter((order) => {
+    if (order.paymentStatus === "refunded") return false;
+    if (order.paymentStatus === "paid" || order.paymentStatus === "paid_test") return true;
+    return order.status === "paid" || order.status === "approved" || order.status === "delivered";
+  });
 }
 
 export function previewWaiting(orders: CustomerOrder[], now = Date.now()): CustomerOrder[] {

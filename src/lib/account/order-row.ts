@@ -39,6 +39,18 @@ export function accountOrderDate(iso: string): string {
   }).format(date);
 }
 
+function accountDownloadFile(order: {
+  serviceType: string;
+  downloadAvailable: boolean;
+  includeTranslation?: boolean;
+  translationReady?: boolean;
+}): AccountRow["downloadFile"] {
+  if (order.includeTranslation && order.translationReady) return "translation";
+  if (!order.downloadAvailable) return null;
+  if (order.serviceType === "evaluation" && order.includeTranslation !== true) return "evaluation";
+  return "translation";
+}
+
 /** One row per order. A repeated id is skipped. */
 export function accountRows(
   orders: readonly {
@@ -53,6 +65,8 @@ export function accountRows(
     totalCents: number | null;
     unitPriceCents?: number | null;
     billablePages?: number | null;
+    includeTranslation?: boolean;
+    translationReady?: boolean;
   }[],
 ): AccountRow[] {
   const seen = new Set<string>();
@@ -68,11 +82,7 @@ export function accountRows(
       documentName: name,
       status: accountOrderStatus(order),
       date: accountOrderDate(order.createdAt),
-      downloadFile: order.downloadAvailable
-        ? order.serviceType === "evaluation"
-          ? "evaluation"
-          : "translation"
-        : null,
+      downloadFile: accountDownloadFile(order),
     });
   }
   return rows;

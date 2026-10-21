@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { addonStripeLines, parseCheckoutBody, serviceCents } from "./addons";
 import { checkoutBlockReason } from "./equivalency";
-import { downloadGate } from "./access";
+import { downloadGate, isSettledPayment } from "./access";
 import { checkoutPreviewImageUrl } from "./checkout-image";
 import { checkoutLineProduct, checkoutProductDescription } from "./checkout-preview";
 import {
@@ -12,7 +12,7 @@ import {
   customerServiceQuote,
   evaluationPricePatch,
 } from "./evaluation-price";
-import { deliveryFileTarget } from "./delivery-file";
+import { bundleTranslationFile, deliveryFileTarget } from "./delivery-file";
 import { withQuotedPages } from "./stored-pages";
 import {
   DOWNLOAD_URL_SECONDS,
@@ -323,6 +323,24 @@ export async function downloadOrderFile(
   }
   const { db, order } = await orderForToken(token);
   const payment = await settledPayment(db, order.id);
+  const documents = await listDocuments(db, order.id);
+  const names = documents.map((document) => document.filename);
+  const bundled = bundleTranslationFile({
+    includeTranslation: order.includeTranslation,
+    file,
+    translationPath: order.finalTranslationPath,
+    documentNames: names,
+    targetLanguage: order.targetLanguage,
+  });
+  if (bundled) {
+    if (!isSettledPayment(payment?.status ?? null)) throw new HttpError("Payment required", 402);
+    const url = await signedObjectUrl(db, FINALS_BUCKET, bundled.path, DOWNLOAD_URL_SECONDS, {
+      download: bundled.filename,
+    });
+    await insertEvent(db, order.id, "downloaded", { file });
+    return { url, filename: bundled.filename, expiresInSeconds: DOWNLOAD_URL_SECONDS };
+  }
+
   const delivery = await getDelivery(db, order.id);
   const gate = downloadGate({
     paymentStatus: payment?.status ?? null,
@@ -330,14 +348,14 @@ export async function downloadOrderFile(
   });
   if (!gate.ok) throw new HttpError(gate.error, gate.status);
 
-  const documents = await listDocuments(db, order.id);
   const allowed = deliveryFileTarget({
     file,
     service: order.service,
     finalPath: delivery?.finalPath ?? null,
     certificationPath: delivery?.certificationPath ?? null,
-    documentNames: documents.map((document) => document.filename),
+    documentNames: names,
     targetLanguage: order.targetLanguage,
+    includeTranslation: order.includeTranslation,
   });
   if (!allowed || !delivery) throw new HttpError("That file is not ready", 404);
   const target = await resolveCustomerFinal(db, order, {

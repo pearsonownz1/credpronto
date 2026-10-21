@@ -16,6 +16,7 @@ import {
   ordersInTab,
   presentOrder,
   previewWaiting,
+  receiptOrders,
 } from "./present";
 
 const NOW = Date.parse("2026-10-12T12:00:00.000Z");
@@ -97,6 +98,25 @@ describe("customer order presentation", () => {
     const bundle = { ...order("quoted"), serviceType: "evaluation", includeTranslation: true };
     expect(orderStepHref(bundle)).toBe("/confirm?token=tok");
     expect(presentOrder(bundle, NOW).chip.label).not.toBe("Ready to pay");
+
+    const paidBundle = {
+      ...order("paid"),
+      id: "0301d079-8368-40d8-854d-95475933124f",
+      serviceType: "evaluation",
+      includeTranslation: true,
+      translationReady: true,
+      paymentStatus: "paid",
+      totalCents: 2990,
+    };
+    const paidView = presentOrder(paidBundle, NOW);
+    expect(paidView.chip.label).toBe("Paid");
+    expect(paidView.action.label).toBe("Download");
+    expect(paidView.action.href).toBe("/order/tok");
+    expect(presentOrder({ ...paidBundle, translationReady: false }, NOW).chip.label).toBe("Paid · being certified");
+    expect(presentOrder({ ...order("paid"), serviceType: "evaluation" }, NOW).chip.label).toBe("In review");
+    expect(receiptOrders([paidBundle, order("preview_ready"), { ...order("delivered"), paymentStatus: "refunded" }]).map((item) => item.id)).toEqual([
+      paidBundle.id,
+    ]);
 
     const translation = order("quoted");
     expect(orderStepHref(translation)).toBe("/confirm?token=tok");
