@@ -4,7 +4,10 @@ import type { QaStatus } from "./qa";
 /** A first-attempt QA pass at or above this score is high confidence. The pass bar is 80. */
 export const HIGH_QA_SCORE = 90;
 
-/** Second staff email when a flagged order is still unapproved this long after paid_at. */
+/**
+ * Second staff email when a flagged translation is still unapproved this long after paid_at.
+ * Credential evaluations are not on this timer. Staff upload that report on their own schedule.
+ */
 export const URGENT_ALERT_DELAY_MS = 2 * 60 * 1000;
 
 export const DEFAULT_STAFF_ALERT_EMAILS = "support@credpronto.com,guyp@mail.grokbot.com";
@@ -105,14 +108,20 @@ export function fulfillmentState(order: { status: string; paidAt?: string | null
   return null;
 }
 
-/** One urgent email, two minutes after paid_at, and only after the first alert. */
+/**
+ * One urgent email, two minutes after paid_at, and only after the first alert.
+ * A credential evaluation (with or without a bundled translation) is waiting on staff
+ * to upload the report. That wait is expected, so the reminder does not apply.
+ */
 export function urgentAlertDue(input: {
   status: string;
   paidAt: string | null;
   staffAlertSentAt: string | null;
   staffUrgentAlertSentAt: string | null;
   now: number;
+  service?: string | null;
 }): boolean {
+  if (input.service) return false;
   if (!UNAPPROVED.has(input.status)) return false;
   if (!input.paidAt || !input.staffAlertSentAt || input.staffUrgentAlertSentAt) return false;
   const paid = Date.parse(input.paidAt);
