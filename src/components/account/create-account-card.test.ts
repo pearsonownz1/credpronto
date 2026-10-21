@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { CreateAccountCard } from "./create-account-card";
+import { CreateAccountCard, passwordHintKind } from "./create-account-card";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: () => undefined, refresh: () => undefined }),
@@ -28,6 +28,9 @@ describe("create account card", () => {
     expect(html).toContain("Email");
     expect(html).toContain("Password");
     expect(html).toContain("8+ characters");
+    expect(html).toContain("text-ink-muted");
+    expect(html).not.toContain("Looks good");
+    expect(html).not.toContain("Use 8 or more characters.");
     expect(html).toContain('value="ada@example.com"');
     expect(html).not.toContain("readOnly");
     expect(html).toContain("Create account &amp; continue");
@@ -39,5 +42,20 @@ describe("create account card", () => {
     expect(html).toContain('aria-label="Show password"');
     expect(html).not.toContain("Continue with Google");
     expect(html).not.toMatch(/>\s*Continue\s*</);
+  });
+});
+
+describe("passwordHintKind", () => {
+  it("stays muted under 8 until a short submit, then turns red", () => {
+    expect(passwordHintKind(0, false)).toBe("muted");
+    expect(passwordHintKind(7, false)).toBe("muted");
+    expect(passwordHintKind(7, true)).toBe("error");
+    expect(passwordHintKind(0, true)).toBe("error");
+  });
+
+  it("replaces the hint with good at 8 or more, even after a short submit", () => {
+    expect(passwordHintKind(8, false)).toBe("good");
+    expect(passwordHintKind(10, false)).toBe("good");
+    expect(passwordHintKind(8, true)).toBe("good");
   });
 });
