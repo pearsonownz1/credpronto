@@ -1,7 +1,7 @@
 import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET, ORIGINALS_BUCKET } from "./constants";
 import { approverDisplayName, stampApprovedCover } from "./certification";
 import { notifyLifecycle, notifyOrder } from "./webhook-delivery";
-import { orderDownloadFilename } from "./download-name";
+import { deliveryDocumentName, orderDownloadFilename } from "./download-name";
 import {
   customerEmail,
   dismissCorrections,
@@ -23,7 +23,7 @@ import {
   updateOrder,
   withCombinedNumbers,
 } from "./db";
-import { orderPageLink, sendDeliveryReady } from "./email";
+import { sendFinalCustomerEmail } from "./final-email";
 import { fulfillmentFor, parseTrackingNumber } from "./fulfillment";
 import { HttpError } from "./errors";
 import { normalizeLanguage } from "./languages";
@@ -160,13 +160,11 @@ async function signedFinals(
     throw new HttpError("Translated files are not ready", 409);
   }
   const names = (await listDocuments(db, order.id)).map((document) => document.filename);
-  const translationName = orderDownloadFilename(
-    order.service ? "evaluation" : "translation",
-    names,
-    order.targetLanguage,
-  );
+  const translationName = order.service
+    ? orderDownloadFilename("evaluation", names, order.targetLanguage)
+    : deliveryDocumentName({ documentNames: names }).filename;
   const certificationName =
-    order.service && translationPath === certificationPath
+    translationPath === certificationPath
       ? translationName
       : orderDownloadFilename(order.service ? "evaluation" : "certification", names, order.targetLanguage);
   const [translationUrl, certificationUrl] = await Promise.all([
@@ -238,14 +236,7 @@ export async function approveOrder(orderId: string) {
     }
   }
 
-  const email = await customerEmail(db, order.customerId);
-  const sent = email
-    ? await sendDeliveryReady(
-        email,
-        order.service ? "evaluation" : "translation",
-        order.service ? orderPageLink(order.id) : null,
-      )
-    : { sent: false, skipped: true };
+  const sent = await sendFinalCustomerEmail(db, order);
   const files = await signedFinals(db, order, order.finalTranslationPath, order.certificationPath);
   if (!sent.sent && !sent.skipped) {
     return { status: "approved" as const, email: "failed" as const, ...files };

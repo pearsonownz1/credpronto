@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as certification from "./certification";
 import * as db from "./db";
-import * as email from "./email";
+import * as finalEmail from "./final-email";
 import * as staff from "./staff";
 import * as storage from "./storage";
 import * as webhooks from "./webhook-delivery";
@@ -65,7 +65,7 @@ describe("approveOrder cover stamp", () => {
     ]);
     vi.spyOn(certification, "approverDisplayName").mockResolvedValue("Ada Lovelace");
     vi.spyOn(certification, "stampApprovedCover").mockResolvedValue(undefined);
-    vi.spyOn(email, "sendDeliveryReady").mockResolvedValue({ sent: true, skipped: false });
+    vi.spyOn(finalEmail, "sendFinalCustomerEmail").mockResolvedValue({ sent: true, skipped: false });
     vi.spyOn(storage, "signedObjectUrl").mockResolvedValue("https://files.example/signed");
     vi.spyOn(webhooks, "notifyOrder").mockResolvedValue(undefined);
     vi.spyOn(webhooks, "notifyLifecycle").mockResolvedValue(undefined);
@@ -114,7 +114,7 @@ describe("approveOrder cover stamp", () => {
     });
     expect(db.updateOrder).not.toHaveBeenCalled();
     expect(db.updateDelivery).not.toHaveBeenCalled();
-    expect(email.sendDeliveryReady).not.toHaveBeenCalled();
+    expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
     expect(db.insertEvent).not.toHaveBeenCalled();
     expect(webhooks.notifyOrder).not.toHaveBeenCalled();
     expect(webhooks.notifyLifecycle).not.toHaveBeenCalled();
@@ -129,7 +129,7 @@ describe("approveOrder cover stamp", () => {
       steps.push("status");
       return true;
     });
-    vi.spyOn(email, "sendDeliveryReady").mockImplementation(async () => {
+    vi.spyOn(finalEmail, "sendFinalCustomerEmail").mockImplementation(async () => {
       steps.push("email");
       return { sent: true, skipped: false };
     });

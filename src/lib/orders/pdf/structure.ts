@@ -165,6 +165,17 @@ function lookup(text: string): Entry | null {
   return null;
 }
 
+/** English document type when the source line is a known title, such as a birth certificate. */
+export function documentHeading(text: string): string | null {
+  const direct = lookup(text);
+  if (direct?.role === "heading") return direct.english;
+  for (const line of text.split(/\n+/)) {
+    const hit = lookup(line);
+    if (hit?.role === "heading") return hit.english;
+  }
+  return null;
+}
+
 function titleWord(text: string): string {
   const word = text.trim().split(/\s+/)[0] ?? text;
   if (!word) return text.trim();

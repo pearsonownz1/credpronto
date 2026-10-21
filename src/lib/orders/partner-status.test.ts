@@ -212,7 +212,7 @@ describe("partner status and files", () => {
     expect(released.downloadAvailable).toBe(true);
     expect(released.translation).toEqual({
       url: "https://files.example/order-1/final.pdf",
-      filename: "diploma-EN-certified.pdf",
+      filename: "diploma-certified-translation.pdf",
       expiresInSeconds: 300,
     });
     expect(released.certification).toEqual({

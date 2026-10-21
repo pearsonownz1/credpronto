@@ -17,7 +17,7 @@ import {
   totalLabel,
   type DownloadFileKind,
 } from "@/lib/flow/present";
-import { orderDownloadFilename } from "@/lib/orders/download-name";
+import { deliveryDocumentName, orderDownloadFilename } from "@/lib/orders/download-name";
 import { evaluationSpeedLine } from "@/lib/orders/speed-line";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
@@ -150,6 +150,8 @@ function Ready({
 }) {
   const copy = downloadReadyCopy(order);
   const names = order.documents.map((document) => document.filename);
+  const named = deliveryDocumentName({ documentNames: names });
+  const rowTitle = copy.primaryFile === "evaluation" ? copy.primaryTitle : order.documentTitle || named.title;
   const evaluatedIn = isCustomerEvaluation(order) ? evaluationSpeedLine(order.paidAt, order.deliveredAt) : null;
   return (
     <div data-testid="download-phase" data-phase="ready">
@@ -171,20 +173,15 @@ function Ready({
         <FileRow
           token={token}
           file={copy.primaryFile}
-          title={copy.primaryTitle}
-          filename={orderDownloadFilename(copy.primaryFile, names, order.targetLanguage)}
+          title={rowTitle}
+          subtitle={
+            copy.primaryFile === "evaluation"
+              ? orderDownloadFilename(copy.primaryFile, names, order.targetLanguage)
+              : "Certified translation · PDF"
+          }
           testId={copy.primaryFile === "evaluation" ? "download-evaluation" : "download-certified"}
           primary
         />
-        {copy.secondary ? (
-          <FileRow
-            token={token}
-            file={copy.secondary.file}
-            title={copy.secondary.title}
-            filename={orderDownloadFilename(copy.secondary.file, names, order.targetLanguage)}
-            testId="download-certification"
-          />
-        ) : null}
       </div>
       <p className="mt-5 text-[13.5px] leading-relaxed text-ink-muted">
         Bookmark this page or use the link in your email to come back. {copy.again}{" "}
@@ -206,14 +203,14 @@ function FileRow({
   token,
   file,
   title,
-  filename,
+  subtitle,
   testId,
   primary,
 }: {
   token: string;
   file: DownloadFileKind;
   title: string;
-  filename: string;
+  subtitle: string;
   testId: string;
   primary?: boolean;
 }) {
@@ -231,11 +228,11 @@ function FileRow({
     <div className="flex flex-col gap-3 border-t border-line px-[18px] py-4 first:border-t-0 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <b>{title}</b>
-        <div className="text-[13px] text-ink-muted">{filename}</div>
+        <div className="text-[13px] text-ink-muted">{subtitle}</div>
         {error ? <p className="mt-1 text-xs text-[var(--cp-warn)]">{error}</p> : null}
       </div>
       {mock ? (
-        <a data-testid={testId} href={href} download={filename} className={className}>
+        <a data-testid={testId} href={href} className={className}>
           Download
         </a>
       ) : (

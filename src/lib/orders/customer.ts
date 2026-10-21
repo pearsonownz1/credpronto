@@ -26,7 +26,6 @@ import {
   latestPayment,
   latestReadyPreview,
   listDocuments,
-  listOrderAddons,
   listPages,
   markDocuments,
   markPaymentExpired,
@@ -54,8 +53,8 @@ import {
   type ConfirmationFieldKey,
   type EvaluationFieldKey,
 } from "./fields";
-import { appOrigin, orderLink, sendPaymentReceipt } from "./email";
-import { formatPaymentMethod, receiptLineItems } from "./email-templates";
+import { appOrigin } from "./email";
+import { resolveCustomerFinal } from "./final-file";
 import { applySucceededSetupIntent } from "./saved-card";
 import { normalizeLanguage } from "./languages";
 import { compareCombinedPages } from "./page-order";
@@ -64,7 +63,7 @@ import { loadCustomerOrder } from "./pipeline";
 import { originalDownloadResponse, originalTargets } from "./originals";
 import { sourceFileBody, sourceFileTarget, type SourceFileResponse } from "./source-file";
 import { serviceDb, signedObjectUrl, uploadObject, type Db } from "./storage";
-import { checkoutReturnUrl, orderTokenFromReturnUrl } from "./checkout-return";
+import { checkoutReturnUrl } from "./checkout-return";
 import { parseCorrectionBody } from "./corrections";
 import { decideChargeRefunded, decideCheckoutCompleted, decideCheckoutExpired } from "./webhook";
 import { checkedProgress } from "./translation-watch";
@@ -315,13 +314,18 @@ export async function downloadOrderFile(
   if (!gate.ok) throw new HttpError(gate.error, gate.status);
 
   const documents = await listDocuments(db, order.id);
-  const target = deliveryFileTarget({
+  const allowed = deliveryFileTarget({
     file,
     service: order.service,
     finalPath: delivery?.finalPath ?? null,
     certificationPath: delivery?.certificationPath ?? null,
     documentNames: documents.map((document) => document.filename),
     targetLanguage: order.targetLanguage,
+  });
+  if (!allowed || !delivery) throw new HttpError("That file is not ready", 404);
+  const target = await resolveCustomerFinal(db, order, {
+    finalPath: delivery.finalPath,
+    certificationPath: delivery.certificationPath,
   });
   if (!target) throw new HttpError("That file is not ready", 404);
   const { path, filename } = target;
@@ -457,15 +461,6 @@ export async function startCheckout(token: string, body: unknown = {}) {
     await insertEvent(db, order.id, "paid", { mode: "paid_test" });
     const { notifyLifecycle } = await import("./webhook-delivery");
     await notifyLifecycle(db, order.id, paidWebhookEvent(order));
-    await emailPaymentReceipt(db, {
-      order,
-      token,
-      receiptNumber: payment.id,
-      paidAt: payment.paidAt ?? paidAt,
-      totalCents: total,
-      paymentLabel: "Test checkout",
-      addons: selection.addons,
-    });
     const { settlePaidOrder } = await import("./paid-release");
     await settlePaidOrder(db, order.id);
     return { mode: "paid_test" as const, paymentStatus: "paid_test" as const, orderStatus: "paid" as const };
@@ -597,72 +592,9 @@ export async function handleStripeWebhook(request: Request) {
     const { notifyLifecycle } = await import("./webhook-delivery");
     await notifyLifecycle(db, payment.orderId, paidWebhookEvent(paidOrder ?? chargedOrder));
   }
-  const receiptOrder = paidOrder ?? chargedOrder;
-  if (receiptOrder) {
-    const paidAt = new Date().toISOString();
-    await emailPaymentReceipt(db, {
-      order: receiptOrder,
-      token: session.metadata?.order_token ?? orderTokenFromReturnUrl(session.success_url),
-      receiptNumber: payment.id,
-      paidAt,
-      totalCents: payment.amountCents,
-      paymentLabel: await stripePaymentLabel(stripe, decision.paymentIntentId),
-    });
-  }
   const { settlePaidOrder } = await import("./paid-release");
   await settlePaidOrder(db, payment.orderId);
   return { received: true };
-}
-
-async function stripePaymentLabel(stripe: Stripe, paymentIntentId: string | null): Promise<string | null> {
-  if (!paymentIntentId) return null;
-  try {
-    const intent = await stripe.paymentIntents.retrieve(paymentIntentId, { expand: ["payment_method"] });
-    const method = intent.payment_method;
-    if (!method || typeof method === "string") return null;
-    return formatPaymentMethod(method.card?.brand, method.card?.last4);
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : "card lookup failed");
-    return null;
-  }
-}
-
-async function emailPaymentReceipt(
-  db: Db,
-  input: {
-    order: NonNullable<Awaited<ReturnType<typeof getOrderById>>>;
-    token: string | null;
-    receiptNumber: string;
-    paidAt: string;
-    totalCents: number;
-    paymentLabel: string | null;
-    addons?: Awaited<ReturnType<typeof listOrderAddons>>;
-  },
-): Promise<void> {
-  if (!input.token) return;
-  const email = await customerEmail(db, input.order.customerId);
-  if (!email) return;
-  const addons = input.addons ?? (await listOrderAddons(db, input.order.id));
-  try {
-    await sendPaymentReceipt(email, {
-      downloadUrl: orderLink(input.token),
-      receiptNumber: input.receiptNumber,
-      paidAt: input.paidAt,
-      paymentLabel: input.paymentLabel,
-      totalCents: input.totalCents,
-      lines: receiptLineItems({
-        service: input.order.service,
-        degreeCount: input.order.degreeCount,
-        evaluationCents: input.order.evaluationCents,
-        translationCents: input.order.translationCents,
-        billablePages: input.order.billablePages,
-        unitPriceCents: input.order.unitPriceCents,
-        addons,
-      }),
-    });
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : "receipt email failed");
-  }
 }
 
 type ConfirmDocument =

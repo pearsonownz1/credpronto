@@ -10,6 +10,7 @@ import {
   listDocuments,
   listOrderAddons,
   listPages,
+  listTranslations,
 } from "./db";
 import { recordTranslationFailure, translateOrder } from "./translation";
 import { toCustomerOrder, type CustomerOrder } from "./view";
@@ -18,16 +19,19 @@ import type { OrderRecord } from "./types";
 
 export async function loadCustomerOrder(db: Db, order: OrderRecord): Promise<CustomerOrder> {
   const documents = await listDocuments(db, order.id);
-  const [pages, confirmations, preview, payment, delivery, email, addons, translationReadyAt] = await Promise.all([
-    listPages(db, documents.map((document) => document.id)),
-    listConfirmations(db, order.id),
-    latestReadyPreview(db, order.id),
-    latestPayment(db, order.id),
-    getDelivery(db, order.id),
-    customerEmail(db, order.customerId),
-    listOrderAddons(db, order.id),
-    earliestReadyPreviewAt(db, order.id),
-  ]);
+  const documentIds = documents.map((document) => document.id);
+  const [pages, confirmations, preview, payment, delivery, email, addons, translationReadyAt, translations] =
+    await Promise.all([
+      listPages(db, documentIds),
+      listConfirmations(db, order.id),
+      latestReadyPreview(db, order.id),
+      latestPayment(db, order.id),
+      getDelivery(db, order.id),
+      customerEmail(db, order.customerId),
+      listOrderAddons(db, order.id),
+      earliestReadyPreviewAt(db, order.id),
+      listTranslations(db, documentIds),
+    ]);
 
   return toCustomerOrder({
     order,
@@ -41,6 +45,7 @@ export async function loadCustomerOrder(db: Db, order: OrderRecord): Promise<Cus
     translationReadyAt,
     email,
     addons,
+    translationOutputs: translations.map((translation) => translation.output),
   });
 }
 

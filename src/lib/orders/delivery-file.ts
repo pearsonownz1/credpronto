@@ -1,4 +1,4 @@
-import { orderDownloadFilename } from "./download-name";
+import { deliveryDocumentName, orderDownloadFilename } from "./download-name";
 import type { EvaluationService } from "./types";
 
 export function isCredentialEvaluation(order: { service: EvaluationService | string | null }): boolean {
@@ -16,26 +16,26 @@ export function deliveryFileTarget(input: {
   certificationPath: string | null;
   documentNames: readonly string[];
   targetLanguage: string;
+  detectedTitle?: string | null;
 }): { path: string; filename: string } | null {
+  const path = input.finalPath || input.certificationPath;
+  if (!path) return null;
+
   if (isCredentialEvaluation(input)) {
-    if (input.file === "certification") {
-      if (!input.certificationPath || input.certificationPath === input.finalPath) return null;
-      return {
-        path: input.certificationPath,
-        filename: orderDownloadFilename("certification", input.documentNames, input.targetLanguage),
-      };
-    }
-    if (input.file !== "evaluation" || !input.finalPath) return null;
+    if (input.file === "translation") return null;
+    if (input.file !== "evaluation" && input.file !== "certification") return null;
     return {
-      path: input.finalPath,
+      path,
       filename: orderDownloadFilename("evaluation", input.documentNames, input.targetLanguage),
     };
   }
 
-  const path = input.file === "certification" ? input.certificationPath : input.finalPath;
-  if (!path) return null;
+  if (input.file !== "translation" && input.file !== "certification") return null;
   return {
     path,
-    filename: orderDownloadFilename(input.file, input.documentNames, input.targetLanguage),
+    filename: deliveryDocumentName({
+      detectedTitle: input.detectedTitle,
+      documentNames: input.documentNames,
+    }).filename,
   };
 }

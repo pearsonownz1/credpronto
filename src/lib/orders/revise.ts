@@ -20,6 +20,7 @@ import {
 } from "./db";
 import { coverClientName, coverDocuments, coverSignature, coverTranslatorName, loadTranslatorSignature } from "./pdf/cover";
 import { HttpError } from "./errors";
+import { storeCertifiedTranslation } from "./final-file";
 import { renderOrderPdfs } from "./pdf/render";
 import { uploadObject } from "./storage";
 import { mergeEditedPages, paragraphsForPage, type PageEdit, type PageTranslation } from "./translation-edit";
@@ -137,10 +138,13 @@ export async function editOrderTranslation(orderId: string, body: unknown) {
       translatorName: coverTranslatorName(approver),
       signature: coverSignature(approver, loadTranslatorSignature()),
     });
-    const translationPath = `${order.id}/translation-v${version}.pdf`;
-    const certificationPath = `${order.id}/certification-v${version}.pdf`;
-    await uploadObject(db, "finals", translationPath, files.cleanTranslation, "application/pdf");
-    await uploadObject(db, "finals", certificationPath, files.certification, "application/pdf");
+    const translationPath = await storeCertifiedTranslation(db, {
+      orderId: order.id,
+      version,
+      cleanTranslation: files.cleanTranslation,
+      combinedOriginalPath: order.combinedOriginalPath,
+    });
+    const certificationPath = translationPath;
     await uploadObject(db, "previews", previewPath, files.watermarkedPreview, "application/pdf");
     await markPreview(db, order.id, version, "ready");
     await updateOrder(db, order.id, {

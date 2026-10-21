@@ -4,6 +4,7 @@ import { inReadingOrder } from "./page-order";
 import { CONFIRMATION_FIELD_KEYS } from "./fields";
 import type { RenderBlock, RenderPage } from "./pdf/layout";
 import { coverClientName, coverDocuments, coverSignature, coverTranslatorName, loadTranslatorSignature } from "./pdf/cover";
+import { storeCertifiedTranslation } from "./final-file";
 import { renderOrderPdfs } from "./pdf/render";
 import { blocksFromModel, blocksToParagraphs, type ModelBlock } from "./pdf/structure";
 import {
@@ -523,10 +524,13 @@ export async function runTranslationAssemble(
           translatorName: coverTranslatorName(null),
           signature: coverSignature(null, configuredSignature),
         });
-        const translationPath = `${input.orderId}/translation-v${input.version}.pdf`;
-        const certificationPath = `${input.orderId}/certification-v${input.version}.pdf`;
-        await uploadObject(db, "finals", translationPath, files.cleanTranslation, "application/pdf");
-        await uploadObject(db, "finals", certificationPath, files.certification, "application/pdf");
+        const translationPath = await storeCertifiedTranslation(db, {
+          orderId: input.orderId,
+          version: input.version,
+          cleanTranslation: files.cleanTranslation,
+          combinedOriginalPath: order.combinedOriginalPath,
+        });
+        const certificationPath = translationPath;
         await uploadObject(db, "previews", previewPath, files.watermarkedPreview, "application/pdf");
         if (deadline.aborted) throw new AiUnavailableError("translation_timeout");
         const active = await getTranslationRun(db, input.orderId, input.version);

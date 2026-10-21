@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { downloadFilename, orderDownloadFilename } from "./download-name";
+import { deliveryDocumentName, detectDocumentTitle, downloadFilename, orderDownloadFilename } from "./download-name";
 
 describe("downloadFilename", () => {
   it("names a translation from the source stem and the target language code", () => {
@@ -85,5 +85,33 @@ describe("orderDownloadFilename", () => {
     );
     expect(orderDownloadFilename("translation", [], "en")).toBe("document-EN-certified.pdf");
     expect(orderDownloadFilename("translation", names, "en")).not.toContain("birth-certificate");
+  });
+});
+
+describe("certified translation name", () => {
+  it("slugifies a detected title and falls back to the upload base name", () => {
+    expect(deliveryDocumentName({ detectedTitle: "Tax status letter", documentNames: ["scan.pdf"] })).toEqual({
+      title: "Tax status letter",
+      filename: "Tax-status-letter-certified-translation.pdf",
+    });
+    expect(deliveryDocumentName({ documentNames: ["birth-certificate.pdf"] })).toEqual({
+      title: "Birth Certificate",
+      filename: "birth-certificate-certified-translation.pdf",
+    });
+    expect(deliveryDocumentName({ documentNames: [] })).toEqual({
+      title: "Document",
+      filename: "document-certified-translation.pdf",
+    });
+  });
+
+  it("reads a translated heading before a known source title", () => {
+    expect(
+      detectDocumentTitle({
+        outputs: [{ pages: [{ blocks: [{ type: "heading", level: 1, text: "Tax status letter" }] }] }],
+        ocrTexts: ["ACTA DE NACIMIENTO"],
+      }),
+    ).toBe("Tax status letter");
+    expect(detectDocumentTitle({ ocrTexts: ["ACTA DE NACIMIENTO\nNombre"] })).toBe("Birth certificate");
+    expect(detectDocumentTitle({ ocrTexts: ["not a title"] })).toBeNull();
   });
 });

@@ -28,7 +28,7 @@ import {
   upsertCustomer,
   type Db,
 } from "./db";
-import { orderDownloadFilename } from "./download-name";
+import { deliveryDocumentName, orderDownloadFilename } from "./download-name";
 import { HttpError } from "./errors";
 import { partnerReviewReason } from "./equivalency";
 import { EVALUATION_REVIEW_REASON } from "./evaluation-price";
@@ -329,16 +329,23 @@ export async function partnerFiles(userId: string, orderId: string) {
   }
 
   const names = documents.map((document) => document.filename);
+  const sameFile =
+    Boolean(delivery?.finalPath) && delivery?.finalPath === delivery?.certificationPath;
   const translation = await signedFinal(
     db,
-    delivery?.finalPath ?? null,
-    orderDownloadFilename("translation", names, order.targetLanguage),
+    delivery?.finalPath ?? delivery?.certificationPath ?? null,
+    order.service
+      ? orderDownloadFilename("evaluation", names, order.targetLanguage)
+      : deliveryDocumentName({ documentNames: names }).filename,
   );
-  const certification = await signedFinal(
-    db,
-    delivery?.certificationPath ?? null,
-    orderDownloadFilename("certification", names, order.targetLanguage),
-  );
+  const certification =
+    sameFile || !delivery?.certificationPath
+      ? null
+      : await signedFinal(
+          db,
+          delivery.certificationPath,
+          orderDownloadFilename(order.service ? "evaluation" : "certification", names, order.targetLanguage),
+        );
   await insertEvent(db, order.id, "downloaded", { file: "api" });
   return { downloadAvailable: true, originals, translation, certification };
 }

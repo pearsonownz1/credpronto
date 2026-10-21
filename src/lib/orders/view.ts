@@ -6,6 +6,7 @@ import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
 import { evaluationPrice, lineItemsForOrder, translationOfferCents } from "./evaluation-price";
 import { customerEvaluationResult, customerReviewReason } from "./equivalency";
 import { fulfillmentState, type FulfillmentState } from "./release-decision";
+import { detectDocumentTitle, deliveryDocumentName } from "./download-name";
 import { storedTimestamp, uploadOrCreatedAt } from "./speed-line";
 import { compareCombinedPages } from "./page-order";
 import type {
@@ -114,6 +115,8 @@ export type CustomerOrder = {
   deliveredAt?: string | null;
   /** `released` after certification. `awaiting_review` while a paid order is still with staff. */
   fulfillment: FulfillmentState | null;
+  /** Detected document title, or a readable form of the upload name. */
+  documentTitle: string;
 };
 
 export function toCustomerOrder(input: {
@@ -128,6 +131,7 @@ export function toCustomerOrder(input: {
   translationReadyAt?: string | null;
   email: string | null;
   addons?: Array<{ id: AddonId }>;
+  translationOutputs?: readonly unknown[];
   now?: number;
 }): CustomerOrder {
   const confidences = input.documents
@@ -149,6 +153,13 @@ export function toCustomerOrder(input: {
     }),
   );
   const stored = input.order.pageOrder;
+  const documentTitle = deliveryDocumentName({
+    detectedTitle: detectDocumentTitle({
+      outputs: input.translationOutputs,
+      ocrTexts: pages.map((page) => page.ocrText),
+    }),
+    documentNames: documents.map((document) => document.filename),
+  }).title;
   const priced = evaluationPrice(input.order);
   const evaluationCents = priced?.evaluationCents ?? input.order.evaluationCents;
   const translationCents = priced ? 0 : input.order.translationCents;
@@ -250,6 +261,7 @@ export function toCustomerOrder(input: {
     translationReadyAt: storedTimestamp(input.translationReadyAt),
     deliveredAt: storedTimestamp(input.deliveredAt),
     fulfillment: fulfillmentState(input.order),
+    documentTitle,
     delayed: isPreviewDelayed({
       status: input.order.status,
       previewVersion: input.previewVersion,

@@ -516,7 +516,7 @@ export function downloadReadyCopy(order: {
     title: "Your certified translation is ready.",
     primaryTitle: "Certified translation",
     primaryFile: "translation",
-    secondary: { title: "Certification page", file: "certification" },
+    secondary: null,
     again: "Need another document translated?",
   };
 }

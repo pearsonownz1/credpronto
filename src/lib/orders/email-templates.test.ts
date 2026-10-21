@@ -7,6 +7,8 @@ import {
   emailGreetingName,
   formatPaymentMethod,
   receiptLineItems,
+  FINAL_DOWNLOAD_SUBJECT,
+  renderFinalDownloadEmail,
   renderOrderReceivedEmail,
   renderPaymentReceiptEmail,
   renderPreviewReadyEmail,
@@ -174,6 +176,24 @@ describe("email templates", () => {
     expect(rendered.html).toContain("Total paid");
     expect(rendered.html).toContain("$110.50");
     expect(rendered.text).toContain(`Download certified PDF: ${ORDER_URL}`);
+
+    const finalDownload = renderFinalDownloadEmail({
+      orderId: "order-9",
+      totalCents: 11050,
+      lines,
+      downloadUrl: ORDER_URL,
+      filename: "Tax-status-letter-certified-translation.pdf",
+    });
+    expect(finalDownload.subject).toBe("Thanks for your payment.  You can download your document now!");
+    expect(finalDownload.subject).toBe(FINAL_DOWNLOAD_SUBJECT);
+    expect(finalDownload.subject).toContain(".  You");
+    expect(finalDownload.html).toContain("order-9");
+    expect(finalDownload.html).toContain("Total paid");
+    expect(finalDownload.html).toContain("$110.50");
+    expect(finalDownload.html).toContain("Certified translation · 4 pages × $9.95");
+    expect(finalDownload.html).toContain(`href="${ORDER_URL}"`);
+    expect(finalDownload.html).toContain("Tax-status-letter-certified-translation.pdf");
+    expect(finalDownload.text).toContain(`Download your document: ${ORDER_URL}`);
 
     const evaluation = receiptLineItems({
       service: "diploma",

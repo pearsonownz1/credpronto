@@ -17,20 +17,31 @@ describe("evaluation download", () => {
       filename: "birth-certificate-evaluation.pdf",
     });
     expect(deliveryFileTarget({ ...shared, file: "translation" })).toBeNull();
-    expect(deliveryFileTarget({ ...shared, file: "certification" })).toBeNull();
+    expect(deliveryFileTarget({ ...shared, file: "certification" })).toEqual({
+      path: report,
+      filename: "birth-certificate-evaluation.pdf",
+    });
     expect(deliveryFileTarget({ ...shared, file: "evaluation" })?.filename).not.toContain("EN-certified");
   });
 
-  it("keeps the certified translation filename for a translation order", () => {
+  it("names one certified translation and serves the certificate link from that file", () => {
+    const shared = {
+      service: null,
+      finalPath: "order-1/translation.pdf",
+      certificationPath: "order-1/certificate.pdf",
+      documentNames: ["birth-certificate.pdf"],
+      targetLanguage: "en",
+    };
+    expect(deliveryFileTarget({ ...shared, file: "translation" })).toEqual({
+      path: "order-1/translation.pdf",
+      filename: "birth-certificate-certified-translation.pdf",
+    });
+    expect(deliveryFileTarget({ ...shared, file: "certification" })).toEqual({
+      path: "order-1/translation.pdf",
+      filename: "birth-certificate-certified-translation.pdf",
+    });
     expect(
-      deliveryFileTarget({
-        file: "translation",
-        service: null,
-        finalPath: "order-1/translation.pdf",
-        certificationPath: "order-1/certificate.pdf",
-        documentNames: ["birth-certificate.pdf"],
-        targetLanguage: "en",
-      })?.filename,
-    ).toBe("birth-certificate-EN-certified.pdf");
+      deliveryFileTarget({ ...shared, file: "translation", detectedTitle: "Tax status letter" })?.filename,
+    ).toBe("Tax-status-letter-certified-translation.pdf");
   });
 });
