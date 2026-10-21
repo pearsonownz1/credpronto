@@ -1,5 +1,7 @@
 import { z } from "zod";
+import type { ModelMessage } from "ai";
 import { generateObject, translationModelId } from "./ai";
+import { imageBytesForModel } from "./analysis";
 import { ORIGINALS_BUCKET } from "./constants";
 import { inReadingOrder } from "./page-order";
 import { CONFIRMATION_FIELD_KEYS } from "./fields";
@@ -7,9 +9,17 @@ import { pageKind, type PageKind, type RenderBlock, type RenderPage } from "./pd
 import { coverClientName, coverDocuments, coverSignature, coverTranslatorName, loadTranslatorSignature } from "./pdf/cover";
 import { storeCertifiedTranslation } from "./final-file";
 import { documentKind } from "./pdf/document-layout";
-import { verifyIdentifiers } from "./pdf/identifiers";
+import { reconcileIdentifiers, verifyIdentifiers } from "./pdf/identifiers";
 import { cropHolderPhoto } from "./pdf/photo";
 import { renderOrderPdfs } from "./pdf/render";
+import {
+  blocksFromSegmentTranslations,
+  ensurePortrait,
+  layoutNeedsRestore,
+  projectLetter,
+  segmentSource,
+  translatedProse,
+} from "./pdf/source-mirror";
 import { blocksFromModel, blocksToParagraphs, type ModelBlock } from "./pdf/structure";
 import {
   claimOrderColumn,
@@ -61,6 +71,7 @@ import {
   reconcileOpenTranslation,
   releaseSkippedPageJob,
   resumeTranslation,
+  type LayoutFallback,
   type PageJobOutput,
 } from "./translation-jobs";
 import { isSkippedTranslationPage, pageTranslationPhrases, passThroughBlocks, pagesToTranslate } from "./translation-pages";
@@ -99,6 +110,13 @@ const modelPageSchema = z.object({
 const translationSchema = z.object({
   pages: z.array(modelPageSchema),
 });
+
+const repairSchema = z.object({
+  parts: z.array(z.object({ id: z.number(), text: z.string() })),
+});
+
+const IMAGE_LAYOUT_NOTE =
+  "The attached image is the source page. Mirror its arrangement: letterhead, date, address, each reference line, the body, each signature, and the enclosure list. Do not join those regions into one paragraph.";
 
 type ModelPage = {
   pageNumber: number;
@@ -262,14 +280,133 @@ ${pageText}`;
       );
       last = result.pages as ModelPage[];
       const aligned = alignPages(expected, last);
-      if (aligned) return aligned;
+      if (aligned) return restoreDocumentPages(input, aligned, deadline);
     } catch (error) {
       if (!isTemporaryTranslationError(error) || attempt === 1 || deadline.aborted) throw error;
     }
   }
   const fallback = alignPages(expected, last);
-  if (fallback) return fallback;
+  if (fallback) return restoreDocumentPages(input, fallback, deadline);
   throw new HttpError("The translation did not return every page.", 502);
+}
+
+function userMessages(text: string, image?: { bytes: Uint8Array; mime: string }): ModelMessage[] {
+  const content: Array<{ type: "text"; text: string } | { type: "file"; mediaType: string; data: Uint8Array }> = [
+    { type: "text", text },
+  ];
+  if (image) content.push({ type: "file", mediaType: image.mime, data: image.bytes });
+  return [{ role: "user", content }];
+}
+
+function reportLayout(via: LayoutFallback, detail: { filename: string; kind: string }): void {
+  const message = via === "flat" ? "layout fallback: kept a flat paragraph" : "layout fallback: restored the source arrangement";
+  console.warn(message, { ...detail, via });
+}
+
+async function restoreCollapsedLayout(input: {
+  sourceText: string;
+  blocks: RenderBlock[];
+  kind?: PageKind;
+  filename: string;
+  sourceLanguage: string;
+  dateFormat: "MM/DD/YYYY" | "DD/MM/YYYY";
+  image?: { bytes: Uint8Array; mime: string };
+  signal?: AbortSignal;
+}): Promise<{ blocks: RenderBlock[]; kind?: PageKind; layoutFallback?: LayoutFallback }> {
+  const detected = segmentSource(input.sourceText);
+  let portrait = false;
+  if (detected?.kind === "certificate" && input.image) {
+    try {
+      portrait = (await cropHolderPhoto(input.image.bytes)) != null;
+    } catch {
+      portrait = false;
+    }
+  }
+  const plan = layoutNeedsRestore(input.sourceText, input.blocks, { portrait });
+  if (!plan) {
+    const blocks = ensurePortrait(input.blocks, portrait);
+    const kind = input.kind ?? (blocks.some((block) => block.type === "photo") ? "certificate" : undefined);
+    return { blocks, kind };
+  }
+
+  const finish = (blocks: RenderBlock[], via: LayoutFallback) => {
+    reportLayout(via, { filename: input.filename, kind: plan.kind });
+    return {
+      blocks: reconcileIdentifiers({
+        sourceText: input.sourceText,
+        blocks,
+        sourceLanguage: input.sourceLanguage,
+        dateFormat: input.dateFormat,
+      }),
+      kind: plan.kind,
+      layoutFallback: via,
+    };
+  };
+
+  if (plan.kind === "letter") {
+    const projected = projectLetter(plan.segments, translatedProse(input.blocks));
+    if (projected) return finish(projected, "source-lines");
+  }
+
+  try {
+    if (input.signal?.aborted) throw new AiUnavailableError("translation_timeout");
+    const parts = plan.segments
+      .map((segment) => `${segment.id}. ${segment.role}${segment.column ? ` (${segment.column})` : ""}: ${segment.text}`)
+      .join("\n");
+    const result = await generateObject(
+      repairSchema,
+      userMessages(
+        `Translate each numbered part on its own into English. Do not merge parts.
+Return one part for every id. A kv or box is "Label: value". An address, signature, or list keeps one line per source line.
+A photo part is "Holder's photo". Copy numbers exactly. Write dates as ${input.dateFormat}.
+
+Parts:
+${parts}
+
+Collapsed translation, for wording only:
+${translatedProse(input.blocks).slice(0, 6000)}`,
+        input.image,
+      ),
+      input.signal,
+      { maxRetries: 0 },
+    );
+    const rebuilt = blocksFromSegmentTranslations(plan.segments, result.parts);
+    if (rebuilt) return finish(rebuilt, "model");
+  } catch (error) {
+    console.warn("layout fallback: restore failed", {
+      filename: input.filename,
+      message: error instanceof Error ? error.message : "restore failed",
+    });
+  }
+  reportLayout("flat", { filename: input.filename, kind: plan.kind });
+  return { blocks: input.blocks, kind: input.kind ?? plan.kind, layoutFallback: "flat" };
+}
+
+async function restoreDocumentPages(
+  input: {
+    filename: string;
+    sourceLanguage: string;
+    fields: ConfirmationRecord[];
+    pages: Array<PageRecord & { number: number }>;
+  },
+  pages: Array<{ pageNumber: number; blocks: RenderBlock[]; kind?: PageKind }>,
+  signal: AbortSignal,
+): Promise<Array<{ pageNumber: number; blocks: RenderBlock[]; kind?: PageKind }>> {
+  const restored = [];
+  for (const page of pages) {
+    const source = input.pages.find((item) => item.number === page.pageNumber);
+    const next = await restoreCollapsedLayout({
+      sourceText: source?.ocrText ?? "",
+      blocks: page.blocks,
+      kind: page.kind,
+      filename: input.filename,
+      sourceLanguage: input.sourceLanguage,
+      dateFormat: strictDateFormat(input.fields),
+      signal,
+    });
+    restored.push({ pageNumber: page.pageNumber, blocks: next.blocks, kind: next.kind });
+  }
+  return restored;
 }
 
 /** One billable page. The caller retries the invocation once; this call does not. */
@@ -281,7 +418,8 @@ async function translateOnePage(input: {
   page: PageRecord & { number: number };
   corrections: CorrectionRecord[];
   qaIssues: QaIssue[];
-}): Promise<{ blocks: RenderBlock[]; kind?: PageKind }> {
+  image?: { bytes: Uint8Array; mime: string };
+}): Promise<{ blocks: RenderBlock[]; kind?: PageKind; layoutFallback?: LayoutFallback }> {
   const notes = input.corrections
     .filter((correction) => correction.pageNumber === input.page.number)
     .map((correction) => {
@@ -320,14 +458,14 @@ For an electronic signature, firma electrónica, or a long unbroken signature to
 
 For a section title, use type "heading".
 ${LAYOUT_INSTRUCTIONS}
-Page ${input.page.number}:
+${input.image ? `${IMAGE_LAYOUT_NOTE}\n` : ""}Page ${input.page.number}:
 ${(input.page.ocrText ?? "").slice(0, 6000)}`;
 
   const deadline = AbortSignal.timeout(TRANSLATION_PAGE_DEADLINE_MS);
   const result = await raceWorkAgainstDeadline(
     generateObject(
       z.union([modelPageSchema, z.object({ pages: z.array(modelPageSchema).min(1) })]),
-      [{ role: "user", content: [{ type: "text", text: prompt }] }],
+      userMessages(prompt, input.image),
       deadline,
       { maxRetries: 0 },
     ),
@@ -337,13 +475,23 @@ ${(input.page.ocrText ?? "").slice(0, 6000)}`;
   if (!page) throw new HttpError("The translation did not return the page.", 502);
   const aligned = alignPages([input.page.number], [page]);
   if (!aligned?.[0]) throw new HttpError("The translation did not return the page.", 502);
+  const dateFormat = strictDateFormat(input.fields);
   const verified = await verifyIdentifiers({
     sourceText: input.page.ocrText ?? "",
     blocks: aligned[0].blocks,
     sourceLanguage: input.sourceLanguage,
-    dateFormat: strictDateFormat(input.fields),
+    dateFormat,
   });
-  return { blocks: verified, kind: aligned[0].kind };
+  return restoreCollapsedLayout({
+    sourceText: input.page.ocrText ?? "",
+    blocks: verified,
+    kind: aligned[0].kind,
+    filename: input.filename,
+    sourceLanguage: input.sourceLanguage,
+    dateFormat,
+    image: input.image,
+    signal: deadline,
+  });
 }
 
 /** Write a terminal status when a translation is still Processing or waiting on the first preview. */
@@ -436,6 +584,18 @@ export async function runTranslationPage(
       if (await releaseSkippedPageJob(db, claimed)) return;
       throw new HttpError("The page is not ready to translate.", 409);
     }
+    let image: { bytes: Uint8Array; mime: string } | undefined;
+    if (work.source) {
+      try {
+        const raw = await downloadObject(db, ORIGINALS_BUCKET, work.source.path);
+        image = await imageBytesForModel(raw, work.source.mime);
+      } catch (error) {
+        console.warn("layout fallback: source image was not attached", {
+          filename: work.filename,
+          message: error instanceof Error ? error.message : "download failed",
+        });
+      }
+    }
     const translated = await translateOnePage({
       filename: work.filename,
       sourceLanguage: work.order.sourceLanguage,
@@ -444,11 +604,13 @@ export async function runTranslationPage(
       page: work.page,
       corrections: work.corrections,
       qaIssues: work.qaIssues,
+      image,
     });
     const output: PageJobOutput = {
       blocks: translated.blocks,
       paragraphs: blocksToParagraphs(translated.blocks),
       ...(translated.kind ? { kind: translated.kind } : {}),
+      ...(translated.layoutFallback ? { layoutFallback: translated.layoutFallback } : {}),
     };
     await completePageJob(db, claimed, output);
   } catch (error) {
@@ -551,11 +713,18 @@ export async function runTranslationAssemble(
                 blocks,
                 paragraphs: blocksToParagraphs(blocks),
                 kind: undefined as PageKind | undefined,
+                layoutFallback: undefined as LayoutFallback | undefined,
               };
             }
             const job = ready.get(page.id);
             if (!job?.output) throw new HttpError("The translation did not return every page.", 502);
-            return { page, blocks: job.output.blocks, paragraphs: job.output.paragraphs, kind: job.output.kind };
+            return {
+              page,
+              blocks: job.output.blocks,
+              paragraphs: job.output.paragraphs,
+              kind: job.output.kind,
+              layoutFallback: job.output.layoutFallback,
+            };
           });
           await insertTranslation(db, {
             documentId: document.id,
@@ -569,6 +738,7 @@ export async function runTranslationAssemble(
                 paragraphs: page.paragraphs,
                 blocks: page.blocks,
                 ...(page.kind ? { kind: page.kind } : {}),
+                ...(page.layoutFallback ? { layoutFallback: page.layoutFallback } : {}),
               })),
             },
           });

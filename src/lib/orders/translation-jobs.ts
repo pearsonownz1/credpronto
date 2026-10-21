@@ -41,10 +41,14 @@ type Row = Record<string, unknown>;
 export type PageJobStatus = "pending" | "running" | "ready" | "failed";
 export type TranslationRunStatus = "running" | "assembling" | "ready" | "failed";
 
+export type LayoutFallback = "source-lines" | "model" | "flat";
+
 export type PageJobOutput = {
   blocks: RenderBlock[];
   paragraphs: string[];
   kind?: PageKind;
+  /** Set when the model returned a flat page and the source arrangement had to be recovered. */
+  layoutFallback?: LayoutFallback;
 };
 
 export type PageJobRecord = {
@@ -119,7 +123,7 @@ const BLOCK_TYPES = new Set([
 
 export function parsePageJobOutput(value: unknown): PageJobOutput | null {
   if (!value || typeof value !== "object") return null;
-  const row = value as { blocks?: unknown; paragraphs?: unknown; kind?: unknown };
+  const row = value as { blocks?: unknown; paragraphs?: unknown; kind?: unknown; layoutFallback?: unknown };
   if (!Array.isArray(row.blocks)) return null;
   const blocks = row.blocks.filter((block): block is RenderBlock => {
     if (!block || typeof block !== "object") return false;
@@ -130,10 +134,15 @@ export function parsePageJobOutput(value: unknown): PageJobOutput | null {
     ? row.paragraphs.filter((item): item is string => typeof item === "string")
     : blocksToParagraphs(blocks);
   const kind = pageKind(row.kind);
+  const layoutFallback =
+    row.layoutFallback === "source-lines" || row.layoutFallback === "model" || row.layoutFallback === "flat"
+      ? row.layoutFallback
+      : undefined;
   return {
     blocks,
     paragraphs: paragraphs.length > 0 ? paragraphs : blocksToParagraphs(blocks),
     ...(kind ? { kind } : {}),
+    ...(layoutFallback ? { layoutFallback } : {}),
   };
 }
 
@@ -741,6 +750,8 @@ export type PageWork = {
   fields: ConfirmationRecord[];
   corrections: CorrectionRecord[];
   qaIssues: QaIssue[];
+  /** Set for a photo or screenshot so translation can see the page, not only its transcription. */
+  source?: { mime: string; path: string } | null;
 };
 
 /** A page skipped after its job started must not fail the order. The row stays pending and is not dispatched. */
@@ -782,6 +793,10 @@ export async function loadPageWork(db: Db, jobId: string): Promise<PageWork | nu
     fields: fields.filter((field) => field.documentId === document.id),
     corrections: corrections.filter((correction) => correction.status === "open"),
     qaIssues: run.qaIssues,
+    source:
+      document.mime?.startsWith("image/") && document.originalPath
+        ? { mime: document.mime, path: document.originalPath }
+        : null,
   };
 }
 

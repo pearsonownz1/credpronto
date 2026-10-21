@@ -273,4 +273,15 @@ describe("page job blocks", () => {
     expect(parsed?.blocks.some((block) => block.type === "box")).toBe(true);
     expect(parsed?.blocks.some((block) => block.type === "photo")).toBe(true);
   });
+
+  it("keeps a layout fallback flag on a flat letter page", () => {
+    const parsed = parsePageJobOutput({
+      kind: "letter",
+      layoutFallback: "flat",
+      blocks: [{ type: "paragraph", text: "Hello from the bank." }],
+      paragraphs: ["Hello from the bank."],
+    });
+    expect(parsed?.layoutFallback).toBe("flat");
+    expect(parsed?.kind).toBe("letter");
+  });
 });
