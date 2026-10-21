@@ -358,6 +358,7 @@ async function restoreCollapsedLayout(input: {
       userMessages(
         `Translate each numbered part on its own into English. Do not merge parts.
 Return one part for every id. A kv or box is "Label: value". An address, signature, or list keeps one line per source line.
+Keep each personal name as printed, including initials. A list keeps a leading 1) marker when the source line has one.
 A photo part is "Holder's photo". Copy numbers exactly. Write dates as ${input.dateFormat}.
 
 Parts:
@@ -372,6 +373,11 @@ ${translatedProse(input.blocks).slice(0, 6000)}`,
     );
     const rebuilt = blocksFromSegmentTranslations(plan.segments, result.parts);
     if (rebuilt) return finish(rebuilt, "model");
+    console.warn("layout fallback: segment translation did not assemble", {
+      filename: input.filename,
+      segments: plan.segments.length,
+      parts: result.parts.length,
+    });
   } catch (error) {
     console.warn("layout fallback: restore failed", {
       filename: input.filename,

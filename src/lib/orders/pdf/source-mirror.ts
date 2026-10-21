@@ -173,13 +173,11 @@ function segmentLetter(lines: string[]): LayoutPlan | null {
       if (head && items.length === 0) {
         label = (head[1] ?? "Attachment").replace(/\.$/, "");
         const rest = head[2]?.trim() ?? "";
-        const inline = rest.match(/^\d+\s*[).]\s*(.*)$/);
-        if (inline?.[1]) items.push(inline[1].trim());
-        else if (rest) items.push(rest);
+        // Keep "1)" on the line. Stripping it made the repair model return plain lines, and the letter was discarded.
+        if (rest) items.push(rest);
         continue;
       }
-      const item = line.match(/^\d+\s*[).]\s*(.*)$/);
-      if (item?.[1]) items.push(item[1].trim());
+      if (/^\d+\s*[).]\s+\S/.test(line)) items.push(line.trim());
       else if (items.length) items[items.length - 1] = `${items[items.length - 1]} ${line}`.trim();
     }
     if (items.length) segments.push({ role: "list", text: `${label}:\n${items.join("\n")}` });
@@ -504,8 +502,31 @@ function parseList(text: string): { label: string; items: string[] } | null {
   const items = [...trimmed.matchAll(/\d+\s*[).]\s*([\s\S]*?)(?=\s*\d+\s*[).]|$)/g)]
     .map((match) => match[1]?.trim() ?? "")
     .filter(Boolean);
-  if (items.length === 0) return null;
-  return { label, items };
+  if (items.length > 0) return { label, items };
+
+  const lines = trimmed.split(/\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length < 2) return null;
+  const first = lines[0] ?? "";
+  const heading = first.length <= 48 && !/^\d/.test(first);
+  const body = heading ? lines.slice(1) : lines;
+  const plain = body.map((line) => line.replace(/^\d+\s*[).:-]\s*/, "").trim()).filter(Boolean);
+  if (plain.length === 0) return null;
+  const plainLabel = heading ? first.replace(/[:.\s]+$/g, "").trim() || "Attachment" : "Attachment";
+  return { label: plainLabel, items: plain };
+}
+
+/** "Document No.: 74" or "Document No. 74" when the source value is still the number. */
+function labeledPair(text: string, sourceText: string): { label: string; value: string } | null {
+  const flat = text.replace(/\s+/g, " ").trim();
+  const match = flat.match(/^(.{1,60}?)\s*:\s*(\S.*)$/);
+  if (match?.[1] && match[2]) return { label: match[1].trim(), value: match[2].trim() };
+  const sourceValue = sourceText.split(":").slice(1).join(":").trim();
+  if (!sourceValue) return null;
+  const at = flat.lastIndexOf(sourceValue);
+  if (at <= 0) return null;
+  const label = flat.slice(0, at).replace(/[:.\s]+$/g, "").trim();
+  if (!label || label.length > 60) return null;
+  return { label, value: flat.slice(at).trim() };
 }
 
 function partText(parts: Array<{ id: number; text: string }>, id: number): string {
@@ -557,10 +578,13 @@ export function blocksFromSegmentTranslations(
       continue;
     }
     if (segment.role === "kv" || segment.role === "box") {
-      const match = text.replace(/\s+/g, " ").match(/^(.{1,60}?)\s*:\s*(\S.*)$/);
-      if (!match?.[1] || !match[2]) return null;
-      if (segment.role === "kv") blocks.push({ type: "kv", label: match[1].trim(), value: match[2].trim() });
-      else blocks.push({ type: "box", label: match[1].trim(), value: match[2].trim(), column: segment.column });
+      const pair = labeledPair(text, segment.text);
+      if (!pair) {
+        blocks.push({ type: "paragraph", text: text.replace(/\s+/g, " "), align: "left" });
+        continue;
+      }
+      if (segment.role === "kv") blocks.push({ type: "kv", label: pair.label, value: pair.value });
+      else blocks.push({ type: "box", label: pair.label, value: pair.value, column: segment.column });
       continue;
     }
     if (segment.role === "signature") {
@@ -576,8 +600,8 @@ export function blocksFromSegmentTranslations(
       continue;
     }
     if (segment.role === "list") {
-      const list = parseList(text.includes("\n") ? text : text.replace(/\s+(?=\d+\s*[).])/g, "\n"));
-      if (!list) return null;
+      const normalized = text.includes("\n") ? text : text.replace(/\s+(?=\d+\s*[).])/g, "\n");
+      const list = parseList(normalized) ?? { label: "Attachment", items: [text.replace(/\s+/g, " ").trim()] };
       blocks.push({ type: "list", ordered: true, label: list.label, items: list.items });
     }
   }
