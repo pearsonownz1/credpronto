@@ -12,7 +12,7 @@ import {
   customerServiceQuote,
   evaluationPricePatch,
 } from "./evaluation-price";
-import { deliveryFileTarget } from "./delivery-file";
+import { bundleTranslationFile, deliveryFileTarget } from "./delivery-file";
 import { withQuotedPages } from "./stored-pages";
 import {
   DOWNLOAD_URL_SECONDS,
@@ -32,6 +32,7 @@ import {
   insertPayment,
   latestPayment,
   latestReadyPreview,
+  listBundleTranslationSignals,
   listDocuments,
   listPages,
   markDocuments,
@@ -61,7 +62,7 @@ import {
   type EvaluationFieldKey,
 } from "./fields";
 import { appOrigin } from "./email";
-import { resolveCustomerFinal } from "./final-file";
+import { bundleTranslationDecision, resolveCustomerFinal } from "./final-file";
 import { applySucceededSetupIntent } from "./saved-card";
 import { normalizeLanguage } from "./languages";
 import { compareCombinedPages } from "./page-order";
@@ -323,6 +324,40 @@ export async function downloadOrderFile(
   }
   const { db, order } = await orderForToken(token);
   const payment = await settledPayment(db, order.id);
+  const documents = await listDocuments(db, order.id);
+  const names = documents.map((document) => document.filename);
+  const bundled = bundleTranslationFile({
+    includeTranslation: order.includeTranslation,
+    file,
+    translationPath: order.finalTranslationPath,
+    documentNames: names,
+    targetLanguage: order.targetLanguage,
+  });
+  if (bundled) {
+    const delivery = await getDelivery(db, order.id);
+    const signals = (await listBundleTranslationSignals(db, [order.id])).get(order.id);
+    const decision = bundleTranslationDecision({
+      includeTranslation: order.includeTranslation,
+      status: order.status,
+      paymentStatus: payment?.status ?? null,
+      finalTranslationPath: order.finalTranslationPath,
+      certificationPath: order.certificationPath,
+      reviewReason: order.reviewReason,
+      qa: signals?.qa ?? null,
+      languageConfidence: signals?.languageConfidence ?? null,
+      pageNeedsReview: signals?.pageNeedsReview === true,
+      openCorrections: signals?.openCorrections === true,
+      deliveryStatus: delivery?.status ?? null,
+      deliveryFinalPath: delivery?.finalPath ?? null,
+    });
+    if (!decision.ok) throw new HttpError(decision.error, decision.status);
+    const url = await signedObjectUrl(db, FINALS_BUCKET, bundled.path, DOWNLOAD_URL_SECONDS, {
+      download: bundled.filename,
+    });
+    await insertEvent(db, order.id, "downloaded", { file });
+    return { url, filename: bundled.filename, expiresInSeconds: DOWNLOAD_URL_SECONDS };
+  }
+
   const delivery = await getDelivery(db, order.id);
   const gate = downloadGate({
     paymentStatus: payment?.status ?? null,
@@ -330,14 +365,14 @@ export async function downloadOrderFile(
   });
   if (!gate.ok) throw new HttpError(gate.error, gate.status);
 
-  const documents = await listDocuments(db, order.id);
   const allowed = deliveryFileTarget({
     file,
     service: order.service,
     finalPath: delivery?.finalPath ?? null,
     certificationPath: delivery?.certificationPath ?? null,
-    documentNames: documents.map((document) => document.filename),
+    documentNames: names,
     targetLanguage: order.targetLanguage,
+    includeTranslation: order.includeTranslation,
   });
   if (!allowed || !delivery) throw new HttpError("That file is not ready", 404);
   const target = await resolveCustomerFinal(db, order, {

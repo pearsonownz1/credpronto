@@ -6,6 +6,7 @@ import {
   DIPLOMA_PRICE_LABEL,
 } from "@/lib/evaluations/catalog";
 import { parseEvaluationService } from "@/lib/flow/order-choice";
+import type { FlowTrack } from "@/lib/flow/types";
 import { FlowHeader } from "./flow-header";
 import { UploadCard } from "./upload-card";
 
@@ -73,23 +74,29 @@ export function UploadView({
   initialService?: string | null;
   sessionEmail?: string | null;
 }) {
-  const [evaluation, setEvaluation] = useState(() => parseEvaluationService(initialService) != null);
+  const [track, setTrack] = useState<FlowTrack>(() =>
+    parseEvaluationService(initialService) != null ? "evaluation" : "translation",
+  );
+  const evaluation = track === "evaluation";
+  const bundle = track === "bundle";
   return (
     <div>
-      <FlowHeader current="upload" track={evaluation ? "evaluation" : "translation"} />
+      <FlowHeader current="upload" track={track} />
       <main className="mx-auto w-full max-w-[560px] px-4 py-10 md:py-16">
         <h1 className="text-[32px] font-bold tracking-[-0.6px]">
-          {evaluation ? "Upload the degree" : "Upload your documents"}
+          {evaluation || bundle ? "Upload the degree" : "Upload your documents"}
         </h1>
         <p className="mt-2 mb-6 text-[15px] text-ink-muted">
           {evaluation
             ? `PDF or phone photos. Diploma evaluation is ${DIPLOMA_PRICE_LABEL}. Course-by-course is ${COURSE_BY_COURSE_PRICE_LABEL}. You pay next.`
-            : "PDF or phone photos. Choose a translation or an evaluation. We’ll price it before you pay."}
+            : bundle
+              ? `PDF or phone photos. Diploma evaluation is ${DIPLOMA_PRICE_LABEL}. Course-by-course is ${COURSE_BY_COURSE_PRICE_LABEL}. We’ll price the translation before you pay.`
+              : "PDF or phone photos. Choose a translation or an evaluation. We’ll price it before you pay."}
         </p>
         <UploadCard
           initialService={initialService}
           sessionEmail={sessionEmail}
-          onEvaluationChange={setEvaluation}
+          onTrackChange={setTrack}
         />
       </main>
     </div>

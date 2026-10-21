@@ -102,6 +102,10 @@ function mapOrder(row: Row): OrderRecord {
     createdAt: str(row.created_at) ?? new Date().toISOString(),
     updatedAt: str(row.updated_at) ?? str(row.created_at) ?? new Date().toISOString(),
     paidAt: str(row.paid_at),
+    underReviewAt: str(row.under_review_at),
+    performingEvaluationAt: str(row.performing_evaluation_at),
+    performingLayoutAt: str(row.performing_layout_at),
+    evaluationCompleteAt: str(row.evaluation_complete_at),
     staffAlertSentAt: str(row.staff_alert_sent_at),
     staffUrgentAlertSentAt: str(row.staff_urgent_alert_sent_at),
     progress: asOrderProgress(row.progress) ?? { step: "uploaded", pagesRead: 0, pagesTotal: 0 },
@@ -709,7 +713,7 @@ export const PAGE_FRAME_COLUMNS =
 
 /** Order columns the preview response and its auth check actually read. */
 export const PREVIEW_ORDER_COLUMNS =
-  "id, user_id, status, total_cents, unit_price_cents, billable_pages, combined_original_path, service, degree_count, addon_cents, evaluation_result";
+  "id, user_id, status, order_type, total_cents, unit_price_cents, billable_pages, combined_original_path, service, degree_count, addon_cents, evaluation_cents, translation_cents, include_translation, evaluation_result";
 
 /** Documents and their page frames in one query. Nested pages reuse PAGE_FRAME_COLUMNS. */
 export const PREVIEW_DOCUMENT_COLUMNS =
@@ -724,6 +728,7 @@ export type PreviewOrderRow = {
   id: string;
   userId: string | null;
   status: string;
+  orderType: string;
   totalCents: number | null;
   unitPriceCents: number;
   billablePages: number | null;
@@ -731,6 +736,9 @@ export type PreviewOrderRow = {
   service: "diploma" | "course_by_course" | null;
   degreeCount: number | null;
   addonCents: number;
+  evaluationCents: number | null;
+  translationCents: number | null;
+  includeTranslation: boolean;
   evaluationPageCount: number | null;
 };
 
@@ -747,6 +755,7 @@ function mapPreviewOrder(row: Row): PreviewOrderRow {
     id: String(row.id),
     userId: str(row.user_id),
     status: String(row.status),
+    orderType: row.order_type === "evaluation" || row.order_type === "expert_letter" ? row.order_type : "translation",
     totalCents: num(row.total_cents),
     unitPriceCents: num(row.unit_price_cents) ?? 995,
     billablePages: num(row.billable_pages),
@@ -754,6 +763,9 @@ function mapPreviewOrder(row: Row): PreviewOrderRow {
     service,
     degreeCount: num(row.degree_count),
     addonCents: num(row.addon_cents) ?? 0,
+    evaluationCents: num(row.evaluation_cents),
+    translationCents: num(row.translation_cents),
+    includeTranslation: row.include_translation === true,
     evaluationPageCount: parseEvaluationResult(row.evaluation_result)?.pageCount ?? null,
   };
 }
@@ -1299,6 +1311,88 @@ export async function listQaRuns(db: Db, orderId: string): Promise<QaRunRecord[]
   return ((data ?? []) as Row[]).map(mapQaRun);
 }
 
+export type BundleTranslationSignals = {
+  qa: { status: QaStatus; score: number } | null;
+  languageConfidence: number | null;
+  pageNeedsReview: boolean;
+  openCorrections: boolean;
+};
+
+/** QA, language confidence, page review, and open corrections for the translation release check. */
+export async function listBundleTranslationSignals(
+  db: Db,
+  orderIds: string[],
+): Promise<Map<string, BundleTranslationSignals>> {
+  const signals = new Map<string, BundleTranslationSignals>();
+  for (const id of orderIds) {
+    signals.set(id, { qa: null, languageConfidence: null, pageNeedsReview: false, openCorrections: false });
+  }
+  if (orderIds.length === 0) return signals;
+
+  const [documents, runs, corrections] = await Promise.all([
+    db.from("documents").select("id, order_id, confidence").in("order_id", orderIds),
+    db.from("order_qa_runs").select("order_id, attempt, status, score").in("order_id", orderIds),
+    db.from("corrections").select("order_id, status").in("order_id", orderIds),
+  ]);
+  fail(documents.error);
+  fail(runs.error);
+  fail(corrections.error);
+
+  const documentOrder = new Map<string, string>();
+  const confidenceByOrder = new Map<string, number[]>();
+  for (const row of (documents.data ?? []) as Row[]) {
+    const orderId = String(row.order_id);
+    documentOrder.set(String(row.id), orderId);
+    const confidence = num(row.confidence);
+    if (confidence == null) continue;
+    const list = confidenceByOrder.get(orderId) ?? [];
+    list.push(confidence);
+    confidenceByOrder.set(orderId, list);
+  }
+
+  const documentIds = [...documentOrder.keys()];
+  if (documentIds.length > 0) {
+    const pages = await db
+      .from("document_pages")
+      .select("document_id, needs_review")
+      .in("document_id", documentIds);
+    fail(pages.error);
+    for (const row of (pages.data ?? []) as Row[]) {
+      if (!row.needs_review) continue;
+      const current = signals.get(documentOrder.get(String(row.document_id)) ?? "");
+      if (current) current.pageNeedsReview = true;
+    }
+  }
+
+  for (const [orderId, values] of confidenceByOrder) {
+    const current = signals.get(orderId);
+    if (current && values.length > 0) current.languageConfidence = Math.min(...values);
+  }
+
+  const latest = new Map<string, { attempt: number; status: QaStatus; score: number }>();
+  for (const row of (runs.data ?? []) as Row[]) {
+    const orderId = String(row.order_id);
+    const attempt = num(row.attempt) ?? 0;
+    const status: QaStatus =
+      row.status === "pass" || row.status === "fail" || row.status === "retranslated" ? row.status : "fail";
+    const score = num(row.score) ?? 0;
+    const previous = latest.get(orderId);
+    if (!previous || attempt >= previous.attempt) latest.set(orderId, { attempt, status, score });
+  }
+  for (const [orderId, qa] of latest) {
+    const current = signals.get(orderId);
+    if (current) current.qa = { status: qa.status, score: qa.score };
+  }
+
+  for (const row of (corrections.data ?? []) as Row[]) {
+    if (row.status !== "open") continue;
+    const current = signals.get(String(row.order_id));
+    if (current) current.openCorrections = true;
+  }
+
+  return signals;
+}
+
 export async function insertQaRun(
   db: Db,
   input: { orderId: string; attempt: number; status: QaStatus; score: number; issues: QaIssue[] },
@@ -1499,6 +1593,10 @@ export type OwnedOrderRow = {
   totalCents: number | null;
   currency: string;
   createdAt: string;
+  includeTranslation: boolean;
+  finalTranslationPath: string | null;
+  certificationPath: string | null;
+  reviewReason: string | null;
 };
 
 export async function listDocumentFilenames(db: Db, orderIds: string[]): Promise<Map<string, string[]>> {
@@ -1527,27 +1625,33 @@ export async function listOwnedOrderRows(db: Db, userId: string): Promise<OwnedO
   const { data, error } = await db
     .from("orders")
     .select(
-      "id, status, service_type, service, degree_count, addon_cents, billable_pages, unit_price_cents, total_cents, currency, created_at",
+      "id, status, service_type, service, degree_count, addon_cents, billable_pages, unit_price_cents, total_cents, currency, created_at, include_translation, translation_cents, final_translation_path, certification_path, review_reason",
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
   fail(error);
   return ((data ?? []) as Row[]).map((row) => {
     const service = row.service === "diploma" || row.service === "course_by_course" ? row.service : null;
+    const includeTranslation = row.include_translation === true;
     const priced = evaluationPrice({
       service,
       degreeCount: num(row.degree_count),
       addonCents: num(row.addon_cents) ?? 0,
     });
+    const translationCents = includeTranslation ? num(row.translation_cents) ?? 0 : 0;
     return {
       id: String(row.id),
       status: String(row.status),
       serviceType: String(row.service_type),
       billablePages: num(row.billable_pages),
       unitPriceCents: priced?.unitPriceCents ?? num(row.unit_price_cents) ?? 995,
-      totalCents: priced?.totalCents ?? num(row.total_cents),
+      totalCents: priced ? priced.totalCents + translationCents : num(row.total_cents),
       currency: str(row.currency) ?? "usd",
       createdAt: str(row.created_at) ?? new Date().toISOString(),
+      includeTranslation,
+      finalTranslationPath: str(row.final_translation_path),
+      certificationPath: str(row.certification_path),
+      reviewReason: str(row.review_reason),
     };
   });
 }

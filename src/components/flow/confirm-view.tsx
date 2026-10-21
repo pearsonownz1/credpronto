@@ -10,15 +10,17 @@ import {
   storedConfirmation,
 } from "@/lib/flow/date-format";
 import { writeToken } from "@/lib/flow/session";
-import { pageLabel } from "@/lib/flow/pricing";
+import { formatMoney, pageLabel } from "@/lib/flow/pricing";
 import {
   canOpenConfirm,
   isCustomerEvaluation,
+  isTranslationBundle,
   joinParents,
   languageLine,
   splitParents,
   totalLabel,
 } from "@/lib/flow/present";
+import { evaluationServiceDescription } from "@/lib/orders/evaluation-price";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
 import { FlowStatus } from "./status";
@@ -53,15 +55,21 @@ export function ConfirmView({ token: pathToken }: { token?: string }) {
   return (
     <div>
       <FlowHeader
-        current="confirm"
-        track={order && isCustomerEvaluation(order) ? "evaluation" : "translation"}
+        current={order && isTranslationBundle(order) ? "preview" : "confirm"}
+        track={
+          order && isTranslationBundle(order)
+            ? "bundle"
+            : order && isCustomerEvaluation(order)
+              ? "evaluation"
+              : "translation"
+        }
       />
       <main>
         {loading && !order ? (
           <FlowStatus title="Loading the details…" body="" />
         ) : error && !order ? (
           <FlowStatus title="We couldn't load this order" body={error} />
-        ) : order && isCustomerEvaluation(order) ? (
+        ) : order && isCustomerEvaluation(order) && !isTranslationBundle(order) ? (
           <EvaluationPayRedirect token={token} />
         ) : !order || !canOpenConfirm(order) ? (
           <FlowStatus
@@ -266,6 +274,13 @@ function ConfirmForm({ token, order }: { token: string; order: CustomerOrder }) 
             label={languageLine({ sourceLanguage: language, targetLanguage: target })}
             value={pageLabel(order.billablePages ?? 0)}
           />
+          {isTranslationBundle(order) && order.service && order.evaluationCents != null && order.evaluationCents > 0 ? (
+            <SummaryRow
+              testId="evaluation-price"
+              label={evaluationServiceDescription(order.service)}
+              value={formatMoney(order.evaluationCents)}
+            />
+          ) : null}
           <SummaryRow
             testId="quote-total"
             label="Total if you buy"

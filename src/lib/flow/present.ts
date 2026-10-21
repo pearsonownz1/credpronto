@@ -1,5 +1,13 @@
 import { serviceCents, withoutExpedited } from "@/lib/orders/addons";
-import { evaluationCheckoutTotal, lineItemsForOrder } from "@/lib/orders/evaluation-price";
+import { UNIT_PRICE_CENTS } from "@/lib/orders/constants";
+import {
+  evaluationCheckoutTotal,
+  evaluationServiceDescription,
+  isTranslationBundle,
+  lineItemsForOrder,
+} from "@/lib/orders/evaluation-price";
+
+export { isTranslationBundle };
 import { TRANSLATION_TIMEOUT_REASON } from "@/lib/orders/translation-failure";
 import {
   languageLabel,
@@ -426,7 +434,7 @@ export function orderWithTranslationChoice(order: CustomerOrder, includeTranslat
   });
   return {
     ...order,
-    includeTranslation: priced.includeTranslation,
+    includeTranslation,
     evaluationCents: priced.evaluationCents,
     translationCents: priced.translationCents,
     totalCents: priced.totalCents,
@@ -600,6 +608,15 @@ export function isCustomerEvaluation(order: {
 }
 
 /** Which screen `/order/[token]` shows for a checkout return or order status. */
+function payFirstEvaluation(order: {
+  orderType?: string | null;
+  service?: string | null;
+  serviceType?: string | null;
+  includeTranslation?: boolean | null;
+} | null | undefined): boolean {
+  return order != null && isCustomerEvaluation(order) && !isTranslationBundle(order);
+}
+
 export function orderHubStep(
   checkout: string | null | undefined,
   status: string | null | undefined,
@@ -610,11 +627,12 @@ export function orderHubStep(
     orderType?: string | null;
     service?: string | null;
     serviceType?: string | null;
+    includeTranslation?: boolean | null;
   } | null,
 ): OrderHubStep {
   if (checkout === "success") return "download";
   if (checkout === "cancel") {
-    if (order && isCustomerEvaluation(order)) return "checkout";
+    if (payFirstEvaluation(order)) return "checkout";
     return "cancel";
   }
   if (order?.fulfillment === "released" || order?.fulfillment === "awaiting_review") {
@@ -627,7 +645,7 @@ export function orderHubStep(
   ) {
     return "download";
   }
-  if (order && isCustomerEvaluation(order)) return "checkout";
+  if (payFirstEvaluation(order)) return "checkout";
   if (status === "preview_ready") return "processing";
   if (
     status === "needs_review" &&
@@ -660,6 +678,7 @@ export function readyPreviewPath(
     orderType?: string | null;
     service?: string | null;
     serviceType?: string | null;
+    includeTranslation?: boolean | null;
   },
 ): string | null {
   if (!token) return null;
@@ -763,6 +782,24 @@ export function toPreviewOrder(
       documentId: page.documentId,
     }));
 
+  const bundle = isTranslationBundle(order);
+  const evaluation = !bundle && (order.orderType === "evaluation" || order.service != null);
+  const pageCount = order.billablePages ?? pages;
+  const translationCents = order.translationCents ?? 0;
+  const pageLines =
+    bundle && translationCents > 0
+      ? [{ label: billablePriceLabel(pageCount, UNIT_PRICE_CENTS), amountCents: translationCents }]
+      : bundle
+        ? []
+        : servicePriceLines(order);
+  const evaluationLine =
+    bundle && order.evaluationCents != null && order.evaluationCents > 0 && order.service
+      ? {
+          label: evaluationServiceDescription(order.service),
+          amountCents: order.evaluationCents,
+        }
+      : undefined;
+
   return {
     id: order.orderId,
     status: "preview_ready",
@@ -784,32 +821,30 @@ export function toPreviewOrder(
       subtitle: "English · watermarked preview",
       pages: mapPages(preview.translation.pages),
     },
-    product: order.orderType === "evaluation" ? "evaluation" : "translation",
-    evaluationDetails: order.orderType === "evaluation" || order.service != null ? evaluationPreviewDetails(order) : undefined,
+    product: evaluation ? "evaluation" : "translation",
+    evaluationDetails: evaluation ? evaluationPreviewDetails(order) : undefined,
+    evaluationLine,
     pricing: {
-      perPageCents: preview.unitPriceCents,
+      perPageCents: bundle ? UNIT_PRICE_CENTS : preview.unitPriceCents,
       pages,
       certificationIncluded: true,
       totalCents:
         serviceCents({
           billablePages: preview.billablePages,
-          unitPriceCents: preview.unitPriceCents,
+          unitPriceCents: bundle ? UNIT_PRICE_CENTS : preview.unitPriceCents,
           service: order.service,
           evaluationCents: order.evaluationCents,
           translationCents: order.translationCents,
         }) ??
         preview.totalCents ??
         0,
-      lines: servicePriceLines(order),
+      lines: pageLines,
     },
     addonOptions: withoutExpedited(order.addonOptions, true),
     addons: order.addons,
     shippingAddress: order.shippingAddress,
-    included: order.orderType === "evaluation" ? EVALUATION_INCLUDED : PREVIEW_INCLUDED,
-    speedLine:
-      order.orderType === "evaluation" || order.service != null
-        ? null
-        : translationSpeedLine(order.uploadedAt, order.translationReadyAt),
+    included: evaluation ? EVALUATION_INCLUDED : PREVIEW_INCLUDED,
+    speedLine: evaluation ? null : translationSpeedLine(order.uploadedAt, order.translationReadyAt),
     corrections: preview.corrections
       .filter((correction) => correction.page != null)
       .map((correction) => ({

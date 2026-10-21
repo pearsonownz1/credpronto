@@ -7,6 +7,7 @@ import { formatMoney, pageLabel } from "@/lib/flow/pricing";
 import {
   checkoutFailureMessage,
   isCustomerEvaluation,
+  isTranslationBundle,
   languageLine,
   servicePriceLines,
   totalLabel,
@@ -25,11 +26,15 @@ export function CheckoutView({ token: pathToken, signedIn = true }: { token?: st
   const token = useStoredToken(pathToken);
   const email = useStoredEmail();
   const { order, error, loading } = useCustomerOrder(token, "while-working");
-  const evaluation = order != null && isCustomerEvaluation(order);
+  const bundle = order != null && isTranslationBundle(order);
+  const evaluation = order != null && isCustomerEvaluation(order) && !bundle;
 
   return (
     <div>
-      <FlowHeader current={evaluation ? "confirm" : "preview"} track={evaluation ? "evaluation" : "translation"} />
+      <FlowHeader
+        current={bundle ? "pay" : evaluation ? "confirm" : "preview"}
+        track={bundle ? "bundle" : evaluation ? "evaluation" : "translation"}
+      />
       <main>
         {loading && !order ? (
           <FlowStatus title="Loading checkout…" body="" />
@@ -108,7 +113,8 @@ function CheckoutForm({
         }),
       }
     : order;
-  const notReady = evaluationOrder ? false : order.status !== "preview_ready";
+  const bundle = isTranslationBundle(order);
+  const notReady = evaluationOrder && !bundle ? false : order.status !== "preview_ready";
   const evaluation = evaluationOrder;
   const counting = checkoutQuotePending(shown);
   const options = withoutExpedited(order.addonOptions, true);

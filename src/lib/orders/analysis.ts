@@ -591,6 +591,13 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
         });
       }
       if (quoted.status === "quoted") await notifyOrder(db, orderId, "order.quoted");
+      if (quoted.status === "quoted" && order.includeTranslation) {
+        try {
+          await queueEarlyTranslation(db, orderId, token);
+        } catch (error) {
+          console.error(error instanceof Error ? error.message : "early translation failed");
+        }
+      }
       await writeProgress("done");
       return;
     }

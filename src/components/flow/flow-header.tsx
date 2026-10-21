@@ -1,4 +1,4 @@
-import type { FlowStep } from "@/lib/flow/types";
+import type { FlowStep, FlowTrack } from "@/lib/flow/types";
 import { Logo } from "./mark";
 import { Stepper } from "./stepper";
 
@@ -7,7 +7,7 @@ export function FlowHeader({
   track = "translation",
 }: {
   current: FlowStep;
-  track?: "translation" | "evaluation";
+  track?: FlowTrack;
 }) {
   return (
     <header className="border-b border-line">

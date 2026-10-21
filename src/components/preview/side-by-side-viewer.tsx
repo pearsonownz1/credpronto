@@ -94,6 +94,8 @@ type ViewerProps = {
   noticeTestId?: string;
   /** When the page already started PDFium, skip a second wasm download. */
   engine?: PdfEngine<Blob> | null;
+  /** `fill` keeps the preview header inside a parent that already owns the viewport. */
+  shellLayout?: "page" | "embedded" | "fill";
 };
 
 export function SideBySideViewer(props: ViewerProps) {
@@ -138,6 +140,7 @@ function SideBySideEngine({
   onCorrect,
   notice,
   noticeTestId,
+  shellLayout,
   engine,
   isLoading,
   error,
@@ -184,7 +187,7 @@ function SideBySideEngine({
     [sourceOriginal, sourceTranslation],
   );
 
-  const layout = chrome === "readonly" ? "embedded" : "page";
+  const layout = shellLayout ?? (chrome === "readonly" ? "embedded" : "page");
   const purchase = showsPurchaseChrome(chrome);
 
   if (error || files.failed) {
@@ -228,6 +231,7 @@ function SideBySideEngine({
       <ViewerWorkspace
         order={order}
         chrome={chrome}
+        layout={layout}
         focusPage={focusPage}
         panel={panel}
         onCorrect={onCorrect}
@@ -281,6 +285,7 @@ function usePageCount(documentId: string) {
 function ViewerWorkspace({
   order,
   chrome,
+  layout,
   focusPage,
   panel,
   onCorrect,
@@ -290,6 +295,7 @@ function ViewerWorkspace({
 }: {
   order: PreviewOrder;
   chrome: PreviewChrome;
+  layout: "page" | "embedded" | "fill";
   focusPage: ViewerFocus | null;
   panel: AddonPanelState;
   onCorrect?: (input: { page: number; note: string }) => Promise<void>;
@@ -591,8 +597,8 @@ function ViewerWorkspace({
 
   return (
     <PreviewShell
-      layout={chrome === "readonly" ? "embedded" : "page"}
-      order={chrome === "readonly" ? undefined : order}
+      layout={layout}
+      order={layout === "embedded" ? undefined : order}
       notice={notice}
       noticeTestId={noticeTestId}
       rail={

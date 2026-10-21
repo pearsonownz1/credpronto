@@ -12,6 +12,7 @@ import {
   downloadPhase,
   downloadReadyCopy,
   isCustomerEvaluation,
+  isTranslationBundle,
   paidReviewEmailLine,
   totalLabel,
   type DownloadFileKind,
@@ -46,21 +47,26 @@ export function DownloadStates({
   const email = order?.email?.trim() || storedEmail;
   const confirming = pendingPayment ? phase !== "certifying" && phase !== "ready" : phase === "finalizing" && order != null;
   const onDownloadStep = confirming || phase === "certifying" || phase === "ready";
+  const bundle = order != null && isTranslationBundle(order);
   const evaluation = order != null && isCustomerEvaluation(order);
   const showEvalTracker =
     order != null &&
     evaluation &&
     !confirming &&
     (phase === "certifying" || (phase === "ready" && order.evaluationStatus === "evaluation_complete"));
-  const headerStep = evaluation
-    ? phase === "ready"
+  const headerStep = bundle
+    ? onDownloadStep
       ? "download"
-      : phase === "certifying"
-        ? "review"
-        : "confirm"
-    : onDownloadStep
-      ? "download"
-      : "preview";
+      : "pay"
+    : evaluation
+      ? phase === "ready"
+        ? "download"
+        : phase === "certifying"
+          ? "review"
+          : "confirm"
+      : onDownloadStep
+        ? "download"
+        : "preview";
 
   useEffect(() => {
     if (order) onOrder?.(order);
@@ -68,7 +74,10 @@ export function DownloadStates({
 
   return (
     <div>
-      <FlowHeader current={headerStep} track={evaluation ? "evaluation" : "translation"} />
+      <FlowHeader
+        current={headerStep}
+        track={bundle ? "bundle" : evaluation ? "evaluation" : "translation"}
+      />
       <main
         className={
           phase === "certifying" && !evaluation
@@ -91,13 +100,38 @@ export function DownloadStates({
         ) : !order ? (
           <FlowStatus title="No order yet" body="Start a translation to get a download." />
         ) : showEvalTracker && order ? (
-          <EvaluationReview order={order} token={token} phase={phase === "ready" ? "ready" : "review"} />
+          <>
+            {bundle && order.translationReady ? <BundleTranslation order={order} token={token} /> : null}
+            <EvaluationReview order={order} token={token} phase={phase === "ready" ? "ready" : "review"} />
+          </>
         ) : phase === "certifying" ? (
           <Certifying order={order} token={token} email={email} />
         ) : (
           <Ready order={order} token={token} email={email} />
         )}
       </main>
+    </div>
+  );
+}
+
+function BundleTranslation({ order, token }: { order: CustomerOrder; token: string }) {
+  const names = order.documents.map((document) => document.filename);
+  const named = deliveryDocumentName({ documentNames: names });
+  return (
+    <div data-testid="bundle-translation" className="mb-10">
+      <p data-testid="email-note" className="mb-4 text-base text-ink-muted">
+        Paid {totalLabel(order.totalCents)} · Order {order.orderId}.
+      </p>
+      <div className="overflow-hidden rounded-[var(--cp-radius)] border border-line">
+        <FileRow
+          token={token}
+          file="translation"
+          title={order.documentTitle || named.title}
+          subtitle="Certified translation · PDF"
+          testId="download-certified"
+          primary
+        />
+      </div>
     </div>
   );
 }

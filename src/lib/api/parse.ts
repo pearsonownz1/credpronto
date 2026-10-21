@@ -58,6 +58,8 @@ export function parseCustomerOrder(value: unknown): CustomerOrder | null {
     targetLanguage: text(row.targetLanguage),
     orderToken: text(row.orderToken),
     etaAt: text(row.etaAt),
+    includeTranslation: row.includeTranslation === true,
+    translationReady: row.translationReady === true,
   };
 }
 
@@ -284,7 +286,31 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
     translationUrl: text(row.translationUrl),
     qa: parseQa(row.qa),
     expedited: row.expedited === true,
+    evaluationStatus: parseEvaluationStatus(row.evaluationStatus),
+    evaluationStatusAt: parseEvaluationStatusAt(row.evaluationStatusAt),
     fulfillment: parseFulfillment(row.fulfillment),
+  };
+}
+
+function parseEvaluationStatus(value: unknown): StaffDetail["evaluationStatus"] {
+  if (
+    value === "under_review" ||
+    value === "performing_evaluation" ||
+    value === "performing_layout" ||
+    value === "evaluation_complete"
+  ) {
+    return value;
+  }
+  return null;
+}
+
+function parseEvaluationStatusAt(value: unknown): StaffDetail["evaluationStatusAt"] {
+  const row = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    under_review: text(row.under_review),
+    performing_evaluation: text(row.performing_evaluation),
+    performing_layout: text(row.performing_layout),
+    evaluation_complete: text(row.evaluation_complete),
   };
 }
 

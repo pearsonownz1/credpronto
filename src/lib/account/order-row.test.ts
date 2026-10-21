@@ -93,4 +93,25 @@ describe("account order rows", () => {
       },
     ]);
   });
+
+  it("offers the certified translation on a paid bundle while the evaluation is still in review", () => {
+    const [row] = accountRows([
+      {
+        id: "0301d079-8368-40d8-854d-95475933124f",
+        documentName: "diploma.pdf",
+        status: "paid",
+        paymentStatus: "paid",
+        downloadAvailable: false,
+        createdAt: "2026-10-21T14:25:35.957Z",
+        serviceType: "evaluation",
+        includeTranslation: true,
+        translationReady: true,
+        totalCents: 2990,
+      },
+    ]);
+    expect(row?.status).toBe("paid");
+    expect(row?.price).toBe("$29.90");
+    expect(row?.orderNumber).toBe("0301d079");
+    expect(row?.downloadFile).toBe("translation");
+  });
 });

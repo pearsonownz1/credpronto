@@ -28,6 +28,7 @@ import { fulfillmentFor, parseTrackingNumber } from "./fulfillment";
 import { HttpError } from "./errors";
 import { normalizeLanguage } from "./languages";
 import { evaluationPricePatch } from "./evaluation-price";
+import { evaluationStatusAt, evaluationStatusValue } from "./evaluation-status";
 import { publishCourseEquivalency, publishDiplomaEquivalency, retryEvaluation } from "./evaluation";
 import { staffEdgeView } from "./edge";
 import { awaitingEquivalencyPublish, approvalBlockReason } from "./equivalency";
@@ -84,6 +85,8 @@ export async function staffOrder(orderId: string) {
 
   return {
     ...order,
+    evaluationStatus: evaluationStatusValue(order.evaluationStatus),
+    evaluationStatusAt: evaluationStatusAt(order),
     email,
     documents: documents.map((document) => {
       const ready = translations.filter(

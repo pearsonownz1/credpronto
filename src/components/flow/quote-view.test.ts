@@ -224,5 +224,8 @@ describe("quote step actions", () => {
     expect(html).toContain('data-testid="include-translation"');
     expect(html).toMatch(/data-testid="include-translation"[^>]*checked/);
     expect(html).toContain('data-testid="file-billable"');
+    expect(html).toContain(">Preview<");
+    expect(html).toContain("Pay only after");
+    expect(html).not.toContain("Pay from this quote");
   });
 });

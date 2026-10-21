@@ -2,6 +2,7 @@ import { Resend } from "resend";
 import { CONTACT_TO, oneLine, type ContactMessage } from "@/lib/contact/validate";
 import { BRAND_NAME } from "./brand";
 import {
+  renderEvaluationStatusEmail,
   renderOrderReceivedEmail,
   renderPaymentReceiptEmail,
   renderPreviewReadyEmail,
@@ -153,6 +154,14 @@ export function sendPreviewReady(
 
 export function sendPaymentReceipt(to: string, input: PaymentReceiptEmail): Promise<SendResult> {
   const rendered = renderPaymentReceiptEmail(input);
+  return send(to, rendered.subject, rendered.text, rendered.html);
+}
+
+export function sendEvaluationStatus(
+  to: string,
+  input: { orderId: string; statusLabel: string; trackUrl: string },
+): Promise<SendResult> {
+  const rendered = renderEvaluationStatusEmail(input);
   return send(to, rendered.subject, rendered.text, rendered.html);
 }
 

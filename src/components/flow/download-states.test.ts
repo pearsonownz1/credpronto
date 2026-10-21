@@ -133,10 +133,42 @@ describe("download page", () => {
     expect(html).not.toContain("%");
     expect(html).not.toContain('data-testid="download-evaluation"');
     expect(html).toContain('data-testid="evaluation-review"');
-    expect(html).toContain('data-state="current" data-step="review"');
+    expect(html).toContain('data-state="current" data-step="download"');
+    expect(html).toContain('data-step="pay"');
+    expect(html).not.toContain('data-step="review"');
     expect(html).not.toContain("Quick final check");
     expect(html).not.toContain('data-testid="paid-preview"');
-    expect(html).not.toContain('data-step="preview"');
+    expect(html).not.toContain('data-testid="download-certified"');
+  });
+
+  it("shows Paid and the certified translation download while the evaluation tracker stays up", () => {
+    state.order = readyOrder({
+      status: "paid",
+      payment: { status: "paid" },
+      delivery: { status: "pending" },
+      fulfillment: "awaiting_review",
+      orderType: "evaluation",
+      service: "diploma",
+      degreeCount: 1,
+      evaluationCents: 1995,
+      translationCents: 995,
+      includeTranslation: true,
+      translationReady: true,
+      totalCents: 2990,
+      evaluationStatus: "under_review",
+    });
+    const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
+    const paidAt = html.indexOf("Paid $29.90");
+    const downloadAt = html.indexOf('data-testid="download-certified"');
+    const trackerAt = html.indexOf('data-testid="evaluation-tracker"');
+    expect(paidAt).toBeGreaterThan(-1);
+    expect(downloadAt).toBeGreaterThan(paidAt);
+    expect(trackerAt).toBeGreaterThan(downloadAt);
+    expect(html).toContain('data-testid="bundle-translation"');
+    expect(html).toContain("Certified translation · PDF");
+    expect(html).toContain('data-status="under_review"');
+    expect(html).not.toContain("Buy &amp; download");
+    expect(html).not.toContain("Opening checkout");
   });
 
   it("follows a stored evaluation status and keeps the download disabled until the file is ready", () => {

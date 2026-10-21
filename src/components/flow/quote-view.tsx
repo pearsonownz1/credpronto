@@ -10,6 +10,7 @@ import {
   canOpenConfirm,
   canSetSourceLanguage,
   isCustomerEvaluation,
+  isTranslationBundle,
   displayedPageRule,
   fileCountLabel,
   languageChoices,
@@ -52,6 +53,8 @@ export function QuoteView({
   const hasAccount = signedIn || signedUp;
   const { covering, reportOrder, endHandoff } = useReadingHandoff();
   const evaluationOrder = order != null && isCustomerEvaluation(order);
+  const bundle = order != null && isTranslationBundle(order);
+  const payFirst = evaluationOrder && !bundle;
 
   useLayoutEffect(() => {
     if (!covering) return;
@@ -64,14 +67,17 @@ export function QuoteView({
   }, [order, onOrder]);
 
   useEffect(() => {
-    if (!evaluationOrder || !token) return;
+    if (!payFirst || !token) return;
     endHandoff();
     router.replace(`/checkout?token=${encodeURIComponent(token)}`);
-  }, [evaluationOrder, token, router, endHandoff]);
+  }, [payFirst, token, router, endHandoff]);
 
   return (
     <div>
-      <FlowHeader current={evaluationOrder ? "confirm" : "quote"} track={evaluationOrder ? "evaluation" : "translation"} />
+      <FlowHeader
+        current={bundle ? "preview" : payFirst ? "confirm" : "quote"}
+        track={bundle ? "bundle" : payFirst ? "evaluation" : "translation"}
+      />
       <main>
         {loading && !order ? (
           covering ? (
@@ -99,7 +105,7 @@ export function QuoteView({
               </Link>
             }
           />
-        ) : evaluationOrder ? (
+        ) : payFirst ? (
           <FlowStatus title="Opening payment…" body="" />
         ) : order.status === "draft" && !quoteReadFinished(order) ? (
           <ReadingFiles status={order.status} progress={order.progress} />
@@ -160,6 +166,7 @@ export function QuoteBody({
     : languageLine(live);
   const qualityHold = live.reviewReason === IMAGE_QUALITY_REASON;
   const evaluation = live.orderType === "evaluation" || live.service != null;
+  const payFirst = evaluation && !live.includeTranslation;
   const showPages = !evaluation || live.includeTranslation;
   const showPrice = !qualityHold;
   const priceLines = showPrice ? quoteSummaryPrices(live) : [];
@@ -232,12 +239,12 @@ export function QuoteBody({
           {qualityHold
             ? "A photo was too hard to read, so this is not a quote yet. Retake it and upload a replacement. A reviewer can also accept the file you already sent."
             : showContinue
-              ? evaluation
+              ? payFirst
                 ? "We read your files. Check the language, then continue. You won’t be charged now."
                 : "We read your files. Check the language and pages, then continue. You won’t be charged now."
               : sameLanguage
                 ? "Choose the language you want, then update this quote. You won’t be charged now."
-                : evaluation
+                : payFirst
                   ? "We read your files. Check the language. You won’t be charged now."
                   : "We read your files. Check the language and pages. You won’t be charged now."}
         </p>
@@ -361,8 +368,8 @@ export function QuoteBody({
               {translationError}
             </p>
           ) : null}
-          <SummaryRow label={evaluation ? "Evaluation report" : "Certification"} value="Included" />
-          {evaluation ? (
+          <SummaryRow label={payFirst ? "Evaluation report" : "Certification"} value="Included" />
+          {payFirst ? (
             <SummaryRow label="Review" value="After you pay" />
           ) : (
             <>
@@ -381,7 +388,7 @@ export function QuoteBody({
             emphasize
           />
         </Summary>
-        {evaluation ? null : <BillingNote note={displayedPageRule(live)} />}
+        {payFirst ? null : <BillingNote note={displayedPageRule(live)} />}
         {qualityHold ? (
           <ImageQuality order={live} token={token} onReplaced={onReplaced} />
         ) : (
@@ -425,7 +432,7 @@ export function QuoteBody({
               </Link>
             ) : sameLanguage ? null : (
               <p className="mt-4 text-[13.5px] text-ink-muted">
-                {evaluation
+                {payFirst
                   ? "We’ll confirm the language before you can pay. You don’t need to do anything else right now."
                   : "We’ll confirm the language before the free preview starts. You don’t need to do anything else right now."}
               </p>
@@ -435,7 +442,7 @@ export function QuoteBody({
         <div className="mt-[18px]">
           <Checks
             items={
-              evaluation
+              payFirst
                 ? ["Pay from this quote", "An evaluator reviews it after you pay", "We'll email you when it's ready"]
                 : ["Pay only after you’ve seen it", "Ready in 3 minutes", "Free corrections"]
             }

@@ -181,6 +181,11 @@ export type OrderRecord = {
   evaluationStatus?: string | null;
   /** ISO timestamps keyed by status. Missing keys were not stored. */
   evaluationStatusAt?: Partial<Record<string, string>>;
+  /** Column `under_review_at`. Kept when a stage changes so earlier stamps stay. */
+  underReviewAt?: string | null;
+  performingEvaluationAt?: string | null;
+  performingLayoutAt?: string | null;
+  evaluationCompleteAt?: string | null;
 };
 
 export type DocumentRecord = {

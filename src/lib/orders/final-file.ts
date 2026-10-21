@@ -1,10 +1,13 @@
+import type { DownloadDecision } from "./access";
 import { FINALS_BUCKET, ORIGINALS_BUCKET } from "./constants";
 import { listDocuments, listPages, listTranslations, type Db } from "./db";
 import { deliveryDocumentName, detectDocumentTitle, orderDownloadFilename } from "./download-name";
+import { EVALUATION_REVIEW_REASON } from "./evaluation-price";
 import { inReadingOrder } from "./page-order";
 import { buildCombinedOriginal, type SourceFile } from "./pdf/combine";
 import { appendPdf, concatPdfs, mergeCertifiedPacket } from "./pdf/merge";
 import { pdfPageCount, stampPacketPageNumbers } from "./pdf/page-numbers";
+import { autoReleaseEnabled, releaseAction, type QaSignal } from "./release-decision";
 import { downloadObject, uploadObject } from "./storage";
 import type { DocumentRecord, OrderRecord } from "./types";
 
@@ -13,6 +16,93 @@ const PDF_TYPE = "application/pdf";
 /** One object in the private finals bucket. Both order columns point at it. */
 export function certifiedTranslationObjectPath(orderId: string, version: number): string {
   return `${orderId}/certified-translation-v${version}.pdf`;
+}
+
+const CERTIFIED_TRANSLATION_OBJECT = /\/certified-translation-v\d+\.pdf$/;
+
+/** The clean translation packet, not an evaluation report stored in the same column. */
+export function isCertifiedTranslationPath(path: string | null | undefined): path is string {
+  return typeof path === "string" && CERTIFIED_TRANSLATION_OBJECT.test(path);
+}
+
+export type BundleTranslationInput = {
+  includeTranslation?: boolean | null;
+  status?: string | null;
+  paymentStatus?: string | null;
+  finalTranslationPath?: string | null;
+  certificationPath?: string | null;
+  reviewReason?: string | null;
+  qa?: QaSignal | null;
+  languageConfidence?: number | null;
+  pageNeedsReview?: boolean;
+  openCorrections?: boolean;
+  /** Defaults to AUTO_RELEASE_ENABLED, same as a translation-only order. */
+  enabled?: boolean;
+  deliveryStatus?: string | null;
+  /**
+   * File on the delivery row. Staff approval of the translation copies the
+   * certified packet here. The evaluation report is a different file.
+   */
+  deliveryFinalPath?: string | null;
+};
+
+function bundleSettled(order: BundleTranslationInput): boolean {
+  return (
+    order.status === "paid" ||
+    order.status === "approved" ||
+    order.status === "delivered" ||
+    order.paymentStatus === "paid" ||
+    order.paymentStatus === "paid_test"
+  );
+}
+
+/** The evaluation hold is not a translation flag. Every other reason still is. */
+function translationReviewReason(reason: string | null | undefined): string | null {
+  const trimmed = reason?.trim() ?? "";
+  if (!trimmed || trimmed === EVALUATION_REVIEW_REASON) return null;
+  return trimmed;
+}
+
+/**
+ * Staff released the translation packet. Uploading the evaluation report
+ * stores a different file and does not approve the translation.
+ */
+function translationStaffApproved(order: BundleTranslationInput): boolean {
+  if (order.deliveryStatus !== "approved" && order.deliveryStatus !== "delivered") return false;
+  return isCertifiedTranslationPath(order.deliveryFinalPath);
+}
+
+/**
+ * Same release rule as a translation-only order. A clean high-confidence pass
+ * is downloadable once the bundle is paid, while the evaluation stays in review.
+ * A flagged translation, or one that failed QA, stays locked until staff approve
+ * that packet. Delivering the evaluation report does not unlock it.
+ */
+export function bundleTranslationReady(order: BundleTranslationInput): boolean {
+  if (order.includeTranslation !== true || !isCertifiedTranslationPath(order.finalTranslationPath)) return false;
+  if (!bundleSettled(order)) return false;
+  if (translationStaffApproved(order)) return true;
+  const action = releaseAction({
+    status: "paid",
+    reviewReason: translationReviewReason(order.reviewReason),
+    qa: order.qa ?? null,
+    languageConfidence: order.languageConfidence ?? null,
+    pageNeedsReview: order.pageNeedsReview === true,
+    openCorrections: order.openCorrections === true,
+    finalsReady: Boolean(order.finalTranslationPath && order.certificationPath),
+    enabled: order.enabled ?? autoReleaseEnabled(),
+    manualEvaluation: false,
+  });
+  return action === "release";
+}
+
+/** Download API status for that same check. Unpaid is 402. A hold is 403. */
+export function bundleTranslationDecision(order: BundleTranslationInput): DownloadDecision {
+  if (!bundleSettled(order)) return { ok: false, status: 402, error: "Payment required" };
+  if (!bundleTranslationReady(order)) {
+    return { ok: false, status: 403, error: "Certification is not approved" };
+  }
+  return { ok: true };
 }
 
 /**

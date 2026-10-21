@@ -10,6 +10,19 @@ import { safeNextPath } from "@/lib/auth/redirect";
 
 type Mode = "sign-in" | "sign-up" | "forgot";
 
+export function SignInCreateLink() {
+  const params = useSearchParams();
+  const next = params.get("next");
+  const href = next ? `/sign-up?next=${encodeURIComponent(safeNextPath(next, "/translate"))}` : "/sign-up";
+  return (
+    <p className="text-center text-[14px]">
+      <Link href={href} className="font-semibold text-[#1F5EFF]">
+        New to CredPronto? Create an account
+      </Link>
+    </p>
+  );
+}
+
 export function AuthForm({ mode }: { mode: Mode }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -147,15 +160,9 @@ export function AuthForm({ mode }: { mode: Mode }) {
       </form>
       <p className="text-sm text-ink-muted">
         {mode === "sign-in" ? (
-          <>
-            <Link href="/forgot-password" className="font-semibold text-primary">
-              Forgot password
-            </Link>
-            <span> · </span>
-            <Link href={`/sign-up?next=${encodeURIComponent(next)}`} className="font-semibold text-primary">
-              Create an account
-            </Link>
-          </>
+          <Link href="/forgot-password" className="font-semibold text-primary">
+            Forgot password
+          </Link>
         ) : null}
         {mode === "sign-up" ? (
           <Link href={`/sign-in?next=${encodeURIComponent(next)}`} className="font-semibold text-primary">

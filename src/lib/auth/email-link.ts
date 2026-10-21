@@ -46,6 +46,7 @@ export async function generateConfirmLink(input: {
   email: string;
   purpose: "signup" | "magiclink";
   password?: string;
+  name?: string;
   origin: string;
   next: string | null;
   orderToken: string | null;
@@ -63,7 +64,10 @@ export async function generateConfirmLink(input: {
           type: "signup",
           email: input.email,
           password: input.password ?? "",
-          options: { redirectTo: `${input.origin.replace(/\/$/, "")}/account` },
+          options: {
+            redirectTo: `${input.origin.replace(/\/$/, "")}/account`,
+            ...(input.name ? { data: { full_name: input.name } } : {}),
+          },
         })
       : await admin.generateLink({
           type: "magiclink",

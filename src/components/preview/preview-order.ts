@@ -65,6 +65,8 @@ export type PreviewOrder = {
   };
   /** Credential holder, school, degree, and dates. Replaces the certification row. */
   evaluationDetails?: Array<{ label: string; value: string }>;
+  /** Bundle evaluation fee, rendered above Total and after add-ons. */
+  evaluationLine?: { label: string; amountCents: number } | null;
   included: string[];
   corrections: PreviewCorrection[];
   /** Set from upload and translation-ready timestamps. Hidden when either is missing. */

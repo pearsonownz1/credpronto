@@ -134,6 +134,7 @@ async function paidSession(current: OrderRecord, body: unknown = {}) {
 describe("checkout session matches the quote", () => {
   it("charges a combined diploma the evaluation plus detected pages, even when stored translation cents are still 0", async () => {
     const current = order({
+      status: "preview_ready",
       includeTranslation: true,
       translationCents: 0,
       totalCents: 1995,
@@ -166,6 +167,7 @@ describe("checkout session matches the quote", () => {
 
   it("charges course-by-course for two degrees plus one detected page", async () => {
     const current = order({
+      status: "preview_ready",
       service: "course_by_course",
       degreeCount: 2,
       evaluationCents: 7990,
@@ -202,7 +204,7 @@ describe("checkout session matches the quote", () => {
     );
   });
 
-  it("charges a combined order from document pages before language detection", async () => {
+  it("does not charge a bundle from document pages before the preview is ready", async () => {
     const documents: DocumentRecord[] = [
       {
         id: "doc-1",
@@ -229,27 +231,12 @@ describe("checkout session matches the quote", () => {
       translationCents: 0,
       totalCents: 1995,
     });
-    const quote = customerServiceQuote({ ...current, documents });
     vi.mocked(db.requireOrderByHash).mockResolvedValue(current);
-    await startCheckout(token, {});
-    const created = await stripeApi.create.mock.results.at(-1)?.value;
-    expect(quote.totalCents).toBe(2990);
-    expect(created.amount_total).toBe(quote.totalCents);
-    expect(db.updateOrder).toHaveBeenCalledWith(
-      expect.anything(),
-      "order-1",
-      expect.objectContaining({
-        billable_pages: 1,
-        evaluation_cents: 1995,
-        translation_cents: 995,
-        include_translation: true,
-        total_cents: 2990,
-        unit_price_cents: 995,
-      }),
-    );
+    await expect(startCheckout(token, {})).rejects.toThrow(/Preview is not ready/);
+    expect(stripeApi.create).not.toHaveBeenCalled();
   });
 
-  it("charges course-by-course from the stored page count when language is still unknown", async () => {
+  it("does not charge a bundle from the stored page count before the preview is ready", async () => {
     const current = order({
       status: "draft",
       service: "course_by_course",
@@ -263,12 +250,9 @@ describe("checkout session matches the quote", () => {
       billablePages: 1,
       translationCents: 0,
     });
-    const quote = customerServiceQuote(current);
     vi.mocked(db.requireOrderByHash).mockResolvedValue(current);
-    await startCheckout(token, {});
-    const created = await stripeApi.create.mock.results.at(-1)?.value;
-    expect(quote.totalCents).toBe(8985);
-    expect(created.amount_total).toBe(quote.totalCents);
+    await expect(startCheckout(token, {})).rejects.toThrow(/Preview is not ready/);
+    expect(stripeApi.create).not.toHaveBeenCalled();
   });
 
   it("still charges an evaluation-only order when language and pages are unknown", async () => {
@@ -307,7 +291,7 @@ describe("checkout session matches the quote", () => {
   });
 
   it("adds the selected add-on on top of the quote", async () => {
-    const current = order({ includeTranslation: true });
+    const current = order({ status: "preview_ready", includeTranslation: true });
     const { quote, amountTotal } = await paidSession(current, { addons: ["notarization"] });
     expect(quote.totalCents).toBe(2990);
     expect(amountTotal).toBe(2990 + 1795);
@@ -317,14 +301,19 @@ describe("checkout session matches the quote", () => {
     vi.mocked(db.requireOrderByHash).mockResolvedValue(
       order({ includeTranslation: true, sourceLanguage: null, billablePages: null, translationCents: 0 }),
     );
-    await expect(startCheckout(token, {})).rejects.toThrow(/counting pages/);
+    await expect(startCheckout(token, {})).rejects.toThrow(/Preview is not ready/);
     expect(db.updateOrder).not.toHaveBeenCalled();
     expect(stripeApi.create).not.toHaveBeenCalled();
   });
 
   it("does not reuse a pending session that omitted the translation", async () => {
     vi.mocked(db.latestPayment).mockResolvedValue(pendingPayment(1995));
-    const current = order({ includeTranslation: true, translationCents: 995, totalCents: 2990 });
+    const current = order({
+      status: "preview_ready",
+      includeTranslation: true,
+      translationCents: 995,
+      totalCents: 2990,
+    });
     const { amountTotal } = await paidSession(current);
     expect(stripeApi.expire).toHaveBeenCalledWith("cs_old");
     expect(db.markPaymentExpired).toHaveBeenCalledWith(expect.anything(), "pay-1");
@@ -338,7 +327,12 @@ describe("checkout session matches the quote", () => {
       url: "https://checkout.stripe.test/c/cs_old",
       status: "open",
     });
-    const current = order({ includeTranslation: true, translationCents: 995, totalCents: 2990 });
+    const current = order({
+      status: "preview_ready",
+      includeTranslation: true,
+      translationCents: 995,
+      totalCents: 2990,
+    });
     vi.mocked(db.requireOrderByHash).mockResolvedValue(current);
     const result = await startCheckout(token, {});
     expect(result).toEqual({ url: "https://checkout.stripe.test/c/cs_old", sessionId: "cs_old" });

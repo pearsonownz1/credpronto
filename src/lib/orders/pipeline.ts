@@ -7,9 +7,11 @@ import {
   latestPayment,
   latestReadyPreview,
   listConfirmations,
+  listCorrections,
   listDocuments,
   listOrderAddons,
   listPages,
+  listQaRuns,
   listTranslations,
 } from "./db";
 import { recordTranslationFailure, translateOrder } from "./translation";
@@ -22,7 +24,7 @@ export async function loadCustomerOrder(db: Db, order: OrderRecord): Promise<Cus
   const priced = await withQuotedPages(db, order);
   const documents = await listDocuments(db, priced.id);
   const documentIds = documents.map((document) => document.id);
-  const [pages, confirmations, preview, payment, delivery, email, addons, translationReadyAt, translations] =
+  const [pages, confirmations, preview, payment, delivery, email, addons, translationReadyAt, translations, qaRuns, corrections] =
     await Promise.all([
       listPages(db, documentIds),
       listConfirmations(db, order.id),
@@ -33,7 +35,10 @@ export async function loadCustomerOrder(db: Db, order: OrderRecord): Promise<Cus
       listOrderAddons(db, order.id),
       earliestReadyPreviewAt(db, order.id),
       listTranslations(db, documentIds),
+      listQaRuns(db, order.id),
+      listCorrections(db, order.id),
     ]);
+  const latestQa = qaRuns.at(-1);
 
   return toCustomerOrder({
     order: priced,
@@ -43,6 +48,9 @@ export async function loadCustomerOrder(db: Db, order: OrderRecord): Promise<Cus
     previewVersion: preview?.version ?? null,
     paymentStatus: payment?.status ?? null,
     deliveryStatus: delivery?.status ?? null,
+    deliveryFinalPath: delivery?.finalPath ?? null,
+    qa: latestQa ? { status: latestQa.status, score: latestQa.score } : null,
+    openCorrections: corrections.some((correction) => correction.status === "open"),
     deliveredAt: delivery?.deliveredAt ?? null,
     translationReadyAt,
     email,
@@ -56,8 +64,8 @@ export async function processOrder(orderId: string, token: string | null = null)
   const order = await getOrderById(db, orderId);
   if (!order) return;
 
-  // Staff reviews a credential evaluation after payment. Do not extract or build a preview.
-  if (order.service) return;
+  // Evaluation-only stays with staff after payment. A translation bundle still builds a preview.
+  if (order.service && !order.includeTranslation) return;
 
   if (order.status === "draft" || (order.status === "failed" && !order.languageConfirmed)) {
     await analyzeOrder(db, order.id, token);

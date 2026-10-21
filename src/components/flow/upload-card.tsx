@@ -9,6 +9,7 @@ import {
   type ServiceChecks,
   type UploadChoice,
 } from "@/lib/flow/order-choice";
+import type { FlowTrack } from "@/lib/flow/types";
 import {
   adoptUploadInputs,
   checksAfterServiceChange,
@@ -140,12 +141,12 @@ export function UploadCard({
   intro,
   initialService,
   sessionEmail,
-  onEvaluationChange,
+  onTrackChange,
 }: {
   intro?: { title: string; lede: string };
   initialService?: string | null;
   sessionEmail?: string | null;
-  onEvaluationChange?: (evaluation: boolean) => void;
+  onTrackChange?: (track: FlowTrack) => void;
 }) {
   const { mock, pending, error, setError, submit } = useQuoteUpload();
   const signedInEmail = useQuoteEmail(sessionEmail);
@@ -210,8 +211,9 @@ export function UploadCard({
   }, [email, picked, checks, degrees]);
 
   useEffect(() => {
-    onEvaluationChange?.(checks.diploma || checks.courseByCourse);
-  }, [checks.diploma, checks.courseByCourse, onEvaluationChange]);
+    const evaluation = checks.diploma || checks.courseByCourse;
+    onTrackChange?.(evaluation && checks.translation ? "bundle" : evaluation ? "evaluation" : "translation");
+  }, [checks.diploma, checks.courseByCourse, checks.translation, onTrackChange]);
 
   useEffect(() => {
     if (picked.length === 0) {
@@ -440,13 +442,17 @@ export function UploadCard({
         ) : null}
         {signedInEmail ? (
           <p data-testid="preview-email" className="mt-4 text-[13px] text-ink-muted">
-            {checks.diploma || checks.courseByCourse ? "Order updates go to" : "Preview link goes to"}{" "}
+            {(checks.diploma || checks.courseByCourse) && !checks.translation
+              ? "Order updates go to"
+              : "Preview link goes to"}{" "}
             {signedInEmail}
           </p>
         ) : (
           <label className="mt-4 block">
             <span className="mb-1.5 block text-[13px] font-semibold">
-              {checks.diploma || checks.courseByCourse ? "Email for your order" : "Email for your preview link"}
+              {(checks.diploma || checks.courseByCourse) && !checks.translation
+                ? "Email for your order"
+                : "Email for your preview link"}
             </span>
             <input
               ref={emailRef}
@@ -482,7 +488,7 @@ export function UploadCard({
         >
           {pending
             ? "Uploading…"
-            : checks.diploma || checks.courseByCourse
+            : (checks.diploma || checks.courseByCourse) && !checks.translation
               ? "Continue to payment"
               : "Get my quote"}
         </button>
