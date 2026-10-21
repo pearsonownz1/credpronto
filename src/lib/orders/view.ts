@@ -5,7 +5,7 @@ import { isPreviewDelayed } from "./translation-watch";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
 import { customerServiceQuote, lineItemsForOrder } from "./evaluation-price";
 import { customerEvaluationResult, customerReviewReason } from "./equivalency";
-import { fulfillmentState, type FulfillmentState } from "./release-decision";
+import { fulfillmentState, type FulfillmentState, type QaSignal } from "./release-decision";
 import { detectDocumentTitle, deliveryDocumentName } from "./download-name";
 import { bundleTranslationReady } from "./final-file";
 import { storedTimestamp, uploadOrCreatedAt } from "./speed-line";
@@ -106,8 +106,9 @@ export type CustomerOrder = {
   /** True when this evaluation includes certified translation. */
   includeTranslation: boolean;
   /**
-   * Paid bundle whose certified translation packet is stored.
-   * The evaluation tracker can still be in review.
+   * Paid bundle whose certified translation passed the same release check as a
+   * translation-only order. A flagged translation stays locked until staff approve
+   * it. The evaluation tracker can still be in review.
    */
   translationReady?: boolean;
   /** Cents to add if the customer opts in. Null when a translation cannot be added. */
@@ -146,6 +147,9 @@ export function toCustomerOrder(input: {
   previewVersion: number | null;
   paymentStatus: string | null;
   deliveryStatus: string | null;
+  deliveryFinalPath?: string | null;
+  qa?: QaSignal | null;
+  openCorrections?: boolean;
   deliveredAt?: string | null;
   translationReadyAt?: string | null;
   email: string | null;
@@ -266,6 +270,14 @@ export function toCustomerOrder(input: {
       status: input.order.status,
       paymentStatus: input.paymentStatus,
       finalTranslationPath: input.order.finalTranslationPath,
+      certificationPath: input.order.certificationPath,
+      reviewReason: input.order.reviewReason,
+      qa: input.qa,
+      languageConfidence: confidences.length > 0 ? Math.min(...confidences) : null,
+      pageNeedsReview: pages.some((page) => page.needsReview),
+      openCorrections: input.openCorrections,
+      deliveryStatus: input.deliveryStatus,
+      deliveryFinalPath: input.deliveryFinalPath,
     }),
     translationOfferCents: quoted.translationOfferCents,
     lineItems: lineItemsForOrder({

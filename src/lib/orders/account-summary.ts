@@ -1,5 +1,5 @@
 import { downloadGate } from "./access";
-import { bundleTranslationReady } from "./final-file";
+import { bundleTranslationReady, type BundleTranslationInput } from "./final-file";
 
 export type CustomerPayment = {
   status: string;
@@ -28,6 +28,14 @@ export function summarizeCustomerOrder(input: {
   deliveryStatus: string | null;
   includeTranslation?: boolean;
   finalTranslationPath?: string | null;
+  certificationPath?: string | null;
+  reviewReason?: string | null;
+  qa?: BundleTranslationInput["qa"];
+  languageConfidence?: number | null;
+  pageNeedsReview?: boolean;
+  openCorrections?: boolean;
+  deliveryFinalPath?: string | null;
+  autoReleaseEnabled?: boolean;
 }) {
   const gate = downloadGate({
     paymentStatus: input.paymentStatus,
@@ -51,6 +59,15 @@ export function summarizeCustomerOrder(input: {
       status: input.status,
       paymentStatus: input.paymentStatus,
       finalTranslationPath: input.finalTranslationPath,
+      certificationPath: input.certificationPath,
+      reviewReason: input.reviewReason,
+      qa: input.qa,
+      languageConfidence: input.languageConfidence,
+      pageNeedsReview: input.pageNeedsReview,
+      openCorrections: input.openCorrections,
+      deliveryStatus: input.deliveryStatus,
+      deliveryFinalPath: input.deliveryFinalPath,
+      enabled: input.autoReleaseEnabled,
     }),
   };
 }

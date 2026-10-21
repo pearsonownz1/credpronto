@@ -7,9 +7,11 @@ import {
   latestPayment,
   latestReadyPreview,
   listConfirmations,
+  listCorrections,
   listDocuments,
   listOrderAddons,
   listPages,
+  listQaRuns,
   listTranslations,
 } from "./db";
 import { recordTranslationFailure, translateOrder } from "./translation";
@@ -22,7 +24,7 @@ export async function loadCustomerOrder(db: Db, order: OrderRecord): Promise<Cus
   const priced = await withQuotedPages(db, order);
   const documents = await listDocuments(db, priced.id);
   const documentIds = documents.map((document) => document.id);
-  const [pages, confirmations, preview, payment, delivery, email, addons, translationReadyAt, translations] =
+  const [pages, confirmations, preview, payment, delivery, email, addons, translationReadyAt, translations, qaRuns, corrections] =
     await Promise.all([
       listPages(db, documentIds),
       listConfirmations(db, order.id),
@@ -33,7 +35,10 @@ export async function loadCustomerOrder(db: Db, order: OrderRecord): Promise<Cus
       listOrderAddons(db, order.id),
       earliestReadyPreviewAt(db, order.id),
       listTranslations(db, documentIds),
+      listQaRuns(db, order.id),
+      listCorrections(db, order.id),
     ]);
+  const latestQa = qaRuns.at(-1);
 
   return toCustomerOrder({
     order: priced,
@@ -43,6 +48,9 @@ export async function loadCustomerOrder(db: Db, order: OrderRecord): Promise<Cus
     previewVersion: preview?.version ?? null,
     paymentStatus: payment?.status ?? null,
     deliveryStatus: delivery?.status ?? null,
+    deliveryFinalPath: delivery?.finalPath ?? null,
+    qa: latestQa ? { status: latestQa.status, score: latestQa.score } : null,
+    openCorrections: corrections.some((correction) => correction.status === "open"),
     deliveredAt: delivery?.deliveredAt ?? null,
     translationReadyAt,
     email,
