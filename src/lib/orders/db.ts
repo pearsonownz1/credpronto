@@ -1,5 +1,5 @@
 import { ADDON_CATALOG, expeditedFlagForAddons, type PricedAddon } from "./addons";
-import { fulfillmentState } from "./release-decision";
+import { fulfillmentState, WAITING_FOR_STAFF_STATUSES } from "./release-decision";
 import {
   countrySlugFallbackFilter,
   mapEdgeCredentialRow,
@@ -455,24 +455,50 @@ export async function clearOrderColumn(
 }
 
 /**
- * Paid orders still waiting on a person, old enough for the urgent backstop.
- * A credential evaluation that already received the first staff email is left out.
- * Staff upload that report later; the two-minute reminder is only for translations.
- * An evaluation with no first email stays in the list so this cron can still send it.
+ * Paid orders the cron may still need to email.
+ * `paidBefore` is the two-minute translation cutoff. That query is translations,
+ * plus evaluations that never received the first staff email.
+ * `evaluationPaidBefore` is four clock hours ago, the soonest four business hours
+ * can elapse. Evaluations already on the staff queue are loaded from there, and
+ * the caller still checks Los Angeles business hours before the urgent email.
  */
-export async function listStaffAlertCandidates(db: Db, paidBefore: string): Promise<OrderRecord[]> {
-  const { data, error } = await db
-    .from("orders")
-    .select("*")
-    .in("status", ["paid", "needs_review", "correction_requested"])
-    .not("paid_at", "is", null)
-    .lte("paid_at", paidBefore)
-    .is("staff_urgent_alert_sent_at", null)
-    .or("service.is.null,staff_alert_sent_at.is.null")
-    .order("paid_at", { ascending: true })
-    .limit(40);
-  fail(error);
-  return ((data ?? []) as Row[]).map(mapOrder);
+export async function listStaffAlertCandidates(
+  db: Db,
+  paidBefore: string,
+  evaluationPaidBefore: string,
+): Promise<OrderRecord[]> {
+  const waiting = [...WAITING_FOR_STAFF_STATUSES];
+  const [translations, evaluations] = await Promise.all([
+    db
+      .from("orders")
+      .select("*")
+      .in("status", waiting)
+      .not("paid_at", "is", null)
+      .lte("paid_at", paidBefore)
+      .is("staff_urgent_alert_sent_at", null)
+      .or("service.is.null,staff_alert_sent_at.is.null")
+      .order("paid_at", { ascending: true })
+      .limit(40),
+    db
+      .from("orders")
+      .select("*")
+      .in("status", waiting)
+      .not("paid_at", "is", null)
+      .lte("paid_at", evaluationPaidBefore)
+      .is("staff_urgent_alert_sent_at", null)
+      .not("service", "is", null)
+      .not("staff_alert_sent_at", "is", null)
+      .order("paid_at", { ascending: true })
+      .limit(40),
+  ]);
+  fail(translations.error);
+  fail(evaluations.error);
+  const byId = new Map<string, OrderRecord>();
+  for (const row of [...((translations.data ?? []) as Row[]), ...((evaluations.data ?? []) as Row[])]) {
+    const order = mapOrder(row);
+    byId.set(order.id, order);
+  }
+  return [...byId.values()].sort((a, b) => (a.paidAt ?? "").localeCompare(b.paidAt ?? ""));
 }
 
 /** One column. The quote pipeline calls this once per extracted page and once per later step. */

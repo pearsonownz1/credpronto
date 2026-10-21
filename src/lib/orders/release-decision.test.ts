@@ -190,5 +190,7 @@ describe("paid staff migration and cron", () => {
 
     const candidates = readFileSync(path.join(process.cwd(), "src/lib/orders/db.ts"), "utf8");
     expect(candidates).toMatch(/service\.is\.null,staff_alert_sent_at\.is\.null/);
+    expect(candidates).toMatch(/not\("service", "is", null\)/);
+    expect(candidates).toMatch(/not\("staff_alert_sent_at", "is", null\)/);
   });
 });

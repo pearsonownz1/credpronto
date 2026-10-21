@@ -29,8 +29,10 @@ import { retryFinalCustomerEmail, sendFinalCustomerEmail } from "./final-email";
 import { EMPTY_TRANSLATION_MESSAGE, emptyTranslationMessage, paragraphsForPage } from "./translation-edit";
 import { notifyLifecycle, notifyOrder } from "./webhook-delivery";
 import {
+  EVALUATION_URGENT_BUSINESS_HOURS,
   URGENT_ALERT_DELAY_MS,
   autoReleaseEnabled,
+  evaluationUrgentDue,
   fulfillmentState,
   releaseAction,
   staffAlertRecipients,
@@ -108,17 +110,25 @@ export async function runStaffAlertBackstop(
   now = Date.now(),
 ): Promise<{ settled: string[]; urgent: string[] }> {
   const cutoff = new Date(now - URGENT_ALERT_DELAY_MS).toISOString();
-  const due = await listStaffAlertCandidates(db, cutoff);
+  // Four business hours take at least four clock hours. The due check applies the calendar.
+  const evaluationCutoff = new Date(now - EVALUATION_URGENT_BUSINESS_HOURS * 60 * 60 * 1000).toISOString();
+  const due = await listStaffAlertCandidates(db, cutoff, evaluationCutoff);
   const settled: string[] = [];
   const urgent: string[] = [];
   for (const order of due) {
     await settlePaidOrder(db, order.id, { scheduleUrgent: false, now });
     settled.push(order.id);
     const fresh = await getOrderById(db, order.id);
-    if (!fresh || !urgentAlertDue({ ...fresh, now })) continue;
+    if (!fresh || !staffReminderDue(fresh, now)) continue;
     if (await sendUrgentOnce(db, fresh)) urgent.push(fresh.id);
   }
   return { settled, urgent };
+}
+
+/** Translations stay on the two-minute timer. Evaluations wait four business hours. */
+function staffReminderDue(order: OrderRecord, now: number): boolean {
+  if (order.service) return evaluationUrgentDue({ ...order, now });
+  return urgentAlertDue({ ...order, now });
 }
 
 async function scheduleDefault(orderId: string): Promise<void> {
