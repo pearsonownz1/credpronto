@@ -427,6 +427,10 @@ describe("retry a translation that failed to dispatch", () => {
       cleanTranslation: new Uint8Array([1]),
       watermarkedPreview: new Uint8Array([2]),
       certification: new Uint8Array([3]),
+      pageTexts: [
+        { number: 1, text: "Hello" },
+        { number: 2, text: "Hello" },
+      ],
     });
     vi.spyOn(storage, "uploadObject").mockResolvedValue(undefined);
   });

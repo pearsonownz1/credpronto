@@ -803,7 +803,7 @@ export async function runTranslationAssemble(
           originalPages: pages.map((page) => ({ number: page.number, text: page.ocrText ?? "" })),
           translatedPages: renderedPages.map((page) => ({
             number: page.combinedPageNumber,
-            text: page.paragraphs.join("\n"),
+            text: files.pageTexts.find((painted) => painted.number === page.combinedPageNumber)?.text ?? "",
           })),
           confirmations,
         });

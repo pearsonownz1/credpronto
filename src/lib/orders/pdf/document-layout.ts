@@ -134,6 +134,14 @@ function wrapWords(words: Word[], size: number, maxWidth: number, measure: Measu
   return lines;
 }
 
+/** Words placed on the page. Text that falls below the page is left out. */
+export function paintedPlanText(plan: DocumentPlan, minY = 12): string {
+  return plan.texts
+    .filter((item) => item.y >= minY)
+    .map((item) => item.text)
+    .join(" ");
+}
+
 export function planDocument(input: {
   kind: "letter" | "certificate";
   blocks: RenderBlock[];
@@ -342,6 +350,147 @@ function planLetter(input: {
   return { serif, overflow: y < input.footer, boxes: [], texts };
 }
 
+/**
+ * A birth certificate stored as a certificate is a stack of labeled fields.
+ * The license planner paints headings and prose only, so those field values
+ * never reach the page. This planner keeps each value on the line with its label.
+ */
+function planLabeledCertificate(input: {
+  blocks: RenderBlock[];
+  width: number;
+  height: number;
+  footer: number;
+  size: number;
+  measure: Measure;
+}): DocumentPlan {
+  const texts: PlanText[] = [];
+  const serif = true;
+  const size = input.size;
+  const inset = 26;
+  const frame: PlanRect = {
+    x: inset,
+    y: input.footer + 6,
+    w: input.width - inset * 2,
+    h: input.height - input.footer - 6 - 22,
+    radius: 18,
+    stroke: 1.6,
+  };
+  const left = frame.x + 22;
+  const innerW = frame.w - 44;
+  let y = frame.y + frame.h - 22;
+  const bottom = frame.y + 12;
+  let clipped = false;
+
+  const paintLine = (text: string, fontSize: number, align: BlockAlign, bold = false, color: "ink" | "muted" = "ink") => {
+    const words = wordsOf(text).map((word) => ({ ...word, bold: word.bold || bold }));
+    if (words.length === 0) return;
+    const lines = wrapWords(words, fontSize, innerW, input.measure, serif);
+    const space = input.measure(" ", fontSize, { serif, bold });
+    for (const line of lines) {
+      if (y < bottom) clipped = true;
+      const natural = lineWidth(line, fontSize, space, input.measure, serif);
+      let cursor = left;
+      if (align === "center") cursor = left + Math.max(0, (innerW - natural) / 2);
+      if (align === "right") cursor = left + Math.max(0, innerW - natural);
+      for (const word of line) {
+        texts.push({
+          text: word.text,
+          x: cursor,
+          y,
+          size: fontSize,
+          color,
+          bold: word.bold,
+          underline: word.underline,
+          serif,
+        });
+        cursor += input.measure(word.text, fontSize, { bold: word.bold, serif }) + space;
+      }
+      y -= fontSize * 1.22;
+    }
+  };
+
+  const paintPair = (label: string, value: string, bold = false) => {
+    const name = label.trim();
+    const printed = value.trim();
+    paintLine(printed ? `${name}: ${printed}` : name, size, "left", bold);
+    y -= 1;
+  };
+
+  for (const block of input.blocks) {
+    if (y < bottom) {
+      clipped = true;
+      break;
+    }
+    if (block.type === "heading") {
+      const prominent = Boolean(block.bold) || block.level === 1;
+      paintLine(block.text, prominent ? size + 1.5 : size, "center", prominent);
+      y -= 2;
+      continue;
+    }
+    if (block.type === "kv") {
+      paintPair(block.label, block.value, Boolean(block.bold));
+      continue;
+    }
+    if (block.type === "box") {
+      paintPair(block.label, block.value, true);
+      continue;
+    }
+    if (block.type === "fields") {
+      for (const row of block.rows) {
+        if (y < bottom) clipped = true;
+        paintPair(row.label, row.value);
+      }
+      y -= 2;
+      continue;
+    }
+    if (block.type === "paragraph") {
+      paintLine(block.text, size, block.align === "center" || block.caps ? "center" : "left", Boolean(block.bold));
+      y -= 3;
+      continue;
+    }
+    if (block.type === "address") {
+      for (const line of block.lines) paintLine(line, size, block.align ?? "left", Boolean(block.bold));
+      y -= 2;
+      continue;
+    }
+    if (block.type === "list") {
+      if (block.label) paintLine(block.label, size, "left", true);
+      block.items.forEach((item, index) => {
+        const prefix = block.ordered === false ? "•" : `${index + 1})`;
+        paintLine(`${prefix} ${item}`, size, "left");
+      });
+      y -= 2;
+      continue;
+    }
+    if (block.type === "table") {
+      for (const row of block.rows) paintLine(row.join("  "), size - 0.5, "left");
+      y -= 2;
+      continue;
+    }
+    if (block.type === "signature") {
+      const note = bracketNote(block);
+      if (note) paintLine(note, NOTE_SIZE, "right", false, "muted");
+      for (const line of block.lines ?? []) paintLine(line, size - 0.5, "right", true);
+      y -= 3;
+      continue;
+    }
+    const note = bracketNote(block);
+    if (note) {
+      paintLine(note, NOTE_SIZE, "left", false, "muted");
+      y -= 1;
+    }
+  }
+
+  const lowest = texts.reduce((min, item) => Math.min(min, item.y), y);
+  return {
+    serif,
+    overflow: clipped || lowest < input.footer + 2 || y < frame.y + 8,
+    frame,
+    boxes: [],
+    texts,
+  };
+}
+
 function planCertificate(input: {
   blocks: RenderBlock[];
   width: number;
@@ -351,6 +500,9 @@ function planCertificate(input: {
   measure: Measure;
   hasPhoto: boolean;
 }): DocumentPlan {
+  if (input.blocks.some((block) => block.type === "kv" || block.type === "fields")) {
+    return planLabeledCertificate(input);
+  }
   const texts: PlanText[] = [];
   const boxes: PlanRect[] = [];
   const serif = true;
