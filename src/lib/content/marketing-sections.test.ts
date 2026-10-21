@@ -42,9 +42,9 @@ describe("marketing sections", () => {
     ]);
     expect(listOf(sectionByHeading(sections, "How it works"), true).map((item) => item.lead)).toEqual([
       "Upload",
-      "Preview",
       "Pay",
-      "Sign-off",
+      "Review",
+      "Download",
     ]);
     expect(faqOf(sectionByHeading(sections, "Frequently asked questions"))[0]?.answer).toContain(
       "check their instructions before you order",
