@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   choiceFields,
+  orderRequestChoice,
   parseEvaluationService,
   uploadChoiceFromChecks,
   uploadChoiceFromSelection,
@@ -27,6 +28,7 @@ describe("upload order choice", () => {
   it("sends includeTranslation only when a translation is combined with an evaluation", () => {
     expect(uploadChoiceFromChecks({ translation: true, diploma: false, courseByCourse: false }, 1)).toEqual({
       orderType: "translation",
+      services: ["translation"],
     });
     expect(choiceFields(uploadChoiceFromChecks({ translation: false, diploma: true, courseByCourse: false }, 1)!)).toEqual({
       orderType: "evaluation",
@@ -50,7 +52,25 @@ describe("upload order choice", () => {
       includeTranslation: "true",
     });
     expect(uploadChoiceFromChecks({ translation: false, diploma: false, courseByCourse: false }, 1)).toBeNull();
-    expect(uploadChoiceFromChecks({ translation: false, diploma: true, courseByCourse: true }, 1)).toBeNull();
+    expect(uploadChoiceFromChecks({ translation: true, diploma: true, courseByCourse: true }, 2)).toMatchObject({
+      orderType: "evaluation",
+      service: "diploma",
+      degreeCount: 2,
+      includeTranslation: true,
+      services: ["translation", "diploma", "course_by_course"],
+    });
+    expect(orderRequestChoice(uploadChoiceFromChecks({ translation: true, diploma: true, courseByCourse: true }, 2)!)).toEqual({
+      orderType: "evaluation",
+      service: "diploma",
+      degreeCount: "2",
+      includeTranslation: true,
+      services: ["translation", "diploma", "course_by_course"],
+    });
+    expect(uploadChoiceFromChecks({ translation: false, diploma: true, courseByCourse: true }, 1)).toMatchObject({
+      service: "diploma",
+      includeTranslation: false,
+      services: ["diploma", "course_by_course"],
+    });
     expect(uploadChoiceFromChecks({ translation: false, diploma: true, courseByCourse: false }, 0)).toBeNull();
     expect(uploadChoiceFromChecks({ translation: true, diploma: true, courseByCourse: false }, 6)).toBeNull();
     const five = uploadChoiceFromChecks({ translation: false, diploma: false, courseByCourse: true }, 5);

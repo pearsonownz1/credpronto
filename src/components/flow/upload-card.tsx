@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { knownPageCount } from "@/lib/analytics/google-ads";
 import { customerEmailError } from "@/lib/flow/customer-email";
 import {
+  SERVICE_IDS,
   uploadChoiceFromChecks,
   type ServiceChecks,
   type UploadChoice,
@@ -54,10 +55,10 @@ const PRODUCTS: Array<{
   label: string;
   price: string;
 }> = [
-  { id: "translation", key: "translation", label: "Translation", price: TRANSLATION_PAGE_LABEL },
-  { id: "diploma", key: "diploma", label: "Diploma evaluation", price: DIPLOMA_PRICE_LABEL },
+  { id: SERVICE_IDS.translation, key: "translation", label: "Translation", price: TRANSLATION_PAGE_LABEL },
+  { id: SERVICE_IDS.diploma, key: "diploma", label: "Diploma evaluation", price: DIPLOMA_PRICE_LABEL },
   {
-    id: "course_by_course",
+    id: SERVICE_IDS.courseByCourse,
     key: "courseByCourse",
     label: "Course-by-course",
     price: COURSE_BY_COURSE_PRICE_LABEL,
@@ -288,7 +289,7 @@ export function UploadCard({
     setEmailError(null);
     const selected = choice();
     if (!selected) {
-      setError(checks.diploma && checks.courseByCourse ? null : choiceError());
+      setError(choiceError());
       return;
     }
     if (!mock && picked.length === 0) {
