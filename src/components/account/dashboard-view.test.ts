@@ -78,6 +78,10 @@ describe("dashboard order rows", () => {
     expect(ready).toContain('href="/order/tok-ready-24611"');
     expect(ready).toMatch(/<a [^>]*whitespace-nowrap[^>]*href="\/order\/tok-ready-24611"[^>]*>Download<\/a>/);
     expect(row(html, "order-CP-24790")).toContain("whitespace-nowrap");
+    const paid = row(html, "order-CP-24790");
+    expect(paid).toContain(">CP-24790</a>");
+    expect(paid).toContain("$9.95");
+    expect(row(html, "order-card-CP-24790")).toContain("$9.95");
 
     const card = row(html, "order-card-CP-24817");
     expect(card).toContain('href="/preview/tok-preview-24817"');
@@ -90,13 +94,20 @@ describe("dashboard order rows", () => {
   it("renders real anchors for a production order that has an id and no raw token", () => {
     const id = "11111111-1111-4111-8111-111111111111";
     const [sample] = mockOrdersFor(MOCK_CUSTOMER_EMAIL, NOW);
-    shell.orders = [{ ...sample, id, orderToken: null, status: "preview_ready" }];
+    shell.orders = [{ ...sample, id, orderToken: null, status: "preview_ready", totalCents: 995 }];
     try {
       const html = dashboardHtml();
       const desktop = row(html, `order-${id}`);
       expect(desktop).toContain(`href="/preview/${id}"`);
+      expect(desktop).toContain(">11111111</a>");
+      expect(desktop).toContain("$9.95");
+      expect(desktop).not.toContain(`>${id}<`);
       expect(desktop).toMatch(new RegExp(`<a [^>]*whitespace-nowrap[^>]*href="/preview/${id}"[^>]*>Buy now</a>`));
       expect(anchors(desktop).every((anchor) => anchor.includes(`href="/preview/${id}"`))).toBe(true);
+      const card = row(html, `order-card-${id}`);
+      expect(card).toContain(">11111111</a>");
+      expect(card).toContain("$9.95");
+      expect(card).not.toContain(`>${id}<`);
       expect(html).toContain(`<a`);
       expect(html.match(new RegExp(`href="/preview/${id}"`, "g"))?.length).toBe(5);
     } finally {

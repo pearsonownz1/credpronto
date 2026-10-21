@@ -7,7 +7,10 @@ import {
   GOOGLE_UNAVAILABLE,
   adminBucket,
   formatOrderDate,
+  formatOrderMoney,
   initials,
+  orderPricePaid,
+  shortOrderId,
   messageForGoogleError,
   orderStepHref,
   ordersInTab,
@@ -71,6 +74,13 @@ describe("customer order presentation", () => {
     expect(previewWaiting(orders, NOW)).toHaveLength(1);
     expect(formatOrderDate("2026-10-11T12:00:00.000Z")).toBe("Oct 11");
     expect(initials("María Ruiz")).toBe("MR");
+    expect(shortOrderId("11111111-1111-4111-8111-111111111111")).toBe("11111111");
+    expect(shortOrderId("CP-24817")).toBe("CP-24817");
+    expect(formatOrderMoney(995)).toBe("$9.95");
+    expect(orderPricePaid({ totalCents: 995, unitPriceCents: 1990 })).toBe("$9.95");
+    expect(orderPricePaid({ totalCents: null, unitPriceCents: 995, billablePages: null })).toBe("$9.95");
+    expect(orderPricePaid({ totalCents: null, unitPriceCents: 995, billablePages: 2 })).toBe("$19.90");
+    expect(presentOrder({ ...order("paid"), totalCents: 995 }, NOW).total).toBe("$9.95");
   });
 
   it("sends an unpaid evaluation to checkout and leaves a quoted translation on confirm", () => {
