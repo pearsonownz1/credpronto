@@ -33,11 +33,17 @@ export function AccountOrders({ orders }: { orders: CustomerOrder[] }) {
                 data-testid={`account-order-${row.id}`}
                 className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line px-4 py-3 first:border-t-0"
               >
+                <span data-testid={`account-number-${row.id}`} className="font-mono text-[12.5px]">
+                  {row.orderNumber}
+                </span>
                 <span className="min-w-0 flex-1 font-semibold break-words">{row.documentName}</span>
                 <span data-testid={`account-status-${row.id}`} className="text-sm text-ink-muted">
                   {row.status}
                 </span>
                 <span className="text-sm text-ink-muted">{row.date}</span>
+                <span data-testid={`account-price-${row.id}`} className="text-sm">
+                  {row.price}
+                </span>
                 {row.downloadFile ? <AccountDownload orderId={row.id} file={row.downloadFile} /> : null}
               </li>
             ))}

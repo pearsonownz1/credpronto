@@ -23,6 +23,8 @@ describe("account order rows", () => {
         downloadAvailable: true,
         createdAt: "2026-10-11T12:00:00.000Z",
         serviceType: "translation",
+        totalCents: 995,
+        unitPriceCents: 1990,
       },
       {
         id: "order-1",
@@ -32,6 +34,7 @@ describe("account order rows", () => {
         downloadAvailable: true,
         createdAt: "2026-10-11T12:00:00.000Z",
         serviceType: "translation",
+        totalCents: 995,
       },
       {
         id: "order-2",
@@ -41,12 +44,27 @@ describe("account order rows", () => {
         downloadAvailable: false,
         createdAt: "2026-10-10T12:00:00.000Z",
         serviceType: "evaluation",
+        totalCents: null,
+        unitPriceCents: 995,
+        billablePages: null,
+      },
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        documentName: "acta.pdf",
+        status: "paid",
+        paymentStatus: "paid",
+        downloadAvailable: false,
+        createdAt: "2026-10-09T12:00:00.000Z",
+        serviceType: "translation",
+        totalCents: 995,
       },
     ]);
 
     expect(rows).toEqual([
       {
         id: "order-1",
+        orderNumber: "order-1",
+        price: "$9.95",
         documentName: "diploma.pdf",
         status: "ready",
         date: "Oct 11, 2026",
@@ -54,9 +72,20 @@ describe("account order rows", () => {
       },
       {
         id: "order-2",
+        orderNumber: "order-2",
+        price: "$9.95",
         documentName: "Birth certificate",
         status: "in review",
         date: "Oct 10, 2026",
+        downloadFile: null,
+      },
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        orderNumber: "11111111",
+        price: "$9.95",
+        documentName: "acta.pdf",
+        status: "paid",
+        date: "Oct 9, 2026",
         downloadFile: null,
       },
     ]);

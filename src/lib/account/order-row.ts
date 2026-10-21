@@ -1,7 +1,13 @@
+import { orderPricePaid, shortOrderId } from "./present";
+
 export type AccountOrderStatus = "paid" | "in review" | "ready";
 
 export type AccountRow = {
   id: string;
+  /** First eight characters. The row key and links keep the full id. */
+  orderNumber: string;
+  /** Price from the order's existing cent fields, like $9.95. */
+  price: string;
   documentName: string;
   status: AccountOrderStatus;
   date: string;
@@ -44,6 +50,9 @@ export function accountRows(
     downloadAvailable: boolean;
     createdAt: string;
     serviceType: string;
+    totalCents: number | null;
+    unitPriceCents?: number | null;
+    billablePages?: number | null;
   }[],
 ): AccountRow[] {
   const seen = new Set<string>();
@@ -54,6 +63,8 @@ export function accountRows(
     const name = order.documentName?.trim() || order.documentsLabel?.trim() || "Document";
     rows.push({
       id: order.id,
+      orderNumber: shortOrderId(order.id),
+      price: orderPricePaid(order),
       documentName: name,
       status: accountOrderStatus(order),
       date: accountOrderDate(order.createdAt),
