@@ -577,6 +577,7 @@ export async function runTranslationAssemble(
             { statuses: OPEN_TRANSLATION_STATUSES },
           );
           if (wrote === false && !keepPaid) return;
+          if (wrote) await alertStaffForHeldTranslation(db, input.orderId, QA_REVIEW_REASON);
           if (keepPaid || current?.paidAt) {
             const { settlePaidOrder } = await import("./paid-release");
             await settlePaidOrder(db, input.orderId);

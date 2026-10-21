@@ -71,18 +71,25 @@ describe("processing view", () => {
     expect(markup).not.toContain('data-testid="view-preview"');
   });
 
-  it("keeps the delayed line and the bar when review starts before a preview exists", () => {
+  it("leaves the progress bar when a translator is reviewing the document", () => {
     state.delayed = true;
     state.status = "needs_review";
     state.progressStep = "done";
     const markup = html();
-    expect(markup).toContain("Taking longer than usual, we&#x27;re on it.");
-    expect(markup).toContain('data-testid="translation-delayed"');
-    expect(markup).toContain("Translating your document");
+    expect(markup).toContain(
+      "A translator is reviewing your document. We&#x27;ll email you when it&#x27;s ready.",
+    );
+    expect(markup).toContain('data-testid="preview-held"');
+    expect(markup).not.toContain('data-testid="progress-bar"');
+    expect(markup).not.toContain('data-testid="preview-percent"');
+    expect(markup).not.toContain('data-testid="preview-steps"');
+    expect(markup).not.toContain("reading-spinner");
+    expect(markup).not.toContain("aria-valuenow");
+    expect(markup).not.toContain("Taking longer than usual");
+    expect(markup).not.toContain("Translating your document");
     expect(markup).not.toContain("Your preview is ready");
     expect(markup).not.toContain('data-testid="view-preview"');
-    expect(markup).toContain('aria-valuenow="92"');
-    expect(markup).not.toContain('aria-valuenow="75"');
+    state.delayed = false;
     state.status = "processing";
     state.progressStep = "translating";
   });

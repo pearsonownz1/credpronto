@@ -22,13 +22,13 @@ describe("mergeCertifiedPacket", () => {
       certification: await page("COVERPAGE"),
       translation: await page("TRANSLATIONPAGE"),
       original: await page("ORIGINALPAGE"),
+      orderId: "order-1",
     });
     const text = await pageText(merged);
-    expect(text.map((pageText) => pageText.replace(/\s+/g, ""))).toEqual([
-      "COVERPAGE",
-      "TRANSLATIONPAGE",
-      "ORIGINALPAGE",
-    ]);
+    expect(text[0]).toContain("COVERPAGE");
+    expect(text[1]).toContain("TRANSLATIONPAGE");
+    expect(text[2]).toContain("ORIGINALPAGE");
+    expect(text[2]).not.toContain("Page");
   });
 
   it("does not repeat a cover that is already the first translation page", async () => {
@@ -44,7 +44,12 @@ describe("mergeCertifiedPacket", () => {
     for (const sheet of pages) combined.addPage(sheet);
     const translation = await combined.save();
     const original = await page("original");
-    const merged = await mergeCertifiedPacket({ certification: cover, translation, original });
+    const merged = await mergeCertifiedPacket({
+      certification: cover,
+      translation,
+      original,
+      orderId: "order-1",
+    });
     const doc = await PDFDocument.load(merged);
     expect(doc.getPageCount()).toBe(3);
   });
