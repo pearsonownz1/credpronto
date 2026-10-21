@@ -28,7 +28,7 @@ export async function walkCustomerFlow(
   ).toBeVisible();
   await expect(page.getByTestId("upload-drop")).toHaveCount(0);
   await expect(page.getByTestId("nav-log-in").filter({ visible: true })).toBeVisible();
-  await expect(page.getByTestId("nav-create-account").filter({ visible: true })).toBeVisible();
+  await expect(page.getByTestId("nav-create-account")).toHaveCount(0);
   await expect(page.getByTestId("nav-get-started").filter({ visible: true })).toHaveAttribute(
     "href",
     "/sign-up?next=%2Ftranslate",
