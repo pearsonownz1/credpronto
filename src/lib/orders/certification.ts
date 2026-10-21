@@ -9,6 +9,7 @@ import {
 } from "./db";
 import { loadOriginalPdf } from "./final-file";
 import { appendPdf } from "./pdf/merge";
+import { pdfPageCount, stampPacketPageNumbers } from "./pdf/page-numbers";
 import {
   coverClientName,
   coverDocuments,
@@ -72,7 +73,13 @@ export async function stampApprovedCover(db: Db, order: OrderRecord, approverNam
       combinedOriginalPath: order.combinedOriginalPath,
       documents,
     });
-    if (original) clean = await appendPdf(clean, original);
+    if (original) {
+      const footerPages = await pdfPageCount(clean);
+      clean = await stampPacketPageNumbers(await appendPdf(clean, original), {
+        orderId: order.id,
+        footerPages,
+      });
+    }
     await uploadObject(db, FINALS_BUCKET, order.finalTranslationPath, clean, "application/pdf");
     // Leave the paths split when the original could not be read so the download can merge later.
     if (original || (!order.combinedOriginalPath && documents.length === 0)) {
@@ -80,6 +87,11 @@ export async function stampApprovedCover(db: Db, order: OrderRecord, approverNam
       order.certificationPath = order.finalTranslationPath;
     }
     return;
+  }
+  const footerPages = 1 + pages.length;
+  const total = await pdfPageCount(clean);
+  if (total > footerPages) {
+    clean = await stampPacketPageNumbers(clean, { orderId: order.id, footerPages });
   }
   await uploadObject(db, FINALS_BUCKET, order.finalTranslationPath, clean, "application/pdf");
 }

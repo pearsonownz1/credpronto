@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   PREVIEW_POLL_MS,
   TRANSLATING_FLOOR,
-  EVALUATION_PROGRESS_REVIEW_COPY,
   TRANSLATION_REVIEW_COPY,
   previewIsReady,
   previewPollContinues,
@@ -203,8 +202,8 @@ describe("preview step progress", () => {
       pagesTranslateTotal: 2,
     });
     expect(evaluationHold.phase).toBe("review");
-    expect(evaluationHold.label).toBe(EVALUATION_PROGRESS_REVIEW_COPY);
-    expect(evaluationHold.label).not.toContain("usually");
+    expect(evaluationHold.label).toBe(TRANSLATION_REVIEW_COPY);
+    expect(evaluationHold.displayPercent).not.toBe(98);
     const ready = previewWork({ status: "processing", progressStep: "done" });
     expect(ready.phase).toBe("ready");
     expect(ready.displayPercent).toBe(100);

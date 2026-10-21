@@ -406,11 +406,8 @@ test("a finished translation in review waits without a stuck progress bar", asyn
   });
 
   await page.goto(`/order/${MOCK_TOKEN}`);
-  await expect(
-    page.getByRole("heading", { name: "A translator is reviewing your document" }).filter({ visible: true }),
-  ).toBeVisible();
-  await expect(page.getByTestId("translation-review").filter({ visible: true })).toHaveText(
-    "We'll email you when it's ready.",
+  await expect(page.getByTestId("preview-held").filter({ visible: true })).toHaveText(
+    "A translator is reviewing your document. We'll email you when it's ready.",
   );
   await expect(page.getByTestId("order-announcement")).toHaveText(
     "A translator is reviewing your document. We'll email you when it's ready.",

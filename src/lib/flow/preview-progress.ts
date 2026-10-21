@@ -23,11 +23,6 @@ export const TRANSLATION_REVIEW_TITLE = "A translator is reviewing your document
 export const TRANSLATION_REVIEW_DETAIL = "We'll email you when it's ready.";
 export const TRANSLATION_REVIEW_COPY = `${TRANSLATION_REVIEW_TITLE}. ${TRANSLATION_REVIEW_DETAIL}`;
 
-/** Same hold for an evaluation that reaches this screen. No time estimate. */
-export const EVALUATION_PROGRESS_REVIEW_TITLE = "An evaluator is reviewing your document";
-export const EVALUATION_PROGRESS_REVIEW_DETAIL = "We'll email you as soon as it's ready.";
-export const EVALUATION_PROGRESS_REVIEW_COPY = `${EVALUATION_PROGRESS_REVIEW_TITLE}. ${EVALUATION_PROGRESS_REVIEW_DETAIL}`;
-
 /** One interval for the whole wait. No backoff. */
 export const PREVIEW_POLL_MS = 3_000;
 
@@ -208,12 +203,11 @@ export function previewWork(input: {
   translatingElapsedMs?: number;
 }): PreviewWork {
   if (input.status === "needs_review") {
-    const evaluation = input.orderType === "evaluation";
     return {
       phase: "review",
       percent: 0,
       displayPercent: 0,
-      label: evaluation ? EVALUATION_PROGRESS_REVIEW_COPY : TRANSLATION_REVIEW_COPY,
+      label: TRANSLATION_REVIEW_COPY,
       steps: PREVIEW_WORK_STEPS.map((step) => ({
         ...step,
         state: step.id === "ready" ? ("pending" as const) : ("done" as const),

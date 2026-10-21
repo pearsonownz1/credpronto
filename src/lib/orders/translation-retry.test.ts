@@ -522,11 +522,22 @@ describe("retry a translation that failed to dispatch", () => {
 
   it("flags a processing order when QA retranslation is exhausted", async () => {
     exhaustQa(db, "processing");
-    await runTranslationAssemble(db as unknown as Db, { orderId, version: 1 });
+    db.tables.orders[0].staff_alert_sent_at = null;
+    const previousAlerts = process.env.STAFF_ALERT_EMAILS;
+    process.env.STAFF_ALERT_EMAILS = "staff@example.com";
+    vi.spyOn(email, "sendTranslationFailureAlert").mockResolvedValue({ sent: true, skipped: false });
+    try {
+      await runTranslationAssemble(db as unknown as Db, { orderId, version: 1 });
+    } finally {
+      if (previousAlerts == null) delete process.env.STAFF_ALERT_EMAILS;
+      else process.env.STAFF_ALERT_EMAILS = previousAlerts;
+    }
     expect(orderStatus(db)).toMatchObject({
       status: "needs_review",
       reviewReason: QA_REVIEW_REASON,
     });
+    expect(email.sendTranslationFailureAlert).toHaveBeenCalledTimes(1);
+    expect(typeof db.tables.orders[0]?.staff_alert_sent_at).toBe("string");
   });
 
   it("does not overwrite a cancelled order when QA retranslation is exhausted", async () => {

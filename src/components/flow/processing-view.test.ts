@@ -8,8 +8,6 @@ const state = vi.hoisted(() => ({
   orderType: "translation",
   progressStep: "translating",
   previewVersion: null as number | null,
-  pagesDone: null as number | null,
-  pagesTranslateTotal: null as number | null,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -27,13 +25,7 @@ vi.mock("./use-order", () => ({
       documents: [],
       billablePages: 2,
       previewVersion: state.previewVersion,
-      progress: {
-        step: state.progressStep,
-        pagesRead: 2,
-        pagesTotal: 2,
-        pagesDone: state.pagesDone,
-        pagesTranslateTotal: state.pagesTranslateTotal,
-      },
+      progress: { step: state.progressStep, pagesRead: 2, pagesTotal: 2 },
     },
     error: null,
     loading: false,
@@ -79,58 +71,27 @@ describe("processing view", () => {
     expect(markup).not.toContain('data-testid="view-preview"');
   });
 
-  it("stops the bar and explains the review when a finished translation needs review", () => {
+  it("leaves the progress bar when a translator is reviewing the document", () => {
     state.delayed = true;
     state.status = "needs_review";
-    state.orderType = "translation";
     state.progressStep = "done";
-    state.pagesDone = 9;
-    state.pagesTranslateTotal = 9;
     const markup = html();
-    expect(markup).toContain("A translator is reviewing your document");
-    expect(markup).toContain("We&#x27;ll email you when it&#x27;s ready.");
-    expect(markup).toContain('data-testid="translation-review"');
-    expect(markup).not.toContain("as soon as your preview is ready");
-    expect(markup).not.toContain("Usually ready in 3 minutes");
+    expect(markup).toContain(
+      "A translator is reviewing your document. We&#x27;ll email you when it&#x27;s ready.",
+    );
+    expect(markup).toContain('data-testid="preview-held"');
+    expect(markup).not.toContain('data-testid="progress-bar"');
+    expect(markup).not.toContain('data-testid="preview-percent"');
+    expect(markup).not.toContain('data-testid="preview-steps"');
+    expect(markup).not.toContain("reading-spinner");
+    expect(markup).not.toContain("aria-valuenow");
     expect(markup).not.toContain("Taking longer than usual");
     expect(markup).not.toContain("Translating your document");
-    expect(markup).not.toContain("reading-spinner");
-    expect(markup).not.toContain('data-testid="preview-steps"');
-    expect(markup).not.toContain('data-testid="preview-percent"');
-    expect(markup).not.toContain('data-testid="progress-bar"');
-    expect(markup).not.toContain('aria-valuenow="98"');
-    expect(markup).not.toContain('aria-valuenow="92"');
     expect(markup).not.toContain("Your preview is ready");
-    expect(markup).not.toContain("Opening your preview");
     expect(markup).not.toContain('data-testid="view-preview"');
     state.delayed = false;
     state.status = "processing";
     state.progressStep = "translating";
-    state.pagesDone = null;
-    state.pagesTranslateTotal = null;
-  });
-
-  it("uses evaluator copy without a time estimate when an evaluation is in review", () => {
-    state.delayed = true;
-    state.status = "needs_review";
-    state.orderType = "evaluation";
-    state.progressStep = "done";
-    state.pagesDone = 2;
-    state.pagesTranslateTotal = 2;
-    const markup = html();
-    expect(markup).toContain("An evaluator is reviewing your document");
-    expect(markup).toContain("We&#x27;ll email you as soon as it&#x27;s ready.");
-    expect(markup).not.toContain("A translator is reviewing");
-    expect(markup).not.toContain("usually within minutes");
-    expect(markup).not.toContain("reading-spinner");
-    expect(markup).not.toContain('data-testid="preview-percent"');
-    expect(markup).not.toContain('data-testid="progress-bar"');
-    state.delayed = false;
-    state.orderType = "translation";
-    state.status = "processing";
-    state.progressStep = "translating";
-    state.pagesDone = null;
-    state.pagesTranslateTotal = null;
   });
 
   it("leaves the progress screen as soon as the preview step is done", () => {

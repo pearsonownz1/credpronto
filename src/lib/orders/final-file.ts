@@ -4,6 +4,7 @@ import { deliveryDocumentName, detectDocumentTitle, orderDownloadFilename } from
 import { inReadingOrder } from "./page-order";
 import { buildCombinedOriginal, type SourceFile } from "./pdf/combine";
 import { appendPdf, concatPdfs, mergeCertifiedPacket } from "./pdf/merge";
+import { pdfPageCount, stampPacketPageNumbers } from "./pdf/page-numbers";
 import { downloadObject, uploadObject } from "./storage";
 import type { DocumentRecord, OrderRecord } from "./types";
 
@@ -32,7 +33,13 @@ export async function storeCertifiedTranslation(
     combinedOriginalPath: input.combinedOriginalPath,
     documents,
   });
-  const bytes = original ? await appendPdf(input.cleanTranslation, original) : input.cleanTranslation;
+  const footerPages = original ? await pdfPageCount(input.cleanTranslation) : 0;
+  const bytes = original
+    ? await stampPacketPageNumbers(await appendPdf(input.cleanTranslation, original), {
+        orderId: input.orderId,
+        footerPages,
+      })
+    : input.cleanTranslation;
   const path = certifiedTranslationObjectPath(input.orderId, input.version);
   await uploadObject(db, FINALS_BUCKET, path, bytes, PDF_TYPE);
   return path;
@@ -73,6 +80,7 @@ export async function resolveCustomerFinal(
             combinedOriginalPath: order.combinedOriginalPath,
             documents,
           }),
+          orderId: order.id,
         });
     const stored = `${order.id}/${evaluation ? "evaluation-merged.pdf" : "certified-translation.pdf"}`;
     await uploadObject(db, FINALS_BUCKET, stored, merged, PDF_TYPE);
