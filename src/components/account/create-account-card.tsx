@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useActionState, useId, useState, type FormEvent, type ReactNode } from "react";
 import { mockMagicLink, mockPasswordAuth } from "@/lib/account/actions";
 import { browserJson, publicMockMode } from "@/lib/api/browser";
-import { safeNextPath } from "@/lib/auth/redirect";
+import { continueAfterSignup, safeNextPath } from "@/lib/auth/redirect";
+import { readToken } from "@/lib/flow/session";
 
 type FieldErrors = {
   name?: string;
@@ -58,7 +59,7 @@ export function CreateAccountCard() {
     if (publicMockMode()) return;
     event.preventDefault();
     setPending(true);
-    const result = await browserJson<{ session?: boolean }>("/api/auth/password", {
+    const result = await browserJson<{ session?: boolean; next?: string }>("/api/auth/password", {
       method: "POST",
       body: JSON.stringify({
         email: email.trim(),
@@ -66,6 +67,7 @@ export function CreateAccountCard() {
         name: name.trim(),
         mode: "sign-up",
         next,
+        orderToken: readToken(),
       }),
     });
     setPending(false);
@@ -79,7 +81,7 @@ export function CreateAccountCard() {
       else setErrors({ email: message });
       return;
     }
-    router.push(next);
+    router.push(continueAfterSignup(result.data.next, next));
     router.refresh();
   }
 
@@ -128,6 +130,7 @@ export function CreateAccountCard() {
       <h1 className="text-[24px] font-semibold tracking-[-0.4px]">Create your account</h1>
       <p className="mt-2 text-[15px] text-ink-muted">Track your order and download your files anytime.</p>
       <form action={publicMockMode() ? passwordAction : undefined} onSubmit={onSubmit} className="mt-6 grid gap-4">
+        <input type="hidden" name="mode" value="sign-up" />
         <input type="hidden" name="next" value={next} />
         <Field id={nameId} label="Full name" error={errors.name || serverField.name}>
           <input

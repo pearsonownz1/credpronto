@@ -84,6 +84,18 @@ describe("evaluation checkout", () => {
     const html = renderToStaticMarkup(createElement(CheckoutView, { token: "token-1", signedIn: true }));
     expect(html).not.toContain('data-testid="account-card"');
     expect(html).toContain('data-testid="pay-button"');
+    expect(html).not.toContain("Wrong email? Fix it");
+  });
+
+  it("puts the fix link on the signed-in email", () => {
+    state.order = checkoutOrder(false);
+    const html = renderToStaticMarkup(
+      createElement(CheckoutView, { token: "token-1", signedIn: true, accountEmail: "ada@example.com" }),
+    );
+    expect(html).toContain('data-testid="email"');
+    expect(html).toContain('value="ada@example.com"');
+    expect(html).toContain("Wrong email? Fix it");
+    expect(html).toContain('data-testid="fix-email"');
   });
 
   it("shows $19.95 and the evaluation report before the customer opts in", () => {

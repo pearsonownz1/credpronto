@@ -11,5 +11,5 @@ export const metadata: Metadata = {
 
 export default async function CheckoutPage() {
   const account = await getAccount();
-  return <CheckoutView signedIn={account != null} />;
+  return <CheckoutView signedIn={account != null} accountEmail={account?.email ?? null} />;
 }

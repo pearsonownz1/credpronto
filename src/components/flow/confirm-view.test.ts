@@ -164,4 +164,20 @@ describe("translation date format", () => {
     expect(selectedFormat(html, "Date format · acta-nacimiento.pdf")).toBe("MM/DD/YYYY");
     expect(html).toContain("Dates in the translation use MM/DD/YYYY");
   });
+
+  it("shows the signed-in email with a fix link, and leaves guests without one", () => {
+    flow.order = sampleCustomerOrder();
+    const guest = renderToStaticMarkup(createElement(ConfirmView, { token: "tok" }));
+    expect(guest).toContain("We’ll email");
+    expect(guest).toContain("ada@example.com");
+    expect(guest).not.toContain("Wrong email? Fix it");
+
+    const signedIn = renderToStaticMarkup(
+      createElement(ConfirmView, { token: "tok", accountEmail: "ada@example.com" }),
+    );
+    expect(signedIn).toContain("ada@example.com");
+    expect(signedIn).toContain("Wrong email? Fix it");
+    expect(signedIn).toContain('data-testid="fix-email"');
+    expect(signedIn).toContain('href="#account-email"');
+  });
 });

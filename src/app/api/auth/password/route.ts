@@ -1,7 +1,8 @@
-import { readEmail, readJson, readOrderToken } from "@/lib/auth/body";
+import { readEmail, readJson, readNext, readOrderToken } from "@/lib/auth/body";
 import { emailHasAccount, isExistingAccountError } from "@/lib/auth/email-link";
 import { finishAuthenticatedUser } from "@/lib/auth/finish";
 import { attachOrderToken } from "@/lib/auth/order-link";
+import { continueAfterSignup, orderTokenFromNext } from "@/lib/auth/redirect";
 import { emailIsVerified } from "@/lib/auth/session";
 import { HttpError } from "@/lib/orders/errors";
 import { json, run } from "@/lib/orders/http";
@@ -20,7 +21,8 @@ export async function POST(request: Request) {
     const mode = (body as { mode?: unknown }).mode === "sign-up" ? "sign-up" : "sign-in";
     const rawName = (body as { name?: unknown }).name;
     const name = typeof rawName === "string" ? rawName.trim() : "";
-    const orderToken = readOrderToken(body);
+    const requestedNext = readNext(body);
+    const orderToken = readOrderToken(body) ?? orderTokenFromNext(requestedNext);
 
     let supabase: Awaited<ReturnType<typeof createClient>>;
     try {
@@ -69,6 +71,7 @@ export async function POST(request: Request) {
         session: true,
         claimedOrderIds: claimed,
         emailVerified: emailIsVerified(signed.data.user),
+        next: continueAfterSignup(requestedNext),
       });
     }
 

@@ -59,14 +59,7 @@ export async function walkCustomerFlow(
   await expect(page).toHaveURL(/\/translate$/);
   await expect(shown(page, "upload-drop")).toBeVisible();
   await expect(shown(page, "preview-email")).toContainText("maria.ruiz@email.com");
-  await shown(page, "fix-email").click();
-  const accountEmail = page.getByLabel("Account email").filter({ visible: true });
-  await expect(accountEmail).toHaveValue("maria.ruiz@email.com");
-  await accountEmail.fill("not-an-email");
-  await page.getByRole("button", { name: "Update email" }).filter({ visible: true }).click();
-  await expect(page.getByRole("alert").filter({ visible: true, hasText: "Enter a valid email." })).toBeVisible();
-  await page.getByRole("button", { name: "Cancel" }).filter({ visible: true }).click();
-  await expect(shown(page, "fix-email")).toBeVisible();
+  await expect(shown(page, "fix-email")).toHaveCount(0);
   await expect(shown(page, "file-list")).toContainText("acta-nacimiento.pdf");
   await expect(shown(page, "file-list")).toContainText("IMG_4021.HEIC");
   await expect(shown(page, "flow-stepper").locator("[data-state=current]")).toContainText(
@@ -112,6 +105,15 @@ export async function walkCustomerFlow(
     "Guadalajara, Jalisco, Mexico",
   );
   await expect(page.getByLabel("Date format · acta-nacimiento.pdf")).toHaveValue("MM/DD/YYYY");
+  await expect(page.getByText("We’ll email").filter({ visible: true })).toContainText("maria.ruiz@email.com");
+  await shown(page, "fix-email").click();
+  const accountEmail = page.getByLabel("Account email").filter({ visible: true });
+  await expect(accountEmail).toHaveValue("maria.ruiz@email.com");
+  await accountEmail.fill("not-an-email");
+  await page.getByRole("button", { name: "Update email" }).filter({ visible: true }).click();
+  await expect(page.getByRole("alert").filter({ visible: true, hasText: "Enter a valid email." })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).filter({ visible: true }).click();
+  await expect(shown(page, "fix-email")).toBeVisible();
   await check();
 
   await shown(page, "start-preview").click();

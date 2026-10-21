@@ -18,11 +18,20 @@ import type { AddonId, ShippingAddress } from "@/lib/orders/types";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
 import { OrderAccountCard } from "./order-account-card";
+import { WrongEmailLink } from "./wrong-email-link";
 import { FlowStatus } from "./status";
 import { useCustomerOrder, useStoredEmail, useStoredToken } from "./use-order";
 import { Checks, Field, FlowColumns, Summary, SummaryRow, buttonClasses, fieldClass } from "./ui";
 
-export function CheckoutView({ token: pathToken, signedIn = true }: { token?: string; signedIn?: boolean }) {
+export function CheckoutView({
+  token: pathToken,
+  signedIn = true,
+  accountEmail = null,
+}: {
+  token?: string;
+  signedIn?: boolean;
+  accountEmail?: string | null;
+}) {
   const token = useStoredToken(pathToken);
   const email = useStoredEmail();
   const { order, error, loading } = useCustomerOrder(token, "while-working");
@@ -43,7 +52,14 @@ export function CheckoutView({ token: pathToken, signedIn = true }: { token?: st
         ) : !order ? (
           <FlowStatus title="No order to pay for" body="Start from your quote." />
         ) : (
-          <CheckoutForm key={order.orderId} token={token} email={email} order={order} signedIn={signedIn} />
+          <CheckoutForm
+            key={order.orderId}
+            token={token}
+            email={email}
+            order={order}
+            signedIn={signedIn}
+            accountEmail={accountEmail}
+          />
         )}
       </main>
     </div>
@@ -55,12 +71,16 @@ function CheckoutForm({
   email,
   order,
   signedIn,
+  accountEmail,
 }: {
   token: string;
   email: string;
   order: CustomerOrder;
   signedIn: boolean;
+  accountEmail: string | null;
 }) {
+  const [signedInEmail, setSignedInEmail] = useState(accountEmail?.trim() || "");
+  const shownEmail = signedInEmail || email;
   const router = useRouter();
   const paying = useRef(false);
   const [signedUp, setSignedUp] = useState(false);
@@ -196,8 +216,9 @@ function CheckoutForm({
         </p>
         <label className="block">
           <span className="mb-1.5 block text-[13px] font-semibold">Email</span>
-          <input data-testid="email" type="email" readOnly value={email} className={fieldClass} />
+          <input data-testid="email" type="email" readOnly value={shownEmail} className={fieldClass} />
         </label>
+        {signedInEmail ? <WrongEmailLink email={signedInEmail} onConfirmed={setSignedInEmail} /> : null}
         <fieldset className="mt-6 grid gap-3" data-testid="checkout-addons">
           <legend className="mb-1 text-[13px] font-semibold">Add-ons</legend>
           {options.map((option) => {

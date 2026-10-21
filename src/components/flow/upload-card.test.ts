@@ -40,9 +40,8 @@ describe("quote email field", () => {
   it("hides the email field when a session email is already known", () => {
     const markup = html("ada@example.com");
     expect(markup).toContain("Preview link goes to ada@example.com");
-    expect(markup).toContain("Wrong email? Fix it");
-    expect(markup).toContain('data-testid="fix-email"');
-    expect(markup).toContain('href="#account-email"');
+    expect(markup).not.toContain("Wrong email? Fix it");
+    expect(markup).not.toContain('data-testid="fix-email"');
     expect(markup).not.toContain("Email for your preview link");
     expect(markup).not.toContain('data-testid="email"');
   });

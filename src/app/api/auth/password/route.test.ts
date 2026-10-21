@@ -87,6 +87,7 @@ describe("POST /api/auth/password sign-up", () => {
       session: true,
       claimedOrderIds: ["order-1"],
       emailVerified: true,
+      next: "/translate",
     });
     expect(JSON.stringify(payload)).not.toContain("Check your email");
     expect(createUser).toHaveBeenCalledWith({
@@ -103,6 +104,46 @@ describe("POST /api/auth/password sign-up", () => {
     expect(generateLink).not.toHaveBeenCalled();
     expect(attachOrderToken).toHaveBeenCalledWith({ kind: "service" }, "user-1", "order-token");
     expect(finishAuthenticatedUser).toHaveBeenCalledWith(confirmedUser, "order-token");
+  });
+
+  it("returns a same-origin next path and attaches the guest order it names", async () => {
+    const token = "b".repeat(43);
+    const response = await post({
+      email: "ada@example.com",
+      password: "password1",
+      mode: "sign-up",
+      next: `/confirm?token=${token}`,
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ session: true, next: `/confirm?token=${token}` });
+    expect(attachOrderToken).toHaveBeenCalledWith({ kind: "service" }, "user-1", token);
+    expect(finishAuthenticatedUser).toHaveBeenCalledWith(confirmedUser, token);
+  });
+
+  it("drops an off-origin next path and does not take an order token from it", async () => {
+    const token = "c".repeat(43);
+    const response = await post({
+      email: "ada@example.com",
+      password: "password1",
+      mode: "sign-up",
+      next: `https://evil.example/order/${token}`,
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ next: "/translate" });
+    expect(attachOrderToken).toHaveBeenCalledWith({ kind: "service" }, "user-1", null);
+  });
+
+  it("keeps an explicit order token ahead of the one in next", async () => {
+    const bodyToken = "d".repeat(43);
+    const nextToken = "e".repeat(43);
+    await post({
+      email: "ada@example.com",
+      password: "password1",
+      mode: "sign-up",
+      orderToken: bodyToken,
+      next: `/preview/${nextToken}`,
+    });
+    expect(attachOrderToken).toHaveBeenCalledWith({ kind: "service" }, "user-1", bodyToken);
   });
 
   it("omits user metadata when no name is sent", async () => {

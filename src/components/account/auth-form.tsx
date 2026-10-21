@@ -6,7 +6,8 @@ import { useActionState, useState, type FormEvent } from "react";
 import { mockMagicLink, mockPasswordAuth } from "@/lib/account/actions";
 import { GOOGLE_UNAVAILABLE, messageForGoogleError } from "@/lib/account/present";
 import { browserJson, publicMockMode } from "@/lib/api/browser";
-import { safeNextPath } from "@/lib/auth/redirect";
+import { continueAfterSignup, safeNextPath } from "@/lib/auth/redirect";
+import { readToken } from "@/lib/flow/session";
 
 type Mode = "sign-in" | "sign-up" | "forgot";
 
@@ -56,13 +57,14 @@ export function AuthForm({ mode }: { mode: Mode }) {
       else setMessage("Check your email for a sign-in link.");
       return;
     }
-    const result = await browserJson<{ session?: boolean; userId?: string | null }>("/api/auth/password", {
+    const result = await browserJson<{ session?: boolean; userId?: string | null; next?: string }>("/api/auth/password", {
       method: "POST",
       body: JSON.stringify({
         email,
         password,
         mode: mode === "sign-up" ? "sign-up" : "sign-in",
         next,
+        orderToken: readToken(),
       }),
     });
     setPending(false);
@@ -70,7 +72,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
       setError(result.error);
       return;
     }
-    router.push(next);
+    router.push(mode === "sign-up" ? continueAfterSignup(result.data.next, next) : next);
     router.refresh();
   }
 
@@ -125,6 +127,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
       ) : null}
       <form action={publicMockMode() ? mockAction : undefined} onSubmit={onSubmit} className="grid gap-3">
         <input type="hidden" name="next" value={next} />
+        {mode === "sign-up" ? <input type="hidden" name="mode" value="sign-up" /> : null}
         <Field label="Email" name="email" type="email" autoComplete="email" required />
         {mode !== "forgot" ? (
           <Field
