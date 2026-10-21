@@ -14,6 +14,7 @@ import { cropHolderPhoto } from "./pdf/photo";
 import { renderOrderPdfs } from "./pdf/render";
 import {
   blocksFromSegmentTranslations,
+  completeLetterFromSource,
   ensurePortrait,
   layoutNeedsRestore,
   projectLetter,
@@ -326,18 +327,21 @@ async function restoreCollapsedLayout(input: {
   if (!plan) {
     const blocks = ensurePortrait(input.blocks, portrait);
     const kind = input.kind ?? (blocks.some((block) => block.type === "photo") ? "certificate" : undefined);
-    return { blocks, kind };
+    return { blocks: completeLetterFromSource(blocks, input.sourceText), kind };
   }
+
+  const settle = (blocks: RenderBlock[]) =>
+    reconcileIdentifiers({
+      sourceText: input.sourceText,
+      blocks: completeLetterFromSource(blocks, input.sourceText),
+      sourceLanguage: input.sourceLanguage,
+      dateFormat: input.dateFormat,
+    });
 
   const finish = (blocks: RenderBlock[], via: LayoutFallback) => {
     reportLayout(via, { filename: input.filename, kind: plan.kind });
     return {
-      blocks: reconcileIdentifiers({
-        sourceText: input.sourceText,
-        blocks,
-        sourceLanguage: input.sourceLanguage,
-        dateFormat: input.dateFormat,
-      }),
+      blocks: settle(blocks),
       kind: plan.kind,
       layoutFallback: via,
     };
@@ -358,6 +362,7 @@ async function restoreCollapsedLayout(input: {
       userMessages(
         `Translate each numbered part on its own into English. Do not merge parts.
 Return one part for every id. A kv or box is "Label: value". An address, signature, or list keeps one line per source line.
+Keep each personal name as printed, including initials. A list keeps a leading 1) marker when the source line has one.
 A photo part is "Holder's photo". Copy numbers exactly. Write dates as ${input.dateFormat}.
 
 Parts:
@@ -372,6 +377,11 @@ ${translatedProse(input.blocks).slice(0, 6000)}`,
     );
     const rebuilt = blocksFromSegmentTranslations(plan.segments, result.parts);
     if (rebuilt) return finish(rebuilt, "model");
+    console.warn("layout fallback: segment translation did not assemble", {
+      filename: input.filename,
+      segments: plan.segments.length,
+      parts: result.parts.length,
+    });
   } catch (error) {
     console.warn("layout fallback: restore failed", {
       filename: input.filename,
@@ -379,7 +389,7 @@ ${translatedProse(input.blocks).slice(0, 6000)}`,
     });
   }
   reportLayout("flat", { filename: input.filename, kind: plan.kind });
-  return { blocks: input.blocks, kind: input.kind ?? plan.kind, layoutFallback: "flat" };
+  return { blocks: settle(input.blocks), kind: input.kind ?? plan.kind, layoutFallback: "flat" };
 }
 
 async function restoreDocumentPages(

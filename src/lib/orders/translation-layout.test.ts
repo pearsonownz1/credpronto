@@ -4,6 +4,7 @@ import * as db from "./db";
 import * as email from "./email";
 import type { Db } from "./storage";
 import * as storage from "./storage";
+import { assessTranslation } from "./qa";
 import { runTranslationPage } from "./translation";
 import * as jobs from "./translation-jobs";
 import type { PageJobOutput, PageJobRecord, PageWork } from "./translation-jobs";
@@ -228,6 +229,97 @@ describe("photo translation layout", () => {
     expect(console.warn).not.toHaveBeenCalled();
   });
 
+  it("restores the reference number and signatories when the enclosure list has no markers", async () => {
+    let repairPrompt = "";
+    vi.spyOn(ai, "generateObject").mockImplementation(async (_schema, messages) => {
+      const text = messageText([_schema, messages]);
+      if (text.includes("Check this certified translation")) return { fixes: [] };
+      if (text.includes("Translate each numbered part")) {
+        repairPrompt = text;
+        return {
+          parts: [
+            { id: 1, text: "OYAK BANK" },
+            { id: 2, text: "Istanbul, 01/31/2006" },
+            { id: 3, text: "Banking Regulation and Supervision Agency\nDepartment of Institutions III" },
+            { id: 4, text: "Atatürk Boulevard No. 191 06684\nKavaklıdere / Ankara" },
+            { id: 5, text: "Document No. 74" },
+            { id: 6, text: "Subject: Appointment Procedure" },
+            { id: 7, text: "The documents pertaining to Ms. Çiğdem DAYAN are attached. Law No. 5411, Article 25 and Article 14." },
+            { id: 8, text: "Respectfully," },
+            { id: 9, text: "OYAK BANK A.Ş." },
+            { id: 10, text: "Head Office" },
+            { id: 11, text: "E. Hakan Eminsoy\nGeneral Manager" },
+            { id: 12, text: "Nejat Bilginer\nDeputy General Manager" },
+            { id: 13, text: "Attachment:\nBankruptcy certificate.\nConcordat certificate." },
+          ],
+        };
+      }
+      return {
+        pageNumber: 1,
+        kind: "letter",
+        blocks: [
+          {
+            type: "paragraph",
+            text: "Istanbul, 01/31/2006 The documents pertaining to Ms. Çiğdem DAYAN are attached. Respectfully,",
+          },
+        ],
+      };
+    });
+
+    await runTranslationPage({} as Db, { orderId, version: 1, jobId });
+
+    expect(repairPrompt).toContain("1) Belge bir.");
+    expect(repairPrompt).toContain("Keep each personal name as printed");
+    expect(saved?.layoutFallback).toBe("model");
+    const text = saved?.paragraphs.join("\n") ?? "";
+    expect(text).toContain("74");
+    expect(text).toContain("E. Hakan Eminsoy");
+    expect(text).toContain("Nejat Bilginer");
+    expect(text).toContain("06684");
+    expect(saved?.blocks.filter((block) => block.type === "signature")).toHaveLength(2);
+    const list = saved?.blocks.find((block) => block.type === "list");
+    expect(list?.type === "list" && list.items).toEqual(["Bankruptcy certificate.", "Concordat certificate."]);
+  });
+
+  it("keeps the printed signatories when the model returns empty signature blocks", async () => {
+    vi.spyOn(ai, "generateObject").mockImplementation(async (_schema, messages) => {
+      const text = messageText([_schema, messages]);
+      if (text.includes("Check this certified translation")) return { fixes: [] };
+      if (text.includes("Translate each numbered part")) {
+        throw new Error("No object generated: could not parse the response.");
+      }
+      return {
+        pageNumber: 1,
+        kind: "letter",
+        blocks: [
+          { type: "logo", text: "OYAK BANK" },
+          { type: "paragraph", text: "Istanbul, 01/31/2006", align: "left" },
+          { type: "address", lines: ["Atatürk Bulvarı No: 191 06684", "Kavaklıdere / Ankara"] },
+          { type: "kv", label: "Document No.", value: "74" },
+          { type: "paragraph", text: "The documents pertaining to Ms. Çiğdem DAYAN are attached.", align: "justify" },
+          { type: "signature", electronic: false, column: "left" },
+          { type: "signature", electronic: false, column: "left" },
+        ],
+      };
+    });
+
+    await runTranslationPage({} as Db, { orderId, version: 1, jobId });
+
+    expect(saved?.layoutFallback).toBeUndefined();
+    const text = saved?.paragraphs.join("\n") ?? "";
+    expect(text).toContain("74");
+    expect(text).toContain("E. Hakan Eminsoy");
+    expect(text).toContain("Nejat Bilginer");
+    expect(text).not.toContain("[Signature]\n[Signature]\n[Signature]");
+    const qa = assessTranslation({
+      originalPages: [{ number: 1, text: work().page.ocrText ?? "" }],
+      translatedPages: [{ number: 1, text }],
+      confirmations: [{ fieldKey: "full_name", confirmedValue: "Çiğdem DAYAN; E. Hakan Eminsoy; Nejat Bilginer" }],
+    });
+    expect(qa.pass).toBe(true);
+    expect(qa.issues).toEqual([]);
+  });
+
   it("flags a flat paragraph when the source arrangement cannot be recovered", async () => {
     vi.spyOn(ai, "generateObject").mockImplementation(async (_schema, messages) => {
       const text = messageText([_schema, messages]);
@@ -239,7 +331,9 @@ describe("photo translation layout", () => {
     await runTranslationPage({} as Db, { orderId, version: 1, jobId });
 
     expect(saved?.layoutFallback).toBe("flat");
-    expect(saved?.blocks).toEqual([{ type: "paragraph", text: "Hello from the bank." }]);
+    expect(saved?.blocks[0]).toEqual({ type: "paragraph", text: "Hello from the bank." });
+    expect(saved?.paragraphs.join("\n")).toContain("E. Hakan Eminsoy");
+    expect(saved?.paragraphs.join("\n")).toContain("Nejat Bilginer");
     expect(console.warn).toHaveBeenCalledWith(
       "layout fallback: kept a flat paragraph",
       expect.objectContaining({ via: "flat", kind: "letter" }),
