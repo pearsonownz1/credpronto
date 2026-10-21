@@ -3,6 +3,12 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
+import {
+  CONFIRM_DATE_FORMATS,
+  defaultDateFormat,
+  isConfirmDateFormat,
+  storedConfirmation,
+} from "@/lib/flow/date-format";
 import { writeToken } from "@/lib/flow/session";
 import { pageLabel } from "@/lib/flow/pricing";
 import {
@@ -25,8 +31,6 @@ import {
   buttonClasses,
   fieldClass,
 } from "./ui";
-
-const DATE_FORMATS = ["MM/DD/YYYY", "DD/MM/YYYY"] as const;
 
 type DocFields = {
   full_name: string;
@@ -92,6 +96,13 @@ function valueOf(order: CustomerOrder, documentId: string, key: string) {
   return row?.confirmedValue ?? row?.originalValue ?? "";
 }
 
+function dateReading(order: CustomerOrder, documentId: string, key: string) {
+  const row = order.confirmations.find(
+    (field) => field.documentId === documentId && field.fieldKey === key,
+  );
+  return storedConfirmation(row?.confirmedValue, row?.originalValue);
+}
+
 function ConfirmForm({ token, order }: { token: string; order: CustomerOrder }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -109,7 +120,10 @@ function ConfirmForm({ token, order }: { token: string; order: CustomerOrder }) 
         father: parents.father,
         mother: parents.mother,
         place_of_birth: valueOf(order, document.id, "place_of_birth"),
-        date_format: valueOf(order, document.id, "date_format") || "MM/DD/YYYY",
+        date_format: defaultDateFormat(
+          dateReading(order, document.id, "date_format"),
+          dateReading(order, document.id, "date_of_birth"),
+        ),
       };
     }
     return initial;
@@ -139,7 +153,9 @@ function ConfirmForm({ token, order }: { token: string; order: CustomerOrder }) 
             date_of_birth: fields?.date_of_birth ?? "",
             parent_names: joinParents(fields?.father ?? "", fields?.mother ?? ""),
             place_of_birth: fields?.place_of_birth ?? "",
-            date_format: fields?.date_format || "MM/DD/YYYY",
+            date_format: isConfirmDateFormat(fields?.date_format)
+              ? fields.date_format
+              : defaultDateFormat(fields?.date_format, fields?.date_of_birth),
           };
         }),
       });
@@ -228,7 +244,7 @@ function ConfirmForm({ token, order }: { token: string; order: CustomerOrder }) 
                   }
                   className={fieldClass}
                 >
-                  {DATE_FORMATS.map((format) => (
+                  {CONFIRM_DATE_FORMATS.map((format) => (
                     <option key={format} value={format}>
                       {format}
                     </option>
