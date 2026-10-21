@@ -529,10 +529,6 @@ export const CONFIRMING_PAYMENT_COPY = "Confirming payment";
 export const CONFIRMING_PAYMENT_DETAIL =
   "Stripe sent you back before the payment showed on this order. This page keeps checking.";
 
-/** Paid evaluation, before a person uploads the finished PDF. */
-export const EVALUATION_REVIEW_COPY =
-  "An evaluator is reviewing your documents, usually within minutes, and we'll email you when it's ready.";
-
 /** Heading while a paid order is still awaiting release. */
 export const QUICK_CHECK_COPY = "Quick final check";
 

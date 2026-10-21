@@ -6,7 +6,6 @@ import { flowUsesMock, getFlowClient } from "@/lib/flow/client";
 import {
   CONFIRMING_PAYMENT_COPY,
   CONFIRMING_PAYMENT_DETAIL,
-  EVALUATION_REVIEW_COPY,
   QUICK_CHECK_COPY,
   QUICK_CHECK_DETAIL,
   downloadEmailedLine,
@@ -17,9 +16,11 @@ import {
   totalLabel,
   type DownloadFileKind,
 } from "@/lib/flow/present";
+import { evaluationDownloadReady, evaluationTracker } from "@/lib/evalStatus";
 import { deliveryDocumentName, orderDownloadFilename } from "@/lib/orders/download-name";
 import { evaluationSpeedLine } from "@/lib/orders/speed-line";
 import type { CustomerOrder } from "@/lib/orders/view";
+import { EvaluationStatusColumn } from "./evaluation-tracker";
 import { FlowHeader } from "./flow-header";
 import { PaidPreview } from "./paid-preview";
 import { FlowStatus } from "./status";
@@ -46,6 +47,11 @@ export function DownloadStates({
   const confirming = pendingPayment ? phase !== "certifying" && phase !== "ready" : phase === "finalizing" && order != null;
   const onDownloadStep = confirming || phase === "certifying" || phase === "ready";
   const evaluation = order != null && isCustomerEvaluation(order);
+  const showEvalTracker =
+    order != null &&
+    evaluation &&
+    !confirming &&
+    (phase === "certifying" || (phase === "ready" && order.evaluationStatus === "evaluation_complete"));
   const headerStep = evaluation
     ? phase === "ready"
       ? "download"
@@ -84,8 +90,8 @@ export function DownloadStates({
           <FlowStatus title="We couldn't load this order" body={error} />
         ) : !order ? (
           <FlowStatus title="No order yet" body="Start a translation to get a download." />
-        ) : phase === "certifying" && evaluation ? (
-          <EvaluationReview order={order} />
+        ) : showEvalTracker && order ? (
+          <EvaluationReview order={order} token={token} phase={phase === "ready" ? "ready" : "review"} />
         ) : phase === "certifying" ? (
           <Certifying order={order} token={token} email={email} />
         ) : (
@@ -96,14 +102,38 @@ export function DownloadStates({
   );
 }
 
-function EvaluationReview({ order }: { order: CustomerOrder }) {
+function EvaluationReview({
+  order,
+  token,
+  phase,
+}: {
+  order: CustomerOrder;
+  token: string;
+  phase: "review" | "ready";
+}) {
+  const view = evaluationTracker({
+    evaluationStatus: order.evaluationStatus,
+    evaluationStatusAt: order.evaluationStatusAt,
+  });
+  const ready = view.showDownload && evaluationDownloadReady(order);
   return (
-    <div data-testid="download-phase" data-phase="review" className="text-center">
-      <p className="preview-kicker blue">Order {order.orderId}</p>
-      <h1 className="mt-3 text-[28px] font-bold leading-tight tracking-[-0.5px] md:text-[32px]">In review</h1>
-      <p data-testid="evaluation-review" className="mt-3 text-base text-ink-muted">
-        {EVALUATION_REVIEW_COPY}
-      </p>
+    <div className="pb-16">
+      <EvaluationStatusColumn
+        orderId={order.orderId}
+        view={view}
+        phase={phase}
+        downloadHref={ready && flowUsesMock() ? MOCK_HREF : null}
+        onDownload={
+          ready && !flowUsesMock()
+            ? () =>
+                getFlowClient()
+                  .download(token, "evaluation")
+                  .then((result) => {
+                    window.location.assign(result.url);
+                  })
+            : undefined
+        }
+      />
     </div>
   );
 }

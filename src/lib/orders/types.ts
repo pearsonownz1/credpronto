@@ -174,6 +174,13 @@ export type OrderRecord = {
   staffAlertSentAt: string | null;
   staffUrgentAlertSentAt: string | null;
   progress: OrderProgress;
+  /**
+   * `orders.evaluation_status` when that column is present.
+   * Null when the column is missing or the value is not one of the four statuses.
+   */
+  evaluationStatus?: string | null;
+  /** ISO timestamps keyed by status. Missing keys were not stored. */
+  evaluationStatusAt?: Partial<Record<string, string>>;
 };
 
 export type DocumentRecord = {

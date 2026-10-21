@@ -195,12 +195,44 @@ describe("customer order", () => {
     expect(order.translationOfferCents).toBeNull();
     expect(order.unitPriceCents).not.toBe(995);
     expect(order.evaluation).toBeNull();
+    expect(order.evaluationStatus).toBeNull();
+    expect(order.evaluationStatusAt).toEqual({});
     expect(order.progress.step).not.toBe("delivered");
     expect(order).not.toHaveProperty("edge");
     expect(order).not.toHaveProperty("edgeCredentialId");
     expect(order).not.toHaveProperty("edgeMatchMethod");
     expect(JSON.stringify(order)).not.toContain("edge_credential");
     expect(JSON.stringify(order)).not.toContain("edge_match");
+  });
+
+  it("copies evaluation status and step timestamps onto the customer order", () => {
+    const order = toCustomerOrder({
+      order: {
+        ...orderRecord(),
+        orderType: "evaluation",
+        service: "diploma",
+        degreeCount: 1,
+        evaluationCents: 1995,
+        translationCents: 0,
+        evaluationStatus: "performing_layout",
+        evaluationStatusAt: {
+          under_review: "2026-10-21T17:02:00.000Z",
+          performing_evaluation: "2026-10-21T17:11:00.000Z",
+          performing_layout: "soon",
+        },
+      },
+      documents: [],
+      confirmations: [],
+      previewVersion: null,
+      paymentStatus: "paid",
+      deliveryStatus: "pending",
+      email: "ada@example.com",
+    });
+    expect(order.evaluationStatus).toBe("performing_layout");
+    expect(order.evaluationStatusAt).toEqual({
+      under_review: "2026-10-21T17:02:00.000Z",
+      performing_evaluation: "2026-10-21T17:11:00.000Z",
+    });
   });
 
   it("returns the evaluation and step delivered after the report is delivered", () => {

@@ -3,10 +3,10 @@
 import { useEffect } from "react";
 import { formatMoney } from "@/lib/flow/pricing";
 import { TRANSLATION_REVIEW_COPY } from "@/lib/flow/preview-progress";
+import { evaluationTracker, type EvalStatus } from "@/lib/evalStatus";
 import {
   CONFIRMING_PAYMENT_COPY,
   CONFIRMING_PAYMENT_DETAIL,
-  EVALUATION_REVIEW_COPY,
   QUICK_CHECK_COPY,
   QUICK_CHECK_DETAIL,
   isCustomerEvaluation,
@@ -32,6 +32,7 @@ export function orderLiveMessage(input: {
     orderType?: CustomerOrder["orderType"];
     service?: CustomerOrder["service"];
     serviceType?: string | null;
+    evaluationStatus?: EvalStatus | null;
     progress?: { step?: string | null } | null;
   }) | null;
 }): string {
@@ -50,7 +51,8 @@ export function orderLiveMessage(input: {
   const pageText = `${pages} ${pages === 1 ? "page" : "pages"}`;
   const evaluation = isCustomerEvaluation(order);
   if (input.phase === "certifying" || order.fulfillment === "awaiting_review") {
-    return evaluation ? EVALUATION_REVIEW_COPY : `${QUICK_CHECK_COPY}. ${QUICK_CHECK_DETAIL}`;
+    if (!evaluation) return `${QUICK_CHECK_COPY}. ${QUICK_CHECK_DETAIL}`;
+    return evaluationLiveLine(order.evaluationStatus);
   }
   if (
     order.fulfillment === "released" ||
@@ -58,6 +60,7 @@ export function orderLiveMessage(input: {
     order.status === "approved" ||
     order.status === "delivered"
   ) {
+    if (evaluation && order.evaluationStatus === "evaluation_complete") return "Evaluation complete.";
     return evaluation ? "Your credential evaluation is ready." : "Your translation is ready.";
   }
   if (
@@ -91,6 +94,12 @@ export function orderLiveMessage(input: {
     return "Translating your document.";
   }
   return "";
+}
+
+function evaluationLiveLine(status: EvalStatus | null | undefined): string {
+  const tracker = evaluationTracker({ evaluationStatus: status });
+  if (tracker.status === "evaluation_complete") return "Evaluation complete.";
+  return tracker.steps.find((step) => step.state === "current")?.detail ?? "We're checking your documents.";
 }
 
 /** The App Router announcer keeps the loading heading after the quote replaces it. */

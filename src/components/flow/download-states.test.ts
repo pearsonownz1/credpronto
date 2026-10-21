@@ -1,7 +1,6 @@
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { EVALUATION_REVIEW_COPY } from "@/lib/flow/present";
 import { sampleCustomerOrder } from "@/lib/flow/sample-order";
 import type { CustomerOrder } from "@/lib/orders/view";
 
@@ -28,6 +27,10 @@ vi.mock("./use-order", () => ({
 }));
 
 import { DownloadStates } from "./download-states";
+
+function downloadButton(html: string): string {
+  return html.match(/<button[^>]*data-testid="download-evaluation"[^>]*>/)?.[0] ?? "";
+}
 
 function readyOrder(patch: Partial<CustomerOrder>): CustomerOrder {
   return {
@@ -98,7 +101,43 @@ describe("download page", () => {
     expect(html).toContain("text-ink-muted");
   });
 
-  it("shows the evaluator wait and switches the step to Review", () => {
+  it("shows the evaluation tracker under the order id, including a translation bundle", () => {
+    state.order = readyOrder({
+      status: "paid",
+      payment: { status: "paid" },
+      delivery: { status: "pending" },
+      fulfillment: "awaiting_review",
+      orderType: "evaluation",
+      service: "diploma",
+      degreeCount: 1,
+      evaluationCents: 1995,
+      translationCents: 995,
+      includeTranslation: true,
+      totalCents: 2990,
+    });
+    const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
+    expect(html).toContain("Order CP-24817");
+    expect(html).toContain('data-testid="evaluation-tracker"');
+    expect(html).toContain('data-status="under_review"');
+    expect(html).toContain("Under review");
+    expect(html).toContain("Performing evaluation");
+    expect(html).toContain("Performing layout");
+    expect(html).toContain("Evaluation complete");
+    expect(html).toContain("We&#x27;re checking your documents.");
+    expect(html).toContain('data-step="under_review" data-state="current"');
+    expect(html).toContain('data-step="performing_evaluation" data-state="upcoming"');
+    expect(html).toContain("eval-status-dot");
+    expect(html).not.toContain("In review");
+    expect(html).not.toContain("%");
+    expect(html).not.toContain('data-testid="download-evaluation"');
+    expect(html).toContain('data-testid="evaluation-review"');
+    expect(html).toContain('data-state="current" data-step="review"');
+    expect(html).not.toContain("Quick final check");
+    expect(html).not.toContain('data-testid="paid-preview"');
+    expect(html).not.toContain('data-step="preview"');
+  });
+
+  it("follows a stored evaluation status and keeps the download disabled until the file is ready", () => {
     state.order = readyOrder({
       status: "paid",
       payment: { status: "paid" },
@@ -110,14 +149,65 @@ describe("download page", () => {
       evaluationCents: 1995,
       translationCents: 0,
       totalCents: 1995,
+      evaluationStatus: "performing_evaluation",
+      evaluationStatusAt: { under_review: "2026-10-21T17:02:00.000Z" },
+    });
+    const working = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
+    expect(working).toContain('data-status="performing_evaluation"');
+    expect(working).toContain("An evaluator is working on your evaluation.");
+    expect(working).toContain('dateTime="2026-10-21T17:02:00.000Z"');
+    expect(working).toContain('stroke="#1F5EFF"');
+    expect(working).not.toContain('data-testid="download-evaluation"');
+
+    state.order = readyOrder({
+      status: "paid",
+      payment: { status: "paid" },
+      delivery: { status: "pending" },
+      fulfillment: "awaiting_review",
+      orderType: "evaluation",
+      service: "course_by_course",
+      degreeCount: 1,
+      evaluationCents: 3995,
+      translationCents: 0,
+      totalCents: 3995,
+      evaluationStatus: "evaluation_complete",
+      evaluationStatusAt: {
+        under_review: "2026-10-21T17:02:00.000Z",
+        performing_evaluation: "2026-10-21T17:11:00.000Z",
+        performing_layout: "2026-10-21T17:24:00.000Z",
+      },
+    });
+    const waiting = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
+    expect(waiting).toContain("Evaluation complete");
+    expect(waiting).toContain('data-testid="download-evaluation"');
+    expect(downloadButton(waiting)).toMatch(/\sdisabled(?:=|>|\s)/);
+    expect(waiting).toContain("h-[52px]");
+    expect(waiting).toContain("bg-primary");
+    expect(waiting).not.toContain("We&#x27;re formatting your report.");
+  });
+
+  it("links a finished evaluation to the existing download", () => {
+    state.order = readyOrder({
+      status: "delivered",
+      payment: { status: "paid" },
+      delivery: { status: "delivered" },
+      fulfillment: "released",
+      orderType: "evaluation",
+      service: "diploma",
+      degreeCount: 1,
+      evaluationCents: 1995,
+      translationCents: 0,
+      totalCents: 1995,
+      paidAt: "2026-10-21T17:00:00.000Z",
+      deliveredAt: "2026-10-21T17:31:00.000Z",
+      evaluationStatus: "evaluation_complete",
     });
     const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
-    expect(html).toContain(EVALUATION_REVIEW_COPY.replaceAll("'", "&#x27;"));
-    expect(html).toContain('data-testid="evaluation-review"');
-    expect(html).toContain('data-state="current" data-step="review"');
-    expect(html).not.toContain("Quick final check");
-    expect(html).not.toContain('data-testid="paid-preview"');
-    expect(html).not.toContain('data-step="preview"');
+    expect(html).toContain('data-phase="ready"');
+    expect(html).toContain('data-status="evaluation_complete"');
+    expect(downloadButton(html)).not.toMatch(/\sdisabled(?:=|>|\s)/);
+    expect(html).not.toContain("Your credential evaluation is ready.");
+    expect(html).toContain('data-state="current" data-step="download"');
   });
 
   it("keeps the certified translation and certification page for a translation", () => {

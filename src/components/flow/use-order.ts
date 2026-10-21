@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { FlowApiError, getFlowClient, flowUsesMock } from "@/lib/flow/client";
 import { checkoutOrderRetryDelay } from "@/lib/orders/checkout-return";
 import { PREVIEW_POLL_MS, previewPollContinues } from "@/lib/flow/preview-progress";
+import { evaluationStatusPollMs } from "@/lib/evalStatus";
 import { ORDER_STATUS_POLL_MS, downloadPhase, orderStatusPollDelay } from "@/lib/flow/present";
 import {
   QUOTE_POLL_MS,
@@ -144,7 +145,8 @@ export function useCustomerOrder(
         seenOrder = true;
         setSnapshot({ token, order: next, error: null });
         if (mode === "until-download" || mode === "checkout") {
-          const delay = orderStatusPollDelay(downloadPhase(next));
+          const phase = downloadPhase(next);
+          const delay = evaluationStatusPollMs(next, phase) ?? orderStatusPollDelay(phase);
           if (delay != null) timer = window.setTimeout(load, delay);
         }
       } catch (cause) {

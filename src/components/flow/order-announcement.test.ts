@@ -179,6 +179,35 @@ describe("order live message", () => {
     expect(
       orderLiveMessage({
         loading: false,
+        phase: "certifying",
+        order: {
+          status: "paid",
+          billablePages: 1,
+          totalCents: 1995,
+          fulfillment: "awaiting_review",
+          orderType: "evaluation",
+          service: "diploma",
+        },
+      }),
+    ).toBe("We're checking your documents.");
+    expect(
+      orderLiveMessage({
+        loading: false,
+        phase: "certifying",
+        order: {
+          status: "paid",
+          billablePages: 1,
+          totalCents: 1995,
+          fulfillment: "awaiting_review",
+          orderType: "evaluation",
+          service: "diploma",
+          evaluationStatus: "performing_layout",
+        },
+      }),
+    ).toBe("We're formatting your report.");
+    expect(
+      orderLiveMessage({
+        loading: false,
         order: {
           status: "needs_review",
           billablePages: 2,

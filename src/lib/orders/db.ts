@@ -11,6 +11,7 @@ import {
   type EdgeGradingScaleRecord,
 } from "./edge";
 import { evaluationPrice, parseEvaluationResult } from "./evaluation-price";
+import { readStoredEvalStatus } from "../evalStatus";
 import { parseStoredPageOrder, compareCombinedPages } from "./page-order";
 import { asOrderProgress, type OrderProgress } from "./reading-progress";
 import type { Db } from "./storage";
@@ -104,6 +105,7 @@ function mapOrder(row: Row): OrderRecord {
     staffAlertSentAt: str(row.staff_alert_sent_at),
     staffUrgentAlertSentAt: str(row.staff_urgent_alert_sent_at),
     progress: asOrderProgress(row.progress) ?? { step: "uploaded", pagesRead: 0, pagesTotal: 0 },
+    ...readStoredEvalStatus(row),
   };
 }
 
