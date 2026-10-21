@@ -56,5 +56,27 @@ describe("customer order summary", () => {
     });
     expect(refunded.downloadAvailable).toBe(false);
     expect(refunded.previewAvailable).toBe(true);
+    expect(refunded.translationReady).toBe(false);
+  });
+
+  it("marks a paid bundle ready to download its certified translation", () => {
+    const bundle = summarizeCustomerOrder({
+      id: "0301d079-8368-40d8-854d-95475933124f",
+      status: "paid",
+      serviceType: "evaluation",
+      totalCents: 2990,
+      currency: "usd",
+      billablePages: 1,
+      unitPriceCents: 995,
+      createdAt: "2026-10-21T14:25:35.957Z",
+      previewReady: true,
+      paymentStatus: "paid",
+      deliveryStatus: "pending",
+      includeTranslation: true,
+      finalTranslationPath: "0301d079-8368-40d8-854d-95475933124f/certified-translation-v1.pdf",
+    });
+    expect(bundle.downloadAvailable).toBe(false);
+    expect(bundle.translationReady).toBe(true);
+    expect(bundle.includeTranslation).toBe(true);
   });
 });

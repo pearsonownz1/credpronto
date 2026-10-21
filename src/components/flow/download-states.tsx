@@ -100,13 +100,38 @@ export function DownloadStates({
         ) : !order ? (
           <FlowStatus title="No order yet" body="Start a translation to get a download." />
         ) : showEvalTracker && order ? (
-          <EvaluationReview order={order} token={token} phase={phase === "ready" ? "ready" : "review"} />
+          <>
+            {bundle && order.translationReady ? <BundleTranslation order={order} token={token} /> : null}
+            <EvaluationReview order={order} token={token} phase={phase === "ready" ? "ready" : "review"} />
+          </>
         ) : phase === "certifying" ? (
           <Certifying order={order} token={token} email={email} />
         ) : (
           <Ready order={order} token={token} email={email} />
         )}
       </main>
+    </div>
+  );
+}
+
+function BundleTranslation({ order, token }: { order: CustomerOrder; token: string }) {
+  const names = order.documents.map((document) => document.filename);
+  const named = deliveryDocumentName({ documentNames: names });
+  return (
+    <div data-testid="bundle-translation" className="mb-10">
+      <p data-testid="email-note" className="mb-4 text-base text-ink-muted">
+        Paid {totalLabel(order.totalCents)} · Order {order.orderId}.
+      </p>
+      <div className="overflow-hidden rounded-[var(--cp-radius)] border border-line">
+        <FileRow
+          token={token}
+          file="translation"
+          title={order.documentTitle || named.title}
+          subtitle="Certified translation · PDF"
+          testId="download-certified"
+          primary
+        />
+      </div>
     </div>
   );
 }

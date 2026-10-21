@@ -15,6 +15,33 @@ export function certifiedTranslationObjectPath(orderId: string, version: number)
   return `${orderId}/certified-translation-v${version}.pdf`;
 }
 
+const CERTIFIED_TRANSLATION_OBJECT = /\/certified-translation-v\d+\.pdf$/;
+
+/** The clean translation packet, not an evaluation report stored in the same column. */
+export function isCertifiedTranslationPath(path: string | null | undefined): path is string {
+  return typeof path === "string" && CERTIFIED_TRANSLATION_OBJECT.test(path);
+}
+
+/**
+ * A paid bundle can download that packet while the evaluation is still in review.
+ * An unpaid order keeps the file private, even after the preview has been built.
+ */
+export function bundleTranslationReady(order: {
+  includeTranslation?: boolean | null;
+  status?: string | null;
+  paymentStatus?: string | null;
+  finalTranslationPath?: string | null;
+}): boolean {
+  if (order.includeTranslation !== true || !isCertifiedTranslationPath(order.finalTranslationPath)) return false;
+  return (
+    order.status === "paid" ||
+    order.status === "approved" ||
+    order.status === "delivered" ||
+    order.paymentStatus === "paid" ||
+    order.paymentStatus === "paid_test"
+  );
+}
+
 /**
  * Cover and translation are already one PDF. Append the original pages when
  * they can be read. A missing original still stores the certified translation.

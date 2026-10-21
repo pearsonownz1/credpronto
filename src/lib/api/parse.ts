@@ -59,6 +59,7 @@ export function parseCustomerOrder(value: unknown): CustomerOrder | null {
     orderToken: text(row.orderToken),
     etaAt: text(row.etaAt),
     includeTranslation: row.includeTranslation === true,
+    translationReady: row.translationReady === true,
   };
 }
 

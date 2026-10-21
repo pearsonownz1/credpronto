@@ -24,6 +24,8 @@ export type CustomerOrder = {
   etaAt?: string | null;
   /** True when this evaluation also includes a certified translation. */
   includeTranslation?: boolean;
+  /** Paid bundle with a stored certified translation. The evaluation may still be in review. */
+  translationReady?: boolean;
 };
 
 export type AdminOrder = {
