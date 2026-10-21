@@ -57,8 +57,9 @@ describe("dashboard order rows", () => {
     expect(html).toContain('href="/preview/tok-preview-24817"');
     const preview = row(html, "order-CP-24817");
     expect(preview).toContain('href="/preview/tok-preview-24817"');
-    expect(preview).toContain("after:absolute");
-    expect(preview).toContain("after:inset-0");
+    expect(preview).toContain("absolute inset-0");
+    expect(preview).toContain(">CP-24817</a>");
+    expect(preview).toMatch(/<a [^>]*relative z-10[^>]*>CP-24817<\/a>/);
     expect(preview).toMatch(/<a [^>]*whitespace-nowrap[^>]*href="\/preview\/tok-preview-24817"[^>]*>Buy now<\/a>/);
     expect(preview).toContain("cursor-pointer");
     expect(preview).toContain("hover:bg-[#eef3fb]");
@@ -109,7 +110,7 @@ describe("dashboard order rows", () => {
       expect(card).toContain("$9.95");
       expect(card).not.toContain(`>${id}<`);
       expect(html).toContain(`<a`);
-      expect(html.match(new RegExp(`href="/preview/${id}"`, "g"))?.length).toBe(5);
+      expect(html.match(new RegExp(`href="/preview/${id}"`, "g"))?.length).toBe(7);
     } finally {
       shell.orders = undefined;
     }

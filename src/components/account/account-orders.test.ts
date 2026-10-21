@@ -42,8 +42,11 @@ describe("account orders list", () => {
     const id = "11111111-1111-4111-8111-111111111111";
     expect(html).toContain("Your orders");
     expect(html).toContain(`data-testid="account-order-${id}"`);
-    expect(html).toContain('data-testid="account-number-11111111-1111-4111-8111-111111111111"');
-    expect(html).toContain(">11111111</span>");
+    const number = 'data-testid="account-number-11111111-1111-4111-8111-111111111111"';
+    expect(html).toContain(number);
+    expect(html).toContain(`href="/order/${id}"`);
+    expect(html).toMatch(new RegExp(`<a [^>]*${number.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[^>]*>11111111</a>`));
+    expect(html).toContain("absolute inset-0");
     expect(html).not.toContain(`>${id}<`);
     expect(html).toContain('data-testid="account-price-11111111-1111-4111-8111-111111111111"');
     expect(html).toContain(">$9.95</span>");

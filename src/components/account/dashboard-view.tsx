@@ -24,7 +24,7 @@ const ROW_GRID =
 const ROW_HOVER =
   "relative isolate cursor-pointer hover:bg-[#eef3fb] focus-within:bg-[#eef3fb] focus-within:outline focus-within:outline-2 focus-within:outline-primary focus-within:outline-offset-[-2px]";
 
-const STRETCH_LINK = "after:absolute after:inset-0 after:z-0 after:content-['']";
+const ROW_LINK = "absolute inset-0 z-0";
 
 const ACTION_LINK =
   "relative z-10 whitespace-nowrap focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2";
@@ -194,6 +194,7 @@ export function DashboardView() {
                     data-testid={`order-${order.id}`}
                     className={`${ROW_GRID} border-t border-line ${ROW_HOVER}`}
                   >
+                    <RowOverlay view={view} />
                     <span className="px-[18px] py-[13px] font-mono text-[12.5px]">
                       <RowAnchor order={order} view={view}>
                         {shortOrderId(order.id)}
@@ -220,6 +221,7 @@ export function DashboardView() {
                 return (
                   <li key={order.id}>
                     <div data-testid={`order-card-${order.id}`} className={`grid gap-2 px-4 py-4 ${ROW_HOVER}`}>
+                      <RowOverlay view={view} />
                       <span className="flex items-center justify-between gap-3">
                         <span className="font-mono text-[12.5px]">
                           <RowAnchor order={order} view={view}>
@@ -276,6 +278,11 @@ function Chip({ view }: { view: OrderPresentation }) {
   );
 }
 
+function RowOverlay({ view }: { view: OrderPresentation }) {
+  if (!view.rowHref) return null;
+  return <Link href={view.rowHref} tabIndex={-1} aria-hidden className={ROW_LINK} />;
+}
+
 function RowAnchor({
   order,
   view,
@@ -290,7 +297,7 @@ function RowAnchor({
     <Link
       href={view.rowHref}
       aria-label={`Open ${order.id}, ${view.documents}, ${view.chip.label}`}
-      className={STRETCH_LINK}
+      className="relative z-10"
     >
       {children}
     </Link>

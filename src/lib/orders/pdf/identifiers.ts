@@ -24,7 +24,13 @@ function pad(value: number): string {
 }
 
 export function usDate(date: CivilDate): string {
-  return `${pad(date.month)}/${pad(date.day)}/${date.year}`;
+  return writtenDate(date, "MM/DD/YYYY");
+}
+
+function writtenDate(date: CivilDate, format: "MM/DD/YYYY" | "DD/MM/YYYY"): string {
+  const month = pad(date.month);
+  const day = pad(date.day);
+  return format === "DD/MM/YYYY" ? `${day}/${month}/${date.year}` : `${month}/${day}/${date.year}`;
 }
 
 export function sourceDateOrder(sourceLanguage: string, dateFormat: "MM/DD/YYYY" | "DD/MM/YYYY"): DateOrder {
@@ -55,7 +61,7 @@ export function sourceDates(text: string, order: DateOrder): CivilDate[] {
   return found;
 }
 
-function rewriteDates(text: string, sources: CivilDate[]): string {
+function rewriteDates(text: string, sources: CivilDate[], format: "MM/DD/YYYY" | "DD/MM/YYYY"): string {
   if (sources.length === 0) return text;
   return text.replace(DATE_TOKEN, (full, a: string, b: string, y: string) => {
     const first = Number(a);
@@ -65,10 +71,10 @@ function rewriteDates(text: string, sources: CivilDate[]): string {
     const dayFirst = civilDate(year, second, first);
     const monthHit = monthFirst != null && sources.some((item) => sameDate(item, monthFirst));
     const dayHit = dayFirst != null && sources.some((item) => sameDate(item, dayFirst));
-    if (monthHit && monthFirst && !dayHit) return usDate(monthFirst);
-    if (dayHit && dayFirst && !monthHit) return usDate(dayFirst);
-    if (monthHit && monthFirst) return usDate(monthFirst);
-    if (dayHit && dayFirst) return usDate(dayFirst);
+    if (monthHit && monthFirst && !dayHit) return writtenDate(monthFirst, format);
+    if (dayHit && dayFirst && !monthHit) return writtenDate(dayFirst, format);
+    if (monthHit && monthFirst) return writtenDate(monthFirst, format);
+    if (dayHit && dayFirst) return writtenDate(dayFirst, format);
     return full;
   });
 }
@@ -130,8 +136,9 @@ function mapText(blocks: RenderBlock[], fn: (text: string) => string): RenderBlo
 }
 
 /**
- * Put dates in MM/DD/YYYY and replace a near-miss ID with the source number.
+ * Put dates in the confirmed format and replace a near-miss ID with the source number.
  * 27379 does not survive when the source prints 24379.
+ * A DD/MM/YYYY choice writes 19/09/1996, not 09/19/1996.
  */
 export function reconcileIdentifiers(input: {
   sourceText: string;
@@ -142,7 +149,7 @@ export function reconcileIdentifiers(input: {
   const order = sourceDateOrder(input.sourceLanguage, input.dateFormat);
   const dates = sourceDates(input.sourceText, order);
   const numbers = sourceNumbers(input.sourceText);
-  return mapText(input.blocks, (text) => rewriteNumbers(rewriteDates(text, dates), numbers));
+  return mapText(input.blocks, (text) => rewriteNumbers(rewriteDates(text, dates, input.dateFormat), numbers));
 }
 
 function hasIdentifiers(source: string, blocks: RenderBlock[]): boolean {
@@ -205,9 +212,9 @@ export async function verifyIdentifiers(input: {
               type: "text",
               text: `Check this certified translation against the source page.
 Source date order: ${order === "DMY" ? "day/month/year" : "month/day/year"}.
-Write dates as MM/DD/YYYY. The day, month, and year must be the same civil date as the source.
+Write dates as ${input.dateFormat}. The day, month, and year must be the same civil date as the source.
 Every number and ID in the translation must appear in the source. A one-digit difference is a mistake. Replace it with the source number.
-Return fixes as {wrong, right}. right is copied from the source, or a date rewritten as MM/DD/YYYY using only digits from the source. If nothing is wrong, return an empty fixes array.
+Return fixes as {wrong, right}. right is copied from the source, or a date rewritten as ${input.dateFormat} using only digits from the source. If nothing is wrong, return an empty fixes array.
 Do not change names. Do not invent digits.
 
 Source:

@@ -64,6 +64,7 @@ describe("account order rows", () => {
       {
         id: "order-1",
         orderNumber: "order-1",
+        href: null,
         price: "$9.95",
         documentName: "diploma.pdf",
         status: "ready",
@@ -73,6 +74,7 @@ describe("account order rows", () => {
       {
         id: "order-2",
         orderNumber: "order-2",
+        href: null,
         price: "$9.95",
         documentName: "Birth certificate",
         status: "in review",
@@ -82,6 +84,7 @@ describe("account order rows", () => {
       {
         id: "11111111-1111-4111-8111-111111111111",
         orderNumber: "11111111",
+        href: "/order/11111111-1111-4111-8111-111111111111",
         price: "$9.95",
         documentName: "acta.pdf",
         status: "paid",

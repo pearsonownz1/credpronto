@@ -226,6 +226,30 @@ describe("identifier check", () => {
     }
   });
 
+  it("writes a DD/MM choice as day/month, and MM/DD as month/day", () => {
+    const source = "FECHA DE REGISTRO\n19/09/1996\nFECHA DE NACIMIENTO\n07/09/1996";
+    const swapped = [
+      { type: "kv" as const, label: "Registration Date", value: "09/19/1996" },
+      { type: "kv" as const, label: "Date of Birth", value: "09/07/1996" },
+    ];
+    const dayFirst = reconcileIdentifiers({
+      sourceText: source,
+      sourceLanguage: "es",
+      dateFormat: "DD/MM/YYYY",
+      blocks: swapped,
+    });
+    const monthFirst = reconcileIdentifiers({
+      sourceText: source,
+      sourceLanguage: "es",
+      dateFormat: "MM/DD/YYYY",
+      blocks: swapped,
+    });
+    expect(dayFirst[0]?.type === "kv" && dayFirst[0].value).toBe("19/09/1996");
+    expect(dayFirst[1]?.type === "kv" && dayFirst[1].value).toBe("07/09/1996");
+    expect(monthFirst[0]?.type === "kv" && monthFirst[0].value).toBe("09/19/1996");
+    expect(monthFirst[1]?.type === "kv" && monthFirst[1].value).toBe("09/07/1996");
+  });
+
   it("keeps a model fix only when the replacement is on the source", () => {
     const blocks = [{ type: "paragraph" as const, text: "Union No. 27379" }];
     const rejected = applyGroundedFixes(blocks, [{ wrong: "27379", right: "99999" }], LICENSE_SOURCE);
