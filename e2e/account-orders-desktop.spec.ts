@@ -39,6 +39,8 @@ test("the account lists every order once and signs out", async ({ page }) => {
   const list = page.getByTestId("account-orders");
   await expect(list.locator("li")).toHaveCount(6);
   await expect(page.getByTestId("account-order-CP-24817")).toContainText("Birth certificate");
+  await expect(page.getByTestId("account-number-CP-24817")).toHaveText("CP-24817");
+  await expect(page.getByTestId("account-price-CP-24790")).toHaveText("$9.95");
   await expect(page.getByTestId("account-status-CP-24817")).toHaveText("ready");
   await expect(page.getByTestId("download-CP-24817")).toHaveCount(0);
   await expect(page.getByTestId("account-order-CP-24815")).toContainText("Diploma, transcript");
