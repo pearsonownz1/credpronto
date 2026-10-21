@@ -116,6 +116,24 @@ describe("quote step actions", () => {
     expect(html).toContain('data-testid="continue"');
     expect(html).toContain('href="/confirm?lang=es&amp;target=en"');
     expect(html).not.toContain('data-testid="update-language"');
+    expect(html).not.toContain('data-testid="account-card"');
+  });
+
+  it("offers an account before Continue and leaves Continue in place", () => {
+    const html = renderToStaticMarkup(
+      createElement(QuoteBody, {
+        order: sampleCustomerOrder(),
+        token: "tok",
+        onReplaced: () => {},
+        showAccount: true,
+      }),
+    );
+    expect(html).toContain("Create your account to track your order");
+    expect(html).toContain('data-testid="account-card"');
+    expect(html).toContain('data-testid="continue"');
+    expect(html.indexOf('data-testid="account-card"')).toBeLessThan(html.indexOf('data-testid="continue"'));
+    expect(html).toContain("#1F5EFF");
+    expect(html).toContain("rounded-[4px]");
   });
 
   it("shows Continue for a quoted order with line items and a total", () => {

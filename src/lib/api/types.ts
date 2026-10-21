@@ -14,6 +14,8 @@ export type CustomerOrder = {
   previewAvailable: boolean;
   paymentStatus: string | null;
   downloadAvailable: boolean;
+  /** File names for this order. Present on GET /api/me/orders. */
+  documentName?: string | null;
   /** Not on GET /api/me/orders. Present only when a caller adds display context. */
   documentsLabel?: string | null;
   sourceLanguage?: string | null;

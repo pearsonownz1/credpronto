@@ -7,6 +7,7 @@ import {
   renderPreviewReadyEmail,
   renderStaffAlertEmail,
   renderTranslationFailureAlertEmail,
+  type RenderedEmail,
   type OrderReceivedEmail,
   type PaymentReceiptEmail,
   type PreviewReadyEmail,
@@ -26,6 +27,11 @@ export function appOrigin(): string {
 
 export function orderLink(token: string): string {
   return `${appOrigin()}/order/${token}`;
+}
+
+/** Signed-in order list. Preview-ready and payment emails use this. */
+export function accountLink(): string {
+  return `${appOrigin()}/account`;
 }
 
 /** Order page for a signed-in owner. The raw email token is not stored on the order. */
@@ -122,6 +128,10 @@ export async function sendContactMessage(input: ContactMessage): Promise<SendRes
   return { sent: true, skipped: false };
 }
 
+export function sendAuthLink(to: string, rendered: RenderedEmail): Promise<SendResult> {
+  return send(to, rendered.subject, rendered.text, rendered.html);
+}
+
 export function sendOrderReceived(
   to: string,
   input: Omit<OrderReceivedEmail, "trackUrl"> & { token: string },
@@ -136,7 +146,7 @@ export function sendPreviewReady(
 ): Promise<SendResult> {
   const rendered = renderPreviewReadyEmail({
     ...input,
-    payUrl: input.token ? orderLink(input.token) : null,
+    payUrl: accountLink(),
   });
   return send(to, rendered.subject, rendered.text, rendered.html);
 }

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
 import { OrderHub } from "@/components/flow/order-hub";
+import { getAccount } from "@/lib/account/session";
 import { OrderLoadingFallback } from "@/components/flow/reading-handoff";
 import { waitsForCheckoutOrder } from "@/lib/orders/checkout-return";
 import { viewerOwnsOrder } from "@/lib/orders/owner-order";
@@ -28,6 +29,7 @@ export default async function OrderPage({
 }) {
   const [{ token }, query] = await Promise.all([params, searchParams]);
   await connection();
+  const account = await getAccount();
   const checkout = Array.isArray(query.checkout) ? query.checkout[0] : query.checkout;
   // Success and cancel links keep the page up while the webhook lands.
   if (isOrderId(token)) {
@@ -42,7 +44,7 @@ export default async function OrderPage({
 
   return (
     <Suspense fallback={<OrderLoadingFallback />}>
-      <OrderHub />
+      <OrderHub signedIn={account != null} />
     </Suspense>
   );
 }

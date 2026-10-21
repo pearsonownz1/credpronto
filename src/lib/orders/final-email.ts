@@ -10,7 +10,7 @@ import {
   updateOrder,
   type Db,
 } from "./db";
-import { orderPageLink, sendFinalDownload } from "./email";
+import { accountLink, sendFinalDownload } from "./email";
 import { receiptLineItems, renderFinalDownloadEmail } from "./email-templates";
 import { resolveCustomerFinal } from "./final-file";
 import { notifyLifecycle, notifyOrder } from "./webhook-delivery";
@@ -67,7 +67,7 @@ export async function sendFinalCustomerEmail(db: Db, order: OrderRecord): Promis
       orderId: order.id,
       totalCents,
       lines,
-      downloadUrl: orderPageLink(order.id),
+      downloadUrl: accountLink(),
       filename,
     });
     const result = await sendFinalDownload(to, rendered, attachment);

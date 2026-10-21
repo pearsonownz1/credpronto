@@ -16,11 +16,12 @@ import { checkoutQuotePending, customerServiceQuote, lineItemsForOrder } from "@
 import type { AddonId, ShippingAddress } from "@/lib/orders/types";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
+import { OrderAccountCard } from "./order-account-card";
 import { FlowStatus } from "./status";
 import { useCustomerOrder, useStoredEmail, useStoredToken } from "./use-order";
 import { Checks, Field, FlowColumns, Summary, SummaryRow, buttonClasses, fieldClass } from "./ui";
 
-export function CheckoutView({ token: pathToken }: { token?: string }) {
+export function CheckoutView({ token: pathToken, signedIn = true }: { token?: string; signedIn?: boolean }) {
   const token = useStoredToken(pathToken);
   const email = useStoredEmail();
   const { order, error, loading } = useCustomerOrder(token, "while-working");
@@ -37,7 +38,7 @@ export function CheckoutView({ token: pathToken }: { token?: string }) {
         ) : !order ? (
           <FlowStatus title="No order to pay for" body="Start from your quote." />
         ) : (
-          <CheckoutForm key={order.orderId} token={token} email={email} order={order} />
+          <CheckoutForm key={order.orderId} token={token} email={email} order={order} signedIn={signedIn} />
         )}
       </main>
     </div>
@@ -48,13 +49,17 @@ function CheckoutForm({
   token,
   email,
   order,
+  signedIn,
 }: {
   token: string;
   email: string;
   order: CustomerOrder;
+  signedIn: boolean;
 }) {
   const router = useRouter();
   const paying = useRef(false);
+  const [signedUp, setSignedUp] = useState(false);
+  const hasAccount = signedIn || signedUp;
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const evaluationOrder = order.orderType === "evaluation" || order.service != null;
@@ -298,6 +303,16 @@ function CheckoutForm({
             {notice}
           </p>
         ) : null}
+        {hasAccount ? null : (
+          <OrderAccountCard
+            orderToken={token}
+            initialEmail={email}
+            onSignedIn={() => {
+              setSignedUp(true);
+              router.refresh();
+            }}
+          />
+        )}
         <button
           type="button"
           data-testid="pay-button"

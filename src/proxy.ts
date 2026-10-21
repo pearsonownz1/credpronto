@@ -10,7 +10,12 @@ import { updateSession } from "@/lib/supabase/proxy";
 const PRIVATE_NO_STORE = "private, no-store";
 
 function isDashboardPath(pathname: string): boolean {
-  return pathname === "/dashboard" || pathname.startsWith("/dashboard/");
+  return (
+    pathname === "/dashboard" ||
+    pathname.startsWith("/dashboard/") ||
+    pathname === "/account" ||
+    pathname.startsWith("/account/")
+  );
 }
 
 function signInRedirect(request: NextRequest): NextResponse {

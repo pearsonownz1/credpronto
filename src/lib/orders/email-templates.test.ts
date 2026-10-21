@@ -8,6 +8,7 @@ import {
   formatPaymentMethod,
   receiptLineItems,
   FINAL_DOWNLOAD_SUBJECT,
+  renderAuthLinkEmail,
   renderFinalDownloadEmail,
   renderOrderReceivedEmail,
   renderPaymentReceiptEmail,
@@ -220,5 +221,19 @@ describe("email templates", () => {
         addons: [],
       }).map((line) => line.label),
     ).toEqual(["Certified translation · 1 page × $9.95"]);
+  });
+});
+
+describe("auth link email", () => {
+  it("points at token_hash verify on /auth/confirm", () => {
+    const confirmUrl =
+      "https://credpronto.com/auth/confirm?token_hash=sample-hash&type=signup&next=%2Faccount";
+    const rendered = renderAuthLinkEmail({ confirmUrl, purpose: "signup" });
+    expect(rendered.html).toContain('href="https://credpronto.com/auth/confirm?token_hash=sample-hash&amp;type=signup&amp;next=%2Faccount"');
+    expect(rendered.text).toContain("/auth/confirm");
+    expect(rendered.text).toContain("token_hash=sample-hash");
+    expect(rendered.html).toContain("#1F5EFF");
+    expect(rendered.html).toContain("border-radius:4px");
+    expect(rendered.subject).toBe("Confirm your CredPronto account");
   });
 });
