@@ -165,6 +165,42 @@ describe("checkout session matches the quote", () => {
     );
   });
 
+  it("charges both evaluations, and a translation, as separate lines that sum to the server total", async () => {
+    const both = order({
+      service: null,
+      services: ["diploma", "course_by_course"],
+      degreeCount: 2,
+      evaluationCents: 0,
+      translationCents: 0,
+      unitPriceCents: 995,
+      totalCents: 0,
+      includeTranslation: false,
+    });
+    const bothPaid = await paidSession(both);
+    expect(bothPaid.quote.totalCents).toBe(2 * (1995 + 3995));
+    expect(bothPaid.amountTotal).toBe(bothPaid.quote.totalCents);
+    expect(bothPaid.params.line_items).toEqual([
+      expect.objectContaining({ quantity: 2, price_data: expect.objectContaining({ unit_amount: 1995 }) }),
+      expect.objectContaining({ quantity: 2, price_data: expect.objectContaining({ unit_amount: 3995 }) }),
+    ]);
+
+    const allThree = order({
+      status: "preview_ready",
+      service: null,
+      services: ["translation", "diploma", "course_by_course"],
+      degreeCount: 3,
+      billablePages: 4,
+      evaluationCents: 0,
+      translationCents: 0,
+      includeTranslation: true,
+      totalCents: 0,
+    });
+    const combined = await paidSession(allThree);
+    expect(combined.quote.totalCents).toBe(3 * 1995 + 3 * 3995 + 4 * 995);
+    expect(combined.amountTotal).toBe(combined.quote.totalCents);
+    expect(combined.params.line_items).toHaveLength(3);
+  });
+
   it("charges course-by-course for two degrees plus one detected page", async () => {
     const current = order({
       status: "preview_ready",

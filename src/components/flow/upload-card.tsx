@@ -271,12 +271,7 @@ export function UploadCard({
   }
 
   function toggleCheck(key: keyof ServiceChecks, checked: boolean) {
-    setChecks((current) => {
-      const next = { ...current, [key]: checked };
-      if (key === "diploma" && checked) next.courseByCourse = false;
-      if (key === "courseByCourse" && checked) next.diploma = false;
-      return next;
-    });
+    setChecks((current) => ({ ...current, [key]: checked }));
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -327,9 +322,13 @@ export function UploadCard({
               const amount =
                 item.id === "translation"
                   ? quote.translationCents
-                  : selected
-                    ? quote.evaluationCents
-                    : null;
+                  : item.id === "diploma"
+                    ? quote.diplomaCents
+                    : quote.courseCents;
+              const showDegrees =
+                selected &&
+                item.id !== "translation" &&
+                (checks.diploma ? item.id === "diploma" : item.id === "course_by_course");
               const price = selected && amount != null ? formatMoney(amount) : item.price;
               return (
                 <div
@@ -368,7 +367,7 @@ export function UploadCard({
                       {pageCount == null ? "Pages: counting…" : `Pages: ${pageCount}`}
                     </span>
                   ) : null}
-                  {item.id !== "translation" && selected ? (
+                  {showDegrees ? (
                     <DegreeStepper count={quote.degreeCount} onChange={(next) => setDegrees(String(next))} />
                   ) : null}
                   <span data-testid={`choice-price-${item.id}`} className="ml-auto shrink-0 text-[14px] font-semibold tabular-nums">

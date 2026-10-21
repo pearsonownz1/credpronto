@@ -1,3 +1,4 @@
+import { PDFDocument } from "pdf-lib";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as db from "./db";
 import * as finalEmail from "./final-email";
@@ -60,6 +61,7 @@ describe("evaluation review queue", () => {
     ).toEqual({
       id: orderId,
       type: "course_by_course",
+      services: ["course_by_course"],
       customerEmail: "ada@example.com",
       paidAt,
       waitMinutes: 14,
@@ -176,5 +178,59 @@ describe("deliverEvaluationReport", () => {
       deliverEvaluationReport(orderId, new Request("https://credpronto.com", { method: "POST", body: text })),
     ).rejects.toThrow(/PDF/);
     expect(db.updateOrder).not.toHaveBeenCalled();
+  });
+
+  it("keeps each evaluation and delivers only after both reports are stored", async () => {
+    const diplomaDoc = await PDFDocument.create();
+    diplomaDoc.addPage();
+    const diploma = await diplomaDoc.save();
+    const courseDoc = await PDFDocument.create();
+    courseDoc.addPage();
+    const course = await courseDoc.save();
+    let current = order({
+      service: null,
+      services: ["diploma", "course_by_course"],
+      degreeCount: 1,
+    });
+    vi.spyOn(db, "getOrderById").mockImplementation(async () => current);
+    vi.spyOn(db, "updateOrder").mockImplementation(async (_client, _id, patch) => {
+      if (patch.service_files && typeof patch.service_files === "object") {
+        current = { ...current, serviceFiles: patch.service_files as OrderRecord["serviceFiles"] };
+      }
+      if (typeof patch.status === "string") current = { ...current, status: patch.status as OrderRecord["status"] };
+      return true;
+    });
+    vi.spyOn(storage, "downloadObject").mockImplementation(async (_client, _bucket, path) =>
+      path.endsWith("diploma-evaluation.pdf") ? diploma : course,
+    );
+
+    const first = new FormData();
+    first.set("service", "diploma");
+    first.set("file", new File([new Uint8Array(diploma)], "diploma.pdf", { type: "application/pdf" }));
+    await expect(
+      deliverEvaluationReport(orderId, new Request("https://credpronto.com", { method: "POST", body: first })),
+    ).resolves.toEqual({ status: "received", email: "skipped", pending: ["course_by_course"] });
+    expect(storage.uploadObject).toHaveBeenCalledWith(
+      expect.anything(),
+      "finals",
+      `${orderId}/diploma-evaluation.pdf`,
+      expect.any(Uint8Array),
+      "application/pdf",
+    );
+    expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
+
+    const second = new FormData();
+    second.set("service", "course_by_course");
+    second.set("file", new File([new Uint8Array(course)], "course.pdf", { type: "application/pdf" }));
+    await expect(
+      deliverEvaluationReport(orderId, new Request("https://credpronto.com", { method: "POST", body: second })),
+    ).resolves.toEqual({ status: "delivered", email: "sent" });
+    expect(storage.uploadObject).toHaveBeenCalledWith(
+      expect.anything(),
+      "finals",
+      `${orderId}/evaluation.pdf`,
+      expect.any(Uint8Array),
+      "application/pdf",
+    );
   });
 });

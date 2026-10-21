@@ -15,6 +15,8 @@ describe("upload service quote", () => {
     expect(uploadServiceQuote({ checks: translation, degreeCount: 1, pageCount: 2 })).toEqual({
       degreeCount: 1,
       translationCents: 2 * UNIT_PRICE_CENTS,
+      diplomaCents: null,
+      courseCents: null,
       evaluationCents: null,
       totalCents: 2 * UNIT_PRICE_CENTS,
     });
@@ -32,8 +34,22 @@ describe("upload service quote", () => {
     expect(uploadServiceQuote({ checks: both, degreeCount: 3, pageCount: 4 })).toEqual({
       degreeCount: 3,
       translationCents: 4 * UNIT_PRICE_CENTS,
+      diplomaCents: null,
+      courseCents: 3 * COURSE_BY_COURSE_CENTS,
       evaluationCents: 3 * COURSE_BY_COURSE_CENTS,
       totalCents: 4 * UNIT_PRICE_CENTS + 3 * COURSE_BY_COURSE_CENTS,
+    });
+    expect(
+      uploadServiceQuote({
+        checks: { translation: false, diploma: true, courseByCourse: true },
+        degreeCount: 2,
+        pageCount: null,
+      }),
+    ).toMatchObject({
+      diplomaCents: 2 * DIPLOMA_EVALUATION_CENTS,
+      courseCents: 2 * COURSE_BY_COURSE_CENTS,
+      evaluationCents: 2 * (DIPLOMA_EVALUATION_CENTS + COURSE_BY_COURSE_CENTS),
+      totalCents: 2 * (DIPLOMA_EVALUATION_CENTS + COURSE_BY_COURSE_CENTS),
     });
   });
 

@@ -132,6 +132,48 @@ export async function issueUploadSession(
   return { sessionId, uploads };
 }
 
+const CLIENT_TOTAL_FIELDS = [
+  "total",
+  "totalCents",
+  "total_cents",
+  "amount",
+  "amountCents",
+  "amount_cents",
+  "evaluationCents",
+  "evaluation_cents",
+  "translationCents",
+  "translation_cents",
+  "unitPriceCents",
+  "unit_price_cents",
+] as const;
+
+/** The server prices every selected service. A client total is rejected. */
+export function rejectCustomerTotal(record: Record<string, unknown>): void {
+  for (const field of CLIENT_TOTAL_FIELDS) {
+    if (!(field in record)) continue;
+    const value = record[field];
+    if (value == null || value === "") continue;
+    throw new HttpError("The total is calculated by the server.", 400);
+  }
+}
+
+function readServices(value: unknown): string[] | null {
+  if (value == null || value === "") return null;
+  if (typeof value === "string") {
+    const names = value.split(",").map((item) => item.trim()).filter((item) => item.length > 0);
+    return names.length > 0 ? names : null;
+  }
+  if (!Array.isArray(value)) throw new HttpError("services must be a list of translation, diploma, and course_by_course", 400);
+  const names: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string" || !item.trim()) {
+      throw new HttpError("services must be a list of translation, diploma, and course_by_course", 400);
+    }
+    names.push(item.trim());
+  }
+  return names.length > 0 ? names : null;
+}
+
 function asText(value: unknown): string | null {
   if (typeof value === "string") {
     const trimmed = value.trim();
@@ -150,6 +192,7 @@ export type DirectOrderFields = {
   service: string | null;
   degreeCount: string | null;
   includeTranslation: string | null;
+  services: string[] | null;
   utmSource: string | null;
   utmMedium: string | null;
   utmCampaign: string | null;
@@ -163,6 +206,7 @@ export function parseDirectOrder(body: unknown): DirectOrderFields {
   }
   const record = body as Record<string, unknown>;
   rejectCustomerPageCount(record);
+  rejectCustomerTotal(record);
   const sessionId = typeof record.sessionId === "string" ? record.sessionId.trim() : "";
   if (!UUID.test(sessionId)) throw new HttpError("Unknown upload", 400);
   const files = record.files;
@@ -188,6 +232,7 @@ export function parseDirectOrder(body: unknown): DirectOrderFields {
     service: asText(record.service),
     degreeCount: asText(record.degreeCount),
     includeTranslation: asText(record.includeTranslation),
+    services: readServices(record.services),
     utmSource: asText(record.utm_source),
     utmMedium: asText(record.utm_medium),
     utmCampaign: asText(record.utm_campaign),

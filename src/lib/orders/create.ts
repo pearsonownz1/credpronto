@@ -12,7 +12,8 @@ import { readDirectOrder, referencedOriginals, storeReferencedFiles } from "./di
 import { assertEmail, safeFilename } from "./files";
 import { serviceDb, uploadObject } from "./storage";
 import { generateOrderToken, hashOrderToken } from "./token";
-import { evaluationFeeCents, evaluationUnitCents, parseOrderChoice } from "./evaluation-price";
+import { parseOrderChoice } from "./evaluation-price";
+import { priceServices } from "./service-selection";
 import type { OrderType } from "./types";
 
 /**
@@ -53,16 +54,23 @@ export async function createOrder(request: Request): Promise<{
     service: body.service,
     degreeCount: body.degreeCount,
     includeTranslation: body.includeTranslation,
+    services: body.services,
   });
 
   const db = serviceDb();
   const files = await referencedOriginals(db, body.sessionId, body.files);
   const customer = await upsertCustomer(db, email);
   const orderToken = generateOrderToken();
-  const evaluationCents =
-    choice.service && choice.degreeCount != null
-      ? evaluationFeeCents(choice.service, choice.degreeCount)
+  const priced =
+    choice.orderType === "evaluation"
+      ? priceServices({
+          services: choice.services,
+          degreeCount: choice.degreeCount,
+          sourceLanguage: null,
+          billablePages: null,
+        })
       : null;
+  const evaluationCents = priced?.evaluationCents ?? null;
   const order = await insertOrder(db, {
     id: body.sessionId,
     tokenHash: hashOrderToken(orderToken),
@@ -72,10 +80,11 @@ export async function createOrder(request: Request): Promise<{
     service: choice.service,
     degreeCount: choice.degreeCount,
     includeTranslation: choice.includeTranslation,
+    services: choice.services,
     evaluationCents,
     translationCents: evaluationCents == null ? null : 0,
     totalCents: evaluationCents,
-    unitPriceCents: choice.service ? evaluationUnitCents(choice.service) : null,
+    unitPriceCents: priced?.unitPriceCents ?? null,
     utmSource: body.utmSource,
     utmMedium: body.utmMedium,
     utmCampaign: body.utmCampaign,

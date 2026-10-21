@@ -1,5 +1,11 @@
 import { evaluationPricePatch, MAX_DEGREE_COUNT, rejectCustomerPageCount } from "./evaluation-price";
 import { HttpError } from "./errors";
+import {
+  orderHasEvaluation,
+  resolveServices,
+  selectionPricePatch,
+  servicesWithTranslation,
+} from "./service-selection";
 import type { EvaluationService } from "./types";
 
 export type QuoteLine = {
@@ -81,6 +87,9 @@ export function parseQuotePatch(body: unknown): QuotePatch {
 export function quotePriceAfterSkip(
   order: {
     service: EvaluationService | null;
+    services?: readonly string[] | null;
+    orderType?: string | null;
+    serviceType?: string | null;
     degreeCount?: number | null;
     sourceLanguage: string | null;
     unitPriceCents: number;
@@ -97,15 +106,44 @@ export function quotePriceAfterSkip(
   includeTranslation: boolean;
   unitPriceCents: number;
 } {
-  if (order.service && order.degreeCount != null) {
-    const priced = evaluationPricePatch({
-      service: order.service,
+  if (orderHasEvaluation(order) && order.degreeCount != null) {
+    const services = servicesWithTranslation(resolveServices(order), order.includeTranslation === true);
+    const priced = selectionPricePatch({
+      services,
+      includeTranslation: order.includeTranslation === true,
       degreeCount: order.degreeCount,
       sourceLanguage: order.sourceLanguage,
       billablePages,
-      includeTranslation: order.includeTranslation === true,
       addonCents: order.addonCents,
     });
+    if (!priced && order.service) {
+      const single = evaluationPricePatch({
+        service: order.service,
+        degreeCount: order.degreeCount,
+        sourceLanguage: order.sourceLanguage,
+        billablePages,
+        includeTranslation: order.includeTranslation === true,
+        addonCents: order.addonCents,
+      });
+      return {
+        billablePages,
+        evaluationCents: single.evaluation_cents,
+        translationCents: single.translation_cents,
+        totalCents: single.total_cents,
+        includeTranslation: single.include_translation,
+        unitPriceCents: single.unit_price_cents,
+      };
+    }
+    if (!priced) {
+      return {
+        billablePages,
+        evaluationCents: order.evaluationCents,
+        translationCents: 0,
+        includeTranslation: order.includeTranslation === true,
+        totalCents: (order.evaluationCents ?? 0) + order.addonCents,
+        unitPriceCents: order.unitPriceCents,
+      };
+    }
     return {
       billablePages,
       evaluationCents: priced.evaluation_cents,

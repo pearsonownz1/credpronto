@@ -4,6 +4,7 @@ import { progressForOrder, type PublicOrderProgress } from "./reading-progress";
 import { isPreviewDelayed } from "./translation-watch";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "./constants";
 import { customerServiceQuote, lineItemsForOrder } from "./evaluation-price";
+import { resolveServices } from "./service-selection";
 import { customerEvaluationResult, customerReviewReason } from "./equivalency";
 import { fulfillmentState, type FulfillmentState, type QaSignal } from "./release-decision";
 import { detectDocumentTitle, deliveryDocumentName } from "./download-name";
@@ -99,6 +100,8 @@ export type CustomerOrder = {
   delivery: { status: string } | null;
   orderType: OrderType;
   service: EvaluationService | null;
+  /** Every selected upload service. Derived from older rows when `services` was not stored. */
+  services?: Array<"translation" | "diploma" | "course_by_course">;
   /** Credentials to evaluate. New orders accept an integer from 1 to 5. */
   degreeCount: number | null;
   evaluationCents: number | null;
@@ -261,6 +264,7 @@ export function toCustomerOrder(input: {
     delivery: input.deliveryStatus ? { status: input.deliveryStatus } : null,
     orderType: input.order.orderType,
     service: input.order.service,
+    services: resolveServices(input.order),
     degreeCount: input.order.degreeCount,
     evaluationCents,
     translationCents,
@@ -282,6 +286,11 @@ export function toCustomerOrder(input: {
     translationOfferCents: quoted.translationOfferCents,
     lineItems: lineItemsForOrder({
       service: input.order.service,
+      services: input.order.services,
+      includeTranslation: quoted.includeTranslation,
+      orderType: input.order.orderType,
+      serviceType: input.order.serviceType,
+      sourceLanguage: input.order.sourceLanguage,
       degreeCount: input.order.degreeCount,
       evaluationCents,
       translationCents,

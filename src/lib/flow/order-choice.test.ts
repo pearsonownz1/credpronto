@@ -32,6 +32,7 @@ describe("upload order choice", () => {
       orderType: "evaluation",
       service: "diploma",
       degreeCount: "1",
+      services: "diploma",
     });
     expect(
       choiceFields(uploadChoiceFromChecks({ translation: true, diploma: true, courseByCourse: false }, 1)!),
@@ -40,6 +41,7 @@ describe("upload order choice", () => {
       service: "diploma",
       degreeCount: "1",
       includeTranslation: "true",
+      services: "translation,diploma",
     });
     expect(
       choiceFields(uploadChoiceFromChecks({ translation: true, diploma: false, courseByCourse: true }, 2)!),
@@ -48,9 +50,24 @@ describe("upload order choice", () => {
       service: "course_by_course",
       degreeCount: "2",
       includeTranslation: "true",
+      services: "translation,course_by_course",
+    });
+    expect(
+      choiceFields(uploadChoiceFromChecks({ translation: false, diploma: true, courseByCourse: true }, 2)!),
+    ).toEqual({
+      orderType: "evaluation",
+      degreeCount: "2",
+      services: "diploma,course_by_course",
+    });
+    expect(
+      choiceFields(uploadChoiceFromChecks({ translation: true, diploma: true, courseByCourse: true }, 1)!),
+    ).toEqual({
+      orderType: "evaluation",
+      degreeCount: "1",
+      includeTranslation: "true",
+      services: "translation,diploma,course_by_course",
     });
     expect(uploadChoiceFromChecks({ translation: false, diploma: false, courseByCourse: false }, 1)).toBeNull();
-    expect(uploadChoiceFromChecks({ translation: false, diploma: true, courseByCourse: true }, 1)).toBeNull();
     expect(uploadChoiceFromChecks({ translation: false, diploma: true, courseByCourse: false }, 0)).toBeNull();
     expect(uploadChoiceFromChecks({ translation: true, diploma: true, courseByCourse: false }, 6)).toBeNull();
     const five = uploadChoiceFromChecks({ translation: false, diploma: false, courseByCourse: true }, 5);

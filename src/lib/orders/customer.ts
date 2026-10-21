@@ -10,8 +10,8 @@ import {
   checkoutQuotePending,
   checkoutServiceCharge,
   customerServiceQuote,
-  evaluationPricePatch,
 } from "./evaluation-price";
+import { orderHasEvaluation, resolveServices, selectionPricePatch, servicesWithTranslation } from "./service-selection";
 import { bundleTranslationFile, deliveryFileTarget } from "./delivery-file";
 import { withQuotedPages } from "./stored-pages";
 import {
@@ -147,7 +147,7 @@ export async function patchOrderQuote(token: string, body: unknown): Promise<Cus
 
   let includeTranslation = order.includeTranslation;
   if (patch.includeTranslation != null) {
-    if (!order.service || order.degreeCount == null) {
+    if (!orderHasEvaluation(order) || order.degreeCount == null) {
       throw new HttpError("This order has no optional translation.", 400);
     }
     includeTranslation = patch.includeTranslation;
@@ -155,7 +155,7 @@ export async function patchOrderQuote(token: string, body: unknown): Promise<Cus
 
   let degreeCount = order.degreeCount;
   if (patch.degreeCount != null) {
-    if (order.service !== "diploma" && order.service !== "course_by_course") {
+    if (!orderHasEvaluation(order)) {
       throw new HttpError("This order has no evaluation.", 400);
     }
     degreeCount = patch.degreeCount;
@@ -193,7 +193,13 @@ export async function patchOrderQuote(token: string, body: unknown): Promise<Cus
     orderPatch.unit_price_cents = priced.unitPriceCents;
     if (priced.translationCents != null) orderPatch.translation_cents = priced.translationCents;
     if (priced.evaluationCents != null) orderPatch.evaluation_cents = priced.evaluationCents;
-    if (order.service) orderPatch.include_translation = priced.includeTranslation;
+    if (orderHasEvaluation(order)) {
+      orderPatch.include_translation = priced.includeTranslation;
+      orderPatch.services = servicesWithTranslation(
+        resolveServices({ ...order, includeTranslation }),
+        priced.includeTranslation,
+      );
+    }
   }
 
   if (Object.keys(orderPatch).length > 0) await updateOrder(db, order.id, orderPatch);
@@ -214,7 +220,7 @@ export async function confirmOrder(token: string, body: unknown): Promise<Custom
 
   const documents = await listDocuments(db, order.id);
   const byId = new Map(documents.map((document) => [document.id, document]));
-  const evaluation = order.service != null && order.degreeCount != null;
+  const evaluation = orderHasEvaluation(order) && order.degreeCount != null;
   if (payload.documents == null) {
     if (!evaluation) throw new HttpError("Confirm the fields for every document.", 400);
   } else if (payload.documents.length !== documents.length) {
@@ -223,6 +229,7 @@ export async function confirmOrder(token: string, body: unknown): Promise<Custom
 
   const fields: Array<{ documentId: string; fieldKey: string; confirmedValue: string }> = [];
   const seen = new Set<string>();
+  const includeTranslation = payload.includeTranslation ?? order.includeTranslation;
   for (const document of payload.documents ?? []) {
     if (!byId.has(document.documentId)) throw new HttpError("Unknown document.", 400);
     if (seen.has(document.documentId)) throw new HttpError("Confirm each document once.", 400);
@@ -249,18 +256,17 @@ export async function confirmOrder(token: string, body: unknown): Promise<Custom
 
   if (fields.length > 0) await confirmFields(db, order.id, fields);
   const pricePatch: Record<string, unknown> = {};
-  if (evaluation && order.service && order.degreeCount != null) {
-    Object.assign(
-      pricePatch,
-      evaluationPricePatch({
-        service: order.service,
-        degreeCount: order.degreeCount,
-        sourceLanguage: language,
-        billablePages: order.billablePages ?? 0,
-        includeTranslation: payload.includeTranslation ?? order.includeTranslation,
-        addonCents: order.addonCents,
-      }),
-    );
+  if (evaluation && order.degreeCount != null) {
+    const services = servicesWithTranslation(resolveServices(order), includeTranslation);
+    const priced = selectionPricePatch({
+      services,
+      includeTranslation,
+      degreeCount: order.degreeCount,
+      sourceLanguage: language,
+      billablePages: order.billablePages ?? 0,
+      addonCents: order.addonCents,
+    });
+    if (priced) Object.assign(pricePatch, priced, { services });
   }
   await updateOrder(db, order.id, {
     status: "confirmed",
@@ -368,6 +374,9 @@ export async function downloadOrderFile(
   const allowed = deliveryFileTarget({
     file,
     service: order.service,
+    services: order.services,
+    orderType: order.orderType,
+    serviceType: order.serviceType,
     finalPath: delivery?.finalPath ?? null,
     certificationPath: delivery?.certificationPath ?? null,
     documentNames: names,
@@ -421,6 +430,11 @@ function serviceStripeLines(input: {
     currency: string;
     billablePages: number | null;
     service: Parameters<typeof checkoutPriceLines>[0]["service"];
+    services?: Parameters<typeof checkoutPriceLines>[0]["services"];
+    includeTranslation?: boolean;
+    orderType?: string | null;
+    serviceType?: string | null;
+    sourceLanguage?: string | null;
     degreeCount: number | null;
     evaluationCents: number | null;
     translationCents: number | null;
@@ -431,6 +445,11 @@ function serviceStripeLines(input: {
 }) {
   const lines = checkoutPriceLines({
     service: input.order.service,
+    services: input.order.services,
+    includeTranslation: input.order.includeTranslation,
+    orderType: input.order.orderType,
+    serviceType: input.order.serviceType,
+    sourceLanguage: input.order.sourceLanguage,
     degreeCount: input.order.degreeCount,
     evaluationCents: input.order.evaluationCents,
     translationCents: input.order.translationCents,

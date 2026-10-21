@@ -1,12 +1,11 @@
 import { addonOptions, offersExpedited } from "@/lib/orders/addons";
 import { UNIT_PRICE_CENTS } from "@/lib/orders/constants";
 import {
-  evaluationCheckoutTotal,
-  evaluationQuote,
   evaluationUnitCents,
   lineItemsForOrder,
   translationOfferCents,
 } from "@/lib/orders/evaluation-price";
+import { evaluationKinds, priceServices, servicesWithTranslation } from "@/lib/orders/service-selection";
 import { languagesEqual } from "@/lib/orders/languages";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import { FlowApiError, requestFailedMessage } from "./api-error";
@@ -232,43 +231,45 @@ function withEvaluationChoice(
   choice: Extract<UploadChoice, { orderType: "evaluation" }>,
 ): CustomerOrder {
   const billablePages = base.billablePages ?? 0;
-  const priced = evaluationCheckoutTotal({
-    service: choice.service,
+  const services =
+    choice.services ??
+    (choice.service
+      ? choice.includeTranslation
+        ? ["translation", choice.service]
+        : [choice.service]
+      : []);
+  const priced = priceServices({
+    services,
     degreeCount: choice.degreeCount,
     sourceLanguage: base.sourceLanguage,
     billablePages,
-    includeTranslation: choice.includeTranslation,
   });
-  const quote = evaluationQuote({
-    service: choice.service,
-    degreeCount: choice.degreeCount,
-    sourceLanguage: base.sourceLanguage,
-    billablePages,
-    includeTranslation: priced.includeTranslation,
-  });
+  if (!priced) return base;
+  const primary = evaluationKinds(priced.services)[0] ?? null;
   return {
     ...base,
     orderType: "evaluation",
-    service: choice.service,
+    service: priced.service,
+    services: priced.services,
     degreeCount: choice.degreeCount,
-    evaluationCents: quote.evaluationCents,
-    translationCents: quote.translationCents,
-    includeTranslation: choice.includeTranslation,
-    unitPriceCents: evaluationUnitCents(choice.service),
-    translationOfferCents: choice.includeTranslation
+    evaluationCents: priced.evaluationCents,
+    translationCents: priced.translationCents,
+    includeTranslation: priced.includeTranslation,
+    unitPriceCents: primary ? evaluationUnitCents(primary) : priced.unitPriceCents,
+    translationOfferCents: priced.includeTranslation
       ? null
       : translationOfferCents({
-          service: choice.service,
+          service: primary,
           sourceLanguage: base.sourceLanguage,
           billablePages,
           unitPriceCents: UNIT_PRICE_CENTS,
         }),
-    totalCents: quote.totalCents,
-    lineItems: quote.lineItems,
+    totalCents: priced.totalCents,
+    lineItems: priced.lineItems,
     addonOptions: addonOptions(billablePages, {
       orderType: "evaluation",
       serviceType: "evaluation",
-      service: choice.service,
+      service: priced.service,
     }),
   };
 }
@@ -480,10 +481,13 @@ const mockClient: FlowClient = {
               unitPriceCents: UNIT_PRICE_CENTS,
             }),
       ...(translationCents != null ? { translationCents } : {}),
-      ...(evaluationOrder && next.service && next.degreeCount != null && next.evaluationCents != null
+      ...(evaluationOrder && next.degreeCount != null && next.evaluationCents != null
         ? {
             lineItems: lineItemsForOrder({
               service: next.service,
+              services: next.services ? servicesWithTranslation(next.services, includeTranslation) : undefined,
+              includeTranslation,
+              sourceLanguage: next.sourceLanguage,
               degreeCount: next.degreeCount,
               evaluationCents: next.evaluationCents,
               translationCents,
