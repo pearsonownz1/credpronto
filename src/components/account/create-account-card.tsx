@@ -17,6 +17,14 @@ type FieldErrors = {
 const inputClass =
   "h-11 w-full rounded-[4px] border border-[#E5E7EB] bg-white px-3 text-[15px] font-normal text-ink outline-none focus:border-[#1F5EFF]";
 
+const PASSWORD_LENGTH_ERROR = "Use 8 or more characters.";
+
+export function passwordHintKind(length: number, submittedShort: boolean): "muted" | "good" | "error" {
+  if (length >= 8) return "good";
+  if (submittedShort) return "error";
+  return "muted";
+}
+
 export function CreateAccountCard() {
   const router = useRouter();
   const params = useSearchParams();
@@ -28,6 +36,7 @@ export function CreateAccountCard() {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [submittedShort, setSubmittedShort] = useState(false);
   const [passwordState, passwordAction, passwordPending] = useActionState(mockPasswordAuth, null);
   const [magicState, magicAction, magicPending] = useActionState(mockMagicLink, null);
   const nameId = useId();
@@ -44,12 +53,13 @@ export function CreateAccountCard() {
     if (!name.trim()) nextErrors.name = "Enter your full name.";
     const emailError = emailProblem();
     if (emailError) nextErrors.email = emailError;
-    if (password.length < 8) nextErrors.password = "Use 8 or more characters.";
+    if (password.length < 8) nextErrors.password = PASSWORD_LENGTH_ERROR;
     return nextErrors;
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     const nextErrors = problems();
+    setSubmittedShort(password.length < 8);
     setErrors(nextErrors);
     setNotice(null);
     if (nextErrors.name || nextErrors.email || nextErrors.password) {
@@ -120,6 +130,9 @@ export function CreateAccountCard() {
     else serverField.email = serverError;
   }
   const emailError = errors.email || magicError || serverField.email;
+  const passwordError = [errors.password, serverField.password].find(
+    (message) => message && message !== PASSWORD_LENGTH_ERROR,
+  );
   const magicNotice = magicError ? null : (notice ?? magicState?.message ?? null);
 
   return (
@@ -154,7 +167,7 @@ export function CreateAccountCard() {
             className={inputClass}
           />
         </Field>
-        <Field id={passwordId} label="Password" hint="8+ characters" error={errors.password || serverField.password}>
+        <Field id={passwordId} label="Password" error={passwordError}>
           <span className="relative block">
             <input
               id={passwordId}
@@ -174,6 +187,7 @@ export function CreateAccountCard() {
               <EyeIcon hidden={!showPassword} />
             </button>
           </span>
+          <PasswordHint kind={passwordHintKind(password.length, submittedShort)} />
         </Field>
         <button
           type="submit"
@@ -207,6 +221,27 @@ export function CreateAccountCard() {
       </p>
     </div>
   );
+}
+
+function PasswordHint({ kind }: { kind: ReturnType<typeof passwordHintKind> }) {
+  if (kind === "good") {
+    return (
+      <span className="mt-1.5 flex items-center gap-1.5 text-[13px] text-[#1F5EFF]">
+        <svg viewBox="0 0 16 16" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+          <path d="M3.5 8.2 6.4 11.2 12.5 4.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Looks good
+      </span>
+    );
+  }
+  if (kind === "error") {
+    return (
+      <span role="alert" className="mt-1.5 block text-[13px] text-[#dc2626]">
+        {PASSWORD_LENGTH_ERROR}
+      </span>
+    );
+  }
+  return <span className="mt-1.5 block text-[13px] text-ink-muted">8+ characters</span>;
 }
 
 function Field({
