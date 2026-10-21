@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { CreateAccountCard } from "./create-account-card";
+import { CreateAccountCard, passwordFromForm } from "./create-account-card";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: () => undefined, refresh: () => undefined }),
@@ -39,5 +39,35 @@ describe("create account card", () => {
     expect(html).toContain('aria-label="Show password"');
     expect(html).not.toContain("Continue with Google");
     expect(html).not.toMatch(/>\s*Continue\s*</);
+  });
+});
+
+describe("passwordFromForm", () => {
+  it("reads the submitted password without trimming", () => {
+    const data = new FormData();
+    data.set("password", " 1234567 ");
+    expect(passwordFromForm(data)).toBe(" 1234567 ");
+    expect(passwordFromForm(data).length).toBe(9);
+  });
+
+  it("accepts a 10-character password and an exact 8, and rejects 7", () => {
+    const ten = new FormData();
+    ten.set("password", "password12");
+    const eight = new FormData();
+    eight.set("password", "12345678");
+    const seven = new FormData();
+    seven.set("password", "1234567");
+    expect(passwordFromForm(ten).length < 8).toBe(false);
+    expect(passwordFromForm(eight).length < 8).toBe(false);
+    expect(passwordFromForm(seven).length < 8).toBe(true);
+  });
+
+  it("keeps surrounding spaces that a trim would drop under 8", () => {
+    const data = new FormData();
+    data.set("password", "1234567 ");
+    const password = passwordFromForm(data);
+    expect(password).toBe("1234567 ");
+    expect(password.length < 8).toBe(false);
+    expect(password.trim().length < 8).toBe(true);
   });
 });

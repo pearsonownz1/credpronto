@@ -33,22 +33,29 @@ export function CreateAccountCard() {
   const emailId = useId();
   const passwordId = useId();
 
-  function emailProblem(): string | undefined {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return "Enter a valid email.";
+  function emailProblem(value = email): string | undefined {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) return "Enter a valid email.";
     return undefined;
   }
 
-  function problems(): FieldErrors {
+  function problems(submittedName: string, submittedEmail: string, submittedPassword: string): FieldErrors {
     const nextErrors: FieldErrors = {};
-    if (!name.trim()) nextErrors.name = "Enter your full name.";
-    const emailError = emailProblem();
+    if (!submittedName.trim()) nextErrors.name = "Enter your full name.";
+    const emailError = emailProblem(submittedEmail);
     if (emailError) nextErrors.email = emailError;
-    if (password.length < 8) nextErrors.password = "Use 8 or more characters.";
+    if (submittedPassword.length < 8) nextErrors.password = "Use 8 or more characters.";
     return nextErrors;
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    const nextErrors = problems();
+    const data = new FormData(event.currentTarget);
+    const submittedName = formText(data, "name");
+    const submittedEmail = formText(data, "email");
+    const submittedPassword = passwordFromForm(data);
+    setName(submittedName);
+    setEmail(submittedEmail);
+    setPassword(submittedPassword);
+    const nextErrors = problems(submittedName, submittedEmail, submittedPassword);
     setErrors(nextErrors);
     setNotice(null);
     if (nextErrors.name || nextErrors.email || nextErrors.password) {
@@ -61,9 +68,9 @@ export function CreateAccountCard() {
     const result = await browserJson<{ session?: boolean }>("/api/auth/password", {
       method: "POST",
       body: JSON.stringify({
-        email: email.trim(),
-        password,
-        name: name.trim(),
+        email: submittedEmail.trim(),
+        password: submittedPassword,
+        name: submittedName.trim(),
         mode: "sign-up",
         next,
       }),
@@ -208,6 +215,16 @@ export function CreateAccountCard() {
       </p>
     </div>
   );
+}
+
+function formText(formData: FormData, field: string): string {
+  const value = formData.get(field);
+  return typeof value === "string" ? value : "";
+}
+
+/** Submitted password, unread from React state and never trimmed. */
+export function passwordFromForm(formData: FormData): string {
+  return formText(formData, "password");
 }
 
 function Field({
