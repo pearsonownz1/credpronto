@@ -4,6 +4,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "re
 import { createClient } from "@/lib/supabase/client";
 import { customerEmailError } from "@/lib/flow/customer-email";
 import {
+  SERVICE_IDS,
+  checksAfterToggle,
   uploadChoiceFromChecks,
   type ServiceChecks,
   type UploadChoice,
@@ -53,10 +55,10 @@ const PRODUCTS: Array<{
   label: string;
   price: string;
 }> = [
-  { id: "translation", key: "translation", label: "Translation", price: TRANSLATION_RATE_NOTE },
-  { id: "diploma", key: "diploma", label: "Diploma evaluation", price: DIPLOMA_PRICE_LABEL },
+  { id: SERVICE_IDS.translation, key: "translation", label: "Translation", price: TRANSLATION_RATE_NOTE },
+  { id: SERVICE_IDS.diploma, key: "diploma", label: "Diploma evaluation", price: DIPLOMA_PRICE_LABEL },
   {
-    id: "course_by_course",
+    id: SERVICE_IDS.courseByCourse,
     key: "courseByCourse",
     label: "Course-by-course",
     price: COURSE_BY_COURSE_PRICE_LABEL,
@@ -243,18 +245,13 @@ export function UploadCard({
 
   function choiceError(): string {
     if (!checks.translation && !checks.diploma && !checks.courseByCourse) {
-      return "Choose a translation, an evaluation, or both.";
+      return "Choose any combination.";
     }
     return "Enter at least 1 degree.";
   }
 
   function toggleCheck(key: keyof ServiceChecks, checked: boolean) {
-    setChecks((current) => {
-      const next = { ...current, [key]: checked };
-      if (key === "diploma" && checked) next.courseByCourse = false;
-      if (key === "courseByCourse" && checked) next.diploma = false;
-      return next;
-    });
+    setChecks((current) => checksAfterToggle(current, key, checked));
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -298,13 +295,19 @@ export function UploadCard({
       <form noValidate onSubmit={onSubmit}>
         <fieldset data-testid="order-choice" className="mb-4">
           <legend className="text-[13px] font-semibold">What do you need?</legend>
-          <p className="mt-1 mb-2 text-xs text-ink-muted">Pick a translation, an evaluation, or both.</p>
+          <p className="mt-1 mb-2 text-xs text-ink-muted">Choose any combination.</p>
           <div className="grid gap-2">
             {PRODUCTS.map((item) => {
               const selected = checks[item.key];
               const fixedCents =
-                item.id === "diploma" ? quote.diplomaCents : item.id === "course_by_course" ? quote.courseCents : null;
-              const price = item.id === "translation" ? null : selected && fixedCents != null ? formatMoney(fixedCents) : item.price;
+                item.id === SERVICE_IDS.diploma
+                  ? quote.diplomaCents
+                  : item.id === SERVICE_IDS.courseByCourse
+                    ? quote.courseCents
+                    : null;
+              const showDegrees = selected && item.id !== SERVICE_IDS.translation;
+              const price =
+                item.id === SERVICE_IDS.translation ? null : selected && fixedCents != null ? formatMoney(fixedCents) : item.price;
               return (
                 <div
                   key={item.id}
@@ -336,7 +339,7 @@ export function UploadCard({
                       <span className="block text-[12.5px] text-ink-muted">{item.price}</span>
                     </span>
                   </label>
-                  {item.id !== "translation" && selected ? (
+                  {showDegrees ? (
                     <DegreeStepper count={quote.degreeCount} onChange={(next) => setDegrees(String(next))} />
                   ) : null}
                   {price != null ? (

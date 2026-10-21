@@ -8,6 +8,7 @@ import { buildCombinedOriginal, type SourceFile } from "./pdf/combine";
 import { appendPdf, concatPdfs, mergeCertifiedPacket } from "./pdf/merge";
 import { pdfPageCount, stampPacketPageNumbers } from "./pdf/page-numbers";
 import { autoReleaseEnabled, releaseAction, type QaSignal } from "./release-decision";
+import { orderHasEvaluation } from "./service-selection";
 import { downloadObject, uploadObject } from "./storage";
 import type { DocumentRecord, OrderRecord } from "./types";
 
@@ -142,7 +143,7 @@ export async function resolveCustomerFinal(
 ): Promise<{ path: string; filename: string } | null> {
   const documents = inReadingOrder(await listDocuments(db, order.id));
   const names = documents.map((document) => document.filename);
-  const evaluation = order.service != null;
+  const evaluation = orderHasEvaluation(order);
   const filename = evaluation
     ? orderDownloadFilename("evaluation", names, order.targetLanguage)
     : deliveryDocumentName({

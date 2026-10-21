@@ -1,5 +1,6 @@
 import { serviceCents } from "./addons";
-import { evaluationPrice, isTranslationBundle } from "./evaluation-price";
+import { orderHasEvaluation } from "./service-selection";
+import { isTranslationBundle } from "./evaluation-price";
 import type { EvaluationResult } from "./types";
 
 export const PENDING_EQUIVALENCY = "Pending staff review";
@@ -108,7 +109,7 @@ export function checkoutBlockReason(
     if (!order.languageConfirmed || base == null) return "This order is not ready to pay";
     return null;
   }
-  if (evaluationPrice(order)) {
+  if (orderHasEvaluation(order) && order.degreeCount != null && order.degreeCount >= 1) {
     if (EVALUATION_NOT_PAYABLE.has(order.status)) return "This order is not ready to pay";
     return null;
   }

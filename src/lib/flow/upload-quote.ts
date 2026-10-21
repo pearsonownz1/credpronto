@@ -21,7 +21,7 @@ export type UploadServiceQuote = {
   /** Null when course-by-course is off. */
   courseCents: number | null;
   /**
-   * Floor shown before the server quote: checked fixed fees, plus one
+   * Floor shown before the server quote: every checked fixed fee, plus one
    * translation page when translation is checked. Billable pages are not
    * known until the server reads the document.
    */

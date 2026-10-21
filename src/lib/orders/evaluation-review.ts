@@ -1,15 +1,21 @@
 import { MAX_FILE_BYTES, FINALS_BUCKET } from "./constants";
-import { ensurePendingDelivery, getDelivery, getOrderById, hasEvent, insertEvent, listEvaluationQueueOrders, settledPayment, updateDelivery, updateOrder } from "./db";
+import { ensurePendingDelivery, getDelivery, getOrderById, hasEvent, insertEvent, listEvaluationQueueOrders, settledPayment, updateDelivery, updateOrder, type Db } from "./db";
 import { sendFinalCustomerEmail } from "./final-email";
 import { HttpError } from "./errors";
 import { ensureStaffRow, requireStaff } from "./staff";
 import { uploadObject } from "./storage";
 import { notifyLifecycle, notifyOrder } from "./webhook-delivery";
 import { waitingMinutes } from "./certification-queue";
+import { isCertifiedTranslationPath } from "./final-file";
+import { orderEvaluationKinds } from "./service-selection";
+import { concatPdfs } from "./pdf/merge";
+import { downloadObject } from "./storage";
+import type { EvaluationService, OrderRecord } from "./types";
 
 export type EvaluationQueueOrder = {
   id: string;
-  type: "diploma" | "course_by_course";
+  type: "diploma" | "course_by_course" | "diploma_and_course_by_course";
+  services: Array<"diploma" | "course_by_course">;
   customerEmail: string | null;
   paidAt: string;
   waitMinutes: number;
@@ -17,16 +23,24 @@ export type EvaluationQueueOrder = {
 
 /** Whole minutes since payment. Orders without a real paid time are not queued. */
 export function evaluationQueueOrder(
-  row: { id: string; service: string | null; email: string | null; paidAt: string | null },
+  row: {
+    id: string;
+    service: string | null;
+    services?: readonly string[] | null;
+    email: string | null;
+    paidAt: string | null;
+  },
   now: number,
 ): EvaluationQueueOrder | null {
-  if (row.service !== "diploma" && row.service !== "course_by_course") return null;
+  const kinds = orderEvaluationKinds(row);
+  if (kinds.length === 0) return null;
   if (!row.paidAt) return null;
   const waitMinutes = waitingMinutes({ paidAt: row.paidAt }, now);
   if (waitMinutes == null) return null;
   return {
     id: row.id,
-    type: row.service,
+    type: kinds.length === 1 ? kinds[0]! : "diploma_and_course_by_course",
+    services: kinds,
     customerEmail: row.email,
     paidAt: row.paidAt,
     waitMinutes,
@@ -78,15 +92,74 @@ export async function deliverEvaluationReport(orderId: string, request: Request)
 
   const order = await getOrderById(db, orderId);
   if (!order) throw new HttpError("Order not found", 404);
-  if (order.service !== "diploma" && order.service !== "course_by_course") {
-    throw new HttpError("This order is not an evaluation", 409);
-  }
+  const kinds = orderEvaluationKinds(order);
+  if (kinds.length === 0) throw new HttpError("This order is not an evaluation", 409);
   if (order.status === "cancelled") throw new HttpError("This order is cancelled", 409);
   const payment = await settledPayment(db, order.id);
   if (!payment) throw new HttpError("This order is not paid", 409);
 
+  if (kinds.length === 1) {
+    const path = evaluationDeliverablePath(order.id);
+    await uploadObject(db, FINALS_BUCKET, path, bytes, "application/pdf");
+    return publishEvaluationDelivery({ db, userId, order, path });
+  }
+
+  const service = deliveredEvaluationService(form, kinds);
+  const partPath = `${order.id}/${service}-evaluation.pdf`;
+  await uploadObject(db, FINALS_BUCKET, partPath, bytes, "application/pdf");
+  const files: Partial<Record<EvaluationService, string>> = { ...(order.serviceFiles ?? {}), [service]: partPath };
+  const pending = kinds.filter((kind) => !files[kind]);
+  if (pending.length > 0) {
+    await updateOrder(db, order.id, { service_files: files });
+    return { status: "received" as const, email: "skipped" as const, pending };
+  }
+
+  const diplomaBytes =
+    service === "diploma" ? bytes : await downloadObject(db, FINALS_BUCKET, files.diploma as string);
+  const courseBytes =
+    service === "course_by_course"
+      ? bytes
+      : await downloadObject(db, FINALS_BUCKET, files.course_by_course as string);
+  const merged = await concatPdfs([diplomaBytes, courseBytes]);
   const path = evaluationDeliverablePath(order.id);
-  await uploadObject(db, FINALS_BUCKET, path, bytes, "application/pdf");
+  await uploadObject(db, FINALS_BUCKET, path, merged, "application/pdf");
+  return publishEvaluationDelivery({ db, userId, order, path, serviceFiles: files });
+}
+
+function deliveredEvaluationService(form: FormData, kinds: readonly EvaluationService[]): EvaluationService {
+  const raw = form.get("service");
+  const service = typeof raw === "string" ? raw.trim() : "";
+  if (service !== "diploma" && service !== "course_by_course") {
+    throw new HttpError("service must be diploma or course_by_course", 400);
+  }
+  if (!kinds.includes(service)) throw new HttpError("This order does not include that evaluation", 409);
+  return service;
+}
+
+function storedReportPaths(order: OrderRecord, reportPath: string): {
+  final_translation_path: string;
+  certification_path: string;
+} {
+  if (order.includeTranslation === true && isCertifiedTranslationPath(order.finalTranslationPath)) {
+    return {
+      final_translation_path: order.finalTranslationPath,
+      certification_path: isCertifiedTranslationPath(order.certificationPath)
+        ? order.certificationPath
+        : order.finalTranslationPath,
+    };
+  }
+  return { final_translation_path: reportPath, certification_path: reportPath };
+}
+
+async function publishEvaluationDelivery(input: {
+  db: Db;
+  userId: string;
+  order: OrderRecord;
+  path: string;
+  serviceFiles?: Partial<Record<EvaluationService, string>>;
+}) {
+  const { db, userId, order, path, serviceFiles } = input;
+  const columns = storedReportPaths(order, path);
   await ensureStaffRow(db, userId);
   await ensurePendingDelivery(db, order.id);
   const delivery = await getDelivery(db, order.id);
@@ -96,8 +169,9 @@ export async function deliverEvaluationReport(orderId: string, request: Request)
   const now = new Date().toISOString();
   await updateOrder(db, order.id, {
     status: "delivered",
-    final_translation_path: path,
-    certification_path: path,
+    final_translation_path: columns.final_translation_path,
+    certification_path: columns.certification_path,
+    ...(serviceFiles ? { service_files: serviceFiles } : {}),
   });
   await updateDelivery(db, order.id, {
     status: "delivered",

@@ -43,6 +43,17 @@ describe("upload service quote", () => {
       courseCents: 3 * COURSE_BY_COURSE_CENTS,
       fromCents: 3 * COURSE_BY_COURSE_CENTS + UNIT_PRICE_CENTS,
     });
+    expect(
+      uploadServiceQuote({
+        checks: { translation: false, diploma: true, courseByCourse: true },
+        degreeCount: 2,
+      }),
+    ).toEqual({
+      degreeCount: 2,
+      diplomaCents: 2 * DIPLOMA_EVALUATION_CENTS,
+      courseCents: 2 * COURSE_BY_COURSE_CENTS,
+      fromCents: 2 * (DIPLOMA_EVALUATION_CENTS + COURSE_BY_COURSE_CENTS),
+    });
   });
 
   it("adds every checked fixed service to one translation page", () => {

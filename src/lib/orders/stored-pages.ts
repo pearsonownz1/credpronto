@@ -2,6 +2,7 @@ import { getDocumentProxy } from "unpdf";
 import { ORIGINALS_BUCKET } from "./constants";
 import { listDocuments, updateDocument, updateOrder, type Db } from "./db";
 import { knownBillablePages } from "./evaluation-price";
+import { orderNeedsBundledPageCount } from "./service-selection";
 import { downloadObject } from "./storage";
 import type { DocumentRecord, OrderRecord } from "./types";
 
@@ -27,8 +28,7 @@ export async function countOriginalPages(
  * It is already on the order, or on each document. When neither was stored, read it from the file once.
  */
 export async function withQuotedPages(db: Db, order: OrderRecord): Promise<OrderRecord> {
-  if (order.includeTranslation !== true) return order;
-  if (order.service !== "diploma" && order.service !== "course_by_course") return order;
+  if (!orderNeedsBundledPageCount(order)) return order;
   if (order.billablePages != null && order.billablePages > 0) return order;
 
   const documents = await listDocuments(db, order.id);

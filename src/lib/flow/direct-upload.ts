@@ -2,7 +2,7 @@ import { DIRECT_FILE_LIMIT_MESSAGE, MAX_DIRECT_FILE_BYTES } from "@/lib/orders/c
 import { resolveUploadMime } from "@/lib/orders/file-type";
 import { readPublicSupabaseEnv } from "@/lib/supabase/env";
 import { FlowApiError, requestFailedMessage } from "./api-error";
-import { choiceFields, type UploadChoice } from "./order-choice";
+import { orderRequestChoice, type UploadChoice } from "./order-choice";
 import { dedupeUploads } from "./uploads";
 
 export type FileUploadProgress = {
@@ -139,12 +139,7 @@ async function filesToUpload(files: File[]): Promise<File[]> {
 }
 
 function choicePayload(choice: UploadChoice): Record<string, unknown> {
-  const fields = choiceFields(choice);
-  return {
-    orderType: choice.orderType,
-    ...fields,
-    ...(choice.orderType === "evaluation" ? { includeTranslation: choice.includeTranslation } : {}),
-  };
+  return orderRequestChoice(choice);
 }
 
 export async function uploadOrderFiles(input: {

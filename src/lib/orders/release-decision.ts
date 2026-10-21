@@ -1,6 +1,7 @@
 import { addBusinessHours } from "./business-hours";
 import { LOW_LANGUAGE_CONFIDENCE } from "./constants";
 import type { QaStatus } from "./qa";
+import { orderHasEvaluation } from "./service-selection";
 
 /** A first-attempt QA pass at or above this score is high confidence. The pass bar is 80. */
 export const HIGH_QA_SCORE = 90;
@@ -129,8 +130,12 @@ export function urgentAlertDue(input: {
   staffUrgentAlertSentAt: string | null;
   now: number;
   service?: string | null;
+  services?: readonly string[] | null;
+  includeTranslation?: boolean | null;
+  orderType?: string | null;
+  serviceType?: string | null;
 }): boolean {
-  if (input.service) return false;
+  if (orderHasEvaluation(input)) return false;
   if (!UNAPPROVED.has(input.status)) return false;
   if (!input.paidAt || !input.staffAlertSentAt || input.staffUrgentAlertSentAt) return false;
   const paid = Date.parse(input.paidAt);
@@ -150,8 +155,12 @@ export function evaluationUrgentDue(input: {
   staffUrgentAlertSentAt: string | null;
   now: number;
   service?: string | null;
+  services?: readonly string[] | null;
+  includeTranslation?: boolean | null;
+  orderType?: string | null;
+  serviceType?: string | null;
 }): boolean {
-  if (!input.service) return false;
+  if (!orderHasEvaluation(input)) return false;
   if (!UNAPPROVED.has(input.status)) return false;
   if (!input.paidAt || !input.staffAlertSentAt || input.staffUrgentAlertSentAt) return false;
   const paid = Date.parse(input.paidAt);

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useState, type ChangeEvent } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
+import { serviceRequestFromOrder } from "@/lib/flow/order-choice";
 import { formatMoney } from "@/lib/flow/pricing";
 import {
   billablePriceLabel,
@@ -189,13 +190,20 @@ export function QuoteBody({
   });
 
   async function onToggleTranslation(includeTranslation: boolean) {
-    if (translationPending || !live.service || live.degreeCount == null) return;
+    const hasEvaluation =
+      live.orderType === "evaluation" ||
+      live.service != null ||
+      (live.services ?? []).some((id) => id !== "translation");
+    if (translationPending || !hasEvaluation || live.degreeCount == null) return;
     const snapshot = live;
     setTranslationError(null);
     setPatch({ source: order, order: orderWithTranslationChoice(snapshot, includeTranslation) });
     setTranslationPending(true);
     try {
-      const updated = await getFlowClient().updateQuote(token, { includeTranslation });
+      const updated = await getFlowClient().updateQuote(
+        token,
+        serviceRequestFromOrder(snapshot, { includeTranslation }),
+      );
       setPatch({ source: order, order: updated });
     } catch (cause) {
       setPatch({ source: order, order: snapshot });
