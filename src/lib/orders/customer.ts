@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { addonStripeLines, parseCheckoutBody, serviceCents } from "./addons";
 import { checkoutBlockReason } from "./equivalency";
-import { downloadGate, isSettledPayment } from "./access";
+import { downloadGate } from "./access";
 import { checkoutPreviewImageUrl } from "./checkout-image";
 import { checkoutLineProduct, checkoutProductDescription } from "./checkout-preview";
 import {
@@ -32,6 +32,7 @@ import {
   insertPayment,
   latestPayment,
   latestReadyPreview,
+  listBundleTranslationSignals,
   listDocuments,
   listPages,
   markDocuments,
@@ -61,7 +62,7 @@ import {
   type EvaluationFieldKey,
 } from "./fields";
 import { appOrigin } from "./email";
-import { resolveCustomerFinal } from "./final-file";
+import { bundleTranslationDecision, resolveCustomerFinal } from "./final-file";
 import { applySucceededSetupIntent } from "./saved-card";
 import { normalizeLanguage } from "./languages";
 import { compareCombinedPages } from "./page-order";
@@ -333,7 +334,23 @@ export async function downloadOrderFile(
     targetLanguage: order.targetLanguage,
   });
   if (bundled) {
-    if (!isSettledPayment(payment?.status ?? null)) throw new HttpError("Payment required", 402);
+    const delivery = await getDelivery(db, order.id);
+    const signals = (await listBundleTranslationSignals(db, [order.id])).get(order.id);
+    const decision = bundleTranslationDecision({
+      includeTranslation: order.includeTranslation,
+      status: order.status,
+      paymentStatus: payment?.status ?? null,
+      finalTranslationPath: order.finalTranslationPath,
+      certificationPath: order.certificationPath,
+      reviewReason: order.reviewReason,
+      qa: signals?.qa ?? null,
+      languageConfidence: signals?.languageConfidence ?? null,
+      pageNeedsReview: signals?.pageNeedsReview === true,
+      openCorrections: signals?.openCorrections === true,
+      deliveryStatus: delivery?.status ?? null,
+      deliveryFinalPath: delivery?.finalPath ?? null,
+    });
+    if (!decision.ok) throw new HttpError(decision.error, decision.status);
     const url = await signedObjectUrl(db, FINALS_BUCKET, bundled.path, DOWNLOAD_URL_SECONDS, {
       download: bundled.filename,
     });

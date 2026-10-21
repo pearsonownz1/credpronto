@@ -1311,6 +1311,88 @@ export async function listQaRuns(db: Db, orderId: string): Promise<QaRunRecord[]
   return ((data ?? []) as Row[]).map(mapQaRun);
 }
 
+export type BundleTranslationSignals = {
+  qa: { status: QaStatus; score: number } | null;
+  languageConfidence: number | null;
+  pageNeedsReview: boolean;
+  openCorrections: boolean;
+};
+
+/** QA, language confidence, page review, and open corrections for the translation release check. */
+export async function listBundleTranslationSignals(
+  db: Db,
+  orderIds: string[],
+): Promise<Map<string, BundleTranslationSignals>> {
+  const signals = new Map<string, BundleTranslationSignals>();
+  for (const id of orderIds) {
+    signals.set(id, { qa: null, languageConfidence: null, pageNeedsReview: false, openCorrections: false });
+  }
+  if (orderIds.length === 0) return signals;
+
+  const [documents, runs, corrections] = await Promise.all([
+    db.from("documents").select("id, order_id, confidence").in("order_id", orderIds),
+    db.from("order_qa_runs").select("order_id, attempt, status, score").in("order_id", orderIds),
+    db.from("corrections").select("order_id, status").in("order_id", orderIds),
+  ]);
+  fail(documents.error);
+  fail(runs.error);
+  fail(corrections.error);
+
+  const documentOrder = new Map<string, string>();
+  const confidenceByOrder = new Map<string, number[]>();
+  for (const row of (documents.data ?? []) as Row[]) {
+    const orderId = String(row.order_id);
+    documentOrder.set(String(row.id), orderId);
+    const confidence = num(row.confidence);
+    if (confidence == null) continue;
+    const list = confidenceByOrder.get(orderId) ?? [];
+    list.push(confidence);
+    confidenceByOrder.set(orderId, list);
+  }
+
+  const documentIds = [...documentOrder.keys()];
+  if (documentIds.length > 0) {
+    const pages = await db
+      .from("document_pages")
+      .select("document_id, needs_review")
+      .in("document_id", documentIds);
+    fail(pages.error);
+    for (const row of (pages.data ?? []) as Row[]) {
+      if (!row.needs_review) continue;
+      const current = signals.get(documentOrder.get(String(row.document_id)) ?? "");
+      if (current) current.pageNeedsReview = true;
+    }
+  }
+
+  for (const [orderId, values] of confidenceByOrder) {
+    const current = signals.get(orderId);
+    if (current && values.length > 0) current.languageConfidence = Math.min(...values);
+  }
+
+  const latest = new Map<string, { attempt: number; status: QaStatus; score: number }>();
+  for (const row of (runs.data ?? []) as Row[]) {
+    const orderId = String(row.order_id);
+    const attempt = num(row.attempt) ?? 0;
+    const status: QaStatus =
+      row.status === "pass" || row.status === "fail" || row.status === "retranslated" ? row.status : "fail";
+    const score = num(row.score) ?? 0;
+    const previous = latest.get(orderId);
+    if (!previous || attempt >= previous.attempt) latest.set(orderId, { attempt, status, score });
+  }
+  for (const [orderId, qa] of latest) {
+    const current = signals.get(orderId);
+    if (current) current.qa = { status: qa.status, score: qa.score };
+  }
+
+  for (const row of (corrections.data ?? []) as Row[]) {
+    if (row.status !== "open") continue;
+    const current = signals.get(String(row.order_id));
+    if (current) current.openCorrections = true;
+  }
+
+  return signals;
+}
+
 export async function insertQaRun(
   db: Db,
   input: { orderId: string; attempt: number; status: QaStatus; score: number; issues: QaIssue[] },
@@ -1513,6 +1595,8 @@ export type OwnedOrderRow = {
   createdAt: string;
   includeTranslation: boolean;
   finalTranslationPath: string | null;
+  certificationPath: string | null;
+  reviewReason: string | null;
 };
 
 export async function listDocumentFilenames(db: Db, orderIds: string[]): Promise<Map<string, string[]>> {
@@ -1541,7 +1625,7 @@ export async function listOwnedOrderRows(db: Db, userId: string): Promise<OwnedO
   const { data, error } = await db
     .from("orders")
     .select(
-      "id, status, service_type, service, degree_count, addon_cents, billable_pages, unit_price_cents, total_cents, currency, created_at, include_translation, translation_cents, final_translation_path",
+      "id, status, service_type, service, degree_count, addon_cents, billable_pages, unit_price_cents, total_cents, currency, created_at, include_translation, translation_cents, final_translation_path, certification_path, review_reason",
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
@@ -1566,6 +1650,8 @@ export async function listOwnedOrderRows(db: Db, userId: string): Promise<OwnedO
       createdAt: str(row.created_at) ?? new Date().toISOString(),
       includeTranslation,
       finalTranslationPath: str(row.final_translation_path),
+      certificationPath: str(row.certification_path),
+      reviewReason: str(row.review_reason),
     };
   });
 }
