@@ -9,6 +9,7 @@ import { fulfillmentState, type FulfillmentState } from "./release-decision";
 import { detectDocumentTitle, deliveryDocumentName } from "./download-name";
 import { storedTimestamp, uploadOrCreatedAt } from "./speed-line";
 import { compareCombinedPages } from "./page-order";
+import { customerEvalStatus, type EvalStatus } from "../evalStatus";
 import type {
   AddonId,
   ConfirmationRecord,
@@ -120,6 +121,13 @@ export type CustomerOrder = {
   deliveredAt?: string | null;
   /** `released` after certification. `awaiting_review` while a paid order is still with staff. */
   fulfillment: FulfillmentState | null;
+  /**
+   * `orders.evaluation_status`. Null when that column is absent or not a known status.
+   * The tracker falls back to under review for a paid evaluation in that case.
+   */
+  evaluationStatus?: EvalStatus | null;
+  /** Per-step ISO timestamps from `under_review_at` and the other status `_at` columns. */
+  evaluationStatusAt?: Partial<Record<EvalStatus, string>>;
   /** Detected document title, or a readable form of the upload name. */
   documentTitle: string;
 };
@@ -266,6 +274,7 @@ export function toCustomerOrder(input: {
     translationReadyAt: storedTimestamp(input.translationReadyAt),
     deliveredAt: storedTimestamp(input.deliveredAt),
     fulfillment: fulfillmentState(input.order),
+    ...customerEvalStatus(input.order),
     documentTitle,
     delayed: isPreviewDelayed({
       status: input.order.status,
