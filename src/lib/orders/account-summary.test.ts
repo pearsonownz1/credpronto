@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { paymentStatusForCustomer, summarizeCustomerOrder } from "./account-summary";
+import { EVALUATION_REVIEW_REASON } from "./evaluation-price";
+import { QA_REVIEW_REASON } from "./qa";
+import { HIGH_QA_SCORE } from "./release-decision";
 
 describe("customer order summary", () => {
   it("prefers a settled payment over a newer failure", () => {
@@ -60,7 +63,8 @@ describe("customer order summary", () => {
   });
 
   it("marks a paid bundle ready to download its certified translation", () => {
-    const bundle = summarizeCustomerOrder({
+    const translation = "0301d079-8368-40d8-854d-95475933124f/certified-translation-v1.pdf";
+    const input = {
       id: "0301d079-8368-40d8-854d-95475933124f",
       status: "paid",
       serviceType: "evaluation",
@@ -71,12 +75,28 @@ describe("customer order summary", () => {
       createdAt: "2026-10-21T14:25:35.957Z",
       previewReady: true,
       paymentStatus: "paid",
-      deliveryStatus: "pending",
+      deliveryStatus: "pending" as const,
       includeTranslation: true,
-      finalTranslationPath: "0301d079-8368-40d8-854d-95475933124f/certified-translation-v1.pdf",
-    });
+      finalTranslationPath: translation,
+      certificationPath: translation,
+      reviewReason: EVALUATION_REVIEW_REASON,
+      qa: { status: "pass" as const, score: HIGH_QA_SCORE },
+      languageConfidence: 0.96,
+      pageNeedsReview: false,
+      openCorrections: false,
+      autoReleaseEnabled: true,
+    };
+    const bundle = summarizeCustomerOrder(input);
     expect(bundle.downloadAvailable).toBe(false);
     expect(bundle.translationReady).toBe(true);
     expect(bundle.includeTranslation).toBe(true);
+
+    const flagged = summarizeCustomerOrder({
+      ...input,
+      reviewReason: QA_REVIEW_REASON,
+      qa: { status: "fail", score: 40 },
+    });
+    expect(flagged.translationReady).toBe(false);
+    expect(flagged.downloadAvailable).toBe(false);
   });
 });

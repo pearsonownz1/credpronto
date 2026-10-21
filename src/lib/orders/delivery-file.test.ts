@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { bundleTranslationFile, deliveryFileTarget } from "./delivery-file";
-import { bundleTranslationReady } from "./final-file";
+import { EVALUATION_REVIEW_REASON } from "./evaluation-price";
+import { bundleTranslationDecision, bundleTranslationReady, type BundleTranslationInput } from "./final-file";
+import { QA_REVIEW_REASON } from "./qa";
+import { HIGH_QA_SCORE } from "./release-decision";
 
 const report = "order-1/evaluation-v1.pdf";
 
@@ -77,22 +80,84 @@ describe("evaluation download", () => {
         targetLanguage: "en",
       })?.filename,
     ).toBe("diploma-evaluation.pdf");
+    const clean: BundleTranslationInput = {
+      includeTranslation: true,
+      status: "paid",
+      paymentStatus: "paid",
+      finalTranslationPath: translation,
+      certificationPath: translation,
+      reviewReason: EVALUATION_REVIEW_REASON,
+      qa: { status: "pass", score: HIGH_QA_SCORE },
+      languageConfidence: 0.96,
+      pageNeedsReview: false,
+      openCorrections: false,
+      enabled: true,
+      deliveryStatus: "pending",
+      deliveryFinalPath: null,
+    };
+    expect(bundleTranslationReady(clean)).toBe(true);
+    expect(bundleTranslationDecision(clean)).toEqual({ ok: true });
     expect(
       bundleTranslationReady({
-        includeTranslation: true,
-        status: "paid",
-        paymentStatus: "paid",
-        finalTranslationPath: translation,
-      }),
-    ).toBe(true);
-    expect(
-      bundleTranslationReady({
-        includeTranslation: true,
+        ...clean,
         status: "preview_ready",
         paymentStatus: null,
-        finalTranslationPath: translation,
       }),
     ).toBe(false);
+    expect(
+      bundleTranslationDecision({
+        ...clean,
+        status: "preview_ready",
+        paymentStatus: null,
+      }),
+    ).toEqual({ ok: false, status: 402, error: "Payment required" });
+  });
+
+  it("keeps a paid flagged bundle locked until staff approve the translation", () => {
+    const translation = "order-1/certified-translation-v1.pdf";
+    const flagged: BundleTranslationInput = {
+      includeTranslation: true,
+      status: "paid",
+      paymentStatus: "paid",
+      finalTranslationPath: translation,
+      certificationPath: translation,
+      reviewReason: QA_REVIEW_REASON,
+      qa: { status: "fail", score: 40 },
+      languageConfidence: 0.96,
+      pageNeedsReview: false,
+      openCorrections: false,
+      enabled: true,
+      deliveryStatus: "pending",
+      deliveryFinalPath: null,
+    };
+    expect(bundleTranslationReady(flagged)).toBe(false);
+    expect(bundleTranslationDecision(flagged)).toEqual({
+      ok: false,
+      status: 403,
+      error: "Certification is not approved",
+    });
+    expect(
+      bundleTranslationReady({
+        ...flagged,
+        reviewReason: EVALUATION_REVIEW_REASON,
+        qa: { status: "pass", score: HIGH_QA_SCORE - 1 },
+      }),
+    ).toBe(false);
+    expect(
+      bundleTranslationReady({
+        ...flagged,
+        status: "delivered",
+        deliveryStatus: "delivered",
+        deliveryFinalPath: "order-1/evaluation.pdf",
+      }),
+    ).toBe(false);
+    expect(
+      bundleTranslationReady({
+        ...flagged,
+        deliveryStatus: "approved",
+        deliveryFinalPath: translation,
+      }),
+    ).toBe(true);
   });
 
   it("names one certified translation and serves the certificate link from that file", () => {

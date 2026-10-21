@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { addonOptions } from "./addons";
 import { WORD_PAGE_RULE } from "./billing";
+import { EVALUATION_REVIEW_REASON } from "./evaluation-price";
+import { QA_REVIEW_REASON } from "./qa";
+import { HIGH_QA_SCORE } from "./release-decision";
 import type { OrderRecord, PageRecord } from "./types";
 import { previewPages, toCustomerOrder } from "./view";
 
@@ -203,6 +206,69 @@ describe("customer order", () => {
     expect(order).not.toHaveProperty("edgeMatchMethod");
     expect(JSON.stringify(order)).not.toContain("edge_credential");
     expect(JSON.stringify(order)).not.toContain("edge_match");
+  });
+
+  it("releases a clean bundle translation on payment and holds a flagged one", () => {
+    const translation = "order-1/certified-translation-v1.pdf";
+    const shared = {
+      order: {
+        ...orderRecord(),
+        status: "paid" as const,
+        orderType: "evaluation" as const,
+        service: "diploma" as const,
+        degreeCount: 1,
+        evaluationCents: 1995,
+        translationCents: 995,
+        includeTranslation: true,
+        billablePages: 1,
+        totalCents: 2990,
+        finalTranslationPath: translation,
+        certificationPath: translation,
+        reviewReason: EVALUATION_REVIEW_REASON,
+      },
+      documents: [
+        {
+          id: "doc-1",
+          orderId: "order-1",
+          originalPath: "order-1/diploma.pdf",
+          filename: "diploma.pdf",
+          mime: "application/pdf",
+          size: 10,
+          pageCount: 1,
+          status: "ready",
+          detectedLanguage: "es",
+          confidence: 0.96,
+          position: 0,
+          appliedPosition: 0,
+        },
+      ],
+      pages: [page({ documentId: "doc-1", number: 1 })],
+      confirmations: [],
+      previewVersion: 1,
+      paymentStatus: "paid",
+      deliveryStatus: "pending",
+      deliveryFinalPath: null,
+      qa: { status: "pass" as const, score: HIGH_QA_SCORE },
+      openCorrections: false,
+      email: "ada@example.com",
+    };
+    expect(toCustomerOrder(shared).translationReady).toBe(true);
+    expect(
+      toCustomerOrder({
+        ...shared,
+        order: { ...shared.order, reviewReason: QA_REVIEW_REASON },
+        qa: { status: "fail", score: 40 },
+      }).translationReady,
+    ).toBe(false);
+    expect(
+      toCustomerOrder({
+        ...shared,
+        order: { ...shared.order, status: "delivered", reviewReason: QA_REVIEW_REASON },
+        qa: { status: "fail", score: 40 },
+        deliveryStatus: "delivered",
+        deliveryFinalPath: "order-1/evaluation.pdf",
+      }).translationReady,
+    ).toBe(false);
   });
 
   it("copies evaluation status and step timestamps onto the customer order", () => {
