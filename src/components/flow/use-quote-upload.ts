@@ -23,6 +23,7 @@ export function useQuoteUpload() {
     files: File[];
     choice: UploadChoice;
     pageCount: number | null;
+    signedIn?: boolean;
   }) {
     setError(null);
     beginUpload(input.files.map((file) => ({ name: file.name, ratio: 0 })));
@@ -43,17 +44,28 @@ export function useQuoteUpload() {
       clearUploadDraft();
       const payFirst =
         input.choice.orderType === "evaluation" && input.choice.includeTranslation !== true;
-      if (payFirst) {
-        endHandoff();
-        router.push(`/checkout?token=${encodeURIComponent(result.orderToken)}`);
-        return;
-      }
-      orderCreated();
       const useOrderRoute =
         !mock ||
         (typeof window !== "undefined" &&
           sessionStorage.getItem("credpronto-mock-order-route") === "1");
-      router.push(useOrderRoute ? `/order/${encodeURIComponent(result.orderToken)}` : "/quote");
+      const nextPath = payFirst
+        ? `/checkout?token=${encodeURIComponent(result.orderToken)}`
+        : useOrderRoute
+          ? `/order/${encodeURIComponent(result.orderToken)}`
+          : "/quote";
+      if (!input.signedIn) {
+        endHandoff();
+        const params = new URLSearchParams({ next: nextPath, email });
+        router.push(`/sign-up?${params.toString()}`);
+        return;
+      }
+      if (payFirst) {
+        endHandoff();
+        router.push(nextPath);
+        return;
+      }
+      orderCreated();
+      router.push(nextPath);
     } catch (cause) {
       endHandoff();
       const reported = cause instanceof Error ? cause.message.trim() : "";

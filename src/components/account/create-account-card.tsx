@@ -17,6 +17,20 @@ type FieldErrors = {
 const inputClass =
   "h-11 w-full rounded-[4px] border border-[#E5E7EB] bg-white px-3 text-[15px] font-normal text-ink outline-none focus:border-[#1F5EFF]";
 
+const PASSWORD_LENGTH_ERROR = "Use 8 or more characters.";
+
+/** Length hint, unless a server error is showing in its place. */
+export function passwordLine(
+  length: number,
+  submittedShort: boolean,
+  serverError?: string | null,
+): "muted" | "good" | "short" | "server" {
+  if (serverError) return "server";
+  if (length >= 8) return "good";
+  if (submittedShort) return "short";
+  return "muted";
+}
+
 export function CreateAccountCard() {
   const router = useRouter();
   const params = useSearchParams();
@@ -28,28 +42,42 @@ export function CreateAccountCard() {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [formSubmitted, setFormSubmitted] = useState(false);
+  const [submittedShort, setSubmittedShort] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [magicSubmitted, setMagicSubmitted] = useState(false);
   const [passwordState, passwordAction, passwordPending] = useActionState(mockPasswordAuth, null);
   const [magicState, magicAction, magicPending] = useActionState(mockMagicLink, null);
   const nameId = useId();
   const emailId = useId();
   const passwordId = useId();
 
-  function emailProblem(): string | undefined {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return "Enter a valid email.";
+  function emailProblem(value = email): string | undefined {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) return "Enter a valid email.";
     return undefined;
   }
 
-  function problems(): FieldErrors {
+  function problems(submittedName: string, submittedEmail: string, submittedPassword: string): FieldErrors {
     const nextErrors: FieldErrors = {};
-    if (!name.trim()) nextErrors.name = "Enter your full name.";
-    const emailError = emailProblem();
+    if (!submittedName.trim()) nextErrors.name = "Enter your full name.";
+    const emailError = emailProblem(submittedEmail);
     if (emailError) nextErrors.email = emailError;
-    if (password.length < 8) nextErrors.password = "Use 8 or more characters.";
+    if (submittedPassword.length < 8) nextErrors.password = PASSWORD_LENGTH_ERROR;
     return nextErrors;
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    const nextErrors = problems();
+    const data = new FormData(event.currentTarget);
+    const submittedName = formText(data, "name");
+    const submittedEmail = formText(data, "email");
+    const submittedPassword = passwordFromForm(data);
+    setName(submittedName);
+    setEmail(submittedEmail);
+    setPassword(submittedPassword);
+    setFormSubmitted(true);
+    setSubmittedShort(submittedPassword.length < 8);
+    setAuthError(null);
+    const nextErrors = problems(submittedName, submittedEmail, submittedPassword);
     setErrors(nextErrors);
     setNotice(null);
     if (nextErrors.name || nextErrors.email || nextErrors.password) {
@@ -62,9 +90,9 @@ export function CreateAccountCard() {
     const result = await browserJson<{ session?: boolean; next?: string }>("/api/auth/password", {
       method: "POST",
       body: JSON.stringify({
-        email: email.trim(),
-        password,
-        name: name.trim(),
+        email: submittedEmail.trim(),
+        password: submittedPassword,
+        name: submittedName.trim(),
         mode: "sign-up",
         next,
         orderToken: readToken(),
@@ -76,9 +104,8 @@ export function CreateAccountCard() {
         setErrors({ email: "An account with this email already exists." });
         return;
       }
-      const message = result.error || "Could not create the account.";
-      if (/password/i.test(message)) setErrors({ password: message });
-      else setErrors({ email: message });
+      setErrors({});
+      setAuthError(result.error || "Could not create the account.");
       return;
     }
     router.push(continueAfterSignup(result.data.next, next));
@@ -86,6 +113,7 @@ export function CreateAccountCard() {
   }
 
   function onMagic(event: FormEvent<HTMLFormElement>) {
+    setMagicSubmitted(true);
     const emailError = emailProblem();
     setNotice(null);
     if (emailError) {
@@ -112,15 +140,22 @@ export function CreateAccountCard() {
 
   const busy = pending || passwordPending || magicPending;
   const magicError = magicState?.error ?? null;
-  const serverError = passwordState?.error ?? null;
+  const actionError = passwordState?.error ?? null;
   const serverField: FieldErrors = {};
-  if (serverError) {
-    if (/password/i.test(serverError)) serverField.password = serverError;
-    else if (/name/i.test(serverError)) serverField.name = serverError;
-    else serverField.email = serverError;
+  if (actionError && !/password/i.test(actionError)) {
+    if (/name/i.test(actionError)) serverField.name = actionError;
+    else serverField.email = actionError;
   }
-  const emailError = errors.email || magicError || serverField.email;
-  const magicNotice = magicError ? null : (notice ?? magicState?.message ?? null);
+  const shownServer = formSubmitted ? serverField : {};
+  const emailError = errors.email || (magicSubmitted ? magicError : null) || shownServer.email;
+  const statusMessage =
+    (formSubmitted || magicSubmitted) && !magicError
+      ? (notice ?? (magicSubmitted ? magicState?.message ?? null : null))
+      : null;
+  const passwordActionError =
+    formSubmitted && actionError && /password/i.test(actionError) ? actionError : null;
+  const serverError =
+    submittedShort && password.length < 8 ? null : authError || passwordActionError;
 
   return (
     <div
@@ -132,7 +167,7 @@ export function CreateAccountCard() {
       <form action={publicMockMode() ? passwordAction : undefined} onSubmit={onSubmit} className="mt-6 grid gap-4">
         <input type="hidden" name="mode" value="sign-up" />
         <input type="hidden" name="next" value={next} />
-        <Field id={nameId} label="Full name" error={errors.name || serverField.name}>
+        <Field id={nameId} label="Full name" error={errors.name || shownServer.name}>
           <input
             id={nameId}
             name="name"
@@ -154,7 +189,7 @@ export function CreateAccountCard() {
             className={inputClass}
           />
         </Field>
-        <Field id={passwordId} label="Password" hint="8+ characters" error={errors.password || serverField.password}>
+        <Field id={passwordId} label="Password">
           <span className="relative block">
             <input
               id={passwordId}
@@ -162,7 +197,10 @@ export function CreateAccountCard() {
               type={showPassword ? "text" : "password"}
               autoComplete="new-password"
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                setAuthError(null);
+              }}
               className={`${inputClass} pr-11`}
             />
             <button
@@ -174,6 +212,11 @@ export function CreateAccountCard() {
               <EyeIcon hidden={!showPassword} />
             </button>
           </span>
+          <PasswordStatus
+            password={password}
+            submittedShort={submittedShort}
+            serverError={serverError}
+          />
         </Field>
         <button
           type="submit"
@@ -194,9 +237,9 @@ export function CreateAccountCard() {
           Email me a sign-in link instead
         </button>
       </form>
-      {magicNotice ? (
+      {statusMessage ? (
         <p role="status" className="mt-2 text-center text-[13px] text-ink-muted">
-          {magicNotice}
+          {statusMessage}
         </p>
       ) : null}
       <div className="my-5 border-t border-[#E5E7EB]" />
@@ -207,6 +250,53 @@ export function CreateAccountCard() {
       </p>
     </div>
   );
+}
+
+function formText(formData: FormData, field: string): string {
+  const value = formData.get(field);
+  return typeof value === "string" ? value : "";
+}
+
+/** Submitted password, unread from React state and never trimmed. */
+export function passwordFromForm(formData: FormData): string {
+  return formText(formData, "password");
+}
+
+function PasswordStatus({
+  password,
+  submittedShort,
+  serverError,
+}: {
+  password: string;
+  submittedShort: boolean;
+  serverError?: string | null;
+}) {
+  const line = passwordLine(password.length, submittedShort, serverError);
+  if (line === "server" && serverError) {
+    return (
+      <span role="alert" className="mt-1.5 block text-[13px] text-[#dc2626]">
+        {serverError}
+      </span>
+    );
+  }
+  if (line === "good") {
+    return (
+      <span className="mt-1.5 flex items-center gap-1.5 text-[13px] text-[#1F5EFF]">
+        <svg viewBox="0 0 16 16" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+          <path d="M3 8.5 6.2 12 13 4" />
+        </svg>
+        Looks good
+      </span>
+    );
+  }
+  if (line === "short") {
+    return (
+      <span role="alert" className="mt-1.5 block text-[13px] text-[#dc2626]">
+        {PASSWORD_LENGTH_ERROR}
+      </span>
+    );
+  }
+  return <span className="mt-1.5 block text-[13px] text-ink-muted">8+ characters</span>;
 }
 
 function Field({

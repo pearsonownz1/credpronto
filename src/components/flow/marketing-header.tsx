@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { getAccount } from "@/lib/account/session";
-import { uploadStartHref } from "@/lib/auth/start-href";
 import { Logo } from "./mark";
 import { buttonClasses } from "./ui";
 
@@ -29,46 +28,14 @@ function SignInLink() {
   );
 }
 
-function CreateAccountLink() {
-  return (
-    <Link
-      href="/sign-up"
-      data-testid="nav-create-account"
-      className="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-[4px] bg-[#1F5EFF] px-3 text-sm font-semibold text-white"
-    >
-      Create account
-    </Link>
-  );
-}
-
 async function MarketingAccountLinks() {
   const account = await getAccount();
-  if (!account) {
-    return (
-      <>
-        <SignInLink />
-        <CreateAccountLink />
-      </>
-    );
-  }
+  if (!account) return <SignInLink />;
   return (
     <Link href="/account" data-testid="nav-my-orders" className="text-sm font-semibold text-ink">
       My orders
     </Link>
   );
-}
-
-function GetStartedAnchor({ href }: { href: string }) {
-  return (
-    <Link href={href} data-testid="nav-get-started" className={getStartedClass}>
-      Get started
-    </Link>
-  );
-}
-
-async function GetStartedLink() {
-  const account = await getAccount();
-  return <GetStartedAnchor href={uploadStartHref(Boolean(account))} />;
 }
 
 function ResourcesMenu() {
@@ -127,19 +94,12 @@ export function MarketingHeader({
         <Logo />
         <SectionNav section={section} className="hidden items-center gap-7 text-sm md:flex" />
         <div className="ml-auto flex items-center gap-3 md:gap-7">
-          <Suspense
-            fallback={
-              <>
-                <SignInLink />
-                <CreateAccountLink />
-              </>
-            }
-          >
+          <Suspense fallback={<SignInLink />}>
             <MarketingAccountLinks />
           </Suspense>
-          <Suspense fallback={<GetStartedAnchor href={uploadStartHref(false)} />}>
-            <GetStartedLink />
-          </Suspense>
+          <Link href="/translate" data-testid="nav-get-started" className={getStartedClass}>
+            Get started
+          </Link>
         </div>
       </header>
       <div className="px-4 pb-3 md:hidden">

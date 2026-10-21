@@ -22,8 +22,8 @@ describe("translation landing", () => {
     expect(html).toContain(TRANSLATION_PAGE_LABEL);
     expect(html).toContain(`${formatMoney(UNIT_PRICE_CENTS)} per page`);
     expect(html).toContain("8 CFR 103.2(b)(3)");
-    expect(html).toContain('href="/sign-up?next=%2Ftranslate"');
-    expect(html).not.toContain('href="/translate"');
+    expect(html).toContain('href="/translate"');
+    expect(html).not.toContain("/sign-up");
     expect(html).toContain("Get started");
     expect(html).toContain("data-testid=\"translation-preview\"");
     expect(html).toContain("hero-docs.png");
@@ -54,12 +54,6 @@ describe("translation landing", () => {
     expect(html).toContain(formatMoney(mail?.unitCents ?? 0));
     expect(html).not.toMatch(BANNED);
     expect(html).not.toMatch(/USCIS accepts/i);
-  });
-
-  it("sends a signed-in visitor straight to upload", () => {
-    const signedIn = renderToStaticMarkup(createElement(TranslationLanding, { signedIn: true }));
-    expect(signedIn).toContain('href="/translate"');
-    expect(signedIn).not.toContain("/sign-up");
   });
 });
 
