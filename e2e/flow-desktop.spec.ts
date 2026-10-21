@@ -385,6 +385,55 @@ test("a quote shows billable pages and dims a free page in the large viewer", as
   await expect(viewer.getByTestId("page-viewer-page").locator("img")).toHaveClass(/opacity-40/);
 });
 
+test("a finished translation in review waits without a stuck progress bar", async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem(
+      "credpronto-mock-order",
+      JSON.stringify({
+        status: "needs_review",
+        delayed: true,
+        reviewReason: "translation_timeout",
+        orderType: "translation",
+        progress: {
+          step: "done",
+          pagesRead: 2,
+          pagesTotal: 2,
+          pagesDone: 9,
+          pagesTranslateTotal: 9,
+        },
+      }),
+    );
+  });
+
+  await page.goto(`/order/${MOCK_TOKEN}`);
+  await expect(
+    page.getByRole("heading", { name: "A translator is reviewing your document" }).filter({ visible: true }),
+  ).toBeVisible();
+  await expect(page.getByTestId("translation-review").filter({ visible: true })).toHaveText(
+    "We'll email you when it's ready.",
+  );
+  await expect(page.getByTestId("order-announcement")).toHaveText(
+    "A translator is reviewing your document. We'll email you when it's ready.",
+  );
+  await expect(page.getByTestId("progress-bar")).toHaveCount(0);
+  await expect(page.getByTestId("preview-percent")).toHaveCount(0);
+  await expect(page.locator(".reading-spinner")).toHaveCount(0);
+  await expect(page.getByText("98%")).toHaveCount(0);
+  await expect(page.getByText(/Usually ready in 3 minutes/)).toHaveCount(0);
+  await expect(page.getByText("María Fernanda Ruiz Delgado")).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`/order/${MOCK_TOKEN}$`));
+
+  await page.evaluate(() => {
+    const key = "credpronto-mock-order";
+    const order = JSON.parse(sessionStorage.getItem(key) || "{}");
+    order.status = "preview_ready";
+    sessionStorage.setItem(key, JSON.stringify(order));
+  });
+  await expect(page).toHaveURL(new RegExp(`/preview/${MOCK_TOKEN}$`));
+  await expect(page.getByRole("heading", { name: "Your preview is ready" })).toHaveCount(0);
+  await expect(page.getByTestId("view-preview")).toHaveCount(0);
+});
+
 test("the homepage preview is on the page, and a signed-in header shows Dashboard", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("translation-preview")).toBeVisible();

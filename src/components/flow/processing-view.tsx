@@ -4,7 +4,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { flowUsesMock, getFlowClient } from "@/lib/flow/client";
-import { previewIsReady, previewWork } from "@/lib/flow/preview-progress";
+import {
+  EVALUATION_PROGRESS_REVIEW_DETAIL,
+  EVALUATION_PROGRESS_REVIEW_TITLE,
+  TRANSLATION_REVIEW_DETAIL,
+  TRANSLATION_REVIEW_TITLE,
+  previewIsReady,
+  previewWork,
+} from "@/lib/flow/preview-progress";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
 import { FlowStatus } from "./status";
@@ -22,9 +29,12 @@ export function ProcessingView({
   const router = useRouter();
   const { order, error, loading, reload } = useCustomerOrder(token, "until-preview");
   const ready = previewIsReady(order);
-  const takingLong = Boolean(order?.delayed) && !ready;
+  const reviewing = order?.status === "needs_review";
+  const takingLong = Boolean(order?.delayed) && !ready && !reviewing;
   const easing =
-    !ready && (order?.progress?.step === "translating" || order?.progress?.step === "done");
+    !ready &&
+    !reviewing &&
+    (order?.progress?.step === "translating" || order?.progress?.step === "done");
   const translatingElapsed = useTranslatingElapsed(easing);
   useEffect(() => {
     if (order) onOrder?.(order);
@@ -67,6 +77,22 @@ export function ProcessingView({
           <FlowStatus title="No order yet" body="Upload a document to start." />
         ) : ready ? (
           <FlowStatus title="Opening your preview…" body="" />
+        ) : work.phase === "review" ? (
+          <>
+            <p className="preview-kicker blue">Order {order.orderId}</p>
+            <h1 className="mt-3 text-[32px] font-bold tracking-[-0.6px] md:text-4xl">
+              {evaluation ? EVALUATION_PROGRESS_REVIEW_TITLE : TRANSLATION_REVIEW_TITLE}
+            </h1>
+            <p data-testid="translation-review" className="mt-2.5 text-base text-ink-muted">
+              {evaluation ? EVALUATION_PROGRESS_REVIEW_DETAIL : TRANSLATION_REVIEW_DETAIL}
+            </p>
+            <p className="mt-6 text-[13.5px] text-ink-muted">
+              {evaluation ? "Need another file on this order? " : "Need more pages translated? "}
+              <Link href="/translate" data-testid="add-documents" className="font-semibold text-primary">
+                Add documents to this order
+              </Link>
+            </p>
+          </>
         ) : (
           <>
             <p className="preview-kicker blue">Order {order.orderId}</p>

@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { formatMoney } from "@/lib/flow/pricing";
+import { TRANSLATION_REVIEW_COPY } from "@/lib/flow/preview-progress";
 import {
   CONFIRMING_PAYMENT_COPY,
   CONFIRMING_PAYMENT_DETAIL,
@@ -11,6 +12,7 @@ import {
   isCustomerEvaluation,
   type DownloadPhase,
 } from "@/lib/flow/present";
+import { TRANSLATION_TIMEOUT_REASON } from "@/lib/orders/translation-failure";
 import type { CustomerOrder } from "@/lib/orders/view";
 
 const LOADING_ORDER = "Loading your order";
@@ -26,6 +28,7 @@ export function orderLiveMessage(input: {
   order: (Pick<CustomerOrder, "status" | "billablePages" | "totalCents"> & {
     fulfillment?: CustomerOrder["fulfillment"];
     delayed?: boolean;
+    reviewReason?: string | null;
     orderType?: CustomerOrder["orderType"];
     service?: CustomerOrder["service"];
     serviceType?: string | null;
@@ -56,6 +59,13 @@ export function orderLiveMessage(input: {
     order.status === "delivered"
   ) {
     return evaluation ? "Your credential evaluation is ready." : "Your translation is ready.";
+  }
+  if (
+    order.status === "needs_review" &&
+    !evaluation &&
+    (order.delayed || order.reviewReason === TRANSLATION_TIMEOUT_REASON)
+  ) {
+    return TRANSLATION_REVIEW_COPY;
   }
   if (order.status === "needs_review" && order.delayed) {
     return "Taking longer than usual, we're on it.";
