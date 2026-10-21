@@ -3,7 +3,6 @@ import {
   DIPLOMA_EVALUATION_CENTS,
 } from "@/lib/evaluations/catalog";
 import { UNIT_PRICE_CENTS } from "@/lib/orders/constants";
-import type { EvaluationService } from "@/lib/orders/types";
 import type { ServiceChecks } from "./order-choice";
 
 export const MIN_DEGREE_COUNT = 1;
@@ -19,7 +18,10 @@ export type UploadServiceQuote = {
   degreeCount: number;
   /** Null when translation is off, or on but the page count is not known yet. */
   translationCents: number | null;
-  /** Null when neither evaluation is selected. */
+  /** Null when that evaluation is off. */
+  diplomaCents: number | null;
+  courseCents: number | null;
+  /** Null when neither evaluation is selected. Sum when both are selected. */
   evaluationCents: number | null;
   /** Null while a selected translation is still waiting on a page count. */
   totalCents: number | null;
@@ -27,7 +29,8 @@ export type UploadServiceQuote = {
 
 /**
  * Translation is the per-page rate times detected pages.
- * An evaluation is the catalog per-degree unit times `degreeCount`.
+ * Each checked evaluation is the catalog per-degree unit times `degreeCount`.
+ * The total adds every checked service.
  */
 export function uploadServiceQuote(input: {
   checks: ServiceChecks;
@@ -35,20 +38,13 @@ export function uploadServiceQuote(input: {
   pageCount: number | null;
 }): UploadServiceQuote {
   const degreeCount = clampDegreeCount(input.degreeCount);
-  const bothEvaluations = input.checks.diploma && input.checks.courseByCourse;
-  const service: EvaluationService | null = bothEvaluations
-    ? null
-    : input.checks.diploma
-      ? "diploma"
-      : input.checks.courseByCourse
-        ? "course_by_course"
-        : null;
   const translationCents =
     input.checks.translation && input.pageCount != null ? input.pageCount * UNIT_PRICE_CENTS : null;
-  const unit = service === "diploma" ? DIPLOMA_EVALUATION_CENTS : service === "course_by_course" ? COURSE_BY_COURSE_CENTS : null;
-  const evaluationCents = service && unit != null ? degreeCount * unit : null;
+  const diplomaCents = input.checks.diploma ? degreeCount * DIPLOMA_EVALUATION_CENTS : null;
+  const courseCents = input.checks.courseByCourse ? degreeCount * COURSE_BY_COURSE_CENTS : null;
+  const evaluationCents =
+    diplomaCents == null && courseCents == null ? null : (diplomaCents ?? 0) + (courseCents ?? 0);
   const translationPending = input.checks.translation && input.pageCount == null;
-  const totalCents =
-    bothEvaluations || translationPending ? null : (translationCents ?? 0) + (evaluationCents ?? 0);
-  return { degreeCount, translationCents, evaluationCents, totalCents };
+  const totalCents = translationPending ? null : (translationCents ?? 0) + (evaluationCents ?? 0);
+  return { degreeCount, translationCents, diplomaCents, courseCents, evaluationCents, totalCents };
 }

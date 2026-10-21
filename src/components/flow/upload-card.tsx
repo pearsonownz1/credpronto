@@ -265,18 +265,13 @@ export function UploadCard({
 
   function choiceError(): string {
     if (!checks.translation && !checks.diploma && !checks.courseByCourse) {
-      return "Choose a translation, an evaluation, or both.";
+      return "Choose any combination.";
     }
     return "Enter at least 1 degree.";
   }
 
   function toggleCheck(key: keyof ServiceChecks, checked: boolean) {
-    setChecks((current) => {
-      const next = { ...current, [key]: checked };
-      if (key === "diploma" && checked) next.courseByCourse = false;
-      if (key === "courseByCourse" && checked) next.diploma = false;
-      return next;
-    });
+    setChecks((current) => ({ ...current, [key]: checked }));
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -293,7 +288,7 @@ export function UploadCard({
     setEmailError(null);
     const selected = choice();
     if (!selected) {
-      setError(choiceError());
+      setError(checks.diploma && checks.courseByCourse ? null : choiceError());
       return;
     }
     if (!mock && picked.length === 0) {
@@ -320,16 +315,17 @@ export function UploadCard({
       <form noValidate onSubmit={onSubmit}>
         <fieldset data-testid="order-choice" className="mb-4">
           <legend className="text-[13px] font-semibold">What do you need?</legend>
-          <p className="mt-1 mb-2 text-xs text-ink-muted">Pick a translation, an evaluation, or both.</p>
+          <p className="mt-1 mb-2 text-xs text-ink-muted">Choose any combination.</p>
           <div className="grid gap-2">
             {PRODUCTS.map((item) => {
               const selected = checks[item.key];
-              const amount =
-                item.id === "translation"
+              const amount = !selected
+                ? null
+                : item.id === "translation"
                   ? quote.translationCents
-                  : selected
-                    ? quote.evaluationCents
-                    : null;
+                  : item.id === "diploma"
+                    ? quote.diplomaCents
+                    : quote.courseCents;
               const price = selected && amount != null ? formatMoney(amount) : item.price;
               return (
                 <div
