@@ -166,7 +166,7 @@ function applyCue(read: PageRead, cue: ModelCue, visual: boolean): PageRead {
   };
 }
 
-async function imageBytesForModel(bytes: Uint8Array, mime: string): Promise<{ bytes: Uint8Array; mime: string }> {
+export async function imageBytesForModel(bytes: Uint8Array, mime: string): Promise<{ bytes: Uint8Array; mime: string }> {
   if (mime === "image/jpeg" || mime === "image/png") return { bytes, mime };
   if (mime === "image/heic" || mime === "image/heif") {
     const convert = (await import("heic-convert")).default;

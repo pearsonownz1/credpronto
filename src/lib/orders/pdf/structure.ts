@@ -1,4 +1,5 @@
 import { blockAlign, blockColumn, type FieldRow, type RenderBlock } from "./layout";
+import { joinedLetterParagraph } from "./source-mirror";
 
 export type TextItem = {
   text: string;
@@ -902,6 +903,11 @@ function fromModelBlock(block: ModelBlock): RenderBlock[] {
   }
   if (type === "paragraph") {
     const styled = styledParagraph(block);
+    if (styled?.type === "paragraph" && !joinedLetterParagraph(styled.text)) return [styled];
+    if (joinedLetterParagraph(block.text ?? "")) {
+      const text = (block.text ?? "").replace(/\s+/g, " ").trim();
+      return [{ type: "paragraph", text, align: blockAlign(block.align), bold: block.bold, underline: block.underline, caps: block.caps }];
+    }
     if (styled) return [styled];
   }
   if (type === "note" && block.text?.trim()) return [{ type: "note", text: block.text.trim() }];
