@@ -88,12 +88,15 @@ describe("service checkboxes", () => {
     expect(markup).toMatch(/data-testid="choice-translation"[^>]*checked=""/);
     expect(markup).not.toMatch(/data-testid="choice-diploma"[^>]*checked=""/);
     expect(markup).not.toMatch(/data-testid="choice-course_by_course"[^>]*checked=""/);
-    expect(markup).toContain('data-testid="translation-pages"');
-    expect(markup).toContain("Pages: counting…");
+    expect(markup).toContain("$9.95 per page · exact price after we read your document");
+    expect(markup).not.toContain('data-testid="translation-pages"');
+    expect(markup).not.toContain("Pages:");
+    expect(markup).not.toContain("counting…");
+    expect(markup).not.toContain('data-testid="choice-price-translation"');
     expect(markup).toContain('data-testid="file-input"');
     expect(markup).toContain('data-testid="file-input" type="file" multiple');
     expect(markup).toContain('data-testid="choice-total"');
-    expect(markup).toContain("counting…");
+    expect(markup).toMatch(/data-testid="choice-total-amount"[^>]*>\s*From \$9\.95\s*</);
     expect(markup).not.toContain('data-testid="degree-count"');
     expect(markup).not.toContain('type="number"');
   });
@@ -109,7 +112,7 @@ describe("service checkboxes", () => {
     expect(diploma).toContain('aria-label="Decrease degrees"');
     expect(diploma).toContain('aria-label="Increase degrees"');
     expect(diploma).toMatch(/data-testid="choice-price-diploma"[^>]*>\s*\$19\.95\s*</);
-    expect(diploma).toMatch(/data-testid="choice-total-amount"[^>]*>\s*\$19\.95\s*</);
+    expect(diploma).toMatch(/data-testid="choice-total-amount"[^>]*>\s*From \$19\.95\s*</);
     expect(diploma).not.toContain("Pages:");
     expect(diploma).toContain("Email for your order");
     expect(diploma).not.toContain("Email for your preview link");

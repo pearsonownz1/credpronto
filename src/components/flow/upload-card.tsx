@@ -19,7 +19,6 @@ import {
   writeUploadDraft,
 } from "./upload-draft";
 import { formatMoney } from "@/lib/flow/pricing";
-import { countUploadPages, estimatedPageLabel, sumUploadPages } from "@/lib/flow/upload-pages";
 import { clampDegreeCount, uploadServiceQuote } from "@/lib/flow/upload-quote";
 import { CUSTOMER_FILE_ACCEPT, addUploadFiles } from "@/lib/flow/uploads";
 import { sampleCustomerOrder } from "@/lib/flow/sample-order";
@@ -27,8 +26,8 @@ import {
   COURSE_BY_COURSE_PRICE_LABEL,
   DIPLOMA_PRICE_LABEL,
   TRANSLATION_ADDON,
-  TRANSLATION_PAGE_LABEL,
 } from "@/lib/evaluations/catalog";
+import { UNIT_PRICE_CENTS } from "@/lib/orders/constants";
 import type { EvaluationService } from "@/lib/orders/types";
 import { buttonClasses, fieldClass } from "./ui";
 import { useQuoteUpload } from "./use-quote-upload";
@@ -36,16 +35,17 @@ import { useQuoteUpload } from "./use-quote-upload";
 type ListedFile = {
   id: string;
   name: string;
-  pages: number | null;
   kind: "pdf" | "image";
 };
 
 const SAMPLE_FILES: ListedFile[] = sampleCustomerOrder().documents.map((document) => ({
   id: document.id,
   name: document.filename,
-  pages: document.pageCount,
   kind: document.filename.toLowerCase().endsWith(".pdf") ? "pdf" : "image",
 }));
+
+/** Rate only. Billable pages are counted on the server after it reads the document. */
+const TRANSLATION_RATE_NOTE = `${formatMoney(UNIT_PRICE_CENTS)} per page · exact price after we read your document`;
 
 const PRODUCTS: Array<{
   id: "translation" | EvaluationService;
@@ -53,7 +53,7 @@ const PRODUCTS: Array<{
   label: string;
   price: string;
 }> = [
-  { id: "translation", key: "translation", label: "Translation", price: TRANSLATION_PAGE_LABEL },
+  { id: "translation", key: "translation", label: "Translation", price: TRANSLATION_RATE_NOTE },
   { id: "diploma", key: "diploma", label: "Diploma evaluation", price: DIPLOMA_PRICE_LABEL },
   {
     id: "course_by_course",
@@ -157,7 +157,6 @@ export function UploadCard({
   const [picked, setPicked] = useState<File[]>(start.files);
   const [checks, setChecks] = useState<ServiceChecks>(start.checks);
   const [degrees, setDegrees] = useState(() => String(clampDegreeCount(Number(start.degrees))));
-  const [countedPages, setCountedPages] = useState<Array<number | null> | null>(null);
   const seenService = useRef(start.serviceKey);
   const restoreFiles = useRef(start.files.length === 0 && draftHasStoredFiles());
 
@@ -214,43 +213,17 @@ export function UploadCard({
     onTrackChange?.(evaluation && checks.translation ? "bundle" : evaluation ? "evaluation" : "translation");
   }, [checks.diploma, checks.courseByCourse, checks.translation, onTrackChange]);
 
-  useEffect(() => {
-    if (picked.length === 0) {
-      setCountedPages(null);
-      return;
-    }
-    let cancelled = false;
-    setCountedPages(null);
-    void Promise.all(picked.map((file) => countUploadPages(file))).then((counts) => {
-      if (!cancelled) setCountedPages(counts);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [picked]);
-
   const files: ListedFile[] =
     mock && picked.length === 0
       ? SAMPLE_FILES
-      : picked.map((file, index) => ({
+      : picked.map((file) => ({
           id: `${file.name}-${file.size}`,
           name: file.name,
-          pages: countedPages?.[index] ?? null,
-          kind: file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
-            ? "pdf"
-            : "image",
+          kind: file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf") ? "pdf" : "image",
         }));
-  const pageCount = sumUploadPages(
-    mock && picked.length === 0
-      ? SAMPLE_FILES.map((file) => file.pages)
-      : picked.length === 0
-        ? []
-        : files.map((file) => file.pages),
-  );
   const quote = uploadServiceQuote({
     checks,
     degreeCount: clampDegreeCount(Number(degrees)),
-    pageCount,
   });
 
   function takeFiles(list: FileList | null) {
@@ -309,7 +282,7 @@ export function UploadCard({
       email: signedInEmail ?? email,
       files: picked,
       choice: selected,
-      pageCount,
+      pageCount: null,
       signedIn: Boolean(signedInEmail),
     });
   }
@@ -329,13 +302,9 @@ export function UploadCard({
           <div className="grid gap-2">
             {PRODUCTS.map((item) => {
               const selected = checks[item.key];
-              const amount =
-                item.id === "translation"
-                  ? quote.translationCents
-                  : selected
-                    ? quote.evaluationCents
-                    : null;
-              const price = selected && amount != null ? formatMoney(amount) : item.price;
+              const fixedCents =
+                item.id === "diploma" ? quote.diplomaCents : item.id === "course_by_course" ? quote.courseCents : null;
+              const price = item.id === "translation" ? null : selected && fixedCents != null ? formatMoney(fixedCents) : item.price;
               return (
                 <div
                   key={item.id}
@@ -351,7 +320,6 @@ export function UploadCard({
                         value={item.id}
                         checked={selected}
                         data-testid={`choice-${item.id}`}
-                        aria-describedby={item.id === "translation" && selected ? "translation-pages" : undefined}
                         onChange={(event) => toggleCheck(item.key, event.target.checked)}
                       />
                       <svg className="service-check-mark" viewBox="0 0 20 20" aria-hidden="true">
@@ -368,25 +336,22 @@ export function UploadCard({
                       <span className="block text-[12.5px] text-ink-muted">{item.price}</span>
                     </span>
                   </label>
-                  {item.id === "translation" && selected ? (
-                    <span id="translation-pages" data-testid="translation-pages" className="text-[13px]">
-                      {pageCount == null ? "Pages: counting…" : estimatedPageLabel(pageCount)}
-                    </span>
-                  ) : null}
                   {item.id !== "translation" && selected ? (
                     <DegreeStepper count={quote.degreeCount} onChange={(next) => setDegrees(String(next))} />
                   ) : null}
-                  <span data-testid={`choice-price-${item.id}`} className="ml-auto shrink-0 text-[14px] font-semibold tabular-nums">
-                    {price}
-                  </span>
+                  {price != null ? (
+                    <span data-testid={`choice-price-${item.id}`} className="ml-auto shrink-0 text-[14px] font-semibold tabular-nums">
+                      {price}
+                    </span>
+                  ) : null}
                 </div>
               );
             })}
           </div>
           <p data-testid="choice-total" className="mt-3 flex items-center justify-between border-t border-line pt-3 text-[14px] font-semibold">
-            <span>{checks.translation && pageCount != null ? "Estimated total" : "Total"}</span>
+            <span>Total</span>
             <span data-testid="choice-total-amount" className="tabular-nums">
-              {quote.totalCents == null ? "counting…" : formatMoney(quote.totalCents)}
+              {`From ${formatMoney(quote.fromCents)}`}
             </span>
           </p>
           {checks.diploma || checks.courseByCourse ? (
@@ -447,9 +412,7 @@ export function UploadCard({
                     {file.name}
                   </span>
                   <span className="flex shrink-0 items-center gap-3">
-                    <span className="text-ink-muted">
-                      {file.pages == null ? "Added" : estimatedPageLabel(file.pages)}
-                    </span>
+                    <span className="text-ink-muted">Added</span>
                     {removable ? (
                       <button
                         type="button"
