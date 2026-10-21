@@ -29,6 +29,7 @@ import {
   ShieldIcon,
   StepStrip,
 } from "./marketing-ui";
+import { uploadStartHref } from "@/lib/auth/start-href";
 import { TranslationPreview } from "./translation-preview";
 
 const HERO_HEADING = "Certified translations accepted by USCIS, and you see them first";
@@ -65,7 +66,8 @@ const PRICES: { service: string; price: string; href?: string; testId?: string }
   },
 ];
 
-export function TranslationLanding() {
+export function TranslationLanding({ signedIn = false }: { signedIn?: boolean }) {
+  const startHref = uploadStartHref(signedIn);
   const sections = marketingSections(homePage.body);
   const hero = sectionByHeading(sections, HERO_HEADING);
   const intro =
@@ -94,7 +96,7 @@ export function TranslationLanding() {
               <RichText source={intro} />
             </div>
             <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-4">
-              <PrimaryLink href="/translate" testId="home-get-started">
+              <PrimaryLink href={startHref} testId="home-get-started">
                 Get started
               </PrimaryLink>
               <p>
@@ -226,7 +228,7 @@ export function TranslationLanding() {
         title="See the translation before you pay."
         body={`Upload your document and read the full translation next to the original. Certified translation is ${TRANSLATION_PAGE_LABEL}.`}
         actions={
-          <PrimaryLink href="/translate" testId="home-closing-cta">
+          <PrimaryLink href={startHref} testId="home-closing-cta">
             Get started
           </PrimaryLink>
         }

@@ -28,8 +28,9 @@ export async function walkCustomerFlow(
   ).toBeVisible();
   await expect(page.getByTestId("upload-drop")).toHaveCount(0);
   await expect(page.getByTestId("nav-log-in")).toBeVisible();
-  await expect(page.getByTestId("nav-get-started")).toBeVisible();
-  await expect(page.getByTestId("home-get-started")).toBeVisible();
+  await expect(page.getByTestId("nav-create-account")).toBeVisible();
+  await expect(page.getByTestId("nav-get-started")).toHaveAttribute("href", "/sign-up?next=%2Ftranslate");
+  await expect(page.getByTestId("home-get-started")).toHaveAttribute("href", "/sign-up?next=%2Ftranslate");
   await expect(page.getByTestId("translation-preview")).toBeVisible();
   await expect(
     page.getByRole("img", {
@@ -41,15 +42,23 @@ export async function walkCustomerFlow(
   await check();
 
   await page.getByTestId("nav-get-started").click();
+  await expect(page).toHaveURL(/\/sign-up\?next=%2Ftranslate$/i);
+  await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
+  await expect(page.getByText("Track your order and download your files anytime.")).toBeVisible();
+  await check();
+  await page.getByLabel("Full name").fill("María Ruiz");
+  await page.getByLabel("Email").fill("maria.ruiz@email.com");
+  await page.getByRole("textbox", { name: "Password", exact: true }).fill("password1");
+  await page.getByRole("button", { name: "Create account & continue" }).click();
   await expect(page).toHaveURL(/\/translate$/);
   await expect(shown(page, "upload-drop")).toBeVisible();
-  await expect(shown(page, "email")).toHaveValue("maria.ruiz@email.com");
+  await expect(shown(page, "preview-email")).toContainText("maria.ruiz@email.com");
   await expect(shown(page, "file-list")).toContainText("acta-nacimiento.pdf");
   await expect(shown(page, "file-list")).toContainText("IMG_4021.HEIC");
   await expect(shown(page, "flow-stepper").locator("[data-state=current]")).toContainText(
     "Upload",
   );
-  await expect(page.getByRole("main")).not.toContainText(/sign in|account/i);
+  await expect(page.getByRole("main").filter({ visible: true })).not.toContainText(/sign in|account/i);
   await check();
 
   await shown(page, "get-quote").click();

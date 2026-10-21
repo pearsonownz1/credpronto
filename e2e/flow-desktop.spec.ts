@@ -431,7 +431,7 @@ test("a finished translation in review waits without a stuck progress bar", asyn
   await expect(page.getByTestId("view-preview")).toHaveCount(0);
 });
 
-test("the homepage preview is on the page, and a signed-in header shows Dashboard", async ({ page }) => {
+test("the homepage preview is on the page, and a signed-in header shows My orders", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("translation-preview")).toBeVisible();
   await expect(page.getByText("8 CFR 103.2(b)(3)")).toBeVisible();
@@ -439,15 +439,18 @@ test("the homepage preview is on the page, and a signed-in header shows Dashboar
   await expect(page.getByText(/Read our USCIS translation guide/)).toBeVisible();
 
   await page.goto("/evaluations");
-  await expect(page.getByTestId("nav-log-in")).toBeVisible();
-  await expect(page.getByTestId("nav-get-started")).toBeVisible();
+  await expect(page.getByTestId("nav-log-in")).toHaveText("Sign in");
+  await expect(page.getByTestId("nav-create-account")).toHaveAttribute("href", "/sign-up");
+  await expect(page.getByTestId("nav-get-started")).toHaveAttribute("href", "/sign-up?next=%2Ftranslate");
   await expect(page.getByText("Find my order")).toHaveCount(0);
 
   await signIn(page, "maria.ruiz@email.com");
   await expect(page).toHaveURL(/\/dashboard$/);
   await page.goto("/");
-  await expect(page.getByTestId("nav-dashboard")).toBeVisible();
+  await expect(page.getByTestId("nav-my-orders")).toHaveAttribute("href", "/account");
   await expect(page.getByTestId("nav-log-in")).toHaveCount(0);
+  await expect(page.getByTestId("nav-create-account")).toHaveCount(0);
+  await expect(page.getByTestId("nav-get-started")).toHaveAttribute("href", "/translate");
   await page.goto("/faq");
-  await expect(page.getByTestId("nav-dashboard")).toBeVisible();
+  await expect(page.getByTestId("nav-my-orders")).toBeVisible();
 });

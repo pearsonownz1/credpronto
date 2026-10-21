@@ -23,7 +23,10 @@ export async function mockPasswordAuth(_state: AuthFormState, formData: FormData
   const next = safeNextPath(String(formData.get("next") ?? ""), "/dashboard");
   if (!isEmail(email)) return { error: "Enter a valid email." };
   if (password.length < 8) return { error: "Password must be at least 8 characters." };
-  await writeMockAccount(mockAccountFor(email));
+  const account = mockAccountFor(email);
+  const name = String(formData.get("name") ?? "").trim();
+  if (name) account.name = name;
+  await writeMockAccount(account);
   redirect(next);
 }
 

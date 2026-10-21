@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { getAccount } from "@/lib/account/session";
+import { uploadStartHref } from "@/lib/auth/start-href";
 import { Logo } from "./mark";
 import { buttonClasses } from "./ui";
 
@@ -15,34 +16,59 @@ const RESOURCES = [
   { href: "/faq", label: "FAQ" },
 ] as const;
 
-function LogInLink() {
+const getStartedClass = buttonClasses(
+  "primary",
+  "h-[38px] whitespace-nowrap px-3 text-[13px] md:px-[18px] md:text-sm",
+);
+
+function SignInLink() {
   return (
     <Link href="/sign-in" data-testid="nav-log-in" className="text-sm font-semibold text-ink">
-      Log in
+      Sign in
+    </Link>
+  );
+}
+
+function CreateAccountLink() {
+  return (
+    <Link
+      href="/sign-up"
+      data-testid="nav-create-account"
+      className="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-[4px] bg-[#1F5EFF] px-3 text-sm font-semibold text-white"
+    >
+      Create account
     </Link>
   );
 }
 
 async function MarketingAccountLinks() {
   const account = await getAccount();
-  if (!account) return <LogInLink />;
+  if (!account) {
+    return (
+      <>
+        <SignInLink />
+        <CreateAccountLink />
+      </>
+    );
+  }
   return (
-    <Link href="/dashboard" data-testid="nav-dashboard" className="text-sm font-semibold text-ink">
-      Dashboard
+    <Link href="/account" data-testid="nav-my-orders" className="text-sm font-semibold text-ink">
+      My orders
     </Link>
   );
 }
 
-function GetStartedLink() {
+function GetStartedAnchor({ href }: { href: string }) {
   return (
-    <Link
-      href="/translate"
-      data-testid="nav-get-started"
-      className={buttonClasses("primary", "h-[38px] px-3 text-[13px] md:px-[18px] md:text-sm")}
-    >
+    <Link href={href} data-testid="nav-get-started" className={getStartedClass}>
       Get started
     </Link>
   );
+}
+
+async function GetStartedLink() {
+  const account = await getAccount();
+  return <GetStartedAnchor href={uploadStartHref(Boolean(account))} />;
 }
 
 function ResourcesMenu() {
@@ -97,14 +123,23 @@ export function MarketingHeader({
 }) {
   return (
     <div className="border-b border-line">
-      <header className="flex h-16 items-center gap-3 px-4 md:gap-7 md:px-10">
+      <header className="flex min-h-16 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 md:gap-x-7 md:px-10">
         <Logo />
         <SectionNav section={section} className="hidden items-center gap-7 text-sm md:flex" />
-        <div className="ml-auto flex items-center gap-4 md:gap-7">
-          <Suspense fallback={<LogInLink />}>
+        <div className="ml-auto flex items-center gap-3 md:gap-7">
+          <Suspense
+            fallback={
+              <>
+                <SignInLink />
+                <CreateAccountLink />
+              </>
+            }
+          >
             <MarketingAccountLinks />
           </Suspense>
-          <GetStartedLink />
+          <Suspense fallback={<GetStartedAnchor href={uploadStartHref(false)} />}>
+            <GetStartedLink />
+          </Suspense>
         </div>
       </header>
       <div className="px-4 pb-3 md:hidden">
