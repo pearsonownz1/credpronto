@@ -8,6 +8,7 @@ type VerifiedUser = {
   email?: string | null;
   email_confirmed_at?: string | null;
   confirmed_at?: string | null;
+  app_metadata?: object | null;
   identities?: { identity_data?: Record<string, unknown> | null }[] | null;
 };
 
@@ -20,4 +21,13 @@ export async function finishAuthenticatedUser(user: VerifiedUser, orderToken: st
     email: user.email ?? null,
     emailVerified: emailIsVerified(user),
   });
+}
+
+/**
+ * Instant sign-up has not proved the inbox. Link only the order this browser
+ * holds (request token, next path, or stored token) and leave other guest orders.
+ */
+export async function finishInstantSignup(userId: string, orderToken: string | null): Promise<string[]> {
+  const linked = await attachOrderToken(serviceDb(), userId, orderToken);
+  return linked ? [linked] : [];
 }
