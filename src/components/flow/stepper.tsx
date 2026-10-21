@@ -1,4 +1,4 @@
-import type { FlowStep } from "@/lib/flow/types";
+import type { FlowStep, FlowTrack } from "@/lib/flow/types";
 
 const TRANSLATION_STEPS: { id: FlowStep; label: string }[] = [
   { id: "upload", label: "Upload" },
@@ -15,6 +15,13 @@ const EVALUATION_STEPS: { id: FlowStep; label: string }[] = [
   { id: "download", label: "Download" },
 ];
 
+const BUNDLE_STEPS: { id: FlowStep; label: string }[] = [
+  { id: "upload", label: "Upload" },
+  { id: "preview", label: "Preview" },
+  { id: "pay", label: "Pay" },
+  { id: "download", label: "Download" },
+];
+
 export function Stepper({
   current,
   compact = false,
@@ -22,9 +29,9 @@ export function Stepper({
 }: {
   current: FlowStep;
   compact?: boolean;
-  track?: "translation" | "evaluation";
+  track?: FlowTrack;
 }) {
-  const steps = track === "evaluation" ? EVALUATION_STEPS : TRANSLATION_STEPS;
+  const steps = track === "bundle" ? BUNDLE_STEPS : track === "evaluation" ? EVALUATION_STEPS : TRANSLATION_STEPS;
   const currentIndex = steps.findIndex((step) => step.id === current);
 
   return (

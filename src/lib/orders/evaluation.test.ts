@@ -253,6 +253,32 @@ describe("assemble evaluation", () => {
         unitPriceCents: 995,
       }),
     ).toBe("Preview is not ready");
+    expect(
+      checkoutBlockReason({
+        status: "draft",
+        languageConfirmed: false,
+        service: "diploma",
+        degreeCount: 1,
+        evaluationCents: 1995,
+        translationCents: 995,
+        includeTranslation: true,
+        billablePages: 1,
+        unitPriceCents: 995,
+      }),
+    ).toBe("Preview is not ready");
+    expect(
+      checkoutBlockReason({
+        status: "preview_ready",
+        languageConfirmed: true,
+        service: "diploma",
+        degreeCount: 1,
+        evaluationCents: 1995,
+        translationCents: 995,
+        includeTranslation: true,
+        billablePages: 1,
+        unitPriceCents: 995,
+      }),
+    ).toBeNull();
   });
 
   it("holds a transcript when a grade is off the scale", () => {

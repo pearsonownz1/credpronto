@@ -5,7 +5,8 @@ import type { PdfEngine } from "@embedpdf/models";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
-import { checkoutFailureMessage, documentIdForPage, previewShellOrder, toPreviewOrder } from "@/lib/flow/present";
+import { FlowHeader } from "@/components/flow/flow-header";
+import { checkoutFailureMessage, documentIdForPage, isTranslationBundle, previewShellOrder, toPreviewOrder } from "@/lib/flow/present";
 import { writeToken } from "@/lib/flow/session";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { timedDownloadLabel } from "./download-bytes";
@@ -232,12 +233,14 @@ function LivePreviewReady({
     return () => window.clearTimeout(timer);
   }, [preview, engine, started]);
 
+  const bundle = order != null && isTranslationBundle(order);
   if (error || !preview) {
     return <PreviewShell notice={notice} noticeTestId={noticeTestId} status={error ?? "Loading preview…"} />;
   }
 
-  return (
+  const viewer = (
     <SideBySideViewer
+      shellLayout={bundle ? "fill" : undefined}
       order={preview}
       engine={engine}
       notice={notice}
@@ -283,5 +286,12 @@ function LivePreviewReady({
         router.push(`/order/${encodeURIComponent(token)}`);
       }}
     />
+  );
+  if (!bundle) return viewer;
+  return (
+    <div className="flex h-dvh flex-col">
+      <FlowHeader current="pay" track="bundle" />
+      <div className="min-h-0 flex-1">{viewer}</div>
+    </div>
   );
 }

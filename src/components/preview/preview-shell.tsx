@@ -24,15 +24,15 @@ export function PreviewShell({
   noticeTestId?: string;
   /** Reinitializes the preview after automatic retries are exhausted. */
   onRetry?: () => void;
-  /** `embedded` sits under the paid-order status and fills its parent. */
-  layout?: "page" | "embedded";
+  /** `embedded` sits under the paid-order status and fills its parent. `fill` does the same and keeps the preview header. */
+  layout?: "page" | "embedded" | "fill";
 }) {
   return (
     <div
       data-testid="preview-shell"
       data-layout={layout}
       className={
-        layout === "embedded"
+        layout === "embedded" || layout === "fill"
           ? "preview-theme flex h-full min-h-0 flex-col bg-bg text-ink"
           : "preview-theme flex h-dvh flex-col bg-bg text-ink"
       }

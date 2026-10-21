@@ -74,6 +74,13 @@ export function sampleCustomerOrder(): CustomerOrder {
     delayed: false,
     paidAt: null,
     fulfillment: null,
+    evaluationStatus: null,
+    evaluationStatusAt: {
+      under_review: null,
+      performing_evaluation: null,
+      performing_layout: null,
+      evaluation_complete: null,
+    },
     documentTitle: "Acta nacimiento",
   };
 }

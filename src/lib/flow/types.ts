@@ -1,4 +1,7 @@
-export type FlowStep = "upload" | "quote" | "confirm" | "preview" | "review" | "download";
+export type FlowStep = "upload" | "quote" | "confirm" | "preview" | "pay" | "review" | "download";
+
+/** Translation keeps Quote and Confirm. A bundle uses Upload, Preview, Pay, Download. */
+export type FlowTrack = "translation" | "evaluation" | "bundle";
 
 export type FlowFileKind = "pdf" | "image";
 

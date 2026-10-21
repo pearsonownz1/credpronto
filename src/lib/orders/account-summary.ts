@@ -25,6 +25,7 @@ export function summarizeCustomerOrder(input: {
   previewReady: boolean;
   paymentStatus: string | null;
   deliveryStatus: string | null;
+  includeTranslation?: boolean;
 }) {
   const gate = downloadGate({
     paymentStatus: input.paymentStatus,
@@ -42,5 +43,6 @@ export function summarizeCustomerOrder(input: {
     previewAvailable: input.previewReady,
     paymentStatus: input.paymentStatus,
     downloadAvailable: gate.ok,
+    includeTranslation: input.includeTranslation === true,
   };
 }

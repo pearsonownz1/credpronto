@@ -14,6 +14,7 @@ import { pageLabel } from "@/lib/flow/pricing";
 import {
   canOpenConfirm,
   isCustomerEvaluation,
+  isTranslationBundle,
   joinParents,
   languageLine,
   splitParents,
@@ -53,15 +54,21 @@ export function ConfirmView({ token: pathToken }: { token?: string }) {
   return (
     <div>
       <FlowHeader
-        current="confirm"
-        track={order && isCustomerEvaluation(order) ? "evaluation" : "translation"}
+        current={order && isTranslationBundle(order) ? "preview" : "confirm"}
+        track={
+          order && isTranslationBundle(order)
+            ? "bundle"
+            : order && isCustomerEvaluation(order)
+              ? "evaluation"
+              : "translation"
+        }
       />
       <main>
         {loading && !order ? (
           <FlowStatus title="Loading the details…" body="" />
         ) : error && !order ? (
           <FlowStatus title="We couldn't load this order" body={error} />
-        ) : order && isCustomerEvaluation(order) ? (
+        ) : order && isCustomerEvaluation(order) && !isTranslationBundle(order) ? (
           <EvaluationPayRedirect token={token} />
         ) : !order || !canOpenConfirm(order) ? (
           <FlowStatus

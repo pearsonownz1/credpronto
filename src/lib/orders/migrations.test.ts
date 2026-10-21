@@ -163,4 +163,21 @@ describe("auth migrations", () => {
     expect(sql.toLowerCase()).not.toMatch(/for update/);
     expect(sql.toLowerCase()).not.toMatch(/for delete/);
   });
+
+  it("adds evaluation stages without a new order status", () => {
+    const sql = readFileSync(path.join(migrationsDir, "20261021130000_evaluation_progress.sql"), "utf8");
+    expect(sql).toMatch(/add column if not exists evaluation_status text/);
+    expect(sql).toMatch(/add column if not exists under_review_at timestamptz/);
+    expect(sql).toMatch(/add column if not exists performing_evaluation_at timestamptz/);
+    expect(sql).toMatch(/add column if not exists performing_layout_at timestamptz/);
+    expect(sql).toMatch(/add column if not exists evaluation_complete_at timestamptz/);
+    expect(sql).toMatch(/'under_review'/);
+    expect(sql).toMatch(/'performing_evaluation'/);
+    expect(sql).toMatch(/'performing_layout'/);
+    expect(sql).toMatch(/'evaluation_complete'/);
+    expect(sql.toLowerCase()).not.toMatch(/create type/);
+    expect(sql.toLowerCase()).not.toMatch(/add value/);
+    expect(sql.toLowerCase()).not.toMatch(/insert into/);
+    expect(sql.toLowerCase()).not.toMatch(/create policy/);
+  });
 });

@@ -33,12 +33,14 @@ export function OrderRail({
   const lines =
     pricing.lines && pricing.lines.length > 0
       ? pricing.lines
-      : [
-          {
-            label: `${pageLabel(pricing.pages)} × ${formatMoney(pricing.perPageCents)}`,
-            amountCents: pricing.totalCents,
-          },
-        ];
+      : order.evaluationLine
+        ? []
+        : [
+            {
+              label: `${pageLabel(pricing.pages)} × ${formatMoney(pricing.perPageCents)}`,
+              amountCents: pricing.totalCents,
+            },
+          ];
 
   return (
     <div data-testid="order-rail" className="flex min-h-full flex-col gap-[18px]">
@@ -83,7 +85,7 @@ export function OrderRail({
             <span>{pricing.certificationIncluded ? "Included" : "Extra"}</span>
           </div>
         )}
-        <AddonTotal panel={panel} />
+        <AddonTotal panel={panel} evaluationLine={order.evaluationLine} />
       </div>
       <AddonPanel panel={panel} />
       <AddonError panel={panel} />

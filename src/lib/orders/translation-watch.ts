@@ -52,6 +52,7 @@ export type WatchOrder = {
   reviewReason: string | null;
   service: string | null;
   orderType: string;
+  includeTranslation?: boolean;
 };
 
 export type CheckedProgress = {
@@ -127,7 +128,7 @@ export function updatedMoreThan(updatedAt: string, now: number, staleMs: number)
 }
 
 export function translationWatchAction(order: WatchOrder, now: number): WatchAction {
-  if (order.orderType !== "translation" || order.service) return "ignore";
+  if ((order.orderType !== "translation" || order.service) && order.includeTranslation !== true) return "ignore";
   if (order.reviewReason === TRANSLATION_TIMEOUT_REASON) return "ignore";
   if (CLOSED.has(order.status)) return "ignore";
   if (!updatedMoreThan(order.updatedAt, now, TRANSLATION_STALE_MS)) return "ignore";

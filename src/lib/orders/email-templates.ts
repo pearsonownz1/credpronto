@@ -414,6 +414,42 @@ export function staffOrderShortId(orderId: string): string {
   return (group || trimmed).slice(0, 8);
 }
 
+export type EvaluationStatusEmail = {
+  orderId: string;
+  statusLabel: string;
+  trackUrl: string;
+};
+
+/** Customer note when staff move an evaluation to a new stage. */
+export function renderEvaluationStatusEmail(input: EvaluationStatusEmail): RenderedEmail {
+  const subject = `Your evaluation: ${input.statusLabel}`;
+  const heading = input.statusLabel;
+  const html = layout({
+    preheader: subject,
+    body: `${badge("Evaluation", "#EEF3FF", "#1F5EFF")}
+<h1 style="margin:14px 0 8px;font-size:24px;letter-spacing:-.4px;line-height:1.25">${escapeHtml(heading)}</h1>
+<p style="margin:0;color:#5B6575">Your credential evaluation moved to this stage.</p>
+${detailTable([
+  ["Order", input.orderId, true],
+  ["Stage", input.statusLabel, false],
+])}
+${button("View your order", input.trackUrl)}`,
+  });
+  const text = [
+    heading,
+    "",
+    "Your credential evaluation moved to this stage.",
+    "",
+    `Order: ${input.orderId}`,
+    `Stage: ${input.statusLabel}`,
+    "",
+    `View your order: ${input.trackUrl}`,
+    "",
+    BRAND_FOOTER,
+  ].join("\n");
+  return { subject, text, html };
+}
+
 export function renderTranslationFailureAlertEmail(input: TranslationFailureAlertEmail): RenderedEmail {
   const reason = input.reason.trim() || "Translation failed.";
   const subject = `Translation failed, needs review — order ${staffOrderShortId(input.orderId)}`;

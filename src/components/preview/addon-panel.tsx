@@ -251,7 +251,13 @@ function Field({
   );
 }
 
-export function AddonTotal({ panel }: { panel: AddonPanelState }) {
+export function AddonTotal({
+  panel,
+  evaluationLine,
+}: {
+  panel: AddonPanelState;
+  evaluationLine?: { label: string; amountCents: number } | null;
+}) {
   const chosen = panel.options.filter(
     (option) => panel.selected.includes(option.id) && option.totalCents != null,
   );
@@ -263,6 +269,15 @@ export function AddonTotal({ panel }: { panel: AddonPanelState }) {
           <span>{formatMoney(option.totalCents ?? 0)}</span>
         </div>
       ))}
+      {evaluationLine ? (
+        <div
+          data-testid="evaluation-price"
+          className="flex justify-between gap-3 border-t border-line px-3.5 py-[11px]"
+        >
+          <span>{evaluationLine.label}</span>
+          <span className="shrink-0">{formatMoney(evaluationLine.amountCents)}</span>
+        </div>
+      ) : null}
       <div className="flex justify-between border-t border-line px-3.5 py-[11px] text-base font-bold">
         <span>Total</span>
         <span>{formatMoney(panel.totalCents)}</span>

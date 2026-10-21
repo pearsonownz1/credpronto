@@ -10,6 +10,7 @@ import {
   QUICK_CHECK_COPY,
   QUICK_CHECK_DETAIL,
   isCustomerEvaluation,
+  isTranslationBundle,
   type DownloadPhase,
 } from "@/lib/flow/present";
 import { TRANSLATION_TIMEOUT_REASON } from "@/lib/orders/translation-failure";
@@ -32,6 +33,7 @@ export function orderLiveMessage(input: {
     orderType?: CustomerOrder["orderType"];
     service?: CustomerOrder["service"];
     serviceType?: string | null;
+    includeTranslation?: boolean | null;
     evaluationStatus?: EvalStatus | null;
     progress?: { step?: string | null } | null;
   }) | null;
@@ -50,6 +52,7 @@ export function orderLiveMessage(input: {
   const pages = order.billablePages ?? 0;
   const pageText = `${pages} ${pages === 1 ? "page" : "pages"}`;
   const evaluation = isCustomerEvaluation(order);
+  const bundle = isTranslationBundle(order);
   if (input.phase === "certifying" || order.fulfillment === "awaiting_review") {
     if (!evaluation) return `${QUICK_CHECK_COPY}. ${QUICK_CHECK_DETAIL}`;
     return evaluationLiveLine(order.evaluationStatus);
@@ -65,7 +68,7 @@ export function orderLiveMessage(input: {
   }
   if (
     order.status === "needs_review" &&
-    !evaluation &&
+    (!evaluation || bundle) &&
     (order.delayed || order.reviewReason === TRANSLATION_TIMEOUT_REASON)
   ) {
     return TRANSLATION_REVIEW_COPY;
@@ -85,7 +88,7 @@ export function orderLiveMessage(input: {
   if (order.delayed && PREVIEW_WAIT.has(order.status)) {
     return "Taking longer than usual, we're on it.";
   }
-  if (evaluation && order.status === "confirmed") return "Ready to pay.";
+  if (evaluation && !bundle && order.status === "confirmed") return "Ready to pay.";
   if (
     order.status === "processing" ||
     order.status === "confirmed" ||

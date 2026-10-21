@@ -102,6 +102,11 @@ function mapOrder(row: Row): OrderRecord {
     createdAt: str(row.created_at) ?? new Date().toISOString(),
     updatedAt: str(row.updated_at) ?? str(row.created_at) ?? new Date().toISOString(),
     paidAt: str(row.paid_at),
+    evaluationStatus: str(row.evaluation_status),
+    underReviewAt: str(row.under_review_at),
+    performingEvaluationAt: str(row.performing_evaluation_at),
+    performingLayoutAt: str(row.performing_layout_at),
+    evaluationCompleteAt: str(row.evaluation_complete_at),
     staffAlertSentAt: str(row.staff_alert_sent_at),
     staffUrgentAlertSentAt: str(row.staff_urgent_alert_sent_at),
     progress: asOrderProgress(row.progress) ?? { step: "uploaded", pagesRead: 0, pagesTotal: 0 },
@@ -709,7 +714,7 @@ export const PAGE_FRAME_COLUMNS =
 
 /** Order columns the preview response and its auth check actually read. */
 export const PREVIEW_ORDER_COLUMNS =
-  "id, user_id, status, total_cents, unit_price_cents, billable_pages, combined_original_path, service, degree_count, addon_cents, evaluation_result";
+  "id, user_id, status, order_type, total_cents, unit_price_cents, billable_pages, combined_original_path, service, degree_count, addon_cents, evaluation_cents, translation_cents, include_translation, evaluation_result";
 
 /** Documents and their page frames in one query. Nested pages reuse PAGE_FRAME_COLUMNS. */
 export const PREVIEW_DOCUMENT_COLUMNS =
@@ -724,6 +729,7 @@ export type PreviewOrderRow = {
   id: string;
   userId: string | null;
   status: string;
+  orderType: string;
   totalCents: number | null;
   unitPriceCents: number;
   billablePages: number | null;
@@ -731,6 +737,9 @@ export type PreviewOrderRow = {
   service: "diploma" | "course_by_course" | null;
   degreeCount: number | null;
   addonCents: number;
+  evaluationCents: number | null;
+  translationCents: number | null;
+  includeTranslation: boolean;
   evaluationPageCount: number | null;
 };
 
@@ -747,6 +756,7 @@ function mapPreviewOrder(row: Row): PreviewOrderRow {
     id: String(row.id),
     userId: str(row.user_id),
     status: String(row.status),
+    orderType: row.order_type === "evaluation" || row.order_type === "expert_letter" ? row.order_type : "translation",
     totalCents: num(row.total_cents),
     unitPriceCents: num(row.unit_price_cents) ?? 995,
     billablePages: num(row.billable_pages),
@@ -754,6 +764,9 @@ function mapPreviewOrder(row: Row): PreviewOrderRow {
     service,
     degreeCount: num(row.degree_count),
     addonCents: num(row.addon_cents) ?? 0,
+    evaluationCents: num(row.evaluation_cents),
+    translationCents: num(row.translation_cents),
+    includeTranslation: row.include_translation === true,
     evaluationPageCount: parseEvaluationResult(row.evaluation_result)?.pageCount ?? null,
   };
 }
@@ -1499,6 +1512,7 @@ export type OwnedOrderRow = {
   totalCents: number | null;
   currency: string;
   createdAt: string;
+  includeTranslation: boolean;
 };
 
 export async function listDocumentFilenames(db: Db, orderIds: string[]): Promise<Map<string, string[]>> {
@@ -1527,27 +1541,30 @@ export async function listOwnedOrderRows(db: Db, userId: string): Promise<OwnedO
   const { data, error } = await db
     .from("orders")
     .select(
-      "id, status, service_type, service, degree_count, addon_cents, billable_pages, unit_price_cents, total_cents, currency, created_at",
+      "id, status, service_type, service, degree_count, addon_cents, billable_pages, unit_price_cents, total_cents, currency, created_at, include_translation, translation_cents",
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
   fail(error);
   return ((data ?? []) as Row[]).map((row) => {
     const service = row.service === "diploma" || row.service === "course_by_course" ? row.service : null;
+    const includeTranslation = row.include_translation === true;
     const priced = evaluationPrice({
       service,
       degreeCount: num(row.degree_count),
       addonCents: num(row.addon_cents) ?? 0,
     });
+    const translationCents = includeTranslation ? num(row.translation_cents) ?? 0 : 0;
     return {
       id: String(row.id),
       status: String(row.status),
       serviceType: String(row.service_type),
       billablePages: num(row.billable_pages),
       unitPriceCents: priced?.unitPriceCents ?? num(row.unit_price_cents) ?? 995,
-      totalCents: priced?.totalCents ?? num(row.total_cents),
+      totalCents: priced ? priced.totalCents + translationCents : num(row.total_cents),
       currency: str(row.currency) ?? "usd",
       createdAt: str(row.created_at) ?? new Date().toISOString(),
+      includeTranslation,
     };
   });
 }

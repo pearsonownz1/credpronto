@@ -113,6 +113,13 @@ function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
     ...patch,
     paidAt: patch.paidAt ?? null,
     fulfillment: patch.fulfillment ?? null,
+    evaluationStatus: patch.evaluationStatus ?? null,
+    evaluationStatusAt: patch.evaluationStatusAt ?? {
+      under_review: null,
+      performing_evaluation: null,
+      performing_layout: null,
+      evaluation_complete: null,
+    },
     documentTitle: patch.documentTitle ?? "Document",
   };
 }
@@ -839,6 +846,51 @@ describe("evaluation prices", () => {
       corrections: [],
     });
     expect(mapped.product).toBe("evaluation");
+    expect(mapped.evaluationLine).toBeUndefined();
+    const bundle = toPreviewOrder(
+      order({
+        orderType: "evaluation",
+        service: "diploma",
+        degreeCount: 1,
+        includeTranslation: true,
+        billablePages: 1,
+        evaluationCents: 1995,
+        translationCents: 995,
+        totalCents: 2990,
+        lineItems: [
+          {
+            kind: "evaluation",
+            description: "Diploma evaluation",
+            quantity: 1,
+            unitAmountCents: 1995,
+            amountCents: 1995,
+          },
+          {
+            kind: "translation",
+            description: "Certified translation",
+            quantity: 1,
+            unitAmountCents: 995,
+            amountCents: 995,
+          },
+        ],
+      }),
+      {
+        status: "preview_ready",
+        totalCents: 2990,
+        unitPriceCents: 995,
+        billablePages: 1,
+        original: { url: "https://files.example/original", pageCount: 1, pages: [] },
+        translation: { url: "https://files.example/preview", pageCount: 1, pages: [], version: 1 },
+        report: null,
+        corrections: [],
+      },
+    );
+    expect(bundle.product).toBe("translation");
+    expect(bundle.pricing.lines).toEqual([{ label: "1 page × $9.95", amountCents: 995 }]);
+    expect(bundle.evaluationLine).toEqual({ label: "Diploma evaluation", amountCents: 1995 });
+    expect(bundle.pricing.totalCents).toBe(2990);
+    expect(bundle.evaluationDetails).toBeUndefined();
+    expect(bundle.included).toContain("Signed certificate of accuracy");
     expect(mapped.pricing.lines).toEqual([{ label: "Diploma evaluation", amountCents: 1995 }]);
     expect(mapped.evaluationDetails).toEqual([
       { label: "Credential holder", value: "Ada Lovelace" },
@@ -887,6 +939,23 @@ describe("order hub", () => {
     expect(orderHubStep(null, "correction_requested")).toBe("processing");
     expect(orderHubStep(null, "preview_ready")).toBe("processing");
     expect(orderHubStep(null, "preview_ready", { orderType: "evaluation", service: "diploma" })).toBe("checkout");
+    expect(
+      orderHubStep(null, "preview_ready", {
+        orderType: "evaluation",
+        service: "diploma",
+        includeTranslation: true,
+      }),
+    ).toBe("processing");
+    expect(
+      orderHubStep(null, "quoted", { orderType: "evaluation", service: "diploma", includeTranslation: true }),
+    ).toBe("quote");
+    expect(
+      orderHubStep("cancel", "preview_ready", {
+        orderType: "evaluation",
+        service: "diploma",
+        includeTranslation: true,
+      }),
+    ).toBe("cancel");
     expect(orderHubStep(null, "confirmed", { orderType: "evaluation", service: "diploma" })).toBe("checkout");
     expect(orderHubStep(null, "confirmed")).toBe("processing");
     expect(orderHubStep(null, "paid")).toBe("download");
@@ -914,6 +983,14 @@ describe("order hub", () => {
     expect(
       readyPreviewPath("tok", null, { status: "preview_ready", orderType: "evaluation", service: "diploma" }),
     ).toBeNull();
+    expect(
+      readyPreviewPath("tok", null, {
+        status: "preview_ready",
+        orderType: "evaluation",
+        service: "diploma",
+        includeTranslation: true,
+      }),
+    ).toBe("/preview/tok");
     expect(readyPreviewPath("", null, { status: "preview_ready" })).toBeNull();
   });
 });
