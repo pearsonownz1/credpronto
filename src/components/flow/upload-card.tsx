@@ -22,7 +22,7 @@ import {
 import { formatMoney, pageLabel } from "@/lib/flow/pricing";
 import { countUploadPages } from "@/lib/flow/upload-pages";
 import { clampDegreeCount, uploadServiceQuote } from "@/lib/flow/upload-quote";
-import { CUSTOMER_FILE_ACCEPT, dedupeUploads } from "@/lib/flow/uploads";
+import { CUSTOMER_FILE_ACCEPT, addUploadFiles } from "@/lib/flow/uploads";
 import { sampleCustomerOrder } from "@/lib/flow/sample-order";
 import {
   COURSE_BY_COURSE_PRICE_LABEL,
@@ -255,8 +255,14 @@ export function UploadCard({
   });
 
   function takeFiles(list: FileList | null) {
-    if (!list || mock) return;
-    setPicked(dedupeUploads(Array.from(list)));
+    if (!list || list.length === 0 || mock) return;
+    const incoming = Array.from(list);
+    setPicked((current) => addUploadFiles(current, incoming));
+    if (inputRef.current) inputRef.current.value = "";
+  }
+
+  function removeFile(index: number) {
+    setPicked((current) => current.filter((_, currentIndex) => currentIndex !== index));
   }
 
   function choice(): UploadChoice | null {
@@ -430,20 +436,35 @@ export function UploadCard({
             data-testid="file-list"
             className="mt-3 overflow-hidden rounded-[var(--cp-radius)] border border-line text-[13.5px]"
           >
-            {files.map((file) => (
-              <li
-                key={file.id}
-                className="flex items-center justify-between gap-3 border-t border-line px-3 py-2.5 first:border-t-0"
-              >
-                <span className="min-w-0 truncate">
-                  <span aria-hidden>{file.kind === "pdf" ? "📄" : "🖼"} </span>
-                  {file.name}
-                </span>
-                <span className="shrink-0 text-ink-muted">
-                  {file.pages == null ? "Added" : pageLabel(file.pages)}
-                </span>
-              </li>
-            ))}
+            {files.map((file, index) => {
+              const removable = !(mock && picked.length === 0);
+              return (
+                <li
+                  key={file.id}
+                  className="flex items-center justify-between gap-3 border-t border-line px-3 py-2.5 first:border-t-0"
+                >
+                  <span className="min-w-0 truncate">
+                    <span aria-hidden>{file.kind === "pdf" ? "📄" : "🖼"} </span>
+                    {file.name}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-3">
+                    <span className="text-ink-muted">
+                      {file.pages == null ? "Added" : pageLabel(file.pages)}
+                    </span>
+                    {removable ? (
+                      <button
+                        type="button"
+                        aria-label={`Remove ${file.name}`}
+                        onClick={() => removeFile(index)}
+                        className="text-[13px] font-semibold text-ink-muted"
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         ) : null}
         {signedInEmail ? (
