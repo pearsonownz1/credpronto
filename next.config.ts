@@ -1,9 +1,9 @@
 import type { NextConfig } from "next";
-import { blogRedirects, privateCrawlHeaders } from "./src/lib/seo";
+import { authRedirects, blogRedirects, privateCrawlHeaders } from "./src/lib/seo";
 
 const nextConfig: NextConfig = {
   async redirects() {
-    return blogRedirects();
+    return [...blogRedirects(), ...authRedirects()];
   },
   async headers() {
     return [

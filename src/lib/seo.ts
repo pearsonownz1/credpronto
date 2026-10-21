@@ -20,6 +20,11 @@ export function blogRedirects() {
   ];
 }
 
+/** Permanent sign-in aliases. statusCode 301, not 308. */
+export function authRedirects() {
+  return [{ source: "/login", destination: "/sign-in", statusCode: 301 }];
+}
+
 /** Paths whose HTML must stay out of search indexes, including error responses. */
 export function privateCrawlHeaders(): {
   source: string;
