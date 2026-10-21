@@ -256,13 +256,24 @@ export function UploadCard({
                     selected ? "border-primary bg-[var(--cp-blue-l)]" : "border-line bg-bg"
                   }`}
                 >
-                  <input
-                    type="checkbox"
-                    value={item.id}
-                    checked={selected}
-                    data-testid={`choice-${item.id}`}
-                    onChange={(event) => toggleCheck(item.key, event.target.checked)}
-                  />
+                  <span className="service-check-box">
+                    <input
+                      type="checkbox"
+                      className="service-check"
+                      value={item.id}
+                      checked={selected}
+                      data-testid={`choice-${item.id}`}
+                      onChange={(event) => toggleCheck(item.key, event.target.checked)}
+                    />
+                    <svg className="service-check-mark" viewBox="0 0 20 20" aria-hidden="true">
+                      <path
+                        fill="currentColor"
+                        fillRule="evenodd"
+                        d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </span>
                   <span className="min-w-0">
                     <span className="block text-[14px] font-semibold">{item.label}</span>
                     <span className="block text-[12.5px] text-ink-muted">{item.price}</span>

@@ -78,6 +78,73 @@ body {
   box-shadow: 0 24px 48px -28px rgba(11, 18, 32, 0.35);
 }
 
+/* Upload service choices: a real checkbox drawn as a light square with a blue check. */
+.service-check-box {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.service-check {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  grid-area: 1 / 1;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  border: 1.5px solid #b7c2d4;
+  border-radius: 2px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.service-check:hover {
+  border-color: #7f93b0;
+}
+
+.service-check:checked {
+  border-color: var(--cp-primary);
+  background: var(--cp-primary);
+}
+
+.service-check:focus-visible {
+  outline: 2px solid var(--cp-primary);
+  outline-offset: 2px;
+}
+
+.service-check-mark {
+  grid-area: 1 / 1;
+  place-self: center;
+  width: 14px;
+  height: 14px;
+  color: #ffffff;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.service-check:checked + .service-check-mark {
+  opacity: 1;
+}
+
+@media (forced-colors: active) {
+  .service-check {
+    appearance: auto;
+    background: ButtonFace;
+    border-color: ButtonText;
+  }
+
+  .service-check:checked {
+    background: Highlight;
+    border-color: Highlight;
+  }
+
+  .service-check-mark {
+    display: none;
+  }
+}
+
 .flow-lines {
   background: repeating-linear-gradient(var(--cp-line) 0 2px, transparent 2px 7px);
 }
