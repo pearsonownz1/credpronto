@@ -300,7 +300,13 @@ export function UploadCard({
       setError("Add at least one PDF or photo.");
       return;
     }
-    await submit({ email: signedInEmail ?? email, files: picked, choice: selected, pageCount });
+    await submit({
+      email: signedInEmail ?? email,
+      files: picked,
+      choice: selected,
+      pageCount,
+      signedIn: Boolean(signedInEmail),
+    });
   }
 
   return (

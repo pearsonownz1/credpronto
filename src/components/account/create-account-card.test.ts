@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { CreateAccountCard } from "./create-account-card";
+import { CreateAccountCard, passwordFromForm } from "./create-account-card";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: () => undefined, refresh: () => undefined }),
@@ -28,6 +28,8 @@ describe("create account card", () => {
     expect(html).toContain("Email");
     expect(html).toContain("Password");
     expect(html).toContain("8+ characters");
+    expect(html).not.toContain("Looks good");
+    expect(html).not.toContain("Check your email to confirm your account. Then sign in.");
     expect(html).toContain('value="ada@example.com"');
     expect(html).not.toContain("readOnly");
     expect(html).toContain("Create account &amp; continue");
@@ -39,5 +41,16 @@ describe("create account card", () => {
     expect(html).toContain('aria-label="Show password"');
     expect(html).not.toContain("Continue with Google");
     expect(html).not.toMatch(/>\s*Continue\s*</);
+  });
+});
+
+describe("passwordFromForm", () => {
+  it("reads the submitted password without trimming", () => {
+    const data = new FormData();
+    data.set("password", "1234567 ");
+    const password = passwordFromForm(data);
+    expect(password).toBe("1234567 ");
+    expect(password.length < 8).toBe(false);
+    expect(password.trim().length < 8).toBe(true);
   });
 });
