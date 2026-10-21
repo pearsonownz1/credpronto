@@ -18,7 +18,9 @@ import {
   uploadStateFromDraft,
   writeUploadDraft,
 } from "./upload-draft";
-import { pageLabel } from "@/lib/flow/pricing";
+import { formatMoney, pageLabel } from "@/lib/flow/pricing";
+import { countUploadPages } from "@/lib/flow/upload-pages";
+import { clampDegreeCount, uploadServiceQuote } from "@/lib/flow/upload-quote";
 import { CUSTOMER_FILE_ACCEPT, dedupeUploads } from "@/lib/flow/uploads";
 import { sampleCustomerOrder } from "@/lib/flow/sample-order";
 import {
@@ -60,6 +62,43 @@ const PRODUCTS: Array<{
     price: COURSE_BY_COURSE_PRICE_LABEL,
   },
 ];
+
+function DegreeStepper({ count, onChange }: { count: number; onChange: (next: number) => void }) {
+  function setCount(next: number) {
+    onChange(clampDegreeCount(next));
+  }
+
+  return (
+    <div data-testid="degree-count" role="group" aria-labelledby="degrees-label" className="flex items-center gap-1.5">
+      <span id="degrees-label" className="text-[12.5px] font-semibold">
+        Degrees
+      </span>
+      <button
+        type="button"
+        data-testid="degree-decrease"
+        aria-label="Decrease degrees"
+        disabled={count <= 1}
+        onClick={() => setCount(count - 1)}
+        className="inline-flex size-7 items-center justify-center rounded-[var(--cp-radius)] border border-line bg-bg text-[16px] leading-none text-ink disabled:opacity-40"
+      >
+        −
+      </button>
+      <span data-testid="degree-value" aria-live="polite" aria-atomic="true" className="min-w-4 text-center text-[14px] font-semibold tabular-nums">
+        {count}
+      </span>
+      <button
+        type="button"
+        data-testid="degree-increase"
+        aria-label="Increase degrees"
+        disabled={count >= 5}
+        onClick={() => setCount(count + 1)}
+        className="inline-flex size-7 items-center justify-center rounded-[var(--cp-radius)] border border-line bg-bg text-[16px] leading-none text-ink disabled:opacity-40"
+      >
+        +
+      </button>
+    </div>
+  );
+}
 
 function readDomChecks(form: HTMLFormElement): ServiceChecks | null {
   const translation = form.querySelector<HTMLInputElement>('[data-testid="choice-translation"]');
@@ -117,7 +156,8 @@ export function UploadCard({
   const [emailError, setEmailError] = useState<string | null>(null);
   const [picked, setPicked] = useState<File[]>(start.files);
   const [checks, setChecks] = useState<ServiceChecks>(start.checks);
-  const [degrees, setDegrees] = useState(start.degrees);
+  const [degrees, setDegrees] = useState(() => String(clampDegreeCount(Number(start.degrees))));
+  const [countedPages, setCountedPages] = useState<Array<number | null> | null>(null);
   const seenService = useRef(start.serviceKey);
   const restoreFiles = useRef(start.files.length === 0 && draftHasStoredFiles());
 
@@ -172,18 +212,45 @@ export function UploadCard({
   useEffect(() => {
     onEvaluationChange?.(checks.diploma || checks.courseByCourse);
   }, [checks.diploma, checks.courseByCourse, onEvaluationChange]);
+
+  useEffect(() => {
+    if (picked.length === 0) {
+      setCountedPages(null);
+      return;
+    }
+    let cancelled = false;
+    setCountedPages(null);
+    void Promise.all(picked.map((file) => countUploadPages(file))).then((counts) => {
+      if (!cancelled) setCountedPages(counts);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [picked]);
+
   const files: ListedFile[] =
     mock && picked.length === 0
       ? SAMPLE_FILES
-      : picked.map((file) => ({
+      : picked.map((file, index) => ({
           id: `${file.name}-${file.size}`,
           name: file.name,
-          pages: null,
+          pages: countedPages?.[index] ?? null,
           kind: file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
             ? "pdf"
             : "image",
         }));
-  const pageCount = knownPageCount(files.map((file) => file.pages));
+  const pageCount = knownPageCount(
+    mock && picked.length === 0
+      ? SAMPLE_FILES.map((file) => file.pages)
+      : picked.length === 0
+        ? []
+        : files.map((file) => file.pages),
+  );
+  const quote = uploadServiceQuote({
+    checks,
+    degreeCount: clampDegreeCount(Number(degrees)),
+    pageCount,
+  });
 
   function takeFiles(list: FileList | null) {
     if (!list || mock) return;
@@ -191,7 +258,7 @@ export function UploadCard({
   }
 
   function choice(): UploadChoice | null {
-    return uploadChoiceFromChecks(checks, Number(degrees));
+    return uploadChoiceFromChecks(checks, quote.degreeCount);
   }
 
   function choiceError(): string {
@@ -249,59 +316,72 @@ export function UploadCard({
           <div className="grid gap-2">
             {PRODUCTS.map((item) => {
               const selected = checks[item.key];
+              const amount =
+                item.id === "translation"
+                  ? quote.translationCents
+                  : selected
+                    ? quote.evaluationCents
+                    : null;
+              const price = selected && amount != null ? formatMoney(amount) : item.price;
               return (
-                <label
+                <div
                   key={item.id}
-                  className={`flex cursor-pointer items-center gap-3 rounded-[var(--cp-radius)] border px-3 py-2.5 ${
+                  className={`flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[var(--cp-radius)] border px-3 py-2.5 ${
                     selected ? "border-primary bg-[var(--cp-blue-l)]" : "border-line bg-bg"
                   }`}
                 >
-                  <span className="service-check-box">
-                    <input
-                      type="checkbox"
-                      className="service-check"
-                      value={item.id}
-                      checked={selected}
-                      data-testid={`choice-${item.id}`}
-                      onChange={(event) => toggleCheck(item.key, event.target.checked)}
-                    />
-                    <svg className="service-check-mark" viewBox="0 0 20 20" aria-hidden="true">
-                      <path
-                        fill="currentColor"
-                        fillRule="evenodd"
-                        d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z"
-                        clipRule="evenodd"
+                  <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
+                    <span className="service-check-box">
+                      <input
+                        type="checkbox"
+                        className="service-check"
+                        value={item.id}
+                        checked={selected}
+                        data-testid={`choice-${item.id}`}
+                        aria-describedby={item.id === "translation" && selected ? "translation-pages" : undefined}
+                        onChange={(event) => toggleCheck(item.key, event.target.checked)}
                       />
-                    </svg>
+                      <svg className="service-check-mark" viewBox="0 0 20 20" aria-hidden="true">
+                        <path
+                          fill="currentColor"
+                          fillRule="evenodd"
+                          d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[14px] font-semibold">{item.label}</span>
+                      <span className="block text-[12.5px] text-ink-muted">{item.price}</span>
+                    </span>
+                  </label>
+                  {item.id === "translation" && selected ? (
+                    <span id="translation-pages" data-testid="translation-pages" className="text-[13px]">
+                      {pageCount == null ? "Pages: counting…" : `Pages: ${pageCount}`}
+                    </span>
+                  ) : null}
+                  {item.id !== "translation" && selected ? (
+                    <DegreeStepper count={quote.degreeCount} onChange={(next) => setDegrees(String(next))} />
+                  ) : null}
+                  <span data-testid={`choice-price-${item.id}`} className="ml-auto shrink-0 text-[14px] font-semibold tabular-nums">
+                    {price}
                   </span>
-                  <span className="min-w-0">
-                    <span className="block text-[14px] font-semibold">{item.label}</span>
-                    <span className="block text-[12.5px] text-ink-muted">{item.price}</span>
-                  </span>
-                </label>
+                </div>
               );
             })}
           </div>
-        </fieldset>
-        {checks.diploma || checks.courseByCourse ? (
-          <label className="mb-4 block">
-            <span className="mb-1.5 block text-[13px] font-semibold">Degrees</span>
-            <input
-              data-testid="degree-count"
-              type="number"
-              min={1}
-              step={1}
-              inputMode="numeric"
-              required
-              value={degrees}
-              onChange={(event) => setDegrees(event.target.value)}
-              className={fieldClass}
-            />
-            <span className="mt-1.5 block text-xs text-ink-muted">
-              {TRANSLATION_ADDON} Staff sign off before the report is released.
+          <p data-testid="choice-total" className="mt-3 flex items-center justify-between border-t border-line pt-3 text-[14px] font-semibold">
+            <span>Total</span>
+            <span data-testid="choice-total-amount" className="tabular-nums">
+              {quote.totalCents == null ? "counting…" : formatMoney(quote.totalCents)}
             </span>
-          </label>
-        ) : null}
+          </p>
+          {checks.diploma || checks.courseByCourse ? (
+            <p className="mt-2 text-xs text-ink-muted">
+              {TRANSLATION_ADDON} Staff sign off before the report is released.
+            </p>
+          ) : null}
+        </fieldset>
         <div
           data-testid="upload-drop"
           className="rounded-[var(--cp-radius)] border-[1.5px] border-dashed border-[#b9c3d6] bg-[var(--cp-blue-l)] px-4 py-6 text-center"
