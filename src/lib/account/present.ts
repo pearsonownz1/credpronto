@@ -75,6 +75,28 @@ export function formatOrderMoney(cents: number | null): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+/** First eight characters shown on account order rows. Links keep the full id. */
+export function shortOrderId(orderId: string): string {
+  return orderId.trim().slice(0, 8);
+}
+
+/**
+ * Price on an account order row, from fields the order list already returns.
+ * Prefer the order total. Otherwise the unit price times pages, then the unit price.
+ */
+export function orderPricePaid(order: {
+  totalCents: number | null;
+  unitPriceCents?: number | null;
+  billablePages?: number | null;
+}): string {
+  if (order.totalCents != null) return formatOrderMoney(order.totalCents);
+  const unit = order.unitPriceCents;
+  const pages = order.billablePages;
+  if (unit != null && pages != null && pages > 0) return formatOrderMoney(unit * pages);
+  if (unit != null) return formatOrderMoney(unit);
+  return "—";
+}
+
 function minutesUntil(etaAt: string | null | undefined, now: number): number | null {
   if (!etaAt) return null;
   const target = Date.parse(etaAt);
@@ -123,7 +145,7 @@ export function presentOrder(order: CustomerOrder, now = Date.now()): OrderPrese
     documents: order.documentsLabel || serviceLabel(order.serviceType),
     pair: languagePair(order),
     placed: formatOrderDate(order.createdAt),
-    total: formatOrderMoney(order.totalCents),
+    total: orderPricePaid(order),
   };
 
   if (order.paymentStatus === "refunded") {

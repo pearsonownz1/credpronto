@@ -7,6 +7,7 @@ import {
   DASHBOARD_TABS,
   formatOrderMoney,
   orderMatches,
+  shortOrderId,
   ordersInTab,
   presentOrder,
   previewWaiting,
@@ -195,7 +196,7 @@ export function DashboardView() {
                   >
                     <span className="px-[18px] py-[13px] font-mono text-[12.5px]">
                       <RowAnchor order={order} view={view}>
-                        {order.id}
+                        {shortOrderId(order.id)}
                       </RowAnchor>
                     </span>
                     <span className="px-[18px] py-[13px] font-semibold">{view.documents}</span>
@@ -222,7 +223,7 @@ export function DashboardView() {
                       <span className="flex items-center justify-between gap-3">
                         <span className="font-mono text-[12.5px]">
                           <RowAnchor order={order} view={view}>
-                            {order.id}
+                            {shortOrderId(order.id)}
                           </RowAnchor>
                         </span>
                         <Chip view={view} />
