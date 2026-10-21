@@ -270,6 +270,54 @@ describe("settlePaidOrder", () => {
     expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
   });
 
+  it("sends one urgent reminder for a bundled evaluation after four business hours", async () => {
+    const paidAt = "2026-10-19T17:00:00.000Z";
+    const due = Date.parse("2026-10-19T21:00:00.000Z");
+    const evaluation = order({
+      serviceType: "evaluation",
+      orderType: "evaluation",
+      service: "diploma",
+      degreeCount: 1,
+      includeTranslation: true,
+      evaluationCents: 1995,
+      translationCents: 995,
+      unitPriceCents: 995,
+      totalCents: 2990,
+      billablePages: 1,
+      finalTranslationPath: null,
+      certificationPath: null,
+      languageConfirmed: false,
+      paidAt,
+      staffAlertSentAt: paidAt,
+      progress: { step: "uploaded", pagesRead: 0, pagesTotal: 0 },
+    });
+    vi.spyOn(db, "listStaffAlertCandidates").mockResolvedValue([evaluation]);
+    vi.spyOn(db, "getOrderById").mockResolvedValue(evaluation);
+    vi.spyOn(db, "listQaRuns").mockResolvedValue([]);
+
+    const early = await runStaffAlertBackstop(dbHandle, due - 1);
+    expect(early.urgent).toEqual([]);
+    expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
+
+    const result = await runStaffAlertBackstop(dbHandle, due);
+
+    expect(result.urgent).toEqual([orderId]);
+    expect(email.sendStaffOrderAlert).toHaveBeenCalledTimes(1);
+    expect(email.sendStaffOrderAlert).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({ urgent: true, orderId, serviceType: "evaluation" }),
+    );
+
+    vi.mocked(email.sendStaffOrderAlert).mockClear();
+    vi.spyOn(db, "getOrderById").mockResolvedValue({
+      ...evaluation,
+      staffUrgentAlertSentAt: new Date(due).toISOString(),
+    });
+    const again = await runStaffAlertBackstop(dbHandle, due + 60_000);
+    expect(again.urgent).toEqual([]);
+    expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
+  });
+
   it("still sends the urgent reminder for a flagged translation", async () => {
     const paidAt = "2026-10-12T00:05:00.000Z";
     const flagged = order({
