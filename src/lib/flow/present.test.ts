@@ -26,6 +26,7 @@ import {
   joinParents,
   languageLine,
   orderHubStep,
+  readyPreviewPath,
   orderStatusPollDelay,
   paidReviewEmailLine,
   fileCountLabel,
@@ -895,6 +896,24 @@ describe("order hub", () => {
     );
     expect(orderHubStep(null, "approved", { fulfillment: "released" })).toBe("download");
     expect(orderHubStep(undefined, undefined)).toBe("processing");
+  });
+
+  it("opens a finished translation preview and leaves every other step on this route", () => {
+    expect(readyPreviewPath("tok_live", null, { status: "preview_ready" })).toBe("/preview/tok_live");
+    expect(
+      readyPreviewPath("tok_live", null, { status: "processing", progress: { step: "done" } }),
+    ).toBe("/preview/tok_live");
+    expect(readyPreviewPath("a b", null, { status: "preview_ready" })).toBe("/preview/a%20b");
+    expect(readyPreviewPath("tok", "success", { status: "preview_ready" })).toBeNull();
+    expect(readyPreviewPath("tok", "cancel", { status: "preview_ready" })).toBeNull();
+    expect(readyPreviewPath("tok", null, { status: "processing", progress: { step: "translating" } })).toBeNull();
+    expect(readyPreviewPath("tok", null, { status: "quoted", progress: { step: "done" } })).toBeNull();
+    expect(readyPreviewPath("tok", null, { status: "needs_review", progress: { step: "done" } })).toBeNull();
+    expect(readyPreviewPath("tok", null, { status: "paid" })).toBeNull();
+    expect(
+      readyPreviewPath("tok", null, { status: "preview_ready", orderType: "evaluation", service: "diploma" }),
+    ).toBeNull();
+    expect(readyPreviewPath("", null, { status: "preview_ready" })).toBeNull();
   });
 });
 
