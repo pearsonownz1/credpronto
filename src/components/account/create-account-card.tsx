@@ -79,10 +79,6 @@ export function CreateAccountCard() {
       else setErrors({ email: message });
       return;
     }
-    if (result.data.session === false) {
-      setNotice("Check your email to confirm your account. Then sign in.");
-      return;
-    }
     router.push(next);
     router.refresh();
   }

@@ -34,11 +34,15 @@ describe("quote email field", () => {
     expect(markup).not.toMatch(/data-testid="email"[^>]*required/);
     expect(markup.match(/type="email"/g)).toHaveLength(1);
     expect(markup).not.toContain("Preview link goes to");
+    expect(markup).not.toContain("Wrong email? Fix it");
   });
 
   it("hides the email field when a session email is already known", () => {
     const markup = html("ada@example.com");
     expect(markup).toContain("Preview link goes to ada@example.com");
+    expect(markup).toContain("Wrong email? Fix it");
+    expect(markup).toContain('data-testid="fix-email"');
+    expect(markup).toContain('href="#account-email"');
     expect(markup).not.toContain("Email for your preview link");
     expect(markup).not.toContain('data-testid="email"');
   });

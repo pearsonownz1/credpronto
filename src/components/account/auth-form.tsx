@@ -26,7 +26,7 @@ export function SignInCreateLink() {
 export function AuthForm({ mode }: { mode: Mode }) {
   const router = useRouter();
   const params = useSearchParams();
-  const next = safeNextPath(params.get("next"), "/dashboard");
+  const next = safeNextPath(params.get("next"), mode === "sign-up" ? "/translate" : "/dashboard");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -68,10 +68,6 @@ export function AuthForm({ mode }: { mode: Mode }) {
     setPending(false);
     if (!result.ok) {
       setError(result.error);
-      return;
-    }
-    if (mode === "sign-up" && result.data.session === false) {
-      setMessage("Check your email to confirm your account. Then sign in.");
       return;
     }
     router.push(next);
