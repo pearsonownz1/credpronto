@@ -158,8 +158,14 @@ function includesLoose(haystack: string, needle: string): boolean {
   return tightHay.includes(tightNeedle);
 }
 
+/** Case and diacritics fold so Çiğdem matches Cigdem and DAYAN matches Dayan. */
+function foldName(value: string): string {
+  return collapse(value).normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
+
 function nameFound(translation: string, name: string): boolean {
-  if (includesText(translation, name)) return true;
+  const wanted = foldName(name);
+  if (wanted && foldName(translation).includes(wanted)) return true;
   return romanizedForms(name).some((form) => includesLoose(translation, form));
 }
 
@@ -366,7 +372,7 @@ export function assessTranslation(input: {
       );
     }
     if ((NAME_FIELDS as readonly string[]).includes(field.fieldKey)) {
-      const parts = field.fieldKey === "parent_names" ? value.split(";").map((part) => collapse(part)) : [value];
+      const parts = value.split(";").map((part) => collapse(part));
       for (const part of parts) {
         if (!part || nameFound(translation, part)) continue;
         const severity = isLatinScriptName(part) ? "high" : "medium";

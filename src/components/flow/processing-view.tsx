@@ -22,9 +22,12 @@ export function ProcessingView({
   const router = useRouter();
   const { order, error, loading, reload } = useCustomerOrder(token, "until-preview");
   const ready = previewIsReady(order);
-  const takingLong = Boolean(order?.delayed) && !ready;
+  const reviewing = order?.status === "needs_review";
+  const takingLong = Boolean(order?.delayed) && !ready && !reviewing;
   const easing =
-    !ready && (order?.progress?.step === "translating" || order?.progress?.step === "done");
+    !reviewing &&
+    !ready &&
+    (order?.progress?.step === "translating" || order?.progress?.step === "done");
   const translatingElapsed = useTranslatingElapsed(easing);
   useEffect(() => {
     if (order) onOrder?.(order);
@@ -67,6 +70,13 @@ export function ProcessingView({
           <FlowStatus title="No order yet" body="Upload a document to start." />
         ) : ready ? (
           <FlowStatus title="Opening your preview…" body="" />
+        ) : reviewing ? (
+          <>
+            <p className="preview-kicker blue">Order {order.orderId}</p>
+            <p data-testid="preview-held" className="mt-3 text-base text-ink">
+              {REVIEW_MESSAGE}
+            </p>
+          </>
         ) : (
           <>
             <p className="preview-kicker blue">Order {order.orderId}</p>
@@ -144,6 +154,9 @@ export function ProcessingView({
     </div>
   );
 }
+
+const REVIEW_MESSAGE =
+  "A translator is reviewing your document. We'll email you when it's ready.";
 
 function useTranslatingElapsed(active: boolean) {
   const [elapsed, setElapsed] = useState(0);

@@ -115,6 +115,30 @@ describe("translation QA", () => {
     expect(blank.issues.some((item) => item.type === "missing_text" && item.severity === "high")).toBe(true);
   });
 
+  it("matches each semicolon-separated name after folding diacritics and case", () => {
+    const fullName = "Çiğdem DAYAN; E. Hakan Eminsoy; Nejat Bilginer";
+    const passed = assessTranslation({
+      originalPages: [{ number: 1, text: "Taraflar Çiğdem DAYAN, E. Hakan Eminsoy ve Nejat Bilginer." }],
+      translatedPages: [
+        { number: 1, text: "Parties: Cigdem Dayan, E. Hakan Eminsoy, and Nejat Bilginer." },
+      ],
+      confirmations: [{ fieldKey: "full_name", confirmedValue: fullName }],
+    });
+    expect(passed).toEqual({ pass: true, score: 100, issues: [] });
+
+    const empty = assessTranslation({
+      originalPages: [{ number: 1, text: "Taraflar." }],
+      translatedPages: [{ number: 1, text: "" }],
+      confirmations: [{ fieldKey: "full_name", confirmedValue: fullName }],
+    });
+    expect(empty.issues.filter((item) => item.type === "name").map((item) => item.original)).toEqual([
+      "Çiğdem DAYAN",
+      "E. Hakan Eminsoy",
+      "Nejat Bilginer",
+    ]);
+    expect(empty.issues.some((item) => item.original === fullName)).toBe(false);
+  });
+
   it("accepts a romanized name and records a missing non-Latin name as medium", () => {
     const passed = assessTranslation({
       originalPages: [{ number: 1, text: "张伟" }],
