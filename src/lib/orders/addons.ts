@@ -122,7 +122,11 @@ export function serviceCents(order: {
   evaluationCents: number | null;
   translationCents: number | null;
 }): number | null {
-  if (order.service && order.evaluationCents != null && order.translationCents != null) {
+  if (
+    order.evaluationCents != null &&
+    order.translationCents != null &&
+    (order.service != null || order.evaluationCents > 0)
+  ) {
     return order.evaluationCents + order.translationCents;
   }
   if (order.billablePages != null && order.billablePages > 0) {

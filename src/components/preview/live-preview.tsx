@@ -5,6 +5,7 @@ import type { PdfEngine } from "@embedpdf/models";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
+import { serviceRequestFromOrder } from "@/lib/flow/order-choice";
 import { FlowHeader } from "@/components/flow/flow-header";
 import { checkoutFailureMessage, documentIdForPage, isTranslationBundle, previewShellOrder, toPreviewOrder } from "@/lib/flow/present";
 import { writeToken } from "@/lib/flow/session";
@@ -248,7 +249,10 @@ function LivePreviewReady({
       onBuy={async (body) => {
         writeToken(token);
         try {
-          const result = await getFlowClient().checkout(token, body);
+          const result = await getFlowClient().checkout(token, {
+            ...(order ? serviceRequestFromOrder(order) : {}),
+            ...body,
+          });
           if ("url" in result && result.url) {
             window.location.assign(result.url);
             return;

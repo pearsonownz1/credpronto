@@ -1,4 +1,5 @@
 import { approvalBlockReason } from "./equivalency";
+import { orderEvaluationKinds, orderHasEvaluation } from "./service-selection";
 import { EVALUATION_REVIEW_REASON } from "./evaluation-price";
 import { stampEvaluationUnderReview } from "./evaluation-status";
 import { stampApprovedCover } from "./certification";
@@ -129,7 +130,7 @@ export async function runStaffAlertBackstop(
 
 /** Translations stay on the two-minute timer. Evaluations wait four business hours. */
 function staffReminderDue(order: OrderRecord, now: number): boolean {
-  if (order.service) return evaluationUrgentDue({ ...order, now });
+  if (orderHasEvaluation(order)) return evaluationUrgentDue({ ...order, now });
   return urgentAlertDue({ ...order, now });
 }
 
@@ -159,7 +160,7 @@ async function releaseSignals(db: Db, order: OrderRecord): Promise<ReleaseInput>
     openCorrections: corrections.some((correction) => correction.status === "open"),
     finalsReady: Boolean(order.finalTranslationPath && order.certificationPath),
     enabled: autoReleaseEnabled(),
-    manualEvaluation: order.service != null,
+    manualEvaluation: orderHasEvaluation(order),
   };
 }
 
@@ -174,7 +175,7 @@ async function autoReleasePaidOrder(db: Db, order: OrderRecord): Promise<Release
   const delivery = await getDelivery(db, order.id);
   if (!delivery) return "blocked";
   if (delivery.status === "delivered") return "released";
-  if (!order.service && (await translationEmpty(db, order))) return "blocked";
+  if (!orderHasEvaluation(order) && (await translationEmpty(db, order))) return "blocked";
 
   try {
     await stampApprovedCover(db, order, null);
@@ -230,20 +231,23 @@ async function translationEmpty(db: Db, order: OrderRecord): Promise<boolean> {
 
 /** Staff webhook at payment time. The later urgent email does not send this again. */
 async function notifyEvaluationPaidAlert(db: Db, order: OrderRecord): Promise<void> {
-  if (order.service !== "diploma" && order.service !== "course_by_course") return;
+  const kinds = orderEvaluationKinds(order);
+  if (kinds.length === 0) return;
   if (!process.env.EVAL_ALERT_WEBHOOK_URL?.trim()) return;
   try {
     const at = new Date().toISOString();
     const claimed = await claimEvalPaidAlert(db, order.id, at);
     if (!claimed) return;
     const email = await customerEmail(db, order.customerId);
-    await postEvaluationPaidAlert({
-      orderId: order.id,
-      type: order.service,
-      customerEmail: email,
-      paidAt: order.paidAt ?? at,
-      adminUrl: adminStudioLink(order.id),
-    });
+    for (const type of kinds) {
+      await postEvaluationPaidAlert({
+        orderId: order.id,
+        type,
+        customerEmail: email,
+        paidAt: order.paidAt ?? at,
+        adminUrl: adminStudioLink(order.id),
+      });
+    }
   } catch {
     // Payment stays settled when the alert cannot be claimed or delivered.
   }

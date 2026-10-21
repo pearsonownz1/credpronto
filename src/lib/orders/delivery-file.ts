@@ -1,9 +1,16 @@
 import { deliveryDocumentName, orderDownloadFilename } from "./download-name";
 import { isCertifiedTranslationPath } from "./final-file";
+import { orderHasEvaluation } from "./service-selection";
 import type { EvaluationService } from "./types";
 
-export function isCredentialEvaluation(order: { service: EvaluationService | string | null }): boolean {
-  return order.service != null;
+export function isCredentialEvaluation(order: {
+  service?: EvaluationService | string | null;
+  services?: readonly string[] | null;
+  includeTranslation?: boolean | null;
+  orderType?: string | null;
+  serviceType?: string | null;
+}): boolean {
+  return orderHasEvaluation(order);
 }
 
 /**
@@ -33,6 +40,9 @@ export function bundleTranslationFile(input: {
 export function deliveryFileTarget(input: {
   file: "translation" | "certification" | "evaluation";
   service: EvaluationService | null;
+  services?: readonly string[] | null;
+  orderType?: string | null;
+  serviceType?: string | null;
   finalPath: string | null;
   certificationPath: string | null;
   documentNames: readonly string[];

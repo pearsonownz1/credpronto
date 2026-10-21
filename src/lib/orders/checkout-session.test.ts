@@ -165,6 +165,81 @@ describe("checkout session matches the quote", () => {
     );
   });
 
+  it("charges both evaluations, and a translation, as separate lines that sum to the server total", async () => {
+    const both = order({
+      service: null,
+      services: ["diploma", "course_by_course"],
+      degreeCount: 2,
+      evaluationCents: 0,
+      translationCents: 0,
+      unitPriceCents: 995,
+      totalCents: 0,
+      includeTranslation: false,
+    });
+    const bothPaid = await paidSession(both);
+    expect(bothPaid.quote.totalCents).toBe(2 * (1995 + 3995));
+    expect(bothPaid.amountTotal).toBe(bothPaid.quote.totalCents);
+    expect(bothPaid.params.line_items).toEqual([
+      expect.objectContaining({ quantity: 2, price_data: expect.objectContaining({ unit_amount: 1995 }) }),
+      expect.objectContaining({ quantity: 2, price_data: expect.objectContaining({ unit_amount: 3995 }) }),
+    ]);
+
+    const allThree = order({
+      status: "preview_ready",
+      service: null,
+      services: ["translation", "diploma", "course_by_course"],
+      degreeCount: 3,
+      billablePages: 4,
+      evaluationCents: 0,
+      translationCents: 0,
+      includeTranslation: true,
+      totalCents: 0,
+    });
+    const combined = await paidSession(allThree);
+    expect(combined.quote.totalCents).toBe(3 * 1995 + 3 * 3995 + 4 * 995);
+    expect(combined.amountTotal).toBe(combined.quote.totalCents);
+    expect(combined.params.line_items).toHaveLength(3);
+  });
+
+  it("prices the services sent at checkout and rejects a client total", async () => {
+    const current = order({
+      service: "diploma",
+      services: ["diploma"],
+      degreeCount: 1,
+      evaluationCents: 1995,
+      totalCents: 1995,
+      includeTranslation: false,
+    });
+    await expect(
+      startCheckout(token, { services: ["diploma", "course_by_course"], degreeCount: 2, totalCents: 1 }),
+    ).rejects.toThrow(/calculated by the server/);
+
+    const both = await paidSession(current, { services: ["diploma", "course_by_course"], degreeCount: 2 });
+    expect(both.amountTotal).toBe(2 * (1995 + 3995));
+    expect(db.updateOrder).toHaveBeenCalledWith(
+      expect.anything(),
+      "order-1",
+      expect.objectContaining({
+        services: ["diploma", "course_by_course"],
+        service: null,
+        degree_count: 2,
+        include_translation: false,
+      }),
+    );
+
+    const legacy = await paidSession(current, { service: "course_by_course", includeTranslation: false, degreeCount: 1 });
+    expect(legacy.amountTotal).toBe(3995);
+    expect(db.updateOrder).toHaveBeenCalledWith(
+      expect.anything(),
+      "order-1",
+      expect.objectContaining({
+        services: ["course_by_course"],
+        service: "course_by_course",
+        include_translation: false,
+      }),
+    );
+  });
+
   it("charges course-by-course for two degrees plus one detected page", async () => {
     const current = order({
       status: "preview_ready",

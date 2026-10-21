@@ -129,6 +129,7 @@ describe("order upload", () => {
       service: "diploma",
       degreeCount: "1",
       includeTranslation: true,
+      services: ["translation", "diploma"],
       files: [
         { path: notesPath, filename: "notes.pdf" },
         { path: photoPath, filename: "photo.jpg" },

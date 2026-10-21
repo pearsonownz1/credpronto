@@ -1,11 +1,8 @@
 import { serviceCents, withoutExpedited } from "@/lib/orders/addons";
 import { UNIT_PRICE_CENTS } from "@/lib/orders/constants";
-import {
-  evaluationCheckoutTotal,
-  evaluationServiceDescription,
-  isTranslationBundle,
-  lineItemsForOrder,
-} from "@/lib/orders/evaluation-price";
+import { evaluationServiceDescription, isTranslationBundle } from "@/lib/orders/evaluation-price";
+import { priceServices } from "@/lib/orders/service-selection";
+import { serviceRequestFromOrder } from "@/lib/flow/order-choice";
 
 export { isTranslationBundle };
 import { TRANSLATION_TIMEOUT_REASON } from "@/lib/orders/translation-failure";
@@ -422,29 +419,28 @@ function priceLineLabel(item: EvaluationLine): string {
   return `${item.description}, ${pages}`;
 }
 
-/** Local quote used while a translation checkbox is in flight. Amounts match the API. */
+/** Local stand-in while a translation checkbox is in flight. The settled total is the server quote. */
 export function orderWithTranslationChoice(order: CustomerOrder, includeTranslation: boolean): CustomerOrder {
-  if (!order.service || order.degreeCount == null) return order;
-  const priced = evaluationCheckoutTotal({
-    service: order.service,
+  const request = serviceRequestFromOrder(order, { includeTranslation });
+  if (request.orderType !== "evaluation" || order.degreeCount == null) return order;
+  const priced = priceServices({
+    services: request.services,
     degreeCount: order.degreeCount,
     sourceLanguage: order.sourceLanguage,
     billablePages: order.billablePages ?? 0,
-    includeTranslation,
+    chargeUnknownLanguage: true,
   });
+  if (!priced) return order;
   return {
     ...order,
-    includeTranslation,
+    services: priced.services,
+    service: priced.service,
+    includeTranslation: priced.includeTranslation,
     evaluationCents: priced.evaluationCents,
     translationCents: priced.translationCents,
     totalCents: priced.totalCents,
-    lineItems: lineItemsForOrder({
-      service: order.service,
-      degreeCount: order.degreeCount,
-      evaluationCents: priced.evaluationCents,
-      translationCents: priced.translationCents,
-      billablePages: order.billablePages,
-    }),
+    unitPriceCents: priced.unitPriceCents,
+    lineItems: priced.lineItems,
   };
 }
 

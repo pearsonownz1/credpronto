@@ -82,7 +82,7 @@ describe("service checkboxes", () => {
   it("checks translation by default and leaves the evaluations off", () => {
     const markup = html(null);
     expect(markup).toContain("What do you need?");
-    expect(markup).toContain("Pick a translation, an evaluation, or both.");
+    expect(markup).toContain("Choose any combination.");
     expect(markup).not.toContain('type="radio"');
     expect(markup.match(/type="checkbox"/g)).toHaveLength(3);
     expect(markup).toMatch(/data-testid="choice-translation"[^>]*checked=""/);

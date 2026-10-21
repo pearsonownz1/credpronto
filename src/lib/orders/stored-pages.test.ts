@@ -55,6 +55,25 @@ describe("quoted pages for combined checkout", () => {
     expect(listed).not.toHaveBeenCalled();
   });
 
+  it("sums page counts from every file when both evaluations include a translation", async () => {
+    vi.spyOn(db, "listDocuments").mockResolvedValue([
+      document(2),
+      { ...document(3), id: "doc-2", originalPath: "order-1/courses.pdf", filename: "courses.pdf" },
+    ]);
+    const update = vi.spyOn(db, "updateOrder").mockResolvedValue(true);
+    const priced = await withQuotedPages(
+      {} as db.Db,
+      order({
+        service: null,
+        services: ["translation", "diploma", "course_by_course"],
+        includeTranslation: true,
+        billablePages: null,
+      }),
+    );
+    expect(priced.billablePages).toBe(5);
+    expect(update).toHaveBeenCalledWith(expect.anything(), "order-1", { billable_pages: 5 });
+  });
+
   it("copies document page counts onto the order", async () => {
     vi.spyOn(db, "listDocuments").mockResolvedValue([document(1)]);
     const update = vi.spyOn(db, "updateOrder").mockResolvedValue(true);

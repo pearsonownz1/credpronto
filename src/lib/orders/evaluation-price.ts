@@ -1,6 +1,15 @@
 import { UNIT_PRICE_CENTS } from "./constants";
 import { HttpError } from "./errors";
 import { normalizeLanguage } from "./languages";
+import {
+  evaluationKinds,
+  parseCatalogServices,
+  priceServices,
+  readServicesField,
+  resolveServices,
+  servicesWithTranslation,
+  type CatalogService,
+} from "./service-selection";
 import type { EvaluationLine, EvaluationResult, EvaluationService } from "./types";
 
 export const DIPLOMA_UNIT_CENTS = 1995;
@@ -93,16 +102,26 @@ export function parseOrderChoice(fields: {
   service: string | null;
   degreeCount: string | null;
   includeTranslation?: string | null;
+  services?: readonly string[] | null;
 }): {
   orderType: "translation" | "evaluation";
   service: EvaluationService | null;
   degreeCount: number | null;
   /** True only for an evaluation the customer also wants translated. */
   includeTranslation: boolean;
+  /** Every selected upload service, in catalog order. */
+  services: CatalogService[];
 } {
+  if (fields.services != null) return parseExplicitServices(fields);
   const orderType = fields.orderType ?? "translation";
   if (orderType === "translation") {
-    return { orderType: "translation", service: null, degreeCount: null, includeTranslation: false };
+    return {
+      orderType: "translation",
+      service: null,
+      degreeCount: null,
+      includeTranslation: false,
+      services: ["translation"],
+    };
   }
   if (orderType !== "evaluation") {
     throw new HttpError("orderType must be translation or evaluation", 400);
@@ -110,16 +129,173 @@ export function parseOrderChoice(fields: {
   if (fields.service !== "diploma" && fields.service !== "course_by_course") {
     throw new HttpError("service must be diploma or course_by_course", 400);
   }
-  const degreeCount = Number(fields.degreeCount);
-  if (!Number.isInteger(degreeCount) || degreeCount < 1 || degreeCount > MAX_DEGREE_COUNT) {
-    throw new HttpError(`degreeCount must be an integer from 1 to ${MAX_DEGREE_COUNT}`, 400);
-  }
+  const degreeCount = parseDegreeCount(fields.degreeCount);
+  const includeTranslation = parseIncludeTranslation(fields.includeTranslation);
+  const services: CatalogService[] = includeTranslation ? ["translation", fields.service] : [fields.service];
   return {
     orderType: "evaluation",
     service: fields.service,
     degreeCount,
-    includeTranslation: parseIncludeTranslation(fields.includeTranslation),
+    includeTranslation,
+    services,
   };
+}
+
+function parseExplicitServices(fields: {
+  orderType: string | null;
+  service: string | null;
+  degreeCount: string | null;
+  includeTranslation?: string | null;
+  services?: readonly string[] | null;
+}): {
+  orderType: "translation" | "evaluation";
+  service: EvaluationService | null;
+  degreeCount: number | null;
+  includeTranslation: boolean;
+  services: CatalogService[];
+} {
+  const services = parseCatalogServices(fields.services ?? []);
+  const kinds = evaluationKinds(services);
+  if (fields.orderType != null && fields.orderType !== "translation" && fields.orderType !== "evaluation") {
+    throw new HttpError("orderType must be translation or evaluation", 400);
+  }
+  if (fields.orderType === "translation" && kinds.length > 0) {
+    throw new HttpError("orderType does not match services", 400);
+  }
+  if (fields.orderType === "evaluation" && kinds.length === 0) {
+    throw new HttpError("orderType does not match services", 400);
+  }
+  if (fields.service != null && fields.service !== "") {
+    if (fields.service !== "diploma" && fields.service !== "course_by_course") {
+      throw new HttpError("service must be diploma or course_by_course", 400);
+    }
+    if (!services.includes(fields.service)) throw new HttpError("service does not match services", 400);
+  }
+  const flagged =
+    fields.includeTranslation == null || fields.includeTranslation === ""
+      ? null
+      : parseIncludeTranslation(fields.includeTranslation);
+  const includeTranslation = kinds.length > 0 && services.includes("translation");
+  if (flagged === true && !includeTranslation) {
+    throw new HttpError("includeTranslation does not match services", 400);
+  }
+  if (flagged === false && includeTranslation) {
+    throw new HttpError("includeTranslation does not match services", 400);
+  }
+  if (kinds.length === 0) {
+    return {
+      orderType: "translation",
+      service: null,
+      degreeCount: null,
+      includeTranslation: false,
+      services,
+    };
+  }
+  return {
+    orderType: "evaluation",
+    service: kinds.length === 1 ? kinds[0]! : null,
+    degreeCount: parseDegreeCount(fields.degreeCount),
+    includeTranslation,
+    services,
+  };
+}
+
+/**
+ * `services` is the upload contract: any non-empty subset of
+ * `translation`, `diploma`, and `course_by_course`.
+ * When `services` is omitted, `service` plus `includeTranslation` still selects one evaluation.
+ * A client total is not read.
+ */
+export function serviceChoiceFromBody(
+  body: unknown,
+  fallback: {
+    service?: string | null;
+    services?: readonly string[] | null;
+    includeTranslation?: boolean | null;
+    degreeCount?: number | null;
+    orderType?: string | null;
+    serviceType?: string | null;
+  },
+): {
+  orderType: "translation" | "evaluation";
+  service: EvaluationService | null;
+  degreeCount: number | null;
+  includeTranslation: boolean;
+  services: CatalogService[];
+} | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+  const record = body as Record<string, unknown>;
+  const servicesPresent = "services" in record && record.services != null && record.services !== "";
+  const servicePresent = "service" in record && record.service != null && record.service !== "";
+  const includePresent =
+    "includeTranslation" in record && record.includeTranslation != null && record.includeTranslation !== "";
+  const degreePresent = "degreeCount" in record && record.degreeCount != null && record.degreeCount !== "";
+  if (!servicesPresent && !servicePresent && !includePresent && !degreePresent) return null;
+
+  const degreeCount = degreePresent
+    ? degreeText(record.degreeCount)
+    : fallback.degreeCount == null
+      ? null
+      : String(fallback.degreeCount);
+  const includeFlag = includePresent ? includeFlagText(record.includeTranslation) : null;
+
+  if (servicesPresent) {
+    return parseOrderChoice({
+      orderType: null,
+      service: servicePresent ? textValue(record.service) : null,
+      degreeCount,
+      includeTranslation: includeFlag,
+      services: parseCatalogServices(readServicesField(record.services)),
+    });
+  }
+
+  const include = includePresent ? includeFlag === "true" : fallback.includeTranslation === true;
+  const service = servicePresent ? textValue(record.service) : (fallback.service ?? null);
+  if (service === "diploma" || service === "course_by_course") {
+    return parseOrderChoice({
+      orderType: "evaluation",
+      service,
+      degreeCount,
+      includeTranslation: include ? "true" : "false",
+      services: include ? ["translation", service] : [service],
+    });
+  }
+  if (!servicePresent && (includePresent || degreePresent)) {
+    return parseOrderChoice({
+      orderType: null,
+      service: null,
+      degreeCount,
+      includeTranslation: include ? "true" : "false",
+      services: servicesWithTranslation(resolveServices(fallback), include),
+    });
+  }
+  throw new HttpError("service must be diploma or course_by_course", 400);
+}
+
+function textValue(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function includeFlagText(value: unknown): string {
+  if (value === true || value === "true") return "true";
+  if (value === false || value === "false") return "false";
+  throw new HttpError("includeTranslation must be true or false.", 400);
+}
+
+function degreeText(value: unknown): string {
+  if (typeof value === "number" && Number.isInteger(value)) return String(value);
+  if (typeof value === "string" && value.trim()) return value.trim();
+  throw new HttpError(`degreeCount must be an integer from 1 to ${MAX_DEGREE_COUNT}`, 400);
+}
+
+function parseDegreeCount(value: string | null): number {
+  const degreeCount = Number(value);
+  if (!Number.isInteger(degreeCount) || degreeCount < 1 || degreeCount > MAX_DEGREE_COUNT) {
+    throw new HttpError(`degreeCount must be an integer from 1 to ${MAX_DEGREE_COUNT}`, 400);
+  }
+  return degreeCount;
 }
 
 function parseIncludeTranslation(value: string | null | undefined): boolean {
@@ -162,13 +338,16 @@ export function knownBillablePages(order: {
  */
 export function checkoutQuotePending(order: {
   service?: string | null;
+  services?: readonly string[] | null;
   includeTranslation?: boolean;
+  orderType?: string | null;
+  serviceType?: string | null;
   sourceLanguage?: string | null;
   billablePages?: number | null;
   documents?: ReadonlyArray<{ pageCount?: number | null }>;
 }): boolean {
-  if (order.service !== "diploma" && order.service !== "course_by_course") return false;
-  if (order.includeTranslation !== true) return false;
+  const services = resolveServices(order);
+  if (!services.includes("translation") || evaluationKinds(services).length === 0) return false;
   if (normalizeLanguage(order.sourceLanguage ?? null) === "en") return false;
   const pages = knownBillablePages(order);
   return pages == null || pages < 1;
@@ -280,13 +459,16 @@ export function evaluationPricePatch(input: {
   };
 }
 
-/** One checkout total: flat per-degree fee plus detected pages when translation is on. */
+/** One checkout total: every selected service, summed. A client total is not read. */
 export function checkoutServiceCharge(order: {
   service: EvaluationService | string | null;
+  services?: readonly string[] | null;
   degreeCount: number | null;
   sourceLanguage: string | null;
   billablePages: number | null;
   includeTranslation: boolean;
+  orderType?: string | null;
+  serviceType?: string | null;
 }): {
   evaluationCents: number;
   translationCents: number;
@@ -294,22 +476,23 @@ export function checkoutServiceCharge(order: {
   unitPriceCents: number;
   serviceCents: number;
 } | null {
-  if (order.service !== "diploma" && order.service !== "course_by_course") return null;
+  const services = resolveServices(order);
+  if (evaluationKinds(services).length === 0) return null;
   if (order.degreeCount == null || !Number.isInteger(order.degreeCount) || order.degreeCount < 1) return null;
-  const patch = evaluationPricePatch({
-    service: order.service,
+  const priced = priceServices({
+    services,
     degreeCount: order.degreeCount,
     sourceLanguage: order.sourceLanguage,
     billablePages: order.billablePages ?? 0,
-    includeTranslation: order.includeTranslation,
     chargeUnknownLanguage: true,
   });
+  if (!priced) return null;
   return {
-    evaluationCents: patch.evaluation_cents,
-    translationCents: patch.translation_cents,
-    includeTranslation: patch.include_translation,
-    unitPriceCents: patch.unit_price_cents,
-    serviceCents: patch.evaluation_cents + patch.translation_cents,
+    evaluationCents: priced.evaluationCents,
+    translationCents: priced.translationCents,
+    includeTranslation: priced.includeTranslation,
+    unitPriceCents: priced.unitPriceCents,
+    serviceCents: priced.serviceCents,
   };
 }
 
@@ -319,6 +502,9 @@ export function checkoutServiceCharge(order: {
  */
 export function customerServiceQuote(order: {
   service: EvaluationService | string | null;
+  services?: readonly string[] | null;
+  orderType?: string | null;
+  serviceType?: string | null;
   degreeCount?: number | null;
   sourceLanguage?: string | null;
   billablePages?: number | null;
@@ -340,12 +526,12 @@ export function customerServiceQuote(order: {
   billablePages: number | null;
 } {
   const billablePages = knownBillablePages(order);
-  const flat = evaluationPrice({
-    service: order.service,
-    degreeCount: order.degreeCount,
-    addonCents: 0,
-  });
-  if (!flat || (order.service !== "diploma" && order.service !== "course_by_course")) {
+  const services = resolveServices(order);
+  const kinds = evaluationKinds(services);
+  const degreeCount = order.degreeCount;
+  const degreeReady =
+    kinds.length > 0 && degreeCount != null && Number.isInteger(degreeCount) && degreeCount >= 1;
+  if (!degreeReady) {
     return {
       evaluation: false,
       evaluationCents: order.evaluationCents ?? null,
@@ -357,28 +543,45 @@ export function customerServiceQuote(order: {
       billablePages,
     };
   }
-  const optedIn = order.includeTranslation === true;
-  const pages = billablePages ?? 0;
-  const pending = checkoutQuotePending({
-    service: order.service,
-    includeTranslation: optedIn,
-    sourceLanguage: order.sourceLanguage,
+  const priced = priceServices({
+    services,
+    degreeCount,
+    sourceLanguage: order.sourceLanguage ?? null,
     billablePages,
-    documents: order.documents,
+    addonCents: 0,
+    chargeUnknownLanguage: true,
   });
-  const language = normalizeLanguage(order.sourceLanguage ?? null);
-  const translationCents = optedIn && language !== "en" && pages > 0 ? pages * UNIT_PRICE_CENTS : 0;
+  if (!priced) {
+    return {
+      evaluation: false,
+      evaluationCents: order.evaluationCents ?? null,
+      translationCents: order.translationCents ?? null,
+      includeTranslation: false,
+      unitPriceCents: order.unitPriceCents,
+      totalCents: order.totalCents ?? null,
+      translationOfferCents: null,
+      billablePages,
+    };
+  }
+  const optedIn = priced.includeTranslation;
+  const pending = checkoutQuotePending({
+    ...order,
+    includeTranslation: optedIn,
+    billablePages,
+  });
+  const translationCents = pending ? 0 : priced.translationCents;
+  const primary = kinds[0] ?? null;
   return {
     evaluation: true,
-    evaluationCents: flat.evaluationCents,
+    evaluationCents: priced.evaluationCents,
     translationCents,
     includeTranslation: optedIn,
-    unitPriceCents: flat.unitPriceCents,
-    totalCents: pending ? null : flat.evaluationCents + translationCents + (order.addonCents ?? 0),
+    unitPriceCents: primary ? evaluationUnitCents(primary) : priced.unitPriceCents,
+    totalCents: pending ? null : priced.evaluationCents + translationCents + (order.addonCents ?? 0),
     translationOfferCents: optedIn
       ? null
       : translationOfferCents({
-          service: order.service,
+          service: primary,
           sourceLanguage: order.sourceLanguage ?? null,
           billablePages,
           unitPriceCents: UNIT_PRICE_CENTS,
@@ -402,11 +605,42 @@ export function translationOfferCents(input: {
 
 export function lineItemsForOrder(input: {
   service: EvaluationService | null;
+  services?: readonly string[] | null;
+  includeTranslation?: boolean;
+  orderType?: string | null;
+  serviceType?: string | null;
+  sourceLanguage?: string | null;
   degreeCount: number | null;
   evaluationCents: number | null;
   translationCents: number | null;
   billablePages: number | null;
 }): EvaluationLine[] {
+  const services = input.services?.length
+    ? resolveServices(input)
+    : input.service
+      ? resolveServices({ service: input.service, includeTranslation: (input.translationCents ?? 0) > 0 })
+      : [];
+  const kinds = evaluationKinds(services);
+  if (kinds.length > 1 && input.degreeCount != null) {
+    const priced = priceServices({
+      services,
+      degreeCount: input.degreeCount,
+      sourceLanguage: input.sourceLanguage ?? null,
+      billablePages: input.billablePages,
+    });
+    if (!priced) return [];
+    const lines = [...priced.lineItems];
+    if ((input.translationCents ?? 0) > 0 && !lines.some((line) => line.kind === "translation")) {
+      lines.push({
+        kind: "translation",
+        description: "Certified translation",
+        quantity: input.billablePages ?? 0,
+        unitAmountCents: UNIT_PRICE_CENTS,
+        amountCents: input.translationCents ?? 0,
+      });
+    }
+    return lines;
+  }
   if (!input.service || input.degreeCount == null || input.evaluationCents == null || input.translationCents == null) {
     return [];
   }
@@ -433,6 +667,11 @@ export function lineItemsForOrder(input: {
 
 export function checkoutPriceLines(input: {
   service: EvaluationService | null;
+  services?: readonly string[] | null;
+  includeTranslation?: boolean;
+  orderType?: string | null;
+  serviceType?: string | null;
+  sourceLanguage?: string | null;
   degreeCount: number | null;
   evaluationCents: number | null;
   translationCents: number | null;
@@ -452,10 +691,7 @@ export function checkoutPriceLines(input: {
     quantity: item.quantity,
     unitAmountCents: item.unitAmountCents,
     name: item.description,
-    description:
-      item.kind === "evaluation" && input.service
-        ? evaluationServiceDescription(input.service)
-        : input.description,
+    description: item.kind === "evaluation" ? item.description : input.description,
     imageUrl: index === 0 ? input.imageUrl : null,
   }));
 }

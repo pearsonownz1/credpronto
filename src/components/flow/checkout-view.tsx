@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
+import { serviceRequestFromOrder } from "@/lib/flow/order-choice";
 import { formatMoney, pageLabel } from "@/lib/flow/pricing";
 import {
   checkoutFailureMessage,
@@ -105,6 +106,8 @@ function CheckoutForm({
 
   const quote = customerServiceQuote({
     service: order.service,
+    services: order.services,
+    orderType: order.orderType,
     degreeCount: order.degreeCount,
     sourceLanguage: order.sourceLanguage,
     billablePages: order.billablePages,
@@ -123,9 +126,14 @@ function CheckoutForm({
         evaluationCents: quote.evaluationCents,
         translationCents: quote.translationCents,
         includeTranslation: quote.includeTranslation,
+        services: order.services,
         totalCents: quote.totalCents,
         lineItems: lineItemsForOrder({
           service: order.service,
+          services: order.services,
+          includeTranslation: quote.includeTranslation,
+          orderType: order.orderType,
+          sourceLanguage: order.sourceLanguage,
           degreeCount: order.degreeCount,
           evaluationCents: quote.evaluationCents,
           translationCents: quote.translationCents,
@@ -170,6 +178,7 @@ function CheckoutForm({
     setNotice(null);
     try {
       const result = await getFlowClient().checkout(token, {
+        ...serviceRequestFromOrder(order),
         addons: selected.filter((id) => options.some((option) => option.id === id)),
         ...(mail ? { shippingAddress: shippingAddress() } : {}),
       });

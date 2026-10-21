@@ -11,6 +11,7 @@ import {
   type EdgeGradingScaleRecord,
 } from "./edge";
 import { evaluationPrice, parseEvaluationResult } from "./evaluation-price";
+import { normalizeCatalogServices } from "./service-selection";
 import { readStoredEvalStatus } from "../evalStatus";
 import { parseStoredPageOrder, compareCombinedPages } from "./page-order";
 import { asOrderProgress, type OrderProgress } from "./reading-progress";
@@ -83,6 +84,9 @@ function mapOrder(row: Row): OrderRecord {
     orderType:
       row.order_type === "evaluation" || row.order_type === "expert_letter" ? row.order_type : "translation",
     service: row.service === "diploma" || row.service === "course_by_course" ? row.service : null,
+    services: storedServices(row.services),
+    serviceFiles: storedServiceFiles(row.service_files),
+    evaluationResults: storedEvaluationResults(row.evaluation_results),
     degreeCount: num(row.degree_count),
     evaluationCents: num(row.evaluation_cents),
     translationCents: num(row.translation_cents),
@@ -111,6 +115,33 @@ function mapOrder(row: Row): OrderRecord {
     progress: asOrderProgress(row.progress) ?? { step: "uploaded", pagesRead: 0, pagesTotal: 0 },
     ...readStoredEvalStatus(row),
   };
+}
+
+function storedServices(value: unknown): Array<"translation" | "diploma" | "course_by_course"> | null {
+  if (!Array.isArray(value)) return null;
+  return normalizeCatalogServices(value.filter((item): item is string => typeof item === "string"));
+}
+
+function storedServiceFiles(value: unknown): Partial<Record<"diploma" | "course_by_course", string>> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const files: Partial<Record<"diploma" | "course_by_course", string>> = {};
+  if (typeof record.diploma === "string" && record.diploma.trim()) files.diploma = record.diploma;
+  if (typeof record.course_by_course === "string" && record.course_by_course.trim()) {
+    files.course_by_course = record.course_by_course;
+  }
+  return files.diploma || files.course_by_course ? files : null;
+}
+
+function storedEvaluationResults(value: unknown) {
+  if (!Array.isArray(value)) return null;
+  const results = [];
+  for (const item of value) {
+    const parsed = parseEvaluationResult(item);
+    if (!parsed) return null;
+    results.push(parsed);
+  }
+  return results.length > 0 ? results : null;
 }
 
 function mapShipping(row: Row): ShippingAddress | null {
@@ -275,6 +306,7 @@ export async function insertOrder(
     service?: "diploma" | "course_by_course" | null;
     degreeCount?: number | null;
     includeTranslation?: boolean;
+    services?: Array<"translation" | "diploma" | "course_by_course"> | null;
     evaluationCents?: number | null;
     translationCents?: number | null;
     totalCents?: number | null;
@@ -297,6 +329,7 @@ export async function insertOrder(
       service: input.service ?? null,
       degree_count: input.degreeCount ?? null,
       include_translation: input.includeTranslation === true,
+      ...(input.services ? { services: input.services } : {}),
       ...(input.evaluationCents != null ? { evaluation_cents: input.evaluationCents } : {}),
       ...(input.translationCents != null ? { translation_cents: input.translationCents } : {}),
       ...(input.totalCents != null ? { total_cents: input.totalCents } : {}),
@@ -492,7 +525,7 @@ export async function listStaffAlertCandidates(
       .not("paid_at", "is", null)
       .lte("paid_at", evaluationPaidBefore)
       .is("staff_urgent_alert_sent_at", null)
-      .not("service", "is", null)
+      .or("service.not.is.null,services.ov.{diploma,course_by_course}")
       .not("staff_alert_sent_at", "is", null)
       .order("paid_at", { ascending: true })
       .limit(40),
@@ -1503,14 +1536,20 @@ export async function listEvaluationQueueOrders(
   db: Db,
   page: { limit: number; offset: number },
 ): Promise<{
-  rows: Array<{ id: string; service: string | null; email: string | null; paidAt: string | null }>;
+  rows: Array<{
+    id: string;
+    service: string | null;
+    services: Array<"translation" | "diploma" | "course_by_course"> | null;
+    email: string | null;
+    paidAt: string | null;
+  }>;
   total: number;
 }> {
   const { data, error, count } = await db
     .from("orders")
-    .select("id, service, paid_at, customers(email)", { count: "exact" })
+    .select("id, service, services, paid_at, customers(email)", { count: "exact" })
     .eq("order_type", "evaluation")
-    .in("service", ["diploma", "course_by_course"])
+    .or("service.in.(diploma,course_by_course),services.ov.{diploma,course_by_course}")
     .in("status", ["paid", "needs_review"])
     .not("paid_at", "is", null)
     .order("paid_at", { ascending: true })
@@ -1522,6 +1561,7 @@ export async function listEvaluationQueueOrders(
     return {
       id: String(row.id),
       service: str(row.service),
+      services: storedServices(row.services),
       email: email ?? null,
       paidAt: str(row.paid_at),
     };
