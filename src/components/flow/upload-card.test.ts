@@ -63,10 +63,11 @@ describe("service checkboxes", () => {
     const css = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
     const rule = css.slice(css.indexOf(".service-check {"), css.indexOf(".service-check:hover"));
     expect(rule).toContain("appearance: none");
-    expect(rule).toContain("border-radius: 2px");
+    expect(rule).toContain("border-radius: 4px");
     expect(rule).toContain("background: #ffffff");
     expect(css).toContain(".service-check:checked + .service-check-mark");
-    expect(css).toMatch(/\.service-check:checked\s*\{[^}]*background:\s*var\(--cp-primary\)/);
+    expect(css).toMatch(/\.service-check:checked\s*\{[^}]*background:\s*#1f5eff/);
+    expect(css).toMatch(/\.service-check-mark\s*\{[^}]*color:\s*#ffffff/);
 
     const markup = html(null);
     expect(markup.match(/class="service-check"/g)).toHaveLength(3);
