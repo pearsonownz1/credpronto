@@ -90,6 +90,8 @@ describe("service checkboxes", () => {
     expect(markup).not.toMatch(/data-testid="choice-course_by_course"[^>]*checked=""/);
     expect(markup).toContain('data-testid="translation-pages"');
     expect(markup).toContain("Pages: counting…");
+    expect(markup).toContain('data-testid="file-input"');
+    expect(markup).toContain('data-testid="file-input" type="file" multiple');
     expect(markup).toContain('data-testid="choice-total"');
     expect(markup).toContain("counting…");
     expect(markup).not.toContain('data-testid="degree-count"');
