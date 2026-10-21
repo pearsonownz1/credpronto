@@ -441,7 +441,7 @@ test("the homepage preview is on the page, and a signed-in header shows My order
   await page.goto("/evaluations");
   await expect(page.getByTestId("nav-log-in")).toHaveText("Sign in");
   await expect(page.getByTestId("nav-create-account")).toHaveCount(0);
-  await expect(page.getByTestId("nav-get-started")).toHaveAttribute("href", "/translate");
+  await expect(page.getByTestId("nav-get-started")).toHaveCount(0);
   await expect(page.getByText("Find my order")).toHaveCount(0);
 
   await signIn(page, "maria.ruiz@email.com");
@@ -450,7 +450,7 @@ test("the homepage preview is on the page, and a signed-in header shows My order
   await expect(page.getByTestId("nav-my-orders")).toHaveAttribute("href", "/account");
   await expect(page.getByTestId("nav-log-in")).toHaveCount(0);
   await expect(page.getByTestId("nav-create-account")).toHaveCount(0);
-  await expect(page.getByTestId("nav-get-started")).toHaveAttribute("href", "/translate");
+  await expect(page.getByTestId("nav-get-started")).toHaveCount(0);
   await page.goto("/faq");
   await expect(page.getByTestId("nav-my-orders")).toBeVisible();
 });
