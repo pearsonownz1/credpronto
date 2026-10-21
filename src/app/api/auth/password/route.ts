@@ -21,6 +21,8 @@ export async function POST(request: Request) {
       throw new HttpError("password must be at least 8 characters", 400);
     }
     const mode = (body as { mode?: unknown }).mode === "sign-up" ? "sign-up" : "sign-in";
+    const rawName = (body as { name?: unknown }).name;
+    const name = typeof rawName === "string" ? rawName.trim() : "";
     const orderToken = readOrderToken(body);
     const origin = requestOrigin(request);
 
@@ -47,6 +49,7 @@ export async function POST(request: Request) {
           email,
           purpose: "signup",
           password,
+          name: name || undefined,
           origin,
           next: readNext(body) ?? "/account",
           orderToken,
