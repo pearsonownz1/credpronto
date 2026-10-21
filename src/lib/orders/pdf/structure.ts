@@ -1,4 +1,4 @@
-import type { FieldRow, RenderBlock } from "./layout";
+import { blockAlign, blockColumn, type FieldRow, type RenderBlock } from "./layout";
 
 export type TextItem = {
   text: string;
@@ -302,10 +302,18 @@ function coalesce(blocks: RenderBlock[]): RenderBlock[] {
       prev.rows = [...prev.rows, ...block.rows];
       continue;
     }
-    if (block.type === "signature" && prev?.type === "signature" && prev.electronic === block.electronic) {
+    if (
+      block.type === "signature" &&
+      prev?.type === "signature" &&
+      prev.electronic === block.electronic &&
+      !prev.lines?.length &&
+      !block.lines?.length &&
+      !prev.column &&
+      !block.column
+    ) {
       continue;
     }
-    if (block.type === "seal" && prev?.type === "seal" && prev.text === block.text) {
+    if (block.type === "seal" && prev?.type === "seal" && prev.text === block.text && prev.column === block.column) {
       continue;
     }
     if (block.type === "paragraph" && prev?.type === "paragraph" && prev.text === block.text) {
@@ -789,6 +797,17 @@ export type ModelBlock = {
   electronic?: boolean;
   rows?: Array<{ label?: string; value?: string }>;
   lines?: string[];
+  align?: string;
+  column?: string;
+  bold?: boolean;
+  underline?: boolean;
+  caps?: boolean;
+  label?: string;
+  value?: string;
+  items?: string[];
+  ordered?: boolean;
+  cells?: string[][];
+  caption?: string;
 };
 
 function cleanSealText(text: string): string {
@@ -799,7 +818,60 @@ function cleanSealText(text: string): string {
   return collapseLetterSpacing(stripped);
 }
 
+function styledParagraph(block: ModelBlock): RenderBlock | null {
+  const text = block.text ?? "";
+  const align = blockAlign(block.align);
+  const styled = Boolean(align || block.bold || block.underline || block.caps || text.includes("**") || text.includes("__"));
+  if (!styled) return null;
+  return { type: "paragraph", text, align, bold: block.bold, underline: block.underline, caps: block.caps };
+}
+
+function layoutBlock(block: ModelBlock): RenderBlock[] | null {
+  const type = block.type ?? "";
+  const column = blockColumn(block.column);
+  if (type === "logo" && block.text?.trim()) return [{ type: "logo", text: block.text.trim() }];
+  if (type === "photo") return [{ type: "photo", caption: block.caption?.trim() || block.text?.trim() || "Holder's photo" }];
+  if (type === "box") {
+    return [{ type: "box", label: (block.label ?? "").trim(), value: (block.value ?? block.text ?? "").trim(), column }];
+  }
+  if (type === "kv") {
+    return [{ type: "kv", label: (block.label ?? "").trim(), value: (block.value ?? "").trim(), bold: block.bold }];
+  }
+  if (type === "address" && block.lines?.length) {
+    return [{ type: "address", lines: block.lines.map((line) => line.trim()).filter(Boolean), align: blockAlign(block.align), bold: block.bold }];
+  }
+  if (type === "list" && block.items?.length) {
+    return [{
+      type: "list",
+      ordered: block.ordered !== false,
+      label: block.label?.trim() || block.text?.trim() || undefined,
+      items: block.items.map((item) => item.trim()).filter(Boolean),
+    }];
+  }
+  if (type === "table" && (block.cells?.length || block.rows?.length)) {
+    const rows = block.cells?.length
+      ? block.cells.map((row) => row.map((cell) => cell.trim()))
+      : (block.rows ?? []).map((row) => [row.label ?? "", row.value ?? ""]);
+    return [{ type: "table", rows, header: false }];
+  }
+  if (type === "stamp") return [{ type: "stamp", text: (block.text ?? "").trim(), column }];
+  if (type === "handwritten") return [{ type: "handwritten", text: (block.text ?? "").trim() }];
+  if (type === "illegible") return [{ type: "illegible" }];
+  if (type === "signature" && (column || block.lines?.length)) {
+    return [{
+      type: "signature",
+      electronic: block.electronic === true,
+      column,
+      lines: block.lines?.map((line) => line.trim()).filter(Boolean),
+    }];
+  }
+  if (type === "seal" && column) return [{ type: "seal", text: cleanSealText(block.text ?? ""), column }];
+  return null;
+}
+
 function fromModelBlock(block: ModelBlock): RenderBlock[] {
+  const laid = layoutBlock(block);
+  if (laid) return laid;
   const type = block.type ?? "paragraph";
   if (type === "fields" && block.rows?.length) {
     const rows = block.rows
@@ -823,7 +895,14 @@ function fromModelBlock(block: ModelBlock): RenderBlock[] {
       type: "heading",
       text: entry?.english ?? translateProse(block.text ?? ""),
       level: block.level === 2 || entry?.role === "section" ? 2 : 1,
+      align: blockAlign(block.align),
+      bold: block.bold,
+      caps: block.caps,
     }];
+  }
+  if (type === "paragraph") {
+    const styled = styledParagraph(block);
+    if (styled) return [styled];
   }
   if (type === "note" && block.text?.trim()) return [{ type: "note", text: block.text.trim() }];
   if (block.text?.trim()) return structurePage(block.text);
@@ -846,14 +925,29 @@ export function blocksFromModel(input: {
 export function blocksToParagraphs(blocks: RenderBlock[]): string[] {
   const lines: string[] = [];
   for (const block of blocks) {
-    if (block.type === "heading" || block.type === "paragraph" || block.type === "note") {
-      if (block.text.trim()) lines.push(block.text);
+    if (block.type === "heading" || block.type === "paragraph" || block.type === "note" || block.type === "logo" || block.type === "stamp" || block.type === "handwritten") {
+      const text = block.text.replace(/\*\*/g, "").replace(/__/g, "").trim();
+      if (text) lines.push(block.type === "logo" ? `[Logo: ${text}]` : block.type === "stamp" ? (text ? `[Stamp: ${text}]` : "[Stamp]") : block.type === "handwritten" ? (text ? `[Handwritten: ${text}]` : "[Handwritten]") : text);
     } else if (block.type === "fields") {
       for (const row of block.rows) lines.push(`${row.label}: ${row.value}`);
+    } else if (block.type === "kv" || block.type === "box") {
+      lines.push(`${block.label}: ${block.value}`);
+    } else if (block.type === "address") {
+      lines.push(...block.lines);
+    } else if (block.type === "list") {
+      if (block.label) lines.push(block.label);
+      block.items.forEach((item, index) => lines.push(`${index + 1}) ${item.replace(/\*\*/g, "")}`));
+    } else if (block.type === "table") {
+      for (const row of block.rows) lines.push(row.join(" "));
     } else if (block.type === "seal") {
-      lines.push(`[Seal: ${block.text}]`);
+      lines.push(block.text.trim() ? `[Seal: ${block.text}]` : "[Seal]");
     } else if (block.type === "signature") {
       lines.push(block.electronic ? "[Electronic signature]" : "[Signature]");
+      for (const line of block.lines ?? []) lines.push(line.replace(/\*\*/g, ""));
+    } else if (block.type === "photo") {
+      lines.push(`[${block.caption?.trim() || "Holder's photo"}]`);
+    } else if (block.type === "illegible") {
+      lines.push("[Illegible]");
     }
   }
   return lines.length ? lines : [" "];

@@ -8,9 +8,12 @@ import {
   coverDocuments,
   coverSignature,
   coverTranslatorName,
+  documentDisplayName,
   formatCoverDate,
   resolveCover,
+  shortOrderNumber,
 } from "./cover";
+import { LICENSE_SOURCE, OYAK_SOURCE } from "./attached-documents";
 
 describe("certification cover", () => {
   it("prints the certification team, never a person or an email", () => {
@@ -93,5 +96,24 @@ describe("certification cover", () => {
     const ata = loadAtaLogo();
     expect(Array.from(ata.subarray(0, 8))).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     expect(cover.clientName).toBe("María Ruiz");
+  });
+
+  it("names a document from the page text and leaves an ordinary filename alone", () => {
+    expect(documentDisplayName("acta.pdf", "")).toBe("acta.pdf");
+    expect(documentDisplayName("Screenshot 2026-10-21 at 1.44.42 AM.png", "")).toBe("Document");
+    expect(documentDisplayName("Screenshot 2026-10-21 at 1.44.42 AM.png", LICENSE_SOURCE)).toBe(
+      "Attorney at Law License",
+    );
+    expect(documentDisplayName("2_oyak_tr.png", OYAK_SOURCE)).toBe("Appointment Letter");
+    expect(documentDisplayName("acta.pdf", "ACTA DE NACIMIENTO")).toBe("Birth Certificate");
+    expect(documentDisplayName("birth.jpg", "出生医学证明")).toBe("Medical Certificate of Birth");
+    expect(
+      coverDocuments(
+        [{ id: "doc-1", filename: "Screenshot 2026-10-21 at 1.44.42 AM.png" }],
+        [{ documentId: "doc-1", ocrText: LICENSE_SOURCE }],
+      ),
+    ).toEqual([{ name: "Attorney at Law License", sourcePages: 1, translatedPages: 1 }]);
+    expect(shortOrderNumber("28492f38-1111-4111-8111-111111111111")).toBe("28492f38");
+    expect(shortOrderNumber("order-1")).toBe("order-1");
   });
 });

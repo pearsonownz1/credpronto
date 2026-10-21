@@ -46,26 +46,29 @@ async function addImagePage(
       ? await dest.embedJpg(embeddable.bytes)
       : await dest.embedPng(embeddable.bytes);
 
+  const landscape = image.width > image.height;
+  const pageW = landscape ? LETTER_HEIGHT_PT : LETTER_WIDTH_PT;
+  const pageH = landscape ? LETTER_WIDTH_PT : LETTER_HEIGHT_PT;
   const margin = 36;
-  const maxW = LETTER_WIDTH_PT - margin * 2;
-  const maxH = LETTER_HEIGHT_PT - margin * 2;
+  const maxW = pageW - margin * 2;
+  const maxH = pageH - margin * 2;
   const scale = Math.min(maxW / image.width, maxH / image.height);
   const drawW = image.width * scale;
   const drawH = image.height * scale;
-  const page = dest.addPage([LETTER_WIDTH_PT, LETTER_HEIGHT_PT]);
+  const page = dest.addPage([pageW, pageH]);
   page.drawImage(image, {
-    x: (LETTER_WIDTH_PT - drawW) / 2,
-    y: (LETTER_HEIGHT_PT - drawH) / 2,
+    x: (pageW - drawW) / 2,
+    y: (pageH - drawH) / 2,
     width: drawW,
     height: drawH,
   });
 
-  return { widthPt: LETTER_WIDTH_PT, heightPt: LETTER_HEIGHT_PT };
+  return { widthPt: pageW, heightPt: pageH };
 }
 
 /**
  * One PDF, upload order preserved, one viewer page per original side.
- * PDF pages keep their own size. Images become a letter page.
+ * PDF pages keep their own size. Images become a letter page, landscape when the image is wider than it is tall.
  */
 export async function buildCombinedOriginal(files: SourceFile[]): Promise<{
   pdf: Uint8Array;
