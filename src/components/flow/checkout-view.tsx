@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
 import { formatMoney, pageLabel } from "@/lib/flow/pricing";
 import {
@@ -12,6 +12,7 @@ import {
   totalLabel,
 } from "@/lib/flow/present";
 import { US_STATE_CODES, addonUnitPhrase, chargeCents, serviceCents, withoutExpedited } from "@/lib/orders/addons";
+import { checkoutQuotePending } from "@/lib/orders/evaluation-price";
 import type { AddonId, ShippingAddress } from "@/lib/orders/types";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
@@ -22,7 +23,7 @@ import { Checks, Field, FlowColumns, Summary, SummaryRow, buttonClasses, fieldCl
 export function CheckoutView({ token: pathToken }: { token?: string }) {
   const token = useStoredToken(pathToken);
   const email = useStoredEmail();
-  const { order, error, loading } = useCustomerOrder(token, "once");
+  const { order, error, loading } = useCustomerOrder(token, "while-working");
   const evaluation = order != null && isCustomerEvaluation(order);
 
   return (
@@ -53,6 +54,7 @@ function CheckoutForm({
   order: CustomerOrder;
 }) {
   const router = useRouter();
+  const paying = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const evaluationOrder = order.orderType === "evaluation" || order.service != null;
@@ -73,8 +75,9 @@ function CheckoutForm({
 
   const notReady = evaluationOrder ? false : order.status !== "preview_ready";
   const evaluation = evaluationOrder;
+  const counting = checkoutQuotePending(order);
   const options = withoutExpedited(order.addonOptions, true);
-  const service = serviceCents(order);
+  const service = counting ? null : serviceCents(order);
   const due = chargeCents(service, options, selected);
   const mail = selected.includes("mail");
   const priceLines = servicePriceLines(order);
@@ -96,10 +99,12 @@ function CheckoutForm({
   }
 
   async function pay() {
+    if (paying.current || counting) return;
     if (mail && (!address.name.trim() || !address.line1.trim() || !address.city.trim() || !address.postalCode.trim())) {
       setNotice("Mail requires a US shipping address");
       return;
     }
+    paying.current = true;
     setPending(true);
     setNotice(null);
     try {
@@ -130,8 +135,9 @@ function CheckoutForm({
         setNotice(cause.message);
         return;
       }
-      setNotice("Payment could not start.");
+      setNotice(cause instanceof Error && cause.message ? cause.message : "Payment could not start.");
     } finally {
+      paying.current = false;
       setPending(false);
     }
   }
@@ -252,6 +258,11 @@ function CheckoutForm({
               : "Your preview isn't ready yet. You can pay as soon as the translation is ready to review."}
           </p>
         ) : null}
+        {counting ? (
+          <p data-testid="checkout-counting" role="status" className="mt-4 text-sm text-ink-muted">
+            We're still counting pages.
+          </p>
+        ) : null}
         {notice ? (
           <p data-testid="checkout-waiting" role="alert" className="mt-4 text-sm text-ink-muted">
             {notice}
@@ -260,11 +271,11 @@ function CheckoutForm({
         <button
           type="button"
           data-testid="pay-button"
-          disabled={pending || notReady || due == null}
+          disabled={pending || notReady || counting || due == null}
           onClick={() => void pay()}
           className={buttonClasses("primary", "mt-[22px] h-[52px] w-full text-base disabled:opacity-60")}
         >
-          {pending ? "Opening checkout…" : `Pay ${due != null ? formatMoney(due) : totalLabel(order.totalCents)}`}
+          {pending ? "Opening checkout…" : counting ? "Counting pages…" : `Pay ${due != null ? formatMoney(due) : totalLabel(order.totalCents)}`}
         </button>
         <p className="mt-2.5 text-center text-xs text-ink-muted">
           <span aria-hidden>🔒 </span>

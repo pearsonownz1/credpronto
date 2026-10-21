@@ -5,7 +5,13 @@ import { checkoutBlockReason } from "./equivalency";
 import { downloadGate } from "./access";
 import { checkoutPreviewImageUrl } from "./checkout-image";
 import { checkoutLineProduct, checkoutProductDescription } from "./checkout-preview";
-import { checkoutPriceLines, checkoutServiceCharge, evaluationPricePatch } from "./evaluation-price";
+import {
+  checkoutPriceLines,
+  checkoutQuotePending,
+  checkoutServiceCharge,
+  customerServiceQuote,
+  evaluationPricePatch,
+} from "./evaluation-price";
 import { deliveryFileTarget } from "./delivery-file";
 import {
   DOWNLOAD_URL_SECONDS,
@@ -431,9 +437,13 @@ export async function startCheckout(token: string, body: unknown = {}) {
   const blocked = checkoutBlockReason(order);
   if (blocked) throw new HttpError(blocked, 409);
   if (await settledPayment(db, order.id)) throw new HttpError("This order is already paid", 409);
+  if (checkoutQuotePending(order)) {
+    throw new HttpError("We're still counting pages.", 409);
+  }
   const selection = parseCheckoutBody(body, order.billablePages, order);
+  const quoted = customerServiceQuote(order);
   const charge = checkoutServiceCharge(order);
-  const base = charge?.serviceCents ?? serviceCents(order);
+  const base = charge?.serviceCents ?? (quoted.evaluation ? null : serviceCents(order));
   if (base == null) throw new HttpError("This order is not ready to pay", 409);
   const total = base + selection.addonCents;
   if (charge) {
@@ -483,6 +493,26 @@ export async function startCheckout(token: string, body: unknown = {}) {
 
   await insertEvent(db, order.id, "checkout_started", { mode: "stripe" });
   const stripe = new Stripe(secret);
+  const pending = await latestPayment(db, order.id);
+  if (pending?.status === "pending" && pending.sessionId) {
+    if (pending.amountCents === total) {
+      try {
+        const existing = await stripe.checkout.sessions.retrieve(pending.sessionId);
+        if (existing.status === "open" && existing.url) {
+          return { url: existing.url, sessionId: existing.id };
+        }
+      } catch {
+        // The stored session cannot be reopened. A new one is created below.
+      }
+    } else {
+      try {
+        await stripe.checkout.sessions.expire(pending.sessionId);
+      } catch {
+        // Already closed or expired.
+      }
+      await markPaymentExpired(db, pending.id);
+    }
+  }
   const email = await customerEmail(db, order.customerId);
   const documents = await listDocuments(db, order.id);
   const description = checkoutProductDescription({
@@ -493,39 +523,48 @@ export async function startCheckout(token: string, body: unknown = {}) {
   });
   const preview = await latestReadyPreview(db, order.id);
   const imageUrl = preview ? await checkoutPreviewImageUrl(db, order.id, preview.previewPath) : null;
-  const session = await stripe.checkout.sessions.create({
-    mode: "payment",
-    customer_email: email ?? undefined,
-    client_reference_id: order.id,
-    metadata: { order_id: order.id, order_token: token },
-    line_items: [
-      ...serviceStripeLines({
-        order,
-        base,
-        description,
-        imageUrl,
-      }),
-      ...addonStripeLines(selection.addons).map((line) => ({
-        quantity: line.quantity,
-        price_data: {
-          currency: order.currency,
-          unit_amount: line.unitAmountCents,
-          product_data: { name: line.name },
-        },
-      })),
-    ],
-    success_url: checkoutReturnUrl(appOrigin(), token, "success"),
-    cancel_url: checkoutReturnUrl(appOrigin(), token, "cancel"),
-  });
+  const addonKey = selection.addons.map((item) => item.id).join(",");
+  const session = await stripe.checkout.sessions.create(
+    {
+      mode: "payment",
+      customer_email: email ?? undefined,
+      client_reference_id: order.id,
+      metadata: { order_id: order.id, order_token: token },
+      line_items: [
+        ...serviceStripeLines({
+          order,
+          base,
+          description,
+          imageUrl,
+        }),
+        ...addonStripeLines(selection.addons).map((line) => ({
+          quantity: line.quantity,
+          price_data: {
+            currency: order.currency,
+            unit_amount: line.unitAmountCents,
+            product_data: { name: line.name },
+          },
+        })),
+      ],
+      success_url: checkoutReturnUrl(appOrigin(), token, "success"),
+      cancel_url: checkoutReturnUrl(appOrigin(), token, "cancel"),
+    },
+    { idempotencyKey: `checkout-${order.id}-${total}-${addonKey}` },
+  );
   if (!session.url) throw new HttpError("Stripe did not return a checkout URL", 502);
   const paymentIntent = typeof session.payment_intent === "string" ? session.payment_intent : null;
-  await insertPayment(db, {
-    orderId: order.id,
-    sessionId: session.id,
-    paymentIntentId: paymentIntent,
-    amountCents: total,
-    status: "pending",
-  });
+  try {
+    await insertPayment(db, {
+      orderId: order.id,
+      sessionId: session.id,
+      paymentIntentId: paymentIntent,
+      amountCents: total,
+      status: "pending",
+    });
+  } catch (error) {
+    const recorded = await paymentBySession(db, session.id);
+    if (!recorded) throw error;
+  }
   return { url: session.url, sessionId: session.id };
 }
 
