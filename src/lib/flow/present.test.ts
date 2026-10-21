@@ -112,6 +112,7 @@ function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
     ...patch,
     paidAt: patch.paidAt ?? null,
     fulfillment: patch.fulfillment ?? null,
+    documentTitle: patch.documentTitle ?? "Document",
   };
 }
 
@@ -861,7 +862,7 @@ describe("download copy", () => {
       title: "Your certified translation is ready.",
       primaryTitle: "Certified translation",
       primaryFile: "translation",
-      secondary: { title: "Certification page", file: "certification" },
+      secondary: null,
       again: "Need another document translated?",
     });
   });

@@ -4,8 +4,11 @@ import {
   listConfirmations,
   listDocuments,
   listPages,
+  updateOrder,
   type Db,
 } from "./db";
+import { loadOriginalPdf } from "./final-file";
+import { appendPdf } from "./pdf/merge";
 import {
   coverClientName,
   coverDocuments,
@@ -62,7 +65,21 @@ export async function stampApprovedCover(db: Db, order: OrderRecord, approverNam
     signature,
   });
   const existing = await downloadObject(db, FINALS_BUCKET, order.finalTranslationPath);
-  const clean = await replaceCoverPage(existing, cover);
-  await uploadObject(db, FINALS_BUCKET, order.certificationPath, cover, "application/pdf");
+  let clean = await replaceCoverPage(existing, cover);
+  const split = order.certificationPath !== order.finalTranslationPath;
+  if (split) {
+    const original = await loadOriginalPdf(db, {
+      combinedOriginalPath: order.combinedOriginalPath,
+      documents,
+    });
+    if (original) clean = await appendPdf(clean, original);
+    await uploadObject(db, FINALS_BUCKET, order.finalTranslationPath, clean, "application/pdf");
+    // Leave the paths split when the original could not be read so the download can merge later.
+    if (original || (!order.combinedOriginalPath && documents.length === 0)) {
+      await updateOrder(db, order.id, { certification_path: order.finalTranslationPath });
+      order.certificationPath = order.finalTranslationPath;
+    }
+    return;
+  }
   await uploadObject(db, FINALS_BUCKET, order.finalTranslationPath, clean, "application/pdf");
 }

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as db from "./db";
-import * as email from "./email";
+import * as finalEmail from "./final-email";
 import { evaluationPrice } from "./evaluation-price";
 import {
   assertEvaluationPdf,
@@ -101,7 +101,7 @@ describe("deliverEvaluationReport", () => {
     vi.spyOn(db, "hasEvent").mockResolvedValue(false);
     vi.spyOn(db, "insertEvent").mockResolvedValue(undefined);
     vi.spyOn(db, "customerEmail").mockResolvedValue("ada@example.com");
-    vi.spyOn(email, "sendDeliveryReady").mockResolvedValue({ sent: true, skipped: false });
+    vi.spyOn(finalEmail, "sendFinalCustomerEmail").mockResolvedValue({ sent: true, skipped: false });
     vi.spyOn(storage, "uploadObject").mockResolvedValue(undefined);
     vi.spyOn(webhooks, "notifyOrder").mockResolvedValue(undefined);
     vi.spyOn(webhooks, "notifyLifecycle").mockResolvedValue(undefined);
@@ -135,11 +135,31 @@ describe("deliverEvaluationReport", () => {
       orderId,
       expect.objectContaining({ status: "delivered", final_path: `${orderId}/evaluation.pdf` }),
     );
-    expect(email.sendDeliveryReady).toHaveBeenCalledWith(
-      "ada@example.com",
-      "evaluation",
-      expect.stringMatching(new RegExp(`/order/${orderId}$`)),
+    expect(finalEmail.sendFinalCustomerEmail).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: orderId }),
     );
+    expect(webhooks.notifyOrder).toHaveBeenCalledWith(expect.anything(), orderId, "order.delivered");
+  });
+
+  it("leaves the report downloadable and retries later when the email fails", async () => {
+    vi.spyOn(finalEmail, "sendFinalCustomerEmail").mockResolvedValue({ sent: false, skipped: false });
+    const body = new FormData();
+    body.set("file", new File([pdf], "evaluation.pdf", { type: "application/pdf" }));
+
+    const result = await deliverEvaluationReport(
+      orderId,
+      new Request("https://credpronto.com/api/admin/orders/1/evaluation", { method: "POST", body }),
+    );
+
+    expect(result).toEqual({ status: "approved", email: "failed" });
+    expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, { status: "approved" });
+    expect(db.updateDelivery).toHaveBeenCalledWith(
+      expect.anything(),
+      orderId,
+      expect.objectContaining({ status: "approved", final_path: `${orderId}/evaluation.pdf` }),
+    );
+    expect(webhooks.notifyOrder).not.toHaveBeenCalled();
   });
 
   it("rejects a translation order and a file that is not a PDF", async () => {

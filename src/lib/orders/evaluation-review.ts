@@ -1,6 +1,6 @@
 import { MAX_FILE_BYTES, FINALS_BUCKET } from "./constants";
-import { customerEmail, ensurePendingDelivery, getDelivery, getOrderById, hasEvent, insertEvent, listEvaluationQueueOrders, settledPayment, updateDelivery, updateOrder } from "./db";
-import { orderPageLink, sendDeliveryReady } from "./email";
+import { ensurePendingDelivery, getDelivery, getOrderById, hasEvent, insertEvent, listEvaluationQueueOrders, settledPayment, updateDelivery, updateOrder } from "./db";
+import { sendFinalCustomerEmail } from "./final-email";
 import { HttpError } from "./errors";
 import { ensureStaffRow, requireStaff } from "./staff";
 import { uploadObject } from "./storage";
@@ -115,13 +115,22 @@ export async function deliverEvaluationReport(orderId: string, request: Request)
     return { status: "delivered" as const, email: "skipped" as const };
   }
 
-  const email = await customerEmail(db, order.customerId);
-  const sent = email ? await sendDeliveryReady(email, "evaluation", orderPageLink(order.id)) : { sent: false, skipped: true };
+  const sent = await sendFinalCustomerEmail(db, order);
+  if (!sent.sent && !sent.skipped) {
+    // Download stays open. The next settle retries the email while the claim is clear.
+    await updateOrder(db, order.id, { status: "approved" });
+    await updateDelivery(db, order.id, {
+      status: "approved",
+      delivered_at: null,
+      approved_by: delivery.approvedBy ?? userId,
+      approved_at: delivery.approvedAt ?? now,
+      final_path: path,
+      certification_path: path,
+    });
+    return { status: "approved" as const, email: "failed" as const };
+  }
   await notifyOrder(db, order.id, "order.delivered");
   await notifyLifecycle(db, order.id, "order.completed");
-  if (!sent.sent && !sent.skipped) {
-    return { status: "delivered" as const, email: "failed" as const };
-  }
   return {
     status: "delivered" as const,
     email: sent.skipped ? ("skipped" as const) : ("sent" as const),

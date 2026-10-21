@@ -24,7 +24,8 @@ import {
   type Db,
 } from "./db";
 import { postEvaluationPaidAlert } from "./eval-alert-webhook";
-import { adminStudioLink, orderPageLink, sendDeliveryReady, sendStaffOrderAlert } from "./email";
+import { adminStudioLink, sendStaffOrderAlert } from "./email";
+import { retryFinalCustomerEmail, sendFinalCustomerEmail } from "./final-email";
 import { EMPTY_TRANSLATION_MESSAGE, emptyTranslationMessage, paragraphsForPage } from "./translation-edit";
 import { notifyLifecycle, notifyOrder } from "./webhook-delivery";
 import {
@@ -55,7 +56,11 @@ export async function settlePaidOrder(
   if (!order || order.status === "cancelled" || order.status === "failed") {
     return { fulfillment: fulfillmentState(order ?? { status: "cancelled" }) };
   }
-  if (order.status === "delivered" || order.status === "approved") {
+  if (order.status === "delivered") {
+    return { fulfillment: "released" };
+  }
+  if (order.status === "approved") {
+    await retryFinalCustomerEmail(db, order);
     return { fulfillment: "released" };
   }
 
@@ -179,14 +184,7 @@ async function autoReleasePaidOrder(db: Db, order: OrderRecord): Promise<Release
     await insertEvent(db, order.id, "approved", { auto: true });
   }
 
-  const email = await customerEmail(db, order.customerId);
-  const sent = email
-    ? await sendDeliveryReady(
-        email,
-        order.service ? "evaluation" : "translation",
-        order.service ? orderPageLink(order.id) : null,
-      )
-    : { sent: false, skipped: true };
+  const sent = await sendFinalCustomerEmail(db, order);
   if (!sent.sent && !sent.skipped) return "released";
 
   await updateDelivery(db, order.id, {

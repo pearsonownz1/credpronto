@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as certification from "./certification";
 import * as db from "./db";
 import * as email from "./email";
+import * as finalEmail from "./final-email";
 import { EVAL_ALERT_SIGNATURE_HEADER } from "./eval-alert-webhook";
 import { settlePaidOrder } from "./paid-release";
 import type { Db } from "./storage";
@@ -105,7 +106,7 @@ describe("settlePaidOrder", () => {
     vi.spyOn(db, "insertEvent").mockResolvedValue(undefined);
     vi.spyOn(db, "customerEmail").mockResolvedValue("ada@example.com");
     vi.spyOn(certification, "stampApprovedCover").mockResolvedValue(undefined);
-    vi.spyOn(email, "sendDeliveryReady").mockResolvedValue({ sent: true, skipped: false });
+    vi.spyOn(finalEmail, "sendFinalCustomerEmail").mockResolvedValue({ sent: true, skipped: false });
     vi.spyOn(email, "sendStaffOrderAlert").mockResolvedValue({ sent: true, skipped: false });
     vi.spyOn(webhooks, "notifyOrder").mockResolvedValue(undefined);
     vi.spyOn(webhooks, "notifyLifecycle").mockResolvedValue(undefined);
@@ -125,7 +126,7 @@ describe("settlePaidOrder", () => {
     expect(result.fulfillment).toBe("released");
     expect(certification.stampApprovedCover).toHaveBeenCalledWith(expect.anything(), expect.anything(), null);
     expect(db.claimOrderStatus).toHaveBeenCalledWith(dbHandle, orderId, "paid", "approved");
-    expect(email.sendDeliveryReady).toHaveBeenCalledWith("ada@example.com", "translation", null);
+    expect(finalEmail.sendFinalCustomerEmail).toHaveBeenCalledWith(dbHandle, expect.objectContaining({ id: orderId }));
     expect(db.updateOrder).toHaveBeenCalledWith(dbHandle, orderId, { status: "delivered" });
     expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
     expect(schedule).not.toHaveBeenCalled();
@@ -202,7 +203,7 @@ describe("settlePaidOrder", () => {
       review_reason: "Credential evaluation is reviewed by staff.",
     });
     expect(certification.stampApprovedCover).not.toHaveBeenCalled();
-    expect(email.sendDeliveryReady).not.toHaveBeenCalled();
+    expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
   });
 
   it("posts one signed evaluation.paid alert when the order is paid", async () => {

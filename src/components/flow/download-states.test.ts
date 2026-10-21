@@ -46,6 +46,7 @@ function readyOrder(patch: Partial<CustomerOrder>): CustomerOrder {
         appliedPosition: 1,
       },
     ],
+    documentTitle: "Birth certificate",
     ...patch,
   };
 }
@@ -123,9 +124,12 @@ describe("download page", () => {
     state.order = readyOrder({ orderType: "translation", service: null });
     const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
     expect(html).toContain("Your certified translation is ready.");
-    expect(html).toContain("birth-certificate-EN-certified.pdf");
+    expect(html).toContain("Birth certificate");
+    expect(html).toContain("Certified translation · PDF");
+    expect(html).toContain("bg-primary");
     expect(html).toContain('data-testid="download-certified"');
-    expect(html).toContain('data-testid="download-certification"');
+    expect(html).not.toContain('data-testid="download-certification"');
+    expect(html).not.toContain("birth-certificate-EN-certified.pdf");
     expect(html).toContain('data-step="download"');
     expect(html).toContain('data-state="current"');
     expect(html).not.toContain('data-state="done" data-step="download"');

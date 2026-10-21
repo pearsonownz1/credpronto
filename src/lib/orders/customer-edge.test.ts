@@ -5,6 +5,7 @@ import { webhookBody } from "./outbound-webhook";
 import { renderEvaluationPdfs } from "./pdf/evaluation";
 import { toPartnerOrder } from "./partner";
 import {
+  renderFinalDownloadEmail,
   renderOrderReceivedEmail,
   renderPaymentReceiptEmail,
   renderPreviewReadyEmail,
@@ -242,6 +243,14 @@ describe("customer surfaces hide the reference", () => {
     assertCustomerCopy("order email", `${received.subject}\n${received.text}\n${received.html}`);
     assertCustomerCopy("preview email", `${preview.subject}\n${preview.text}\n${preview.html}`);
     assertCustomerCopy("receipt email", `${receipt.subject}\n${receipt.text}\n${receipt.html}`);
+    const finalDownload = renderFinalDownloadEmail({
+      orderId: "order-1",
+      totalCents: 1995,
+      lines: [{ label: "Diploma evaluation", amountCents: 1995 }],
+      downloadUrl: "https://www.credpronto.com/order/order-1",
+      filename: "Diploma-evaluation.pdf",
+    });
+    assertCustomerCopy("final email", `${finalDownload.subject}\n${finalDownload.text}\n${finalDownload.html}`);
 
     const hook = webhookBody({
       id: "evt-1",

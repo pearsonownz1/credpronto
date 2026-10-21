@@ -242,6 +242,47 @@ ${action}`,
   return { subject: "Your CredPronto preview is ready", text, html };
 }
 
+/** Two spaces after the period. The subject is matched exactly. */
+export const FINAL_DOWNLOAD_SUBJECT = "Thanks for your payment.  You can download your document now!";
+
+export type FinalDownloadEmail = {
+  orderId: string;
+  totalCents: number;
+  lines: ReceiptLine[];
+  downloadUrl: string;
+  filename: string;
+};
+
+/** Receipt plus the single merged file. Sent once the download is unlocked. */
+export function renderFinalDownloadEmail(input: FinalDownloadEmail): RenderedEmail {
+  const total = formatEmailMoney(input.totalCents);
+  const rows: Array<readonly [string, string, boolean]> = [["Order", input.orderId, true]];
+  for (const line of input.lines) rows.push([line.label, formatEmailMoney(line.amountCents), false]);
+  const html = layout({
+    preheader: "Your document is ready to download.",
+    body: `${badge("Paid", "#E8F7EE", "#137A3E")}
+<h1 style="margin:14px 0 8px;font-size:24px;letter-spacing:-.4px;line-height:1.25">${escapeHtml(FINAL_DOWNLOAD_SUBJECT)}</h1>
+<p style="margin:0;color:#5B6575">Your certified document is attached and ready to download. Keep this email as your receipt.</p>
+${button("Download your document", input.downloadUrl)}
+<p style="margin:6px 0 0;font-size:13px;color:#5B6575">${escapeHtml(input.filename)}</p>
+<div style="margin-top:22px;font-size:12px;color:#5B6575;text-transform:uppercase;letter-spacing:.05em;font-weight:600">Receipt</div>
+${receiptTable(rows, total)}`,
+  });
+  const text = [
+    FINAL_DOWNLOAD_SUBJECT,
+    "",
+    "Your certified document is attached and ready to download. Keep this email as your receipt.",
+    "",
+    `Download your document: ${input.downloadUrl}`,
+    input.filename,
+    "",
+    `Order: ${input.orderId}`,
+    ...input.lines.map((line) => `${line.label}: ${formatEmailMoney(line.amountCents)}`),
+    `Total paid: ${total}`,
+  ].join("\n");
+  return { subject: FINAL_DOWNLOAD_SUBJECT, text, html };
+}
+
 export function renderPaymentReceiptEmail(input: PaymentReceiptEmail): RenderedEmail {
   const paid = formatEmailDate(input.paidAt);
   const total = formatEmailMoney(input.totalCents);

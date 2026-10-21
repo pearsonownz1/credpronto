@@ -421,7 +421,7 @@ export async function claimOrderStatus(db: Db, orderId: string, from: string, to
 export async function claimOrderColumn(
   db: Db,
   orderId: string,
-  column: "staff_alert_sent_at" | "staff_urgent_alert_sent_at",
+  column: "staff_alert_sent_at" | "staff_urgent_alert_sent_at" | "delivery_email_sent_at",
   at: string,
   statuses?: string[],
 ): Promise<boolean> {
@@ -447,7 +447,7 @@ export async function claimEvalPaidAlert(db: Db, orderId: string, at: string): P
 export async function clearOrderColumn(
   db: Db,
   orderId: string,
-  column: "staff_alert_sent_at" | "staff_urgent_alert_sent_at",
+  column: "staff_alert_sent_at" | "staff_urgent_alert_sent_at" | "delivery_email_sent_at",
   at: string,
 ): Promise<void> {
   const { error } = await db.from("orders").update({ [column]: null }).eq("id", orderId).eq(column, at);

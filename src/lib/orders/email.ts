@@ -14,6 +14,11 @@ import {
   type TranslationFailureAlertEmail,
 } from "./email-templates";
 
+export type EmailAttachment = {
+  filename: string;
+  content: Buffer;
+};
+
 export function appOrigin(): string {
   const raw = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "https://credpronto.com";
   return raw.replace(/\/$/, "");
@@ -53,7 +58,13 @@ function mailer(): { from: string; resend: Resend } | null {
   return { from: emailFromHeader(configured), resend: new Resend(apiKey) };
 }
 
-async function send(to: string | readonly string[], subject: string, text: string, html?: string): Promise<SendResult> {
+async function send(
+  to: string | readonly string[],
+  subject: string,
+  text: string,
+  html?: string,
+  attachments?: readonly EmailAttachment[],
+): Promise<SendResult> {
   const client = mailer();
   if (!client) return { sent: false, skipped: true };
   const { error } = await client.resend.emails.send({
@@ -62,6 +73,7 @@ async function send(to: string | readonly string[], subject: string, text: strin
     subject,
     text,
     ...(html ? { html } : {}),
+    ...(attachments && attachments.length > 0 ? { attachments: attachments.map((file) => ({ ...file })) } : {}),
   });
   if (error) {
     console.error(`email failed: ${error.message}`);
@@ -179,4 +191,12 @@ export function sendDeliveryReady(
 ): Promise<SendResult> {
   const message = deliveryReadyMessage(product, downloadUrl);
   return send(to, message.subject, message.text);
+}
+
+export function sendFinalDownload(
+  to: string,
+  message: { subject: string; text: string; html: string },
+  attachment?: EmailAttachment,
+): Promise<SendResult> {
+  return send(to, message.subject, message.text, message.html, attachment ? [attachment] : undefined);
 }
