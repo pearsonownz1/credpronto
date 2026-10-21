@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { callbackUrl, confirmUrl, isEmailOtpType, safeNextPath } from "./redirect";
+import { callbackUrl, confirmUrl, continueAfterSignup, isEmailOtpType, orderTokenFromNext, safeNextPath } from "./redirect";
 
 describe("auth redirect", () => {
   it("keeps a relative next path", () => {
@@ -34,5 +34,25 @@ describe("auth redirect", () => {
     expect(safeNextPath("//evil.example")).toBe("/");
     expect(safeNextPath("/\\evil.example")).toBe("/");
     expect(safeNextPath(null)).toBe("/");
+  });
+
+  it("sends a new account to a same-origin next path, or Upload when next is missing", () => {
+    const token = "a".repeat(43);
+    expect(continueAfterSignup(`/preview/${token}`)).toBe(`/preview/${token}`);
+    expect(continueAfterSignup("/confirm?token=" + token)).toBe("/confirm?token=" + token);
+    expect(continueAfterSignup(null)).toBe("/translate");
+    expect(continueAfterSignup("https://evil.example/preview/" + token)).toBe("/translate");
+    expect(continueAfterSignup("//evil.example")).toBe("/translate");
+  });
+
+  it("reads a guest order token only from a same-origin next path", () => {
+    const token = "a".repeat(43);
+    expect(orderTokenFromNext(`/order/${token}`)).toBe(token);
+    expect(orderTokenFromNext(`/preview/${encodeURIComponent(token)}`)).toBe(token);
+    expect(orderTokenFromNext(`/confirm?token=${token}`)).toBe(token);
+    expect(orderTokenFromNext(`/checkout?order=${token}`)).toBe(token);
+    expect(orderTokenFromNext("/preview/11111111-1111-1111-1111-111111111111")).toBeNull();
+    expect(orderTokenFromNext(`https://evil.example/order/${token}`)).toBeNull();
+    expect(orderTokenFromNext(null)).toBeNull();
   });
 });

@@ -3,6 +3,7 @@
 import type { FormEvent } from "react";
 import { AddonError, AddonPanel, AddonTotal, type AddonPanelState } from "./addon-panel";
 import { pageLabel } from "@/lib/flow/pricing";
+import { ScopedWrongEmailLink, useAccountEmail } from "@/components/flow/wrong-email-link";
 import {
   buyLabel,
   formatMoney,
@@ -28,6 +29,7 @@ export function OrderRail({
   corrections: PreviewCorrection[];
   panel: AddonPanelState;
 }) {
+  const accountEmail = useAccountEmail();
   const { pricing } = order;
   const evaluation = order.product === "evaluation";
   const lines =
@@ -134,9 +136,10 @@ export function OrderRail({
         <span aria-hidden>🔒</span>
         <span>
           The clean file and certificate unlock only after payment. This
-          preview link is private to your email.
+          preview link is private to {accountEmail ? <b className="text-ink">{accountEmail}</b> : "your email"}.
         </span>
       </p>
+      <ScopedWrongEmailLink />
     </div>
   );
 }
@@ -150,11 +153,20 @@ export function MobileBuyBar({
   onFlag: () => void;
   panel: AddonPanelState;
 }) {
+  const accountEmail = useAccountEmail();
   return (
     <div
       data-testid="mobile-buy-bar"
       className="flex max-h-[70dvh] flex-col gap-2 overflow-y-auto border-t border-line bg-bg px-4 pt-3 pb-6"
     >
+      {accountEmail ? (
+        <div className="text-xs text-ink-muted">
+          <p>
+            Preview link goes to <b className="text-ink">{accountEmail}</b>
+          </p>
+          <ScopedWrongEmailLink />
+        </div>
+      ) : null}
       <AddonPanel panel={panel} />
       <AddonError panel={panel} />
       <TranslationSpeed order={order} />
