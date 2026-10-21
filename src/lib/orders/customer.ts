@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { addonStripeLines, parseCheckoutBody, serviceCents } from "./addons";
-import { rejectCustomerTotal } from "./direct-upload";
+import { rejectCustomerTotal } from "./customer-total";
 import { checkoutBlockReason } from "./equivalency";
 import { downloadGate } from "./access";
 import { checkoutPreviewImageUrl } from "./checkout-image";

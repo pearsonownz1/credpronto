@@ -3,6 +3,7 @@ import { DIRECT_FILE_LIMIT_MESSAGE, MAX_DIRECT_FILE_BYTES, ORIGINALS_BUCKET } fr
 import { insertDocument, type Db } from "./db";
 import { HttpError } from "./errors";
 import { resolveUploadMime, safeFilename } from "./file-type";
+import { rejectCustomerTotal } from "./customer-total";
 import { rejectCustomerPageCount } from "./evaluation-price";
 import { createSignedUpload, downloadObject, originalObjectInfo } from "./storage";
 
@@ -132,30 +133,7 @@ export async function issueUploadSession(
   return { sessionId, uploads };
 }
 
-const CLIENT_TOTAL_FIELDS = [
-  "total",
-  "totalCents",
-  "total_cents",
-  "amount",
-  "amountCents",
-  "amount_cents",
-  "evaluationCents",
-  "evaluation_cents",
-  "translationCents",
-  "translation_cents",
-  "unitPriceCents",
-  "unit_price_cents",
-] as const;
-
-/** The server prices every selected service. A client total is rejected. */
-export function rejectCustomerTotal(record: Record<string, unknown>): void {
-  for (const field of CLIENT_TOTAL_FIELDS) {
-    if (!(field in record)) continue;
-    const value = record[field];
-    if (value == null || value === "") continue;
-    throw new HttpError("The total is calculated by the server.", 400);
-  }
-}
+export { rejectCustomerTotal };
 
 function readServices(value: unknown): string[] | null {
   if (value == null || value === "") return null;

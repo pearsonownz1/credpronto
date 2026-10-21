@@ -1,4 +1,4 @@
-import { rejectCustomerTotal } from "./direct-upload";
+import { rejectCustomerTotal } from "./customer-total";
 import { evaluationPricePatch, MAX_DEGREE_COUNT, rejectCustomerPageCount } from "./evaluation-price";
 import { HttpError } from "./errors";
 import {
