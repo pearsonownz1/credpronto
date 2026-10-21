@@ -2,7 +2,6 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { knownPageCount } from "@/lib/analytics/google-ads";
 import { customerEmailError } from "@/lib/flow/customer-email";
 import {
   uploadChoiceFromChecks,
@@ -19,8 +18,8 @@ import {
   uploadStateFromDraft,
   writeUploadDraft,
 } from "./upload-draft";
-import { formatMoney, pageLabel } from "@/lib/flow/pricing";
-import { countUploadPages } from "@/lib/flow/upload-pages";
+import { formatMoney } from "@/lib/flow/pricing";
+import { countUploadPages, estimatedPageLabel, sumUploadPages } from "@/lib/flow/upload-pages";
 import { clampDegreeCount, uploadServiceQuote } from "@/lib/flow/upload-quote";
 import { CUSTOMER_FILE_ACCEPT, addUploadFiles } from "@/lib/flow/uploads";
 import { sampleCustomerOrder } from "@/lib/flow/sample-order";
@@ -241,7 +240,7 @@ export function UploadCard({
             ? "pdf"
             : "image",
         }));
-  const pageCount = knownPageCount(
+  const pageCount = sumUploadPages(
     mock && picked.length === 0
       ? SAMPLE_FILES.map((file) => file.pages)
       : picked.length === 0
@@ -371,7 +370,7 @@ export function UploadCard({
                   </label>
                   {item.id === "translation" && selected ? (
                     <span id="translation-pages" data-testid="translation-pages" className="text-[13px]">
-                      {pageCount == null ? "Pages: counting…" : `Pages: ${pageCount}`}
+                      {pageCount == null ? "Pages: counting…" : estimatedPageLabel(pageCount)}
                     </span>
                   ) : null}
                   {item.id !== "translation" && selected ? (
@@ -385,7 +384,7 @@ export function UploadCard({
             })}
           </div>
           <p data-testid="choice-total" className="mt-3 flex items-center justify-between border-t border-line pt-3 text-[14px] font-semibold">
-            <span>Total</span>
+            <span>{checks.translation && pageCount != null ? "Estimated total" : "Total"}</span>
             <span data-testid="choice-total-amount" className="tabular-nums">
               {quote.totalCents == null ? "counting…" : formatMoney(quote.totalCents)}
             </span>
@@ -449,7 +448,7 @@ export function UploadCard({
                   </span>
                   <span className="flex shrink-0 items-center gap-3">
                     <span className="text-ink-muted">
-                      {file.pages == null ? "Added" : pageLabel(file.pages)}
+                      {file.pages == null ? "Added" : estimatedPageLabel(file.pages)}
                     </span>
                     {removable ? (
                       <button
