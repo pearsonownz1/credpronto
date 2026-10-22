@@ -4,11 +4,22 @@ import {
   orderRequestChoice,
   parseEvaluationService,
   serviceRequestFromOrder,
+  checksAfterToggle,
   uploadChoiceFromChecks,
   uploadChoiceFromSelection,
 } from "./order-choice";
 
 describe("upload order choice", () => {
+  it("keeps all three services checked", () => {
+    const checks = checksAfterToggle(
+      checksAfterToggle({ translation: true, diploma: false, courseByCourse: false }, "diploma", true),
+      "courseByCourse",
+      true,
+    );
+    expect(checks).toEqual({ translation: true, diploma: true, courseByCourse: true });
+    expect(uploadChoiceFromChecks(checks, 1)?.services).toEqual(["translation", "diploma", "course_by_course"]);
+  });
+
   it("leaves a translation upload on the default order type", () => {
     expect(choiceFields(uploadChoiceFromSelection("translation", 1))).toEqual({});
     expect(orderRequestChoice(uploadChoiceFromSelection("translation", 1))).toEqual({

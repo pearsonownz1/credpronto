@@ -41,6 +41,15 @@ export type ServiceChecks = {
   courseByCourse: boolean;
 };
 
+/** Checking one service leaves the other boxes as they are. */
+export function checksAfterToggle(
+  current: ServiceChecks,
+  key: keyof ServiceChecks,
+  checked: boolean,
+): ServiceChecks {
+  return { ...current, [key]: checked };
+}
+
 /** Create, quote, and checkout body. `services` is the checked subset; the other fields are the older shape. */
 export type ServiceRequest = {
   services: CatalogService[];
