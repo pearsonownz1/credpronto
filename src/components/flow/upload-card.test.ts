@@ -15,6 +15,7 @@ vi.mock("@/lib/supabase/client", () => ({
   }),
 }));
 
+import { clearUploadDraft, writeUploadDraft } from "./upload-draft";
 import { UploadCard } from "./upload-card";
 import { UploadExperience, UploadPageFallback, UploadView } from "./upload-view";
 
@@ -99,6 +100,7 @@ describe("service checkboxes", () => {
     expect(markup).toMatch(/data-testid="choice-total-amount"[^>]*>\s*From \$9\.95\s*</);
     expect(markup).not.toContain('data-testid="degree-count"');
     expect(markup).not.toContain('type="number"');
+    expect(markup).not.toContain("You can add a certified translation");
   });
 
   it("checks only the evaluation named in the link", () => {
@@ -114,6 +116,8 @@ describe("service checkboxes", () => {
     expect(diploma).toMatch(/data-testid="choice-price-diploma"[^>]*>\s*\$19\.95\s*</);
     expect(diploma).toMatch(/data-testid="choice-total-amount"[^>]*>\s*From \$19\.95\s*</);
     expect(diploma).not.toContain("Pages:");
+    expect(diploma).toContain("You can add a certified translation at $9.95/page.");
+    expect(diploma).toContain("Staff sign off before the report is released.");
     expect(diploma).toContain("Email for your order");
     expect(diploma).not.toContain("Email for your preview link");
     expect(diploma).toContain("Continue to payment");
@@ -125,6 +129,27 @@ describe("service checkboxes", () => {
     expect(course).not.toMatch(/data-testid="choice-translation"[^>]*checked=""/);
     expect(course).not.toMatch(/data-testid="choice-diploma"[^>]*checked=""/);
     expect(course).toContain("Continue to payment");
+    expect(course).toContain("You can add a certified translation at $9.95/page.");
+  });
+
+  it("hides the translation add-on line when translation is already checked", () => {
+    writeUploadDraft({
+      email: "",
+      files: [],
+      checks: { translation: true, diploma: true, courseByCourse: true },
+      degrees: "1",
+      serviceKey: "",
+    });
+    try {
+      const markup = html(null);
+      expect(markup).toMatch(/data-testid="choice-translation"[^>]*checked=""/);
+      expect(markup).toMatch(/data-testid="choice-diploma"[^>]*checked=""/);
+      expect(markup).toMatch(/data-testid="choice-course_by_course"[^>]*checked=""/);
+      expect(markup).not.toContain("You can add a certified translation");
+      expect(markup).toContain("Staff sign off before the report is released.");
+    } finally {
+      clearUploadDraft();
+    }
   });
 
   it("shows the flat fee and the pay step when the page is a diploma upload", () => {
