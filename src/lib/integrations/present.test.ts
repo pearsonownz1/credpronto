@@ -7,6 +7,8 @@ import {
   formatCharged,
   formatKeyPrefix,
   formatLastUsed,
+  PARTNER_APPS,
+  partnerStatusLabel,
   integrationSamples,
   orderCreateCurl,
   orderCreateResponse,
@@ -32,6 +34,21 @@ const order: ApiOrder = {
 };
 
 describe("integrations presentation", () => {
+  it("lists Clio as a coming-soon app with a letter mark and no connect action", () => {
+    expect(PARTNER_APPS).toEqual([
+      {
+        id: "clio",
+        name: "Clio",
+        description: "Send evaluation and translation orders from a Clio matter and save finished reports back to it.",
+        mark: "C",
+        status: "coming_soon",
+      },
+    ]);
+    expect(partnerStatusLabel("coming_soon")).toBe("Coming soon");
+    expect(PARTNER_APPS[0]).not.toHaveProperty("href");
+    expect(JSON.stringify(PARTNER_APPS)).not.toMatch(/oauth|connect/i);
+  });
+
   it("shows a prefix like cp_live_ab12… and leaves unknown last-used blank", () => {
     expect(formatKeyPrefix("cp_live_", "ab12")).toBe("cp_live_ab12…");
     expect(formatKeyPrefix("cp_test_", "c0de")).toBe("cp_test_c0de…");

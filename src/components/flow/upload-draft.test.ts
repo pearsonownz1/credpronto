@@ -5,6 +5,7 @@ import {
   clearUploadDraft,
   readUploadDraft,
   serviceKeyFrom,
+  uploadServiceFromQuery,
   uploadStateFromDraft,
   writeUploadDraft,
 } from "./upload-draft";
@@ -23,6 +24,16 @@ describe("service toggle draft", () => {
     expect(checksAfterServiceChange(diplomaAndTranslation, "diploma", "diploma")).toEqual(diplomaAndTranslation);
     expect(serviceKeyFrom("diploma")).toBe("diploma");
     expect(serviceKeyFrom("nope")).toBe("");
+    expect(uploadServiceFromQuery("translation")).toBe("translation");
+    expect(uploadServiceFromQuery("evaluation")).toBe("diploma");
+    expect(uploadServiceFromQuery("diploma")).toBe("diploma");
+    expect(uploadServiceFromQuery("course_by_course")).toBe("course_by_course");
+    expect(uploadServiceFromQuery("clio")).toBeNull();
+    expect(uploadServiceFromQuery("")).toBeNull();
+    expect(serviceKeyFrom("translation")).toBe("translation");
+    expect(serviceKeyFrom("evaluation")).toBe("diploma");
+    expect(checksAfterServiceChange(diplomaAndTranslation, "diploma", "translation")).toEqual(translation);
+    expect(checksAfterServiceChange(diplomaAndTranslation, "diploma", "")).toEqual(diplomaAndTranslation);
   });
 
   it("adopts an email, file, and diploma choice made before React state exists", () => {
@@ -116,5 +127,37 @@ describe("service toggle draft", () => {
       diploma: true,
       courseByCourse: false,
     });
+    expect(uploadStateFromDraft("evaluation").checks).toEqual({
+      translation: false,
+      diploma: true,
+      courseByCourse: false,
+    });
+    expect(uploadStateFromDraft("evaluation").serviceKey).toBe("diploma");
+    expect(uploadStateFromDraft("translation")).toMatchObject({
+      checks: translation,
+      serviceKey: "translation",
+    });
+    expect(uploadStateFromDraft("not-a-service")).toMatchObject({
+      checks: translation,
+      serviceKey: "",
+    });
+  });
+
+  it("lets an explicit translation link replace a saved evaluation", () => {
+    clearUploadDraft();
+    writeUploadDraft({
+      email: "ada@example.com",
+      files: [],
+      checks: { translation: false, diploma: true, courseByCourse: false },
+      degrees: "1",
+      serviceKey: "diploma",
+    });
+    expect(uploadStateFromDraft("translation").checks).toEqual(translation);
+    expect(uploadStateFromDraft("nope").checks).toEqual({
+      translation: false,
+      diploma: true,
+      courseByCourse: false,
+    });
+    clearUploadDraft();
   });
 });

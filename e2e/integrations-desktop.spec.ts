@@ -13,6 +13,12 @@ test("integrations shows keys, webhook, card, orders, and quick start", async ({
   await signIn(page, "maria.ruiz@email.com", "/dashboard/integrations");
   await expect(page).toHaveURL(/\/dashboard\/integrations$/);
   await expect(page.getByRole("heading", { name: "Integrations" })).toBeVisible();
+  await expect(page.getByTestId("integration-clio")).toContainText("Clio");
+  await expect(page.getByTestId("integration-clio")).toContainText(
+    "Send evaluation and translation orders from a Clio matter and save finished reports back to it.",
+  );
+  await expect(page.getByTestId("integration-clio-status")).toHaveText("Coming soon");
+  await expect(page.getByTestId("integration-clio").getByRole("button")).toHaveCount(0);
   await expect(page.getByTestId("nav-integrations")).toHaveAttribute("href", "/dashboard/integrations");
   await expect(page.getByText("Expert letter")).toHaveCount(0);
 
