@@ -32,7 +32,7 @@ async function MarketingAccountLinks() {
   const account = await getAccount();
   if (!account) return <SignInLink />;
   return (
-    <Link href="/account" data-testid="nav-my-orders" className="text-sm font-semibold text-ink">
+    <Link href="/dashboard" data-testid="nav-my-orders" className="text-sm font-semibold text-ink">
       My orders
     </Link>
   );

@@ -8,6 +8,7 @@ const NOW = Date.parse("2026-10-12T12:00:00.000Z");
 
 const shell = vi.hoisted(() => ({
   orders: undefined as unknown,
+  query: "",
 }));
 
 vi.mock("next/link", () => ({
@@ -26,7 +27,7 @@ vi.mock("@/components/account/account-shell", () => ({
     orders: (shell.orders as ReturnType<typeof mockOrdersFor> | undefined) ?? mockOrdersFor(MOCK_CUSTOMER_EMAIL, NOW),
     ordersError: null,
     now: NOW,
-    query: "",
+    query: shell.query,
     setQuery: () => undefined,
   }),
 }));
@@ -48,6 +49,10 @@ function row(html: string, testId: string) {
 
 function anchors(fragment: string) {
   return [...fragment.matchAll(/<a\b[^>]*>[\s\S]*?<\/a>/g)].map((match) => match[0]);
+}
+
+function tabCount(html: string, label: string): string | undefined {
+  return html.match(new RegExp(`>${label}<span[^>]*>(\\d+)</span>`))?.[1];
 }
 
 describe("dashboard order rows", () => {
@@ -112,6 +117,27 @@ describe("dashboard order rows", () => {
       expect(html.match(new RegExp(`href="/preview/${id}"`, "g"))?.length).toBe(5);
     } finally {
       shell.orders = undefined;
+    }
+  });
+
+  it("counts Translating with the same search filter as the rows", () => {
+    const orders = mockOrdersFor(MOCK_CUSTOMER_EMAIL, NOW);
+    const passport = {
+      ...orders[1],
+      id: "CP-24816",
+      documentsLabel: "Passport",
+      orderToken: "tok-passport",
+    };
+    shell.orders = [...orders, passport];
+    shell.query = "passport";
+    try {
+      const html = dashboardHtml();
+      expect(tabCount(html, "Translating")).toBe("1");
+      expect(html).toContain('data-testid="order-CP-24816"');
+      expect(html).not.toContain('data-testid="order-CP-24815"');
+    } finally {
+      shell.orders = undefined;
+      shell.query = "";
     }
   });
 });

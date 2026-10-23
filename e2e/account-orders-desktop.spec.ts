@@ -27,31 +27,18 @@ test("creating an account from the quote opens the order list", async ({ page })
   await card.getByTestId("account-email").fill("maria.ruiz@email.com");
   await card.getByTestId("account-password").fill("password1");
   await card.getByRole("button", { name: "Create account" }).click();
-  await expect(page).toHaveURL(/\/account$/);
+  await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByRole("heading", { name: "Your orders" })).toBeVisible();
 });
 
-test("the account lists every order once and signs out", async ({ page }) => {
+test("a signed-in /account visit opens the dashboard and signs out", async ({ page }) => {
   await signIn(page, "maria.ruiz@email.com", "/account");
+  await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByRole("heading", { name: "Your orders" })).toBeVisible();
-  await expect(page.getByTestId("account-sign-out")).toBeVisible();
+  await expect(page.getByTestId("order-CP-24817")).toContainText("Birth certificate");
 
-  const list = page.getByTestId("account-orders");
-  await expect(list.locator("li")).toHaveCount(6);
-  await expect(page.getByTestId("account-order-CP-24817")).toContainText("Birth certificate");
-  await expect(page.getByTestId("account-number-CP-24817")).toHaveText("CP-24817");
-  await expect(page.getByTestId("account-price-CP-24790")).toHaveText("$9.95");
-  await expect(page.getByTestId("account-status-CP-24817")).toHaveText("ready");
-  await expect(page.getByTestId("download-CP-24817")).toHaveCount(0);
-  await expect(page.getByTestId("account-order-CP-24815")).toContainText("Diploma, transcript");
-  await expect(page.getByTestId("account-status-CP-24815")).toHaveText("in review");
-  await expect(page.getByTestId("account-order-CP-24790")).toContainText("paid");
-  await expect(page.getByTestId("account-order-CP-24702")).toContainText("in review");
-  await expect(page.getByTestId("account-order-CP-24611")).toContainText("Oct 2, 2026");
-  await expect(page.getByTestId("download-CP-24611")).toHaveText("Download");
-  await expect(page.getByTestId("download-CP-24588")).toBeVisible();
-
-  await page.getByTestId("account-sign-out").click();
+  await page.getByTestId("sidebar-account").click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/$/);
   await page.goto("/account");
   await expect(page).toHaveURL(/\/sign-in\?next=/);

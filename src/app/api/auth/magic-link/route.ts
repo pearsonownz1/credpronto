@@ -27,7 +27,7 @@ export async function POST(request: Request) {
       email,
       purpose: "magiclink",
       origin,
-      next: readNext(body) ?? "/account",
+      next: readNext(body) ?? "/dashboard",
       orderToken,
     });
 

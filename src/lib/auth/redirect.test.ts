@@ -29,6 +29,16 @@ describe("auth redirect", () => {
     expect(safeNextPath("https://evil.example", "/account")).toBe("/account");
   });
 
+  it("sends a confirm link to the dashboard when next is missing", () => {
+    const url = new URL(
+      confirmUrl("https://credpronto.com/", {
+        tokenHash: "sample-hash",
+        type: "signup",
+      }),
+    );
+    expect(url.searchParams.get("next")).toBe("/dashboard");
+  });
+
   it("rejects open redirects", () => {
     expect(safeNextPath("https://evil.example")).toBe("/");
     expect(safeNextPath("//evil.example")).toBe("/");

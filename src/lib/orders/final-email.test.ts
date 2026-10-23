@@ -56,8 +56,8 @@ describe("sendFinalCustomerEmail", () => {
     expect(send.mock.calls[0]?.[1].subject).toBe(FINAL_DOWNLOAD_SUBJECT);
     expect(send.mock.calls[0]?.[1].text).toContain(orderId);
     expect(send.mock.calls[0]?.[1].text).toContain("$19.95");
-    expect(send.mock.calls[0]?.[1].text).toContain("/account");
-    expect(send.mock.calls[0]?.[1].html).toContain("/account");
+    expect(send.mock.calls[0]?.[1].text).toContain("/dashboard");
+    expect(send.mock.calls[0]?.[1].html).toContain("/dashboard");
     expect(db.clearOrderColumn).not.toHaveBeenCalled();
   });
 
