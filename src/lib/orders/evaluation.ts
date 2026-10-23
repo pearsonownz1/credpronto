@@ -20,7 +20,11 @@ import { sendPreviewReady } from "./email";
 import { AiUnavailableError, HttpError } from "./errors";
 import { needsBundledTranslation } from "./evaluation-price";
 import { paidEvaluationDegreeCount } from "./evaluation-summary";
-import { courseExtractFromTranscript, recoverCourseExtract } from "./evaluation-transcript";
+import {
+  courseExtractFromTranscript,
+  recoverCourseExtract,
+  type TranscriptRowFailure,
+} from "./evaluation-transcript";
 import { orderEvaluationKinds, orderHasEvaluation, selectionPricePatch } from "./service-selection";
 import { concatPdfs } from "./pdf/merge";
 import { etaFromNow } from "./quote";
@@ -752,40 +756,53 @@ function storedEdgeMatch(built: {
  * Course-by-course does not need a stored degree count. A diploma uses the
  * paid credential count, or one credential when that count was not saved.
  */
+export type ServiceFromText = {
+  result: EvaluationResult | null;
+  failures: TranscriptRowFailure[];
+};
+
 export async function evaluateServiceFromText(
   db: Db,
   order: OrderRecord,
   service: EvaluationService,
   pageText: string,
   filenames: string[],
-): Promise<EvaluationResult | null> {
+): Promise<ServiceFromText> {
   const degreeCount = paidEvaluationDegreeCount(order) ?? (service === "course_by_course" ? 1 : null);
-  if (degreeCount == null) return null;
+  if (degreeCount == null) return { result: null, failures: [] };
   if (service === "course_by_course") {
     const parsed = courseExtractFromTranscript(pageText);
-    if (parsed) {
+    if (parsed.extract) {
       const fromTranscript = await buildEvaluatedResult(
         db,
         service,
-        parsed,
+        parsed.extract,
         degreeCount,
         filenames,
         order.edgeCredentialId,
       );
-      if (fromTranscript.result) return fromTranscript.result;
+      if (fromTranscript.result) return { result: fromTranscript.result, failures: parsed.failures };
     }
+    const recovered = recoverCourseExtract(await extractCourses(pageText));
+    const built = await buildEvaluatedResult(
+      db,
+      service,
+      recovered.extract,
+      degreeCount,
+      filenames,
+      order.edgeCredentialId,
+    );
+    return { result: built.result, failures: [...parsed.failures, ...recovered.failures] };
   }
-  const extracted =
-    service === "diploma" ? await extractDiploma(pageText) : recoverCourseExtract(await extractCourses(pageText));
   const built = await buildEvaluatedResult(
     db,
     service,
-    extracted,
+    await extractDiploma(pageText),
     degreeCount,
     filenames,
     order.edgeCredentialId,
   );
-  return built.result;
+  return { result: built.result, failures: [] };
 }
 
 export async function completeEvaluation(

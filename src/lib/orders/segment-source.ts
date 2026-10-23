@@ -59,16 +59,14 @@ function overlap(segment: string, line: string): number {
   return total;
 }
 
-/**
- * Source line index for each segment. Indexes are non-decreasing and point at
- * non-blank source lines, so several segments can belong to one printed line.
- */
-export function assignSourceIndexes(sourceText: string | null, segments: readonly string[]): number[] {
-  const lines = sourceLines(sourceText);
-  const content = lines.flatMap((line, index) => (line.trim() ? [{ line, index }] : []));
-  if (segments.length === 0) return [];
-  if (content.length === 0) return segments.map(() => 0);
+type SourceLine = { line: string; index: number };
 
+/**
+ * Order-preserving pass. Several segments may share one printed line, and the
+ * walk only moves forward, so a segment stored before its source line cannot
+ * reach that line.
+ */
+function assignForward(segments: readonly string[], content: readonly SourceLine[]): number[] {
   const segmentCount = segments.length;
   const lineCount = content.length;
   const floor = Number.NEGATIVE_INFINITY;
@@ -118,6 +116,60 @@ export function assignSourceIndexes(sourceText: string | null, segments: readonl
     }
   }
   return assigned;
+}
+
+/** One accent-folded stem shared by the segment and the line. A short stem still counts as a full word. */
+function stemOverlap(segment: string, line: string): number {
+  const foldedSegment = fold(segment);
+  const foldedLine = fold(line);
+  let total = 0;
+  for (const [pattern] of STEMS) {
+    if (pattern.test(foldedSegment) && pattern.test(foldedLine)) total += 2;
+  }
+  return total;
+}
+
+/**
+ * Best source line by stem score. A single strong stem wins when that line is
+ * more specific than any other line with the same score. Equal lines do not move.
+ */
+function bestStemLine(
+  segment: string,
+  content: readonly SourceLine[],
+): { index: number; score: number; decisive: boolean } {
+  const ranked = content
+    .map((line) => ({
+      index: line.index,
+      score: stemOverlap(segment, line.line),
+      size: tokens(line.line).size,
+    }))
+    .sort((left, right) => right.score - left.score || left.size - right.size || left.index - right.index);
+  const top = ranked[0];
+  const next = ranked[1];
+  if (!top || top.score < 2) return { index: top?.index ?? 0, score: top?.score ?? 0, decisive: false };
+  const decisive = !next || top.score > next.score || top.size < next.size;
+  return { index: top.index, score: top.score, decisive };
+}
+
+/**
+ * Source line index for each segment. A segment stored out of order is matched
+ * to the source line it actually resembles, so several segments can still share
+ * one printed line.
+ */
+export function assignSourceIndexes(sourceText: string | null, segments: readonly string[]): number[] {
+  const lines = sourceLines(sourceText);
+  const content = lines.flatMap((line, index) => (line.trim() ? [{ line, index }] : []));
+  if (segments.length === 0) return [];
+  if (content.length === 0) return segments.map(() => 0);
+
+  const forward = assignForward(segments, content);
+  return forward.map((sourceIndex, segmentAt) => {
+    const segment = segments[segmentAt] ?? "";
+    const best = bestStemLine(segment, content);
+    const current = stemOverlap(segment, lines[sourceIndex] ?? "");
+    if (best.decisive && best.score > current) return best.index;
+    return sourceIndex;
+  });
 }
 
 export function segmentsInSourceOrder(sourceText: string | null, paragraphs: readonly string[]): StoredSegment[] {

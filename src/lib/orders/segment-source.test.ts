@@ -147,6 +147,28 @@ describe("transcript segment source indexes", () => {
     expect(french?.translation).toBe("French 3.0 34");
   });
 
+  it("matches Philosophy to its subject line when that segment is stored first", () => {
+    const philosophy = "Philosophy 2.0 20";
+    const stored = [philosophy, ...SEGMENTS.filter((segment) => segment !== philosophy)];
+    const aligned = alignTranslation(SOURCE, stored);
+    const session = SOURCE.split("\n").findIndex((line) => line.includes("Sous-centre BAFOUSSAM"));
+    const subject = SOURCE.split("\n").findIndex((line) => line.startsWith("Philosophie"));
+    const match = aligned.find((segment) => segment.text === philosophy);
+    expect(subject).toBeGreaterThan(session);
+    expect(match?.source_index).toBe(subject);
+  });
+
+  it("matches Mathematics by its French stem when that segment is stored first", () => {
+    const mathematics = "Mathematics";
+    const aligned = alignTranslation(SOURCE, [mathematics, ...SEGMENTS]);
+    const subject = SOURCE.split("\n").findIndex((line) => line.startsWith("Mathématiques |"));
+    const philosophy = SOURCE.split("\n").findIndex((line) => line.startsWith("Philosophie"));
+    const match = aligned.find((segment) => segment.text === mathematics);
+    expect(subject).toBeGreaterThanOrEqual(0);
+    expect(match?.source_index).toBe(subject);
+    expect(match?.source_index).not.toBe(philosophy);
+  });
+
   it("keeps a stored source_index and does not invent a new one", () => {
     expect(
       alignTranslation("A\nB", [

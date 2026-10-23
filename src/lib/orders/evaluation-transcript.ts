@@ -104,82 +104,175 @@ function decisionOf(lines: readonly string[]): string {
   return "";
 }
 
-/** The third column is Note × Coefficient, so the mark is that product divided by the coefficient. */
-function mark(weighted: number, coefficient: number): string | null {
-  if (!(coefficient > 0) || !(weighted > 0)) return null;
-  const grade = Math.round((weighted / coefficient) * 100) / 100;
-  if (!(grade > 0) || grade > 20) return null;
-  return String(grade);
+export type TranscriptRowFailure = {
+  row: string;
+  reason: string;
+};
+
+export type TranscriptCourseRead = {
+  extract: TranscriptCourseExtract | null;
+  failures: TranscriptRowFailure[];
+};
+
+const NUMBER = /^\d+(?:[.,]\d+)?$/;
+const THREE_CELLS = /^(.+?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*$/;
+const TWO_CELLS = /^(.+?)\s*\|\s*([^|]+?)\s*$/;
+
+/** The header or column label says the third value is Note × Coefficient. */
+function showsWeightedColumn(text: string): boolean {
+  return /note\s*[x×]\s*coef|grade\s*[x×]\s*coef/i.test(text);
+}
+
+function quotient(raw: number, coefficient: number): number {
+  return Math.round((raw / coefficient) * 100) / 100;
 }
 
 /**
- * Reads a coefficient relevé into a course-by-course extract.
- * Returns null when the page is not that kind of transcript.
+ * A Note × Coef column is always divided. Any other value is divided only when it
+ * is over 20 and the coefficient brings it back onto the scale. A mark already
+ * out of 20 stays as printed.
  */
-export function courseExtractFromTranscript(text: string): TranscriptCourseExtract | null {
-  if (!isCoefficientTranscript(text)) return null;
+function resolveMark(
+  raw: number,
+  coefficient: number,
+  weightedColumn: boolean,
+): { grade: string } | { reason: string } {
+  if (!Number.isFinite(coefficient)) return { reason: "No coefficient" };
+  if (coefficient === 0) return { reason: "Coefficient is 0" };
+  if (coefficient < 0) return { reason: "Coefficient is not a number" };
+  if (!Number.isFinite(raw)) return { reason: "Result is not a number" };
+  if (raw < 0) return { reason: "Result is not a number" };
+  if (raw === 0) return { grade: "0" };
+  const divided = quotient(raw, coefficient);
+  const dividedFits = divided > 0 && divided <= 20;
+  if (raw > 20) return dividedFits ? { grade: String(divided) } : { reason: "Result is over 20" };
+  if (!weightedColumn) return { grade: String(raw) };
+  return dividedFits ? { grade: String(divided) } : { reason: "Result is over 20" };
+}
+
+function rowLabel(name: string, credits: number, grade: string): string {
+  return `${name} | ${credits} | ${grade}`;
+}
+
+/**
+ * Reads a relevé into a course-by-course extract.
+ * Dropped course rows are listed in `failures` instead of being skipped quietly.
+ * `extract` is null when the page is not a relevé or it does not have enough courses.
+ */
+export function courseExtractFromTranscript(text: string): TranscriptCourseRead {
+  if (!isCoefficientTranscript(text)) return { extract: null, failures: [] };
   const lines = text
     .split(/\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
+  const weightedColumn = showsWeightedColumn(text);
+  const failures: TranscriptRowFailure[] = [];
   const courses = [];
   for (const line of lines) {
-    const match = line.match(COURSE_ROW);
-    if (!match?.[1] || !match[2] || !match[3]) continue;
-    const originalName = match[1].trim();
+    const three = line.match(THREE_CELLS);
+    if (three?.[1]) {
+      const originalName = three[1].trim();
+      if (skippedCourseName(originalName)) continue;
+      const coefCell = three[2]?.trim() ?? "";
+      const gradeCell = three[3]?.trim() ?? "";
+      if (!NUMBER.test(coefCell)) {
+        failures.push({
+          row: line,
+          reason: coefCell.length === 0 ? "No coefficient" : "Coefficient is not a number",
+        });
+        continue;
+      }
+      if (!NUMBER.test(gradeCell)) {
+        failures.push({ row: line, reason: "Result is not a number" });
+        continue;
+      }
+      const localCredits = amount(coefCell);
+      const resolved = resolveMark(amount(gradeCell), localCredits, weightedColumn);
+      if ("reason" in resolved) {
+        failures.push({ row: line, reason: resolved.reason });
+        continue;
+      }
+      courses.push({ originalName, englishName: originalName, localCredits, localGrade: resolved.grade });
+      continue;
+    }
+    const two = line.match(TWO_CELLS);
+    if (!two?.[1] || !two[2]) continue;
+    const originalName = two[1].trim();
     if (skippedCourseName(originalName)) continue;
-    const localCredits = amount(match[2]);
-    const localGrade = mark(amount(match[3]), localCredits);
-    if (!localGrade || !Number.isFinite(localCredits) || localCredits <= 0) continue;
-    courses.push({ originalName, englishName: originalName, localCredits, localGrade });
+    if (!NUMBER.test(two[2].trim())) {
+      failures.push({ row: line, reason: "Result is not a number" });
+      continue;
+    }
+    failures.push({ row: line, reason: "No coefficient" });
   }
   const applicant = applicantOf(lines);
   const institution = institutionOf(lines);
   const country = countryOf(text);
   const credential = credentialOf(lines);
   const year = sessionYear(text);
-  if (!applicant || !institution || !country || !credential || !year || courses.length < 3) return null;
+  if (!applicant || !institution || !country || !credential || !year || courses.length < 3) {
+    return { extract: null, failures };
+  }
   const result = decisionOf(lines);
   return {
-    applicant,
-    institution,
-    country,
-    credential,
-    scale: "20",
-    ...(result ? { result } : {}),
-    years: [{ year, courses }],
+    extract: {
+      applicant,
+      institution,
+      country,
+      credential,
+      scale: "20",
+      ...(result ? { result } : {}),
+      years: [{ year, courses }],
+    },
+    failures,
   };
 }
 
 /**
- * Turns a model extract that copied Note × Coefficient into the mark out of 20.
- * Total and average rows are dropped. A page that is already on the scale is left as it is.
+ * Turns a model extract that copied a weighted product over 20 into the mark.
+ * Total and average rows are left out. A mark already out of 20 is kept.
+ * Rows that cannot be used are listed in `failures`.
  */
-export function recoverCourseExtract<T extends TranscriptCourseExtract>(extracted: T): T {
-  const max = extracted.scale === "10" ? 10 : extracted.scale === "20" ? 20 : null;
-  if (max == null) return extracted;
+export function recoverCourseExtract<T extends TranscriptCourseExtract>(
+  extracted: T,
+): { extract: T; failures: TranscriptRowFailure[] } {
+  if (extracted.scale === "letter") return { extract: extracted, failures: [] };
   let scale = extracted.scale;
+  const failures: TranscriptRowFailure[] = [];
   const years = [];
   for (const year of extracted.years) {
     const courses = [];
     for (const course of year.courses) {
       if (skippedCourseName(course.originalName) || skippedCourseName(course.englishName)) continue;
-      const weighted = amount(course.localGrade);
+      const row = rowLabel(course.originalName, course.localCredits, course.localGrade);
+      const raw = amount(course.localGrade);
       const credits = course.localCredits;
-      if (Number.isFinite(weighted) && weighted > max && credits > 0) {
-        const grade = Math.round((weighted / credits) * 100) / 100;
-        if (grade > 0 && grade <= 20) {
-          if (grade > 10) scale = "20";
-          courses.push({ ...course, localGrade: String(grade) });
-          continue;
-        }
+      if (!Number.isFinite(credits)) {
+        failures.push({ row, reason: "No coefficient" });
+        continue;
       }
-      courses.push(course);
+      const resolved = resolveMark(raw, credits, false);
+      if ("reason" in resolved) {
+        failures.push({ row, reason: resolved.reason });
+        continue;
+      }
+      if (Number(resolved.grade) > 10) scale = "20";
+      courses.push({ ...course, localGrade: resolved.grade });
     }
-    if (courses.length > 0 && year.year.trim()) years.push({ ...year, courses });
+    if (courses.length === 0) continue;
+    if (!year.year.trim()) {
+      for (const course of courses) {
+        failures.push({
+          row: rowLabel(course.originalName, course.localCredits, course.localGrade),
+          reason: "No year",
+        });
+      }
+      continue;
+    }
+    years.push({ ...year, courses });
   }
-  if (years.length === 0) return extracted;
-  return { ...extracted, scale, years };
+  if (years.length === 0 && failures.length === 0) return { extract: extracted, failures };
+  return { extract: { ...extracted, scale, years }, failures };
 }
 
 /** Course-by-course reads the transcript pages. A diploma reads the other pages. */
