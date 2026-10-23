@@ -4,7 +4,7 @@ import { WORD_PAGE_RULE } from "./billing";
 import { EVALUATION_REVIEW_REASON } from "./evaluation-price";
 import { QA_REVIEW_REASON } from "./qa";
 import { HIGH_QA_SCORE } from "./release-decision";
-import type { OrderRecord, PageRecord } from "./types";
+import type { FinalCorrectionRecord, OrderRecord, PageRecord } from "./types";
 import { previewPages, toCustomerOrder } from "./view";
 
 function orderRecord(): OrderRecord {
@@ -607,6 +607,77 @@ describe("customer order", () => {
       skip: true,
       skipReason: "already English",
     });
+  });
+
+  it("returns the latest final-file correction without the note or file path", () => {
+    const shared = {
+      order: orderRecord(),
+      documents: [],
+      confirmations: [],
+      previewVersion: null,
+      paymentStatus: null,
+      deliveryStatus: null,
+      email: "ada@example.com",
+    };
+    expect(toCustomerOrder(shared).finalCorrection).toBeNull();
+
+    const stored: FinalCorrectionRecord = {
+      id: "corr-1",
+      orderId: "order-1",
+      text: "The date on the diploma is wrong.",
+      status: "open",
+      finalPath: "order-1/certified-translation-v1.pdf",
+      finalVersion: null,
+      claimedAt: null,
+      fixedAt: null,
+      createdAt: "2026-10-23T15:00:00.000Z",
+    };
+    const open = toCustomerOrder({ ...shared, finalCorrection: stored });
+    expect(open.finalCorrection).toEqual({
+      id: "corr-1",
+      status: "open",
+      createdAt: "2026-10-23T15:00:00.000Z",
+      fixedAt: null,
+    });
+    expect(open.finalCorrection).not.toHaveProperty("text");
+    expect(open.finalCorrection).not.toHaveProperty("finalPath");
+    expect(open.finalCorrection).not.toHaveProperty("orderId");
+    expect(open.finalCorrection).not.toHaveProperty("claimedAt");
+    expect(open.finalCorrection).not.toHaveProperty("finalVersion");
+
+    const working = toCustomerOrder({
+      ...shared,
+      finalCorrection: {
+        ...stored,
+        status: "in_progress",
+        claimedAt: "2026-10-23T16:00:00.000Z",
+      },
+    });
+    expect(working.finalCorrection).toEqual({
+      id: "corr-1",
+      status: "in_progress",
+      createdAt: "2026-10-23T15:00:00.000Z",
+      fixedAt: null,
+    });
+
+    const fixed = toCustomerOrder({
+      ...shared,
+      finalCorrection: {
+        ...stored,
+        status: "fixed",
+        finalPath: "order-1/corrected-final-v2.pdf",
+        finalVersion: 2,
+        claimedAt: "2026-10-23T16:00:00.000Z",
+        fixedAt: "2026-10-23T17:00:00.000Z",
+      },
+    });
+    expect(fixed.finalCorrection).toEqual({
+      id: "corr-1",
+      status: "fixed",
+      createdAt: "2026-10-23T15:00:00.000Z",
+      fixedAt: "2026-10-23T17:00:00.000Z",
+    });
+    expect(JSON.stringify(fixed)).not.toMatch(/diploma is wrong|corrected-final|certified-translation/);
   });
 });
 

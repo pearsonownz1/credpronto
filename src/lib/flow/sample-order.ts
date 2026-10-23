@@ -77,6 +77,7 @@ export function sampleCustomerOrder(): CustomerOrder {
     evaluationStatus: null,
     evaluationStatusAt: {},
     documentTitle: "Acta nacimiento",
+    finalCorrection: null,
   };
 }
 
