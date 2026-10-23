@@ -70,14 +70,21 @@ export type GradeMapOptions = {
 };
 
 /**
- * Reads the printed overall decision. Admis, Passed, and Réussi count as passed.
- * Ajourné, Refusé, Non admis, and Failed count as failed.
+ * Reads the printed overall decision. Negatives are tested first, so a phrase such as
+ * "non diplômé" or "not graduated" is failed even though it contains a passing word.
+ * Matching ignores accents and case.
  */
+const FAILED_DECISION =
+  /\b(non[\s-]?diplomee?|non[\s-]?validee?|non[\s-]?admis|no[\s-]?aprobad[oa]|nao[\s-]?aprovad[oa]|not[\s-]?graduated|not[\s-]?graduate|not admitted|reprovad[oa]|reprobad[oa]|suspens[oa]|ajourn\w*|refus\w*|recal\w*|fail\w*|unsuccessful)\b/;
+
+const PASSED_DECISION =
+  /\b(graduated|graduate|diplomee|diplome|validee|valide|aprobada|aprobado|aprovada|aprovado|admis|admitted|passed|pass|reussi|passable|successful)\b/;
+
 export function credentialWasPassed(result: string | null | undefined): boolean | undefined {
   const value = foldDecision(result);
   if (!value) return undefined;
-  if (/\b(non[\s-]?admis|ajourn\w*|refus\w*|recal\w*|fail\w*|not admitted|unsuccessful)\b/.test(value)) return false;
-  if (/\b(admis|admitted|passed|pass|reussi|passable|successful)\b/.test(value)) return true;
+  if (FAILED_DECISION.test(value)) return false;
+  if (PASSED_DECISION.test(value)) return true;
   return undefined;
 }
 

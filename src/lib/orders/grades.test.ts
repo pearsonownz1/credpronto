@@ -69,6 +69,37 @@ describe("grade scales", () => {
     expect(mapLocalGrade("10", "20", { passMark: Number.NaN })?.usGrade).toBe("C");
   });
 
+  it.each([
+    "graduated",
+    "graduate",
+    "diplômé",
+    "diplome",
+    "diplômée",
+    "validé",
+    "valide",
+    "validée",
+    "aprobado",
+    "aprobada",
+    "aprovado",
+    "aprovada",
+  ])("counts %s as passed", (decision) => {
+    expect(credentialWasPassed(decision)).toBe(true);
+  });
+
+  it.each([
+    "non diplômé",
+    "non validé",
+    "no aprobado",
+    "não aprovado",
+    "nao aprovado",
+    "reprovado",
+    "reprobado",
+    "suspenso",
+    "not graduated",
+  ])("counts %s as failed", (decision) => {
+    expect(credentialWasPassed(decision)).toBe(false);
+  });
+
   it("a passed Bac with sub-10 subjects gives D's and no F's, and keeps the GPA", () => {
     expect(credentialWasPassed("Admis")).toBe(true);
     expect(credentialWasPassed("Passed")).toBe(true);
