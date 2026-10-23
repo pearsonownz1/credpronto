@@ -32,6 +32,8 @@ export function previewWatermarkRgb(): { r: number; g: number; b: number } {
 export const ORIGINALS_BUCKET = "originals";
 export const PREVIEWS_BUCKET = "previews";
 export const FINALS_BUCKET = "finals";
+/** Anonymous instant pre-evaluation uploads. Private. Service role only. */
+export const PRE_EVALUATIONS_BUCKET = "pre-evaluations";
 
 export const LETTER_WIDTH_PT = 612;
 export const LETTER_HEIGHT_PT = 792;
