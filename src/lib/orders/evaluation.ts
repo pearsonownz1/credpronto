@@ -57,6 +57,7 @@ import {
 } from "./grades";
 import { IMAGE_QUALITY_REASON } from "./image-quality";
 import { evaluationIssuedLabel, evaluationReportId, renderEvaluationPdfs } from "./pdf/evaluation";
+import { stampFinishedPdf } from "./verification";
 import { uploadObject } from "./storage";
 import { watermarkedTranslationPreview } from "./translation";
 import type { EvaluationResult, OrderRecord, StoredPageOrder } from "./types";
@@ -247,7 +248,8 @@ export async function publishDiplomaEquivalency(
     detectedPages: order.billablePages,
   });
   const cleanPath = `${order.id}/evaluation-v${version}.pdf`;
-  await uploadObject(db, FINALS_BUCKET, cleanPath, files.clean, "application/pdf");
+  const clean = await stampFinishedPdf(db, files.clean, { orderId: order.id, documentType: "evaluation" });
+  await uploadObject(db, FINALS_BUCKET, cleanPath, clean, "application/pdf");
   await uploadObject(db, PREVIEWS_BUCKET, reportPath, files.preview, "application/pdf");
   await updateOrder(db, order.id, {
     review_reason: null,
@@ -280,7 +282,8 @@ export async function publishCourseEquivalency(db: Db, order: OrderRecord, equiv
     detectedPages: order.billablePages,
   });
   const cleanPath = `${order.id}/evaluation-v${version}.pdf`;
-  await uploadObject(db, FINALS_BUCKET, cleanPath, files.clean, "application/pdf");
+  const clean = await stampFinishedPdf(db, files.clean, { orderId: order.id, documentType: "evaluation" });
+  await uploadObject(db, FINALS_BUCKET, cleanPath, clean, "application/pdf");
   await uploadObject(db, PREVIEWS_BUCKET, reportPath, files.preview, "application/pdf");
   await updateOrder(db, order.id, {
     review_reason: null,

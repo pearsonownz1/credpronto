@@ -4,6 +4,7 @@ import * as db from "./db";
 import * as finalEmail from "./final-email";
 import * as staff from "./staff";
 import * as storage from "./storage";
+import * as verification from "./verification";
 import * as webhooks from "./webhook-delivery";
 import { approveOrder } from "./admin";
 import { EMPTY_TRANSLATION_MESSAGE } from "./translation-edit";
@@ -65,6 +66,7 @@ describe("approveOrder cover stamp", () => {
     ]);
     vi.spyOn(certification, "approverDisplayName").mockResolvedValue("Ada Lovelace");
     vi.spyOn(certification, "stampApprovedCover").mockResolvedValue(undefined);
+    vi.spyOn(verification, "stampFinishedPdf").mockImplementation(async (_db, bytes) => bytes);
     vi.spyOn(finalEmail, "sendFinalCustomerEmail").mockResolvedValue({ sent: true, skipped: false });
     vi.spyOn(storage, "signedObjectUrl").mockResolvedValue("https://files.example/signed");
     vi.spyOn(webhooks, "notifyOrder").mockResolvedValue(undefined);
@@ -151,6 +153,10 @@ describe("approveOrder cover stamp", () => {
 
     expect(response.status).toBe(200);
     expect(download).toHaveBeenCalledTimes(2);
+    expect(verification.stampFinishedPdf).toHaveBeenCalledWith(expect.anything(), expect.any(Uint8Array), {
+      orderId,
+      documentType: "evaluation",
+    });
     expect(upload).toHaveBeenCalledWith(expect.anything(), expect.anything(), `${orderId}/evaluation.pdf`, expect.any(Uint8Array), "application/pdf");
     expect(db.updateDelivery).toHaveBeenCalledWith(
       expect.anything(),
