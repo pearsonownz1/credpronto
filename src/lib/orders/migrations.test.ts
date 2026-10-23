@@ -198,7 +198,7 @@ describe("auth migrations", () => {
   });
 
   it("adds final-file corrections, notarized, and mail fields without rewriting orders", () => {
-    const sql = readFileSync(path.join(migrationsDir, "20261023170000_admin_fulfillment.sql"), "utf8");
+    const sql = readFileSync(path.join(migrationsDir, "20261023180000_admin_fulfillment.sql"), "utf8");
     const lower = sql.toLowerCase();
     expect(sql).toMatch(/create table public\.order_final_corrections/);
     expect(sql).toMatch(/status in \('open', 'in_progress', 'fixed'\)/);
