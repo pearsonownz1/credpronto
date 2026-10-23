@@ -8,6 +8,13 @@ export const AI_ATTEMPT_TIMEOUT_MS = 150_000;
 /** Retries after the first attempt. Three calls at most. */
 export const AI_MAX_RETRIES = 2;
 
+/** Keep reasoning short for large table extractions so the output budget goes to the answer. */
+export const LOW_REASONING = {
+  google: { thinkingConfig: { thinkingLevel: "low", includeThoughts: false } },
+  openai: { reasoningEffort: "low" },
+  anthropic: { thinking: { type: "disabled" } },
+};
+
 export function translationModelId(): string {
   const configured = process.env.TRANSLATION_MODEL?.trim();
   return configured || DEFAULT_TRANSLATION_MODEL;
@@ -22,7 +29,7 @@ export async function generateObject<T>(
   schema: ZodType<T>,
   messages: ModelMessage[],
   signal?: AbortSignal,
-  options?: { maxRetries?: number },
+  options?: { maxRetries?: number; lowReasoning?: boolean },
 ): Promise<T> {
   const maxRetries = options?.maxRetries ?? AI_MAX_RETRIES;
   let last: unknown;
@@ -34,6 +41,8 @@ export async function generateObject<T>(
         output: Output.object({ schema }),
         messages,
         maxOutputTokens: 16000,
+        // Long table extractions spent the whole budget on hidden reasoning and returned no object.
+        ...(options?.lowReasoning ? { providerOptions: LOW_REASONING } : {}),
         maxRetries: 0,
         abortSignal: attemptSignal(signal),
       });

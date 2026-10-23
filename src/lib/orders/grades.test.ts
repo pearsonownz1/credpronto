@@ -7,7 +7,8 @@ describe("grade scales", () => {
     expect(mapLocalGrade("8.5", "10")).toEqual({ usGrade: "B", points: 3 });
     expect(mapLocalGrade("B+", "letter")).toEqual({ usGrade: "B+", points: 3.3 });
     expect(mapLocalGrade("21", "20")).toBeNull();
-    expect(mapLocalGrade("pass", "10")).toBeNull();
+    expect(mapLocalGrade("pass", "10")).toEqual({ usGrade: "P", points: 0, ungraded: true });
+    expect(mapLocalGrade("seven", "10")).toBeNull();
   });
 
   it("names the U.S. equivalency from the printed credential", () => {
@@ -156,5 +157,61 @@ describe("grade scales", () => {
     expect(scored!.courses.some((course) => course.usGrade === "F")).toBe(false);
     expect(scored!.gpa).toBeGreaterThanOrEqual(2);
     expect(scored!.gpa).toBe(2);
+  });
+});
+
+describe("round 2 grade scales", () => {
+  it("maps percentages, 4.0 points, and CXC Roman numerals", () => {
+    expect(mapLocalGrade("72", "100")).toEqual({ usGrade: "A", points: 4 });
+    expect(mapLocalGrade("45%", "100")).toEqual({ usGrade: "D", points: 1 });
+    expect(mapLocalGrade("38", "100")).toEqual({ usGrade: "F", points: 0 });
+    expect(mapLocalGrade("3.3", "4")).toEqual({ usGrade: "B+", points: 3.3 });
+    expect(mapLocalGrade("III", "roman")).toEqual({ usGrade: "C", points: 2 });
+    expect(mapLocalGrade("VI", "roman")).toEqual({ usGrade: "F", points: 0 });
+    expect(mapLocalGrade("THREE", "roman")).toEqual({ usGrade: "C", points: 2 });
+    expect(mapLocalGrade("2", "roman")).toEqual({ usGrade: "B", points: 3 });
+    expect(mapLocalGrade("85%", "10")).toEqual({ usGrade: "A", points: 4 });
+    expect(mapLocalGrade("85", "10")).toBeNull();
+  });
+
+  it("gives one unit per subject when no credits are printed and keeps pass courses out of the GPA", () => {
+    const scored = scoreCourses(
+      [
+        { originalName: "Maths", englishName: "Maths", localCredits: 0, localGrade: "I" },
+        { originalName: "English", englishName: "English", localCredits: 0, localGrade: "III" },
+        { originalName: "PE", englishName: "PE", localCredits: 0, localGrade: "Pass" },
+      ],
+      "roman",
+    );
+    expect(scored?.totalHours).toBe(3);
+    expect(scored?.gpa).toBe(3);
+  });
+
+  it("tolerates a few unreadable grades but not many", () => {
+    const course = (grade: string) => ({ originalName: grade, englishName: grade, localCredits: 3, localGrade: grade });
+    const mostlyGood = [...Array.from({ length: 10 }, () => course("80")), course("??")];
+    const result = scoreCourses(mostlyGood, "100");
+    expect(result?.gpa).toBe(4);
+    expect(result?.courses.at(-1)).toMatchObject({ usGrade: "NR", usSemesterHours: 0 });
+    expect(scoreCourses([course("80"), course("??")], "100")).toBeNull();
+  });
+});
+
+describe("grade words", () => {
+  it("maps Australian bands and keeps withdrawn or transferred courses out of hours", () => {
+    expect(mapLocalGrade("HD", "letter")).toEqual({ usGrade: "A", points: 4 });
+    expect(mapLocalGrade("CR", "letter")).toEqual({ usGrade: "B", points: 3 });
+    expect(mapLocalGrade("PS", "letter")).toEqual({ usGrade: "C", points: 2 });
+    expect(mapLocalGrade("Aprovado", "10")).toMatchObject({ usGrade: "P", ungraded: true });
+    const scored = scoreCourses(
+      [
+        { originalName: "A", englishName: "A", localCredits: 3, localGrade: "A" },
+        { originalName: "B", englishName: "B", localCredits: 3, localGrade: "Withdrawn" },
+        { originalName: "C", englishName: "C", localCredits: 3, localGrade: "T" },
+      ],
+      "letter",
+    );
+    expect(scored?.totalHours).toBe(3);
+    expect(scored?.gpa).toBe(4);
   });
 });
