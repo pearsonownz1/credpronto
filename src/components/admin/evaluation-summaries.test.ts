@@ -51,4 +51,32 @@ describe("EvaluationSummaries", () => {
     expect(html).toContain("2018: Law — A");
     expect(html).not.toContain("Not generated yet.");
   });
+
+  it("shows why a paid evaluation did not generate and links a stored PDF", () => {
+    const html = renderToStaticMarkup(
+      createElement(EvaluationSummaries, {
+        reports: [
+          { service: "diploma", url: "https://files.example/diploma-evaluation.pdf" },
+          { service: "course_by_course" },
+        ],
+        summaries: [],
+        problems: [
+          {
+            service: "course_by_course",
+            reason: "Course-by-course evaluation could not be read from the uploaded pages.",
+          },
+        ],
+        canGenerate: true,
+        pending: null,
+        onGenerate: () => undefined,
+      }),
+    );
+
+    expect(html).toContain('data-testid="evaluation-pdf-diploma"');
+    expect(html).toContain('href="https://files.example/diploma-evaluation.pdf"');
+    expect(html).toContain("Open PDF");
+    expect(html).toContain('data-testid="evaluation-problem-course_by_course"');
+    expect(html).toContain("Course-by-course evaluation could not be read from the uploaded pages.");
+    expect(html).not.toContain('data-testid="evaluation-pdf-course_by_course"');
+  });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   evaluationSummaries,
+  paidEvaluationDegreeCount,
   paidEvaluationPatch,
   pendingEvaluationWork,
 } from "./evaluation-summary";
@@ -54,6 +55,59 @@ function course(): EvaluationResult {
     gradeScale: "10-point",
   };
 }
+
+describe("paidEvaluationDegreeCount", () => {
+  const bundle = {
+    service: null,
+    services: ["translation", "diploma", "course_by_course"] as const,
+    includeTranslation: true,
+    orderType: "evaluation",
+  };
+
+  it("uses a stored count", () => {
+    expect(paidEvaluationDegreeCount({ ...bundle, degreeCount: 2 })).toBe(2);
+  });
+
+  it("reads one credential from the paid diploma and course fees when the column is empty", () => {
+    expect(
+      paidEvaluationDegreeCount({
+        ...bundle,
+        degreeCount: null,
+        evaluationCents: 5990,
+        translationCents: 2985,
+        totalCents: 8975,
+      }),
+    ).toBe(1);
+  });
+
+  it("reads the count from the total when only the translation fee is stored beside it", () => {
+    expect(
+      paidEvaluationDegreeCount({
+        ...bundle,
+        degreeCount: null,
+        evaluationCents: null,
+        translationCents: 2985,
+        totalCents: 8975,
+      }),
+    ).toBe(1);
+  });
+
+  it("defaults to one credential for a paid course-by-course order", () => {
+    expect(
+      paidEvaluationDegreeCount({
+        service: "course_by_course",
+        includeTranslation: true,
+        degreeCount: null,
+        evaluationCents: null,
+        totalCents: null,
+      }),
+    ).toBe(1);
+  });
+
+  it("does not invent a count for a translation", () => {
+    expect(paidEvaluationDegreeCount({ service: null, degreeCount: null, orderType: "translation" })).toBeNull();
+  });
+});
 
 describe("pendingEvaluationWork", () => {
   it("asks for both reports when a paid bundle only stored the certified translation", () => {

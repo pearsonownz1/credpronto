@@ -302,15 +302,18 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
     createdAt,
     reviewReason: text(row.reviewReason),
     service: row.service === "diploma" || row.service === "course_by_course" ? row.service : null,
-    ...adminOrderFields(
-      {
-        id,
-        services: stringList(row.services),
-        service: row.service === "diploma" || row.service === "course_by_course" ? row.service : null,
-        includeTranslation: row.includeTranslation === true,
-        serviceFiles: serviceFileMap(row.serviceFiles),
-      },
-      text(delivery?.finalPath),
+    ...withReportLinks(
+      adminOrderFields(
+        {
+          id,
+          services: stringList(row.services),
+          service: row.service === "diploma" || row.service === "course_by_course" ? row.service : null,
+          includeTranslation: row.includeTranslation === true,
+          serviceFiles: serviceFileMap(row.serviceFiles),
+        },
+        text(delivery?.finalPath),
+      ),
+      row.evaluationReports,
     ),
     equivalencyCredentials: equivalencyCredentials(row.evaluationResult),
     evaluations: storedEvaluations(row),
@@ -335,6 +338,30 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
     evaluationStatus: parseEvaluationStatus(row.evaluationStatus),
     evaluationStatusAt: parseEvaluationStatusAt(row.evaluationStatusAt),
     fulfillment: parseFulfillment(row.fulfillment),
+  };
+}
+
+function withReportLinks<T extends { evaluationReports: Array<{ service: string; url?: string }> }>(
+  fields: T,
+  raw: unknown,
+): T {
+  const links = new Map<string, string>();
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      if (!entry || typeof entry !== "object") continue;
+      const item = entry as Record<string, unknown>;
+      const service = item.service === "diploma" || item.service === "course_by_course" ? item.service : null;
+      const url = text(item.url);
+      if (service && url) links.set(service, url);
+    }
+  }
+  if (links.size === 0) return fields;
+  return {
+    ...fields,
+    evaluationReports: fields.evaluationReports.map((report) => {
+      const url = links.get(report.service);
+      return url ? { ...report, url } : report;
+    }),
   };
 }
 

@@ -159,7 +159,12 @@ describe("ensurePaidEvaluationReports", () => {
   it("writes both reports once and leaves them on a second run", async () => {
     const first = await ensurePaidEvaluationReports(dbHandle, orderId, { produce, store });
 
-    expect(first).toEqual({ status: "ready", generated: ["diploma", "course_by_course"], pending: [] });
+    expect(first).toEqual({
+      status: "ready",
+      generated: ["diploma", "course_by_course"],
+      pending: [],
+      failures: [],
+    });
     expect(db.updateOrder).toHaveBeenCalledTimes(1);
     const patch = vi.mocked(db.updateOrder).mock.calls[0]?.[2];
     expect(patch).not.toHaveProperty("total_cents");
@@ -173,7 +178,7 @@ describe("ensurePaidEvaluationReports", () => {
     });
 
     const second = await ensurePaidEvaluationReports(dbHandle, orderId, { produce, store });
-    expect(second).toEqual({ status: "unchanged", generated: [], pending: [] });
+    expect(second).toEqual({ status: "unchanged", generated: [], pending: [], failures: [] });
     expect(db.updateOrder).toHaveBeenCalledTimes(1);
     expect(produce).toHaveBeenCalledTimes(2);
     expect(store).toHaveBeenCalledTimes(2);
@@ -182,13 +187,82 @@ describe("ensurePaidEvaluationReports", () => {
   it("saves the diploma when the course result is still missing", async () => {
     produce.mockImplementation(async (_db, _order, service) => (service === "diploma" ? diploma() : null));
 
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const result = await ensurePaidEvaluationReports(dbHandle, orderId, { produce, store });
 
-    expect(result).toEqual({ status: "partial", generated: ["diploma"], pending: ["course_by_course"] });
+    expect(result).toEqual({
+      status: "partial",
+      generated: ["diploma"],
+      pending: ["course_by_course"],
+      failures: [
+        {
+          service: "course_by_course",
+          reason: "Course-by-course evaluation could not be read from the uploaded pages.",
+        },
+      ],
+    });
+    expect(error).toHaveBeenCalled();
     expect(db.updateOrder).toHaveBeenCalledTimes(1);
     const patch = vi.mocked(db.updateOrder).mock.calls[0]?.[2];
     expect(patch?.service_files).toEqual({ diploma: `${orderId}/diploma-evaluation.pdf` });
     expect(patch?.evaluation_results).toHaveLength(1);
+  });
+
+  it("builds course-by-course when degree_count was not stored", async () => {
+    current = bundle({
+      degreeCount: null,
+      evaluationCents: 5990,
+      translationCents: 2985,
+      totalCents: 8975,
+      evaluationResult: diploma(),
+      serviceFiles: { diploma: `${orderId}/diploma-evaluation.pdf` },
+    });
+
+    const result = await ensurePaidEvaluationReports(dbHandle, orderId, { produce, store });
+
+    expect(result).toEqual({
+      status: "ready",
+      generated: ["course_by_course"],
+      pending: [],
+      failures: [],
+    });
+    expect(produce).toHaveBeenCalledTimes(1);
+    expect(produce).toHaveBeenCalledWith(
+      dbHandle,
+      expect.objectContaining({ degreeCount: 1 }),
+      "course_by_course",
+      expect.any(String),
+      ["diploma.pdf"],
+    );
+    expect(store).toHaveBeenCalledTimes(1);
+    expect(db.updateOrder).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(db.updateOrder).mock.calls[0]?.[2]).not.toHaveProperty("degree_count");
+  });
+
+  it("names the reason when the uploaded pages have no text", async () => {
+    current = bundle({ degreeCount: null });
+    vi.spyOn(db, "listPages").mockResolvedValue([
+      { id: "page-1", documentId: "doc-1", pageNumber: 1, ocrText: "   " } as PageRecord,
+    ]);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const result = await ensurePaidEvaluationReports(dbHandle, orderId, { produce, store });
+
+    expect(result).toEqual({
+      status: "partial",
+      generated: [],
+      pending: ["diploma", "course_by_course"],
+      failures: [
+        { service: "diploma", reason: "This order has no page text to read for the evaluation." },
+        { service: "course_by_course", reason: "This order has no page text to read for the evaluation." },
+      ],
+    });
+    expect(error).toHaveBeenCalledWith("diploma: This order has no page text to read for the evaluation.");
+    expect(error).toHaveBeenCalledWith(
+      "course_by_course: This order has no page text to read for the evaluation.",
+    );
+    expect(produce).not.toHaveBeenCalled();
+    expect(db.updateOrder).not.toHaveBeenCalled();
   });
 });
 
@@ -265,7 +339,12 @@ describe("regeneratePaidEvaluations", () => {
   it("stores both missing evaluations and does not charge on a second run", async () => {
     const first = await regeneratePaidEvaluations(orderId);
 
-    expect(first).toEqual({ status: "ready", generated: ["diploma", "course_by_course"], pending: [] });
+    expect(first).toEqual({
+      status: "ready",
+      generated: ["diploma", "course_by_course"],
+      pending: [],
+      failures: [],
+    });
     expect(db.insertPayment).not.toHaveBeenCalled();
     const patch = vi.mocked(db.updateOrder).mock.calls[0]?.[2];
     expect(patch).not.toHaveProperty("total_cents");
@@ -293,7 +372,7 @@ describe("regeneratePaidEvaluations", () => {
     );
 
     const second = await regeneratePaidEvaluations(orderId);
-    expect(second).toEqual({ status: "unchanged", generated: [], pending: [] });
+    expect(second).toEqual({ status: "unchanged", generated: [], pending: [], failures: [] });
     expect(db.updateOrder).toHaveBeenCalledTimes(1);
     expect(evaluation.evaluateServiceFromText).toHaveBeenCalledTimes(2);
     expect(db.insertPayment).not.toHaveBeenCalled();

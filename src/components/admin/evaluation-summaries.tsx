@@ -6,18 +6,21 @@ import { evaluationReportLabel } from "@/components/admin/evaluation-report-mode
 export function EvaluationSummaries({
   reports,
   summaries,
+  problems,
   canGenerate,
   pending,
   onGenerate,
 }: {
-  reports: readonly { service: "diploma" | "course_by_course" }[];
+  reports: readonly { service: "diploma" | "course_by_course"; url?: string }[];
   summaries: readonly EvaluationSummary[];
+  problems?: readonly { service: "diploma" | "course_by_course"; reason: string }[];
   canGenerate: boolean;
   pending: string | null;
   onGenerate: () => void;
 }) {
   if (reports.length === 0) return null;
   const byService = new Map(summaries.map((summary) => [summary.service, summary]));
+  const byProblem = new Map((problems ?? []).map((problem) => [problem.service, problem.reason]));
   const busy = pending === "regenerate-evaluations";
 
   return (
@@ -44,6 +47,7 @@ export function EvaluationSummaries({
       <div className="grid gap-3 md:grid-cols-2">
         {reports.map((report) => {
           const summary = byService.get(report.service);
+          const problem = byProblem.get(report.service);
           return (
             <article
               key={report.service}
@@ -60,6 +64,22 @@ export function EvaluationSummaries({
               ) : (
                 <p className="text-sm text-ink-muted">Not generated yet.</p>
               )}
+              {problem ? (
+                <p className="text-sm text-[#b45309]" data-testid={`evaluation-problem-${report.service}`}>
+                  {problem}
+                </p>
+              ) : null}
+              {report.url ? (
+                <a
+                  href={report.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  data-testid={`evaluation-pdf-${report.service}`}
+                  className="text-sm font-semibold text-primary"
+                >
+                  Open PDF
+                </a>
+              ) : null}
             </article>
           );
         })}

@@ -129,6 +129,8 @@ export type StaffDetail = {
     service: "diploma" | "course_by_course";
     uploaded: boolean;
     fileName?: string;
+    /** Short-lived staff link for a stored evaluation PDF. */
+    url?: string;
   }>;
   /** Structured text for each stored evaluation. Absent until the order payload includes it. */
   evaluations?: Array<{
