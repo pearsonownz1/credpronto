@@ -193,7 +193,8 @@ export async function approveOrder(orderId: string) {
   const { db, userId } = await requireStaff();
   const order = await getOrderById(db, orderId);
   if (!order) throw new HttpError("Order not found", 404);
-  if (order.status !== "paid" && order.status !== "approved") {
+  // Already-delivered orders pass so the repair below can stamp evaluation_complete.
+  if (order.status !== "paid" && order.status !== "approved" && order.status !== "delivered") {
     throw new HttpError("Only a paid order can be certified", 409);
   }
   const equivalencyBlock = approvalBlockReason(order);

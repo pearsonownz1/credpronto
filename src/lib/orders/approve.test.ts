@@ -160,6 +160,62 @@ describe("approveOrder cover stamp", () => {
     expect(finalEmail.sendFinalCustomerEmail).toHaveBeenCalledTimes(1);
   });
 
+  it("stamps evaluation_complete on an already-delivered evaluation without sending another email", async () => {
+    const deliveredAt = "2026-10-22T12:00:00.000Z";
+    vi.spyOn(db, "getOrderById").mockResolvedValue({
+      ...paidOrder,
+      status: "delivered",
+      service: "diploma",
+      evaluationStatus: "under_review",
+    });
+    vi.spyOn(db, "getDelivery").mockResolvedValue({
+      ...pendingDelivery,
+      status: "delivered",
+      finalPath: "finals/diploma-evaluation.pdf",
+      certificationPath: "finals/diploma-evaluation.pdf",
+      deliveredAt,
+    });
+
+    const response = await run(async () => json(await approveOrder(orderId)));
+    const body = (await response.json()) as { status?: string; email?: string };
+
+    expect(response.status).toBe(200);
+    expect(body.status).toBe("delivered");
+    expect(body.email).toBeUndefined();
+    expect(db.updateOrder).toHaveBeenCalledTimes(1);
+    expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, {
+      evaluation_status: "evaluation_complete",
+      evaluation_complete_at: deliveredAt,
+    });
+    expect(db.updateDelivery).not.toHaveBeenCalled();
+    expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
+    expect(webhooks.notifyOrder).not.toHaveBeenCalled();
+    expect(webhooks.notifyLifecycle).not.toHaveBeenCalled();
+    expect(certification.stampApprovedCover).not.toHaveBeenCalled();
+  });
+
+  it("refuses an unpaid order", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue({ ...paidOrder, status: "preview_ready" });
+
+    const response = await run(async () => json(await approveOrder(orderId)));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "Only a paid order can be certified" });
+    expect(db.updateOrder).not.toHaveBeenCalled();
+    expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
+  });
+
+  it("refuses a paid order that has no settled payment", async () => {
+    vi.spyOn(db, "settledPayment").mockResolvedValue(null);
+
+    const response = await run(async () => json(await approveOrder(orderId)));
+
+    expect(response.status).toBe(402);
+    await expect(response.json()).resolves.toEqual({ error: "Payment required" });
+    expect(db.updateOrder).not.toHaveBeenCalled();
+    expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
+  });
+
   it("fails the approval and returns the stamp error when the cover restamp throws", async () => {
     vi.spyOn(certification, "stampApprovedCover").mockRejectedValue(
       new Error("ENOENT: no such file or directory, open '/var/task/src/lib/orders/pdf/NotoSans-Italic.ttf'"),
