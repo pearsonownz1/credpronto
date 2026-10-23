@@ -159,9 +159,7 @@ export async function walkCustomerFlow(
   await expect(shown(page, "email-note")).toContainText("maria.ruiz@email.com");
   await expect(shown(page, "email-note")).toContainText("CP-24817");
   await expect(shown(page, "email-note")).toContainText("$19.90");
-  await expect(shown(page, "flow-stepper").locator("[data-state=done]")).toHaveCount(4);
-  await expect(shown(page, "flow-stepper").locator("[data-state=current]")).toContainText(
-    "Download",
-  );
+  await expect(shown(page, "flow-stepper")).toHaveCount(0);
+  await expect(shown(page, "package-step-ready")).toHaveAttribute("data-state", "current");
   await check();
 }

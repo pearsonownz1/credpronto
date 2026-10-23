@@ -132,6 +132,9 @@ describe("download page", () => {
     expect(html).not.toContain('data-testid="download-evaluation"');
     expect(html).not.toContain('data-testid="download-certified"');
     expect(html).toContain('href="/dashboard"');
+    expect(html).not.toContain('data-testid="flow-stepper"');
+    expect(html).toContain("bg-primary");
+    expect(html).not.toContain("bg-[#d6e2ff]");
     expect(html).not.toContain("%");
   });
 
@@ -166,6 +169,8 @@ describe("download page", () => {
     expect(html).not.toContain("Performing layout");
     expect(html).toContain('href="/dashboard"');
     expect(html).not.toContain('data-testid="start-another-order"');
+    expect(html).not.toContain('data-testid="flow-stepper"');
+    expect(html).toContain("data-paid-compact");
   });
 
   it("hides the download until an evaluation package is approved", () => {
@@ -224,9 +229,8 @@ describe("download page", () => {
     expect(html).toContain('data-testid="download-certified"');
     expect(html).not.toContain('data-testid="download-certification"');
     expect(html).not.toContain("birth-certificate-EN-certified.pdf");
-    expect(html).toContain('data-step="download"');
-    expect(html).toContain('data-state="current"');
-    expect(html).not.toContain('data-state="done" data-step="download"');
+    expect(html).toContain('data-testid="package-step-ready" data-state="current"');
+    expect(html).not.toContain('data-testid="flow-stepper"');
   });
 
   it("keeps a paid order on Download with the review copy and a read-only preview", () => {
@@ -251,22 +255,21 @@ describe("download page", () => {
     expect(html).toContain('aria-valuetext="Quick Review"');
     expect(html).not.toContain("aria-valuenow");
     expect(html).not.toMatch(/\d+%/);
-    expect(html).toContain('data-testid="package-step-quick_review" data-state="current"');
     expect(html).toContain('data-testid="package-step-almost_ready" data-state="upcoming"');
     expect(html).toContain('data-testid="package-step-ready" data-state="upcoming"');
     expect(html).not.toContain("Final review");
     expect(html).not.toContain("Performing evaluation");
-    expect(html).toContain("release-indeterminate");
-    expect(html).toContain("motion-reduce:animate-none");
+    expect(html).toContain('data-testid="package-step-quick_review" data-state="current"');
+    expect(html).toContain("bg-primary");
+    expect(html).not.toContain("bg-[#d6e2ff]");
+    expect(html).not.toContain("release-indeterminate");
+    expect(html).not.toContain('data-testid="flow-stepper"');
     expect(html).toContain("Back to dashboard");
     expect(html).toContain('href="/dashboard"');
     expect(html).not.toMatch(/second|minute|countdown|usually/i);
     expect(html).not.toContain("being certified");
     expect(html).toContain('data-testid="paid-preview"');
     expect(html).toContain('data-testid="email-note"');
-    expect(html).toContain('data-state="done" data-step="preview"');
-    expect(html).toContain('data-state="current" data-step="download"');
-    expect(html).not.toContain('data-state="done" data-step="download"');
     expect(html).not.toContain('data-testid="download-certified"');
     expect(html).not.toContain("Order not found");
     expect(html).not.toContain("flag-correction");
@@ -321,7 +324,8 @@ describe("download page", () => {
     const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1", pendingPayment: true }));
     expect(html).toContain("Your certified translation is ready.");
     expect(html).toContain('data-testid="download-certified"');
-    expect(html).toContain('data-state="current" data-step="download"');
+    expect(html).toContain('data-testid="package-step-ready" data-state="current"');
+    expect(html).not.toContain('data-testid="flow-stepper"');
     expect(html).not.toContain("Confirming payment");
     expect(html).not.toContain('data-testid="paid-preview"');
   });

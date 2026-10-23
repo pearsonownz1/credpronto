@@ -546,6 +546,18 @@ export function orderContents(order: {
   return { translation: true, evaluation: false };
 }
 
+/** Payment has been recorded. The checkout stepper is no longer the status. */
+export function orderIsPaid(order: {
+  status?: string | null;
+  payment?: { status: string } | null;
+  fulfillment?: "released" | "awaiting_review" | null;
+}): boolean {
+  if (order.fulfillment === "released" || order.fulfillment === "awaiting_review") return true;
+  if (order.status === "paid" || order.status === "approved" || order.status === "delivered") return true;
+  const payment = order.payment?.status;
+  return payment === "paid" || payment === "paid_test";
+}
+
 /** The whole order is approved, or the certified file has been released. */
 export function orderApprovedOrDelivered(order: {
   status?: string | null;

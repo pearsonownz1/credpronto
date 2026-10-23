@@ -15,6 +15,7 @@ import {
   downloadPhase,
   downloadReadyCopy,
   orderContents,
+  orderIsPaid,
   packageProgress,
   packageProgressSteps,
   paidReceiptLine,
@@ -83,6 +84,7 @@ export function PaidOrderScreen({
   const contents = order ? orderContents(order) : { translation: true, evaluation: false };
   const bundle = contents.translation && contents.evaluation;
   const evaluation = contents.evaluation;
+  const paid = order != null && orderIsPaid(order);
   const onDownloadStep = confirming || phase === "certifying" || phase === "ready";
   const headerStep = bundle
     ? onDownloadStep
@@ -100,9 +102,13 @@ export function PaidOrderScreen({
   const wide = phase === "certifying" && !evaluation && !confirming;
 
   return (
-    <div>
+    <div data-paid-compact={wide ? undefined : ""}>
       <BackToDashboard />
-      <FlowHeader current={headerStep} track={bundle ? "bundle" : evaluation ? "evaluation" : "translation"} />
+      <FlowHeader
+        current={headerStep}
+        track={bundle ? "bundle" : evaluation ? "evaluation" : "translation"}
+        showStepper={!paid}
+      />
       <main
         className={
           wide
@@ -209,20 +215,9 @@ function PackageProgress({ order }: { order: CustomerOrder }) {
         >
           <div
             className={`h-1.5 overflow-hidden rounded-full ${
-              step.state === "done" || (current === "ready" && step.state === "current")
-                ? "bg-primary"
-                : step.state === "current"
-                  ? "relative bg-[#d6e2ff]"
-                  : "bg-line"
+              step.state === "upcoming" ? "bg-line" : "bg-primary"
             }`}
-          >
-            {step.state === "current" && current !== "ready" ? (
-              <span
-                className="release-indeterminate pointer-events-none absolute inset-y-0 left-0 w-full motion-reduce:animate-none"
-                aria-hidden
-              />
-            ) : null}
-          </div>
+          />
           <p
             className={`mt-2 text-[12px] leading-tight md:text-[13px] ${
               step.state === "current"
