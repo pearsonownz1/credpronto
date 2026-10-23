@@ -172,6 +172,8 @@ export type StaffDetail = {
     mail: {
       status: "pending" | "shipped";
       trackingNumber: string | null;
+      carrier: string | null;
+      shippedAt: string | null;
       address: {
         name: string;
         line1: string;
@@ -182,7 +184,7 @@ export type StaffDetail = {
         country: "US";
       } | null;
     } | null;
-    notarization: { status: "pending" | "done" } | null;
+    notarization: { status: "pending" | "notarized" | "done" } | null;
   };
 };
 

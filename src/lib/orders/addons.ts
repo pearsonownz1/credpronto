@@ -196,7 +196,7 @@ export function addonStripeLines(addons: PricedAddon[]): Array<{
   }));
 }
 
-function parseShippingAddress(value: unknown): ShippingAddress {
+export function parseShippingAddress(value: unknown): ShippingAddress {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new HttpError("Mail requires a US shipping address", 400);
   }

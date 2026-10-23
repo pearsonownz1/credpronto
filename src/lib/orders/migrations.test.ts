@@ -196,4 +196,21 @@ describe("auth migrations", () => {
     expect(lower).not.toMatch(/insert into/);
     expect(lower).not.toMatch(/create policy/);
   });
+
+  it("adds final-file corrections, notarized, and mail fields without rewriting orders", () => {
+    const sql = readFileSync(path.join(migrationsDir, "20261023170000_admin_fulfillment.sql"), "utf8");
+    const lower = sql.toLowerCase();
+    expect(sql).toMatch(/create table public\.order_final_corrections/);
+    expect(sql).toMatch(/status in \('open', 'in_progress', 'fixed'\)/);
+    expect(sql).toMatch(/unique \(order_id\)/);
+    expect(sql).toMatch(/notarization_status in \('pending', 'notarized', 'done'\)/);
+    expect(sql).toMatch(/add column if not exists mail_carrier text/);
+    expect(sql).toMatch(/add column if not exists mail_shipped_at timestamptz/);
+    expect(sql).toMatch(/mail_status = 'shipped' or mail_shipped_at is null/);
+    expect(lower).not.toMatch(/\bupdate\s+(public\.)?orders\b/);
+    expect(lower).not.toMatch(/\binsert\s+into\b/);
+    expect(lower).not.toMatch(/correction_status/);
+    expect(lower).not.toMatch(/add value/);
+    expect(lower).not.toMatch(/alter table public\.corrections/);
+  });
 });

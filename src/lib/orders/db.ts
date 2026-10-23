@@ -23,6 +23,8 @@ import { HttpError } from "./errors";
 import type {
   ConfirmationRecord,
   CorrectionRecord,
+  FinalCorrectionRecord,
+  FinalCorrectionStatus,
   DeliveryRecord,
   DeliveryStatus,
   DocumentRecord,
@@ -97,8 +99,14 @@ function mapOrder(row: Row): OrderRecord {
     shippingAddress: mapShipping(row),
     mailStatus: row.mail_status === "pending" || row.mail_status === "shipped" ? row.mail_status : null,
     mailTracking: str(row.mail_tracking),
+    mailCarrier: str(row.mail_carrier),
+    mailShippedAt: str(row.mail_shipped_at),
     notarizationStatus:
-      row.notarization_status === "pending" || row.notarization_status === "done" ? row.notarization_status : null,
+      row.notarization_status === "pending" ||
+      row.notarization_status === "notarized" ||
+      row.notarization_status === "done"
+        ? row.notarization_status
+        : null,
     edgeCredentialId: str(row.edge_credential_id),
     edgeGradingScaleId: str(row.edge_grading_scale_id),
     edgeMatchMethod:
@@ -926,6 +934,99 @@ export async function resolveCorrections(
     .update({ status: "resolved", resolved_preview_version: previewVersion })
     .in("id", ids);
   fail(error);
+}
+
+const FINAL_CORRECTION_STATUSES = new Set<FinalCorrectionStatus>(["open", "in_progress", "fixed"]);
+
+function mapFinalCorrection(row: Row): FinalCorrectionRecord {
+  const status = str(row.status);
+  if (!status || !FINAL_CORRECTION_STATUSES.has(status as FinalCorrectionStatus)) {
+    throw new Error("Unknown final correction status");
+  }
+  return {
+    id: String(row.id),
+    orderId: String(row.order_id),
+    text: str(row.request_text) ?? "",
+    status: status as FinalCorrectionStatus,
+    finalPath: str(row.final_path),
+    finalVersion: num(row.final_version),
+    claimedAt: str(row.claimed_at),
+    fixedAt: str(row.fixed_at),
+    createdAt: str(row.created_at) ?? new Date().toISOString(),
+  };
+}
+
+export async function getFinalCorrection(db: Db, orderId: string): Promise<FinalCorrectionRecord | null> {
+  const { data, error } = await db.from("order_final_corrections").select("*").eq("order_id", orderId).maybeSingle();
+  fail(error);
+  return data ? mapFinalCorrection(data as Row) : null;
+}
+
+/** Null when this order already has a request (unique order_id). */
+export async function insertFinalCorrection(
+  db: Db,
+  input: { orderId: string; text: string },
+): Promise<FinalCorrectionRecord | null> {
+  const { data, error } = await db
+    .from("order_final_corrections")
+    .insert({ order_id: input.orderId, request_text: input.text, status: "open" })
+    .select("*")
+    .single();
+  if (error?.code === "23505") return null;
+  fail(error);
+  return mapFinalCorrection(data as Row);
+}
+
+export async function listFinalCorrectionsByStatus(
+  db: Db,
+  status: "open" | "in_progress",
+): Promise<FinalCorrectionRecord[]> {
+  const { data, error } = await db
+    .from("order_final_corrections")
+    .select("*")
+    .eq("status", status)
+    .order("created_at", { ascending: true });
+  fail(error);
+  return ((data ?? []) as Row[]).map(mapFinalCorrection);
+}
+
+/** Moves open -> in_progress. Null when another worker already claimed it. */
+export async function claimFinalCorrection(
+  db: Db,
+  orderId: string,
+  claimedAt: string,
+): Promise<FinalCorrectionRecord | null> {
+  const { data, error } = await db
+    .from("order_final_corrections")
+    .update({ status: "in_progress", claimed_at: claimedAt })
+    .eq("order_id", orderId)
+    .eq("status", "open")
+    .select("*");
+  fail(error);
+  const row = ((data ?? []) as Row[])[0];
+  return row ? mapFinalCorrection(row) : null;
+}
+
+/** Moves in_progress -> fixed. Null when the row was no longer in progress. */
+export async function markFinalCorrectionFixed(
+  db: Db,
+  orderId: string,
+  input: { path: string; version: number; fixedAt: string },
+): Promise<FinalCorrectionRecord | null> {
+  const { data, error } = await db
+    .from("order_final_corrections")
+    .update({
+      status: "fixed",
+      final_path: input.path,
+      final_version: input.version,
+      fixed_at: input.fixedAt,
+    })
+    .eq("order_id", orderId)
+    .eq("status", "in_progress")
+    .select("*");
+  fail(error);
+  const row = ((data ?? []) as Row[])[0];
+  return row ? mapFinalCorrection(row) : null;
 }
 
 export async function dismissCorrections(db: Db, ids: string[]): Promise<void> {
