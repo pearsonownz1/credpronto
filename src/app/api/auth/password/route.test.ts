@@ -96,7 +96,7 @@ describe("POST /api/auth/password sign-up", () => {
     });
     expect(createClient).toHaveBeenCalledOnce();
     expect(generateLink).not.toHaveBeenCalled();
-    expect(finishInstantSignup).toHaveBeenCalledWith("user-1", "order-token");
+    expect(finishInstantSignup).toHaveBeenCalledWith("user-1", "order-token", "ada@example.com");
     expect(finishAuthenticatedUser).not.toHaveBeenCalled();
   });
 
@@ -110,7 +110,7 @@ describe("POST /api/auth/password sign-up", () => {
     });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ session: true, next: `/confirm?token=${token}` });
-    expect(finishInstantSignup).toHaveBeenCalledWith("user-1", token);
+    expect(finishInstantSignup).toHaveBeenCalledWith("user-1", token, "ada@example.com");
     expect(finishAuthenticatedUser).not.toHaveBeenCalled();
   });
 
@@ -124,7 +124,7 @@ describe("POST /api/auth/password sign-up", () => {
     });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ next: "/translate" });
-    expect(finishInstantSignup).toHaveBeenCalledWith("user-1", null);
+    expect(finishInstantSignup).toHaveBeenCalledWith("user-1", null, "ada@example.com");
     expect(finishAuthenticatedUser).not.toHaveBeenCalled();
   });
 
@@ -138,7 +138,7 @@ describe("POST /api/auth/password sign-up", () => {
       orderToken: bodyToken,
       next: `/preview/${nextToken}`,
     });
-    expect(finishInstantSignup).toHaveBeenCalledWith("user-1", bodyToken);
+    expect(finishInstantSignup).toHaveBeenCalledWith("user-1", bodyToken, "ada@example.com");
     expect(finishAuthenticatedUser).not.toHaveBeenCalled();
   });
 
