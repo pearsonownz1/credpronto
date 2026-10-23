@@ -125,8 +125,13 @@ function applyPatch(order: OrderRecord, patch: Record<string, unknown>): OrderRe
 describe("ensurePaidEvaluationReports", () => {
   let current: OrderRecord;
   const produce = vi.fn(
-    async (_db: Db, _order: OrderRecord, service: EvaluationService): Promise<EvaluationResult | null> =>
-      service === "diploma" ? diploma() : course(),
+    async (
+      _db: Db,
+      _order: OrderRecord,
+      service: EvaluationService,
+      _pageText: string,
+      _filenames: string[],
+    ): Promise<EvaluationResult | null> => (service === "diploma" ? diploma() : course()),
   );
   const store = vi.fn(
     async (_db: Db, _order: OrderRecord, service: EvaluationService, result: EvaluationResult) => ({
@@ -262,7 +267,61 @@ describe("ensurePaidEvaluationReports", () => {
       "course_by_course: This order has no page text to read for the evaluation.",
     );
     expect(produce).not.toHaveBeenCalled();
-    expect(db.updateOrder).not.toHaveBeenCalled();
+    expect(db.updateOrder).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(db.updateOrder).mock.calls[0]?.[2]).toMatchObject({
+      progress: {
+        evaluationFailures: [
+          { service: "diploma", reason: "This order has no page text to read for the evaluation." },
+          { service: "course_by_course", reason: "This order has no page text to read for the evaluation." },
+        ],
+      },
+    });
+    expect(vi.mocked(db.updateOrder).mock.calls[0]?.[2]).not.toHaveProperty("evaluation_result");
+  });
+
+  it("reads the course report from the transcript page", async () => {
+    vi.spyOn(db, "listDocuments").mockResolvedValue([
+      { id: "doc-diploma", filename: "diploma.pdf", position: 1 } as DocumentRecord,
+      { id: "doc-transcript", filename: "Aristide.pdf", position: 2 } as DocumentRecord,
+    ]);
+    vi.spyOn(db, "listPages").mockResolvedValue([
+      {
+        id: "page-diploma",
+        documentId: "doc-diploma",
+        pageNumber: 1,
+        ocrText: "Baccalauréat\nest conféré à M. KOUAMOU",
+      } as PageRecord,
+      {
+        id: "page-transcript",
+        documentId: "doc-transcript",
+        pageNumber: 1,
+        ocrText: "RELEVE DE NOTES\nSciences Economiques | 4.0 | 38\nMathématiques | 2.0 | 25\nFrançais | 3.0 | 34",
+      } as PageRecord,
+    ]);
+
+    await ensurePaidEvaluationReports(dbHandle, orderId, { produce, store });
+
+    const texts = produce.mock.calls.map((call) => call[3]);
+    expect(texts[0]).toContain("est conféré");
+    expect(texts[0]).not.toContain("RELEVE DE NOTES");
+    expect(texts[1]).toContain("RELEVE DE NOTES");
+    expect(texts[1]).not.toContain("est conféré");
+  });
+
+  it("stores the course failure on the order progress", async () => {
+    produce.mockImplementation(async (_db, _order, service) => (service === "diploma" ? diploma() : null));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await ensurePaidEvaluationReports(dbHandle, orderId, { produce, store });
+
+    expect(vi.mocked(db.updateOrder).mock.calls[0]?.[2]?.progress).toMatchObject({
+      evaluationFailures: [
+        {
+          service: "course_by_course",
+          reason: "Course-by-course evaluation could not be read from the uploaded pages.",
+        },
+      ],
+    });
   });
 });
 

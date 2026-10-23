@@ -42,7 +42,7 @@ export function TranslationView({
   return (
     <div className="grid gap-4">
       {pages.map((page) => {
-        const alignment = translationLines(page.sourceText, drafts[page.id] ?? []);
+        const alignment = translationLines(page.sourceText, drafts[page.id] ?? [], page.sourceIndexes);
         const lines = alignment.rows;
         const warning = segmentMismatchWarning(alignment);
         return (

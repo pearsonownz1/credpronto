@@ -20,11 +20,18 @@ export type TranslationAlignment = {
  * Blank lines stay blank on both sides and do not consume a segment.
  * Segments are already stored with blanks removed, one per non-blank line.
  */
-export function translationLines(sourceText: string | null, segments: readonly string[]): TranslationAlignment {
+export function translationLines(
+  sourceText: string | null,
+  segments: readonly string[],
+  sourceIndexes?: readonly number[] | null,
+): TranslationAlignment {
   const display = sourceTextForDisplay(sourceText);
   const normalized = (display ?? "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const lines = normalized.length === 0 ? [] : normalized.split("\n");
   if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  if (sourceIndexes && sourceIndexes.length === segments.length) {
+    return translationLinesByIndex(lines, segments, sourceIndexes);
+  }
 
   const rows: TranslationLine[] = [];
   let segmentCursor = 0;
@@ -55,6 +62,53 @@ export function translationLines(sourceText: string | null, segments: readonly s
   }
 
   return { rows, extra, missing };
+}
+
+function translationLinesByIndex(
+  lines: readonly string[],
+  segments: readonly string[],
+  sourceIndexes: readonly number[],
+): TranslationAlignment {
+  const groups = new Map<number, Array<{ text: string; segmentIndex: number }>>();
+  const unmatched: Array<{ text: string; segmentIndex: number }> = [];
+  segments.forEach((text, segmentIndex) => {
+    const sourceIndex = sourceIndexes[segmentIndex] ?? -1;
+    const line = lines[sourceIndex];
+    if (line == null || line.trim().length === 0) {
+      unmatched.push({ text, segmentIndex });
+      return;
+    }
+    const group = groups.get(sourceIndex) ?? [];
+    group.push({ text, segmentIndex });
+    groups.set(sourceIndex, group);
+  });
+
+  const rows: TranslationLine[] = [];
+  let missing = 0;
+  lines.forEach((line, index) => {
+    if (line.trim().length === 0) {
+      rows.push({ source: "", translation: "", segmentIndex: null });
+      return;
+    }
+    const matched = groups.get(index) ?? [];
+    if (matched.length === 0) {
+      missing += 1;
+      rows.push({ source: line, translation: "", segmentIndex: null });
+      return;
+    }
+    matched.forEach((segment, offset) => {
+      rows.push({
+        source: offset === 0 ? line : "",
+        translation: segment.text,
+        segmentIndex: segment.segmentIndex,
+      });
+    });
+  });
+
+  for (const segment of unmatched) {
+    rows.push({ source: "", translation: segment.text, segmentIndex: segment.segmentIndex });
+  }
+  return { rows, extra: unmatched.length, missing };
 }
 
 export function segmentMismatchWarning(alignment: Pick<TranslationAlignment, "extra" | "missing">): string | null {

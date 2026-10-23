@@ -1,3 +1,4 @@
+import { parseEvaluationFailures, type StoredEvaluationFailure } from "./evaluation-failures";
 import { TRANSLATION_TIMEOUT_REASON } from "./translation-failure";
 
 /** A translation with no preview is stale once `updated_at` is older than this. */
@@ -62,6 +63,7 @@ export type CheckedProgress = {
   retries?: number;
   pagesDone?: number;
   pagesTranslateTotal?: number;
+  evaluationFailures?: StoredEvaluationFailure[];
 };
 
 export function progressStep(progress: unknown): string | null {
@@ -111,6 +113,7 @@ export function checkedProgress(
   if (pagesDone != null && pagesTranslateTotal != null && pagesDone > pagesTranslateTotal) {
     pagesDone = pagesTranslateTotal;
   }
+  const evaluationFailures = parseEvaluationFailures(row.evaluationFailures);
   return {
     step,
     pagesRead,
@@ -118,6 +121,7 @@ export function checkedProgress(
     ...(Number.isInteger(retries) && retries > 0 ? { retries } : {}),
     ...(pagesDone != null ? { pagesDone } : {}),
     ...(pagesTranslateTotal != null ? { pagesTranslateTotal } : {}),
+    ...(evaluationFailures.length > 0 ? { evaluationFailures } : {}),
   };
 }
 

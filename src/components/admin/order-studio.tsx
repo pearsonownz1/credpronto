@@ -137,9 +137,9 @@ export function OrderStudio({
   const activity = activityFor(detail, thread);
   const canEdit = EDITABLE.has(detail.status);
   const [reportOverrides, setReportOverrides] = useState<Record<string, ReportOverride>>({});
-  const [evaluationProblems, setEvaluationProblems] = useState<
-    Array<{ service: "diploma" | "course_by_course"; reason: string }>
-  >([]);
+  const [evaluationProblems, setEvaluationProblems] = useState(() =>
+    evaluationProblemsFrom(detail.evaluationFailures),
+  );
   const blobUrls = useRef<string[]>([]);
   useEffect(() => {
     const stored = blobUrls;

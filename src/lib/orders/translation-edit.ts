@@ -54,8 +54,34 @@ export function paragraphsForPage(
   if (!match || typeof match !== "object") return null;
   const paragraphs = (match as { paragraphs?: unknown }).paragraphs;
   if (!Array.isArray(paragraphs)) return null;
-  const text = paragraphs.filter((item): item is string => typeof item === "string");
+  const text = paragraphs.flatMap((item) => {
+    if (typeof item === "string") return [item];
+    if (item && typeof item === "object" && typeof (item as { text?: unknown }).text === "string") {
+      return [(item as { text: string }).text];
+    }
+    return [];
+  });
   return text.length > 0 ? text : null;
+}
+
+/** Paragraph values as stored, including `{ text, source_index }` segments. */
+export function storedParagraphsForPage(
+  output: unknown,
+  page: { pageNumber: number; combinedPageNumber?: number },
+): unknown[] {
+  if (!output || typeof output !== "object") return [];
+  const pages = (output as { pages?: unknown }).pages;
+  if (!Array.isArray(pages)) return [];
+  const records = pages.filter((entry): entry is { pageNumber?: unknown; combinedPageNumber?: unknown; paragraphs?: unknown } =>
+    Boolean(entry) && typeof entry === "object",
+  );
+  const match =
+    records.find((record) => record.pageNumber === page.pageNumber) ??
+    records.find(
+      (record) => page.combinedPageNumber != null && record.combinedPageNumber === page.combinedPageNumber,
+    );
+  const paragraphs = match && typeof match === "object" ? (match as { paragraphs?: unknown }).paragraphs : null;
+  return Array.isArray(paragraphs) ? paragraphs : [];
 }
 
 function cleanParagraphs(paragraphs: string[]): string[] | null {

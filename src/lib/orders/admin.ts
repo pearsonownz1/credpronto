@@ -43,7 +43,8 @@ import { etaFromNow } from "./quote";
 import { sourceTextForDisplay } from "./source-text";
 import { signedObjectUrl, signedObjectUrls } from "./storage";
 import { ensureStaffRow, requireStaff } from "./staff";
-import { EMPTY_TRANSLATION_MESSAGE, emptyTranslationMessage, paragraphsForPage } from "./translation-edit";
+import { alignTranslation } from "./segment-source";
+import { EMPTY_TRANSLATION_MESSAGE, emptyTranslationMessage, paragraphsForPage, storedParagraphsForPage } from "./translation-edit";
 import { ORDER_STATUSES, type OrderRecord, type OrderStatus } from "./types";
 import { translateOrder } from "./translation";
 
@@ -111,18 +112,25 @@ export async function staffOrder(orderId: string) {
         pages: pages
           .filter((page) => page.documentId === document.id)
           .map((page) => {
-            const paragraphs = translation
-              ? paragraphsForPage(translation.output, {
+            const stored = translation
+              ? storedParagraphsForPage(translation.output, {
                   pageNumber: page.pageNumber,
                   combinedPageNumber: page.number,
                 })
-              : null;
+              : [];
+            const aligned = alignTranslation(sourceTextForDisplay(page.ocrText), stored);
             return {
               ...page,
               sourceText: sourceTextForDisplay(page.ocrText),
-              translation: paragraphs
-                ? { version: translation?.version ?? null, model: translation?.model ?? null, paragraphs }
-                : null,
+              translation:
+                translation && aligned.length > 0
+                  ? {
+                      version: translation.version,
+                      model: translation.model,
+                      paragraphs: aligned.map((segment) => segment.text),
+                      sourceIndexes: aligned.map((segment) => segment.source_index),
+                    }
+                  : null,
             };
           }),
       };
@@ -144,17 +152,25 @@ export async function staffOrder(orderId: string) {
       : null,
     originals,
     evaluations: evaluationSummaries(collectedEvaluationResults(order)),
+    evaluationFailures: order.progress?.evaluationFailures ?? [],
   };
 }
 
-/** Short-lived staff links for evaluation PDFs already stored on the order. */
+/** A stored evaluation PDF may be signed only when it lives under this order. */
+export function evaluationPdfPath(orderId: string, path: string | null | undefined): string | null {
+  const trimmed = path?.trim() ?? "";
+  if (!trimmed.startsWith(`${orderId}/`)) return null;
+  if (trimmed.includes("..") || trimmed.includes("\\")) return null;
+  return trimmed;
+}
+
 async function signedEvaluationReports(
   db: Parameters<typeof signedObjectUrls>[0],
-  order: { serviceFiles?: OrderRecord["serviceFiles"] },
+  order: { id: string; serviceFiles?: OrderRecord["serviceFiles"] },
   reports: AdminOrderFields["evaluationReports"],
 ) {
   const paths = reports.flatMap((report) => {
-    const path = order.serviceFiles?.[report.service]?.trim();
+    const path = evaluationPdfPath(order.id, order.serviceFiles?.[report.service]);
     return path ? [path] : [];
   });
   if (paths.length === 0) return reports;
@@ -166,7 +182,7 @@ async function signedEvaluationReports(
     return reports;
   }
   return reports.map((report) => {
-    const path = order.serviceFiles?.[report.service]?.trim();
+    const path = evaluationPdfPath(order.id, order.serviceFiles?.[report.service]);
     const url = path ? urls.get(path) : undefined;
     return url ? { ...report, url } : report;
   });

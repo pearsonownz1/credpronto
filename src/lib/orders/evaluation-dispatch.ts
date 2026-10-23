@@ -2,6 +2,7 @@ import { FINALS_BUCKET } from "./constants";
 import { listDocuments, listPages, settledPayment, updateOrder, getOrderById, type Db } from "./db";
 import { HttpError } from "./errors";
 import { evaluateServiceFromText } from "./evaluation";
+import { progressWithEvaluationFailures } from "./evaluation-failures";
 import {
   evaluationServicePath,
   evaluationSummaries,
@@ -11,6 +12,7 @@ import {
   pendingEvaluationWork,
   type ProducedEvaluation,
 } from "./evaluation-summary";
+import { textForPaidEvaluation } from "./evaluation-transcript";
 import { evaluationIssuedLabel, evaluationReportId, renderEvaluationPdfs } from "./pdf/evaluation";
 import { orderHasEvaluation } from "./service-selection";
 import { requireStaff } from "./staff";
@@ -79,14 +81,6 @@ async function storeEvaluationPdf(
   return { result: stored, path };
 }
 
-function pageTextOf(pages: Array<{ pageNumber: number; ocrText: string | null }>): string {
-  return [...pages]
-    .sort((a, b) => a.pageNumber - b.pageNumber)
-    .map((page) => page.ocrText ?? "")
-    .filter(Boolean)
-    .join("\n");
-}
-
 /**
  * Builds each purchased evaluation that is still missing. A second call leaves
  * finished reports in place and does not change the amount paid.
@@ -100,14 +94,17 @@ export async function ensurePaidEvaluationReports(
   if (!order || !orderIsPaid(order) || !orderHasEvaluation(order)) return UNCHANGED;
 
   const initial = pendingEvaluationWork(order);
-  if (initial.length === 0) return UNCHANGED;
+  if (initial.length === 0) {
+    const progress = progressWithEvaluationFailures(order.progress, []);
+    if (progress) await updateOrder(db, order.id, { progress });
+    return UNCHANGED;
+  }
 
   const documents = await listDocuments(db, order.id);
   const pages = await listPages(
     db,
     documents.map((document) => document.id),
   );
-  const text = pageTextOf(pages);
   const filenames = documents.map((document) => document.filename);
   const produced: ProducedEvaluation[] = [];
   const generated: EvaluationService[] = [];
@@ -118,6 +115,7 @@ export async function ensurePaidEvaluationReports(
     try {
       const degreeCount = paidEvaluationDegreeCount(current);
       const counted = degreeCount == null ? current : { ...current, degreeCount };
+      const text = textForPaidEvaluation(documents, pages, gap.service);
       const existing =
         current.evaluationResults?.find((result) => result.kind === gap.service) ??
         (current.evaluationResult?.kind === gap.service ? current.evaluationResult : null);
@@ -157,8 +155,10 @@ export async function ensurePaidEvaluationReports(
     }
   }
 
-  const patch = paidEvaluationPatch(order, produced);
-  if (patch) await updateOrder(db, order.id, patch);
+  const patch = paidEvaluationPatch(order, produced) ?? {};
+  const progress = progressWithEvaluationFailures(order.progress, failures);
+  if (progress) patch.progress = progress;
+  if (Object.keys(patch).length > 0) await updateOrder(db, order.id, patch);
   const pending = pendingEvaluationWork({
     ...order,
     evaluationResult: (patch?.evaluation_result as EvaluationResult | undefined) ?? order.evaluationResult,
