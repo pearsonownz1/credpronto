@@ -10,7 +10,7 @@ import {
   submitPreEvaluationEmail,
 } from "@/lib/pre-evaluation/client";
 import { preEvaluationFileError } from "@/lib/pre-evaluation/file";
-import { INITIAL_PHASE, reducePreEvaluation } from "@/lib/pre-evaluation/phase";
+import { phaseForPreEvaluationLink, reducePreEvaluation } from "@/lib/pre-evaluation/phase";
 import { preEvaluationProgress } from "@/lib/pre-evaluation/progress";
 import {
   PreEvaluationChecking,
@@ -21,8 +21,8 @@ import {
   PreEvaluationUpload,
 } from "./screens";
 
-export function PreEvaluationExperience() {
-  const [phase, dispatch] = useReducer(reducePreEvaluation, INITIAL_PHASE);
+export function PreEvaluationExperience({ initialId = null }: { initialId?: string | null }) {
+  const [phase, dispatch] = useReducer(reducePreEvaluation, initialId, phaseForPreEvaluationLink);
   const [elapsed, setElapsed] = useState(0);
   const [uploadPending, setUploadPending] = useState(false);
   const [emailPending, setEmailPending] = useState(false);
@@ -123,7 +123,6 @@ export function PreEvaluationExperience() {
       {phase.step === "result" ? (
         <PreEvaluationResult
           id={phase.id}
-          email={phase.email}
           equivalent={phase.equivalent}
           confidence={phase.confidence}
           previewUrl={phase.previewUrl}

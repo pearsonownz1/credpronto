@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 export default function TranslatePage({
   searchParams,
 }: {
-  searchParams: Promise<{ service?: string | string[] }>;
+  searchParams: Promise<{ service?: string | string[]; preEvaluation?: string | string[] }>;
 }) {
   return (
     <UploadExperience
@@ -31,9 +31,16 @@ export default function TranslatePage({
 async function TranslateUpload({
   searchParams,
 }: {
-  searchParams: Promise<{ service?: string | string[] }>;
+  searchParams: Promise<{ service?: string | string[]; preEvaluation?: string | string[] }>;
 }) {
   const [params, account] = await Promise.all([searchParams, getAccount()]);
   const service = Array.isArray(params.service) ? params.service[0] : params.service;
-  return <UploadSeed initialService={service} sessionEmail={account?.email ?? null} />;
+  const preEvaluation = Array.isArray(params.preEvaluation) ? params.preEvaluation[0] : params.preEvaluation;
+  return (
+    <UploadSeed
+      initialService={service}
+      sessionEmail={account?.email ?? null}
+      preEvaluationId={preEvaluation ?? null}
+    />
+  );
 }

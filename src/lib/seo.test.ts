@@ -21,7 +21,7 @@ describe("crawl policy", () => {
       rules: {
         userAgent: "*",
         allow: "/",
-        disallow: ["/preview/", "/order/", "/dashboard", "/admin", "/api"],
+        disallow: ["/preview/", "/order/", "/pre-evaluation/", "/dashboard", "/admin", "/api"],
       },
       sitemap: `${SITE_ORIGIN}/sitemap.xml`,
     });
@@ -74,6 +74,10 @@ describe("crawl policy", () => {
       },
       {
         source: "/order/:path*",
+        headers: [{ key: "X-Robots-Tag", value: ROBOTS_NOINDEX }],
+      },
+      {
+        source: "/pre-evaluation/:id",
         headers: [{ key: "X-Robots-Tag", value: ROBOTS_NOINDEX }],
       },
     ]);

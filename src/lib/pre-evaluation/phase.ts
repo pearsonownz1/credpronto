@@ -1,3 +1,4 @@
+import { isOrderToken } from "@/lib/orders/token";
 import type { PreEvaluationRecord } from "./client";
 
 export const FAILED_PREVIEW_MESSAGE = "We couldn't prepare a preview from this document. Try a clearer photo or a PDF.";
@@ -12,7 +13,7 @@ export type PreEvaluationPhase =
   | {
       step: "result";
       id: string;
-      email: string;
+      email: string | null;
       equivalent: string;
       confidence: NonNullable<PreEvaluationRecord["confidence"]>;
       previewUrl: string | null;
@@ -27,6 +28,23 @@ export type PreEvaluationPhase =
     };
 
 export const INITIAL_PHASE: PreEvaluationPhase = { step: "upload", message: null, rateLimited: false };
+
+/** Resume `/pre-evaluation/{id}` from the result link. A bad token never calls the API. */
+export function phaseForPreEvaluationLink(id: string | null | undefined): PreEvaluationPhase {
+  const trimmed = id?.trim() ?? "";
+  if (!trimmed) return INITIAL_PHASE;
+  if (!isOrderToken(trimmed)) {
+    return {
+      step: "error",
+      id: null,
+      email: null,
+      message: "Pre-evaluation not found",
+      rateLimited: false,
+      retryable: false,
+    };
+  }
+  return { step: "checking", id: trimmed, email: null };
+}
 
 export type PreEvaluationEvent =
   | { type: "reset" }
@@ -119,11 +137,6 @@ function applyStatus(phase: PreEvaluationPhase, record: PreEvaluationRecord): Pr
       rateLimited: false,
       retryable: false,
     };
-  }
-
-  if (!email) {
-    if (phase.step === "email") return phase;
-    return { step: "email", id, message: null, rateLimited: false };
   }
 
   if (!record.equivalent || !record.confidence) {

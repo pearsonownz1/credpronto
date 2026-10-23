@@ -6,6 +6,7 @@ import {
   DIPLOMA_PRICE_LABEL,
 } from "@/lib/evaluations/catalog";
 import type { FlowTrack } from "@/lib/flow/types";
+import { getPreEvaluationPrefill } from "@/lib/pre-evaluation/client";
 import { FlowHeader } from "./flow-header";
 import { UploadCard } from "./upload-card";
 import { uploadServiceFromQuery } from "./upload-draft";
@@ -23,22 +24,40 @@ export function UploadPageFallback() {
   );
 }
 
-type UploadSeedValue = { service: string | null; email: string | null };
+type UploadSeedValue = { service: string | null; email: string | null; degreeCount: number | null };
 
 const UploadSeedContext = createContext<(seed: UploadSeedValue) => void>(() => {});
 
-/** Reports the URL service and signed-in email without remounting the form. */
+/** Reports the URL service, signed-in email, and any pre-evaluation order fields without remounting the form. */
 export function UploadSeed({
   initialService,
   sessionEmail,
+  preEvaluationId,
 }: {
   initialService?: string | null;
   sessionEmail?: string | null;
+  preEvaluationId?: string | null;
 }) {
   const report = useContext(UploadSeedContext);
   useEffect(() => {
-    report({ service: initialService ?? null, email: sessionEmail ?? null });
-  }, [report, initialService, sessionEmail]);
+    let cancelled = false;
+    report({ service: initialService ?? null, email: sessionEmail ?? null, degreeCount: null });
+    const id = preEvaluationId?.trim();
+    if (!id) return;
+    void getPreEvaluationPrefill(id)
+      .then((prefill) => {
+        if (cancelled) return;
+        report({
+          service: prefill.service,
+          email: sessionEmail ?? prefill.email,
+          degreeCount: prefill.degreeCount,
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [report, initialService, sessionEmail, preEvaluationId]);
   return null;
 }
 
@@ -50,7 +69,14 @@ export function UploadExperience({ seed }: { seed: ReactNode }) {
   const [reported, setReported] = useState<UploadSeedValue | null>(null);
   const report = useCallback((next: UploadSeedValue) => {
     setReported((current) => {
-      if (current && current.service === next.service && current.email === next.email) return current;
+      if (
+        current &&
+        current.service === next.service &&
+        current.email === next.email &&
+        current.degreeCount === next.degreeCount
+      ) {
+        return current;
+      }
       return next;
     });
   }, []);
@@ -59,7 +85,11 @@ export function UploadExperience({ seed }: { seed: ReactNode }) {
     <UploadSeedContext.Provider value={report}>
       {seed}
       {reported ? (
-        <UploadView initialService={reported.service} sessionEmail={reported.email} />
+        <UploadView
+          initialService={reported.service}
+          sessionEmail={reported.email}
+          initialDegreeCount={reported.degreeCount}
+        />
       ) : (
         <UploadPageFallback />
       )}
@@ -70,9 +100,11 @@ export function UploadExperience({ seed }: { seed: ReactNode }) {
 export function UploadView({
   initialService,
   sessionEmail,
+  initialDegreeCount = null,
 }: {
   initialService?: string | null;
   sessionEmail?: string | null;
+  initialDegreeCount?: number | null;
 }) {
   const [track, setTrack] = useState<FlowTrack>(() => {
     const service = uploadServiceFromQuery(initialService);
@@ -97,6 +129,7 @@ export function UploadView({
         <UploadCard
           initialService={initialService}
           sessionEmail={sessionEmail}
+          initialDegreeCount={initialDegreeCount}
           onTrackChange={setTrack}
         />
       </main>

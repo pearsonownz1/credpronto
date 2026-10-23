@@ -2,7 +2,6 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { RATE_LIMIT_MESSAGE } from "@/lib/pre-evaluation/client";
-import { officialEvaluationSignupHref } from "@/lib/pre-evaluation/handoff";
 import { preEvaluationProgress } from "@/lib/pre-evaluation/progress";
 import {
   PreEvaluationEmailGate,
@@ -21,7 +20,7 @@ describe("pre-evaluation screens", () => {
     );
     expect(html).toContain("Check a diploma or transcript");
     expect(html).toContain("This is not an official evaluation.");
-    expect(html).toContain("PDF, JPG, or PNG · 50MB or smaller");
+    expect(html).toContain("PDF, JPG, or PNG · 10MB or smaller");
     expect(html).toContain('accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png"');
     expect(html).toContain("Check my document");
     expect(html).not.toContain("Get my official evaluation");
@@ -69,11 +68,9 @@ describe("pre-evaluation screens", () => {
   });
 
   it("renders the watermarked free preview and the official-evaluation handoff", () => {
-    const href = officialEvaluationSignupHref({ id: "prev-1", email: "ada@example.com" });
     const html = renderToStaticMarkup(
       createElement(PreEvaluationResult, {
         id: "prev-1",
-        email: "ada@example.com",
         equivalent: "Bachelor's degree",
         confidence: "high",
         previewUrl: "https://cdn.example/preview.png",
@@ -100,7 +97,7 @@ describe("pre-evaluation screens", () => {
     expect(html).toContain('aria-valuenow="100"');
     expect(html).toContain(">Get my official evaluation<");
     expect(html).toContain("ready in about 5 minutes");
-    expect(html).toContain(`href="${href.replaceAll("&", "&amp;")}"`);
+    expect(html).not.toContain('href="/sign-up');
     expect(html).toContain("https://cdn.example/preview.png");
     expect(html).toContain('class="mt-8 rounded-[4px] border border-line bg-white');
   });
@@ -109,7 +106,6 @@ describe("pre-evaluation screens", () => {
     const html = renderToStaticMarkup(
       createElement(PreEvaluationResult, {
         id: "prev-2",
-        email: "ada@example.com",
         equivalent: "Master's degree",
         confidence: "medium",
         previewUrl: null,
@@ -120,5 +116,22 @@ describe("pre-evaluation screens", () => {
     expect(html).toContain('aria-valuenow="66"');
     expect(html).not.toContain("<iframe");
     expect(html).not.toContain("<img");
+  });
+
+  it("shows a signed PDF in a frame and keeps the watermark over it", () => {
+    const html = renderToStaticMarkup(
+      createElement(PreEvaluationResult, {
+        id: "prev-3",
+        equivalent: "Doctoral degree",
+        confidence: "low",
+        previewUrl: "https://cdn.example/object/sign/document.pdf?token=abc",
+      }),
+    );
+    expect(html).toContain("<iframe");
+    expect(html).toContain("document.pdf?token=abc");
+    expect(html).toContain('data-testid="pre-evaluation-watermark"');
+    expect(html).toContain("pointer-events:none");
+    expect(html).toContain('data-confidence="low"');
+    expect(html).toContain('aria-valuenow="33"');
   });
 });

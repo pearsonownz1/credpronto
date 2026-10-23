@@ -1,11 +1,16 @@
 "use client";
 
-import Link from "next/link";
-import { useState, type DragEvent, type FormEvent } from "react";
+import { useRef, useState, type DragEvent, type FormEvent } from "react";
 import { buttonClasses, fieldClass } from "@/components/flow/ui";
-import type { PreEvaluationConfidence } from "@/lib/pre-evaluation/client";
+import {
+  getPreEvaluation,
+  getPreEvaluationPrefill,
+  preEvaluationErrorStatus,
+  replacementPreviewUrl,
+  type PreEvaluationConfidence,
+} from "@/lib/pre-evaluation/client";
 import { PRE_EVALUATION_ACCEPT, preEvaluationFileError } from "@/lib/pre-evaluation/file";
-import { officialEvaluationSignupHref } from "@/lib/pre-evaluation/handoff";
+import { signupHrefFromPrefill } from "@/lib/pre-evaluation/handoff";
 import type { PreEvaluationProgress } from "@/lib/pre-evaluation/progress";
 import { previewWatermarkDataUrl } from "@/lib/pre-evaluation/watermark";
 
@@ -114,7 +119,7 @@ export function PreEvaluationUpload({
               />
             </label>
           </div>
-          <p className="mt-1 text-[12.5px] text-ink-muted">PDF, JPG, or PNG · 50MB or smaller</p>
+          <p className="mt-1 text-[12.5px] text-ink-muted">PDF, JPG, or PNG · 10MB or smaller</p>
         </div>
         {file ? (
           <p data-testid="file-name" className="mt-3 truncate text-[13.5px]">
@@ -263,14 +268,17 @@ function PreviewWatermark() {
   );
 }
 
-function PreviewFrame({ url }: { url: string }) {
-  const path = url.split("?")[0]?.toLowerCase() ?? "";
-  const image = /\.(png|jpe?g|gif|webp)$/.test(path);
-  if (image) {
+function previewFrameKind(url: string): "image" | "document" {
+  const path = url.split(/[?#]/)[0]?.toLowerCase() ?? "";
+  return /\.(png|jpe?g|gif|webp)$/.test(path) ? "image" : "document";
+}
+
+function PreviewFrame({ url, onError }: { url: string; onError: () => void }) {
+  if (previewFrameKind(url) === "image") {
     return (
-      // The preview host comes from the API. next/image cannot allow it ahead of time.
+      // The signed host comes from the API. next/image cannot allow it ahead of time.
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={url} alt="Preview of the likely U.S. equivalent" className="mt-4 w-full" />
+      <img src={url} alt="Preview of the likely U.S. equivalent" className="mt-4 w-full" referrerPolicy="no-referrer" onError={onError} />
     );
   }
   return (
@@ -279,24 +287,90 @@ function PreviewFrame({ url }: { url: string }) {
       src={url}
       className="mt-4 h-72 w-full border-0 bg-white"
       referrerPolicy="no-referrer"
+      onError={onError}
     />
+  );
+}
+
+/** Shows the current signed link. A failed load fetches a fresh one once. */
+function SignedPreview({ id, previewUrl }: { id: string; previewUrl: string | null }) {
+  const [link, setLink] = useState({ source: previewUrl, url: previewUrl, attempt: 0 });
+  const refreshing = useRef<string | null>(null);
+  if (link.source !== previewUrl) {
+    setLink({ source: previewUrl, url: previewUrl, attempt: 0 });
+  }
+  const active = link.source === previewUrl ? link : { source: previewUrl, url: previewUrl, attempt: 0 };
+
+  async function onLoadError() {
+    if (active.attempt >= 1) {
+      setLink({ source: previewUrl, url: null, attempt: active.attempt + 1 });
+      return;
+    }
+    if (refreshing.current === previewUrl) return;
+    refreshing.current = previewUrl;
+    try {
+      const record = await getPreEvaluation(id);
+      setLink({ source: previewUrl, url: replacementPreviewUrl(record, 1), attempt: 1 });
+    } catch {
+      setLink({ source: previewUrl, url: null, attempt: 1 });
+    } finally {
+      if (refreshing.current === previewUrl) refreshing.current = null;
+    }
+  }
+
+  if (!active.url) return null;
+  return <PreviewFrame key={`${active.attempt}:${active.url}`} url={active.url} onError={() => void onLoadError()} />;
+}
+
+function OfficialEvaluationButton({ id }: { id: string }) {
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function openAccount() {
+    setPending(true);
+    setMessage(null);
+    try {
+      const prefill = await getPreEvaluationPrefill(id);
+      window.location.assign(signupHrefFromPrefill(prefill));
+    } catch (cause) {
+      const error = preEvaluationErrorStatus(cause);
+      setMessage(error.message);
+      setPending(false);
+    }
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        data-testid="official-evaluation"
+        disabled={pending}
+        onClick={() => void openAccount()}
+        className={buttonClasses("primary", "h-12 w-full text-[15px] disabled:opacity-60")}
+      >
+        Get my official evaluation
+      </button>
+      <p className="mt-2 text-center text-[13px] text-ink-muted">ready in about 5 minutes</p>
+      {message ? (
+        <p role="alert" className="mt-2 text-center text-sm text-[var(--cp-warn)]">
+          {message}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
 export function PreEvaluationResult({
   id,
-  email,
   equivalent,
   confidence,
   previewUrl,
 }: {
   id: string;
-  email: string;
   equivalent: string;
   confidence: PreEvaluationConfidence;
   previewUrl: string | null;
 }) {
-  const href = officialEvaluationSignupHref({ id, email });
   const percent = CONFIDENCE_PERCENT[confidence];
   return (
     <div data-testid="pre-evaluation-result" className="mx-auto w-full max-w-[1040px] px-4 py-10">
@@ -316,7 +390,7 @@ export function PreEvaluationResult({
                   {equivalent}
                 </p>
               </div>
-              {previewUrl ? <PreviewFrame url={previewUrl} /> : null}
+              <SignedPreview id={id} previewUrl={previewUrl} />
             </div>
             <div className="absolute inset-x-0 bottom-0 bg-[#0b1220] px-4 py-3 text-center text-[12px] font-semibold tracking-[0.04em] text-white">
               PREVIEW ONLY · OFFICIAL EVALUATION REQUIRED
@@ -346,12 +420,7 @@ export function PreEvaluationResult({
               </div>
               <p className="mt-2 text-[12.5px] text-ink-muted">Based on EDGE equivalency data</p>
             </div>
-            <div>
-              <Link href={href} data-testid="official-evaluation" className={buttonClasses("primary", "h-12 w-full text-[15px]")}>
-                Get my official evaluation
-              </Link>
-              <p className="mt-2 text-center text-[13px] text-ink-muted">ready in about 5 minutes</p>
-            </div>
+            <OfficialEvaluationButton id={id} />
           </aside>
         </div>
       </section>

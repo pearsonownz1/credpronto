@@ -141,11 +141,13 @@ export function UploadCard({
   intro,
   initialService,
   sessionEmail,
+  initialDegreeCount = null,
   onTrackChange,
 }: {
   intro?: { title: string; lede: string };
   initialService?: string | null;
   sessionEmail?: string | null;
+  initialDegreeCount?: number | null;
   onTrackChange?: (track: FlowTrack) => void;
 }) {
   const { mock, pending, error, setError, submit } = useQuoteUpload();
@@ -156,6 +158,7 @@ export function UploadCard({
   const [checks, setChecks] = useState<ServiceChecks>(start.checks);
   const [degrees, setDegrees] = useState(() => String(clampDegreeCount(Number(start.degrees))));
   const seenService = useRef(start.serviceKey);
+  const degreesTouched = useRef(false);
   const restoreFiles = useRef(start.files.length === 0 && draftHasStoredFiles());
 
   useEffect(() => {
@@ -186,6 +189,11 @@ export function UploadCard({
     // Adopt the DOM once, before the first toggle can render empty React state over it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (degreesTouched.current || initialDegreeCount == null) return;
+    setDegrees(String(clampDegreeCount(initialDegreeCount)));
+  }, [initialDegreeCount]);
 
   useEffect(() => {
     const serviceKey = serviceKeyFrom(initialService);
@@ -324,7 +332,13 @@ export function UploadCard({
                     </span>
                   </label>
                   {showDegrees ? (
-                    <DegreeStepper count={quote.degreeCount} onChange={(next) => setDegrees(String(next))} />
+                    <DegreeStepper
+                      count={quote.degreeCount}
+                      onChange={(next) => {
+                        degreesTouched.current = true;
+                        setDegrees(String(next));
+                      }}
+                    />
                   ) : null}
                   {price != null ? (
                     <span data-testid={`choice-price-${item.id}`} className="ml-auto shrink-0 text-[14px] font-semibold tabular-nums">

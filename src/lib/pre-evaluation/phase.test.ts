@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { RATE_LIMIT_MESSAGE } from "./client";
 import type { PreEvaluationRecord } from "./client";
-import { FAILED_PREVIEW_MESSAGE, INITIAL_PHASE, reducePreEvaluation } from "./phase";
+import { FAILED_PREVIEW_MESSAGE, INITIAL_PHASE, phaseForPreEvaluationLink, reducePreEvaluation } from "./phase";
 
 const empty: PreEvaluationRecord = {
   status: "email_required",
@@ -10,17 +10,16 @@ const empty: PreEvaluationRecord = {
   previewUrl: null,
 };
 
+const token = "a".repeat(43);
+
 describe("pre-evaluation flow", () => {
-  it("goes upload, email gate, then result only after the email is accepted", () => {
+  it("stays on the email gate while the status is email_required, then shows a ready preview", () => {
     let phase = reducePreEvaluation(INITIAL_PHASE, { type: "uploaded", id: "prev-1" });
     expect(phase).toMatchObject({ step: "checking", id: "prev-1", email: null });
 
-    phase = reducePreEvaluation(phase, { type: "status", record: { ...empty, equivalent: "Bachelor's degree", confidence: "high" } });
-    expect(phase.step).toBe("email");
-
     phase = reducePreEvaluation(phase, {
       type: "status",
-      record: { status: "done", equivalent: "Bachelor's degree", confidence: "high", previewUrl: null },
+      record: { ...empty, equivalent: "Bachelor's degree", confidence: "high", previewUrl: "https://cdn.example/secret.png" },
     });
     expect(phase.step).toBe("email");
 
@@ -33,10 +32,10 @@ describe("pre-evaluation flow", () => {
     phase = reducePreEvaluation(phase, {
       type: "status",
       record: {
-        status: "done",
+        status: "ready",
         equivalent: "Bachelor's degree",
         confidence: "high",
-        previewUrl: "https://cdn.example/preview.png",
+        previewUrl: "https://cdn.example/preview.png?token=one",
       },
     });
     expect(phase).toMatchObject({
@@ -45,7 +44,32 @@ describe("pre-evaluation flow", () => {
       email: "ada@example.com",
       equivalent: "Bachelor's degree",
       confidence: "high",
-      previewUrl: "https://cdn.example/preview.png",
+      previewUrl: "https://cdn.example/preview.png?token=one",
+    });
+  });
+
+  it("opens a result link on the server status, including a ready preview with no local email", () => {
+    expect(phaseForPreEvaluationLink(" prev-1 ")).toMatchObject({
+      step: "error",
+      message: "Pre-evaluation not found",
+      retryable: false,
+    });
+    let phase = phaseForPreEvaluationLink(` ${token} `);
+    expect(phase).toMatchObject({ step: "checking", id: token, email: null });
+    phase = reducePreEvaluation(phase, {
+      type: "status",
+      record: {
+        status: "ready",
+        equivalent: "Master's degree",
+        confidence: "medium",
+        previewUrl: "https://cdn.example/preview.pdf?token=one",
+      },
+    });
+    expect(phase).toMatchObject({
+      step: "result",
+      email: null,
+      equivalent: "Master's degree",
+      previewUrl: "https://cdn.example/preview.pdf?token=one",
     });
   });
 
