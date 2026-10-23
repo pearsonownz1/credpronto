@@ -181,3 +181,128 @@ describe("transcript segment source indexes", () => {
     ]);
   });
 });
+
+/** Diploma page 1 on order 5274b9e5. Legacy segments are plain strings, with no source_index. */
+const DIPLOMA_SOURCE = `Ministère de l'Education Nationale
+Office du Baccalauréat du Cameroun
+
+République du Cameroun
+Paix Travail Patrie
+
+Baccalauréat de l'Enseignement Secondaire
+N° 01232
+
+Vu les textes en vigueur portant organisation des Baccalauréats de l'Enseignement Secondaire
+Vu le Procès-verbal des délibérations du jury, session de Juin 2001, Jury N° 180
+Le diplôme du Baccalauréat de l'Enseignement Secondaire Technique et Professionnel
+série/spécialité : BAG2 TECHNIQUES QUANTITATIVES DE GESTION
+est conféré à M. KOUAMOU NANA MYRTHE ARISTIDE     Matricule 002213
+né(e) le 09/09/1979 à MBO BANDJOUN     Mention PASSABLE
+
+Pour en jouir avec les droits et prérogatives qui y sont attachés.
+Fait à Yaoundé le 26 Mars 2003
+
+Signature du titulaire
+Pour ampliation conforme
+Le Directeur de l'Office du Baccalauréat du Cameroun
+Le Ministre de l'Education Nationale
+Joseph OWONA
+Le Ministre de l'Enseignement Supérieur
+Chancelier des ordres académiques
+Maurice TCHUENTE`;
+
+const DIPLOMA_SEGMENTS = [
+  "Ministry of National Education",
+  "Cameroon Baccalaureate Office",
+  "Republic of Cameroon",
+  "Peace, Work, Fatherland",
+  "Secondary Education Baccalaureate",
+  "No.: 01232",
+  "Having regard to the regulations in force governing the organization of Secondary Education Baccalaureate examinations;",
+  "Having regard to the record of the jury's deliberations for the June 2001 session, Jury No. 180;",
+  "The Technical and Vocational Secondary Education Baccalaureate diploma",
+  "Series/specialization: BAG2 QUANTITATIVE MANAGEMENT TECHNIQUES",
+  "Is awarded to: Mr. KOUAMOU NANA MYRTHE ARISTIDE",
+  "Registration number: 002213",
+  "Born on: 09/09/1979",
+  "At: MBO BANDJOUN",
+  "Grade: PASS",
+  "To enjoy the rights and privileges attached thereto.",
+  "Issued in Yaoundé on 03/26/2003.",
+  "Holder's signature",
+  "For a certified true copy",
+  "Director of the Cameroon Baccalaureate Office",
+  "Minister of National Education Joseph OWONA",
+  "Minister of Higher Education Chancellor of Academic Orders Maurice TCHUENTE",
+];
+
+describe("diploma page legacy alignment", () => {
+  it("keeps the split conferral line together and does not shift the rows after it", () => {
+    const aligned = alignTranslation(DIPLOMA_SOURCE, DIPLOMA_SEGMENTS);
+    const indexes = aligned.map((segment) => segment.source_index);
+    const lines = DIPLOMA_SOURCE.split("\n");
+    expect(indexes).toHaveLength(DIPLOMA_SEGMENTS.length);
+    for (const index of indexes) {
+      expect(lines[index]?.trim().length).toBeGreaterThan(0);
+    }
+
+    const alignment = translationLines(
+      DIPLOMA_SOURCE,
+      aligned.map((segment) => segment.text),
+      indexes,
+    );
+    expect(alignment.extra).toBe(0);
+
+    const conferral = lines.findIndex((line) => line.includes("Matricule 002213"));
+    const conferralRows = alignment.rows.filter((row) => row.segmentIndex != null && indexes[row.segmentIndex] === conferral);
+    expect(conferralRows.map((row) => row.translation)).toEqual([
+      "Is awarded to: Mr. KOUAMOU NANA MYRTHE ARISTIDE",
+      "Registration number: 002213",
+    ]);
+
+    const birth = lines.findIndex((line) => line.includes("09/09/1979"));
+    const birthRows = alignment.rows.filter((row) => row.segmentIndex != null && indexes[row.segmentIndex] === birth);
+    expect(birthRows.map((row) => row.translation)).toEqual(["Born on: 09/09/1979", "At: MBO BANDJOUN", "Grade: PASS"]);
+
+    expect(alignment.rows.find((row) => row.source.includes("Signature du titulaire"))?.translation).toBe("Holder's signature");
+    expect(alignment.missing).toBe(0);
+
+    const positional = translationLines(DIPLOMA_SOURCE, DIPLOMA_SEGMENTS);
+    expect(positional.rows.find((row) => row.source === "Le Ministre de l'Education Nationale")?.translation).toBe(
+      "Holder's signature",
+    );
+    expect(positional.rows.find((row) => row.source.includes("09/09/1979"))?.translation).toBe("Registration number: 002213");
+  });
+
+  it("anchors a title-and-name run on the first line and covers the name", () => {
+    const aligned = alignTranslation(DIPLOMA_SOURCE, DIPLOMA_SEGMENTS);
+    const lines = DIPLOMA_SOURCE.split("\n");
+    const minister = lines.findIndex((line) => line === "Le Ministre de l'Education Nationale");
+    const name = lines.findIndex((line) => line === "Joseph OWONA");
+    const higher = lines.findIndex((line) => line === "Le Ministre de l'Enseignement Supérieur");
+    const chancellor = lines.findIndex((line) => line === "Chancelier des ordres académiques");
+    const maurice = lines.findIndex((line) => line === "Maurice TCHUENTE");
+    expect([minister, name, higher, chancellor, maurice]).toEqual([22, 23, 24, 25, 26]);
+
+    const indexes = aligned.map((segment) => segment.source_index);
+    expect(aligned.find((segment) => segment.text === "Minister of National Education Joseph OWONA")?.source_index).toBe(minister);
+    expect(aligned.find((segment) => segment.text.includes("Maurice TCHUENTE"))?.source_index).toBe(higher);
+
+    const alignment = translationLines(
+      DIPLOMA_SOURCE,
+      aligned.map((segment) => segment.text),
+      indexes,
+    );
+    expect(alignment.rows.find((row) => row.source === "Le Ministre de l'Education Nationale")?.translation).toBe(
+      "Minister of National Education Joseph OWONA",
+    );
+    expect(alignment.rows.find((row) => row.source === "Joseph OWONA")?.translation).toBe("");
+    expect(alignment.rows.find((row) => row.source === "Le Ministre de l'Enseignement Supérieur")?.translation).toBe(
+      "Minister of Higher Education Chancellor of Academic Orders Maurice TCHUENTE",
+    );
+    expect(alignment.rows.find((row) => row.source === "Chancelier des ordres académiques")?.translation).toBe("");
+    expect(alignment.rows.find((row) => row.source === "Maurice TCHUENTE")?.translation).toBe("");
+    expect(alignment.extra).toBe(0);
+    expect(alignment.missing).toBe(0);
+  });
+});

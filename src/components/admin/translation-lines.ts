@@ -1,3 +1,4 @@
+import { coveredSourceIndexes } from "@/lib/orders/segment-source";
 import { sourceTextForDisplay } from "@/lib/orders/source-text";
 
 export type TranslationLine = {
@@ -9,7 +10,7 @@ export type TranslationLine = {
 
 export type TranslationAlignment = {
   rows: TranslationLine[];
-  /** Non-blank source lines that have no stored segment. */
+  /** Non-blank source lines with no segment and not covered by the previous segment's run. */
   missing: number;
   /** Stored segments that have no non-blank source line. */
   extra: number;
@@ -24,7 +25,8 @@ type SegmentSlot = { text: string; segmentIndex: number };
  * segment k goes with the k-th non-blank source line.
  * A source_index that does not point at a non-blank line stays unmatched.
  * Blank source lines stay blank on both sides. A non-blank line with no
- * segment is missing and carries no segment index, so it stays read-only.
+ * segment stays read-only. It counts as missing unless it continues the
+ * previous segment's run (a title line, then the name).
  */
 export function translationLines(
   sourceText: string | null,
@@ -86,6 +88,7 @@ function translationLinesByIndex(
   sourceIndexes: readonly number[],
 ): TranslationAlignment {
   const nonBlank = lines.flatMap((line, index) => (line.trim().length === 0 ? [] : [index]));
+  const covered = new Set(coveredSourceIndexes(lines.join("\n"), segments, sourceIndexes));
   const groups = new Map<number, SegmentSlot[]>();
   const unmatched: SegmentSlot[] = [];
 
@@ -123,7 +126,7 @@ function translationLinesByIndex(
     }
     const matched = groups.get(index) ?? [];
     if (matched.length === 0) {
-      missing += 1;
+      if (!covered.has(index)) missing += 1;
       rows.push({ source: line, translation: "", segmentIndex: null });
       return;
     }
