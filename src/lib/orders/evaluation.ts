@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { generateObject } from "./ai";
-import { LOW_LANGUAGE_CONFIDENCE, FINALS_BUCKET, PREVIEWS_BUCKET } from "./constants";
+import { LOW_LANGUAGE_CONFIDENCE, FINALS_BUCKET, PREVIEWS_BUCKET, SPARSE_PAGE_WORDS } from "./constants";
 import {
   orderCustomerEmail,
   insertEvent,
@@ -57,7 +57,9 @@ import {
 } from "./grades";
 import { IMAGE_QUALITY_REASON } from "./image-quality";
 import { evaluationIssuedLabel, evaluationReportId, renderEvaluationPdfs } from "./pdf/evaluation";
+import { stampFinishedPdf } from "./verification";
 import { uploadObject } from "./storage";
+import { countWords } from "./words";
 import { watermarkedTranslationPreview } from "./translation";
 import type { EvaluationResult, OrderRecord, StoredPageOrder } from "./types";
 
@@ -247,7 +249,8 @@ export async function publishDiplomaEquivalency(
     detectedPages: order.billablePages,
   });
   const cleanPath = `${order.id}/evaluation-v${version}.pdf`;
-  await uploadObject(db, FINALS_BUCKET, cleanPath, files.clean, "application/pdf");
+  const clean = await stampFinishedPdf(db, files.clean, { orderId: order.id, documentType: "evaluation" });
+  await uploadObject(db, FINALS_BUCKET, cleanPath, clean, "application/pdf");
   await uploadObject(db, PREVIEWS_BUCKET, reportPath, files.preview, "application/pdf");
   await updateOrder(db, order.id, {
     review_reason: null,
@@ -280,7 +283,8 @@ export async function publishCourseEquivalency(db: Db, order: OrderRecord, equiv
     detectedPages: order.billablePages,
   });
   const cleanPath = `${order.id}/evaluation-v${version}.pdf`;
-  await uploadObject(db, FINALS_BUCKET, cleanPath, files.clean, "application/pdf");
+  const clean = await stampFinishedPdf(db, files.clean, { orderId: order.id, documentType: "evaluation" });
+  await uploadObject(db, FINALS_BUCKET, cleanPath, clean, "application/pdf");
   await uploadObject(db, PREVIEWS_BUCKET, reportPath, files.preview, "application/pdf");
   await updateOrder(db, order.id, {
     review_reason: null,
@@ -346,6 +350,22 @@ export function assembleCourse(
   };
 }
 
+const DIPLOMA_EXTRACT_INSTRUCTIONS = `Extract each degree from this credential document.
+Return one credential per degree that is printed. Copy names, institutions, countries, fields, and dates as printed.
+credential is the degree title as printed (for example Licence, Licenciatura, Licenciada, Licenciado, Maîtrise, Bachillerato).
+field is the subject. For "Licenciada en Administración de Empresas", field is "Administración de Empresas".
+country is the country of the institution. If the country is not printed, infer it from the city or state (Guadalajara, Jalisco is Mexico). Use an empty string only when no place is printed.
+dates is the examination or conferral date as printed.
+Return the student's granted title even when a field is missing. Do not add degrees for the rector or other signatories. Do not invent a degree.`;
+
+const COURSE_EXTRACT_INSTRUCTIONS = `Extract this academic transcript into a course-by-course table.
+Group courses by the academic year printed on the page. Keep each year label as printed.
+originalName is the course title as printed. englishName is the English name.
+localCredits and localGrade are the values as printed. localGrade is a string.
+scale is "10" when grades are out of 10, "20" when grades are out of 20, and "letter" when grades are already A–F.
+result is the overall decision printed on the credential, such as Admis, Passed, Réussi, Ajourné, Refusé, or Failed. Use an empty string when no overall result is printed.
+Do not convert grades. Do not invent courses.`;
+
 async function extractDiploma(text: string): Promise<DiplomaExtract> {
   return generateObject(diplomaSchema, [
     {
@@ -353,17 +373,23 @@ async function extractDiploma(text: string): Promise<DiplomaExtract> {
       content: [
         {
           type: "text",
-          text: `Extract each degree from this credential document.
-Return one credential per degree that is printed. Copy names, institutions, countries, fields, and dates as printed.
-credential is the degree title as printed (for example Licence, Licenciatura, Licenciada, Licenciado, Maîtrise, Bachillerato).
-field is the subject. For "Licenciada en Administración de Empresas", field is "Administración de Empresas".
-country is the country of the institution. If the country is not printed, infer it from the city or state (Guadalajara, Jalisco is Mexico). Use an empty string only when no place is printed.
-dates is the examination or conferral date as printed.
-Return the student's granted title even when a field is missing. Do not add degrees for the rector or other signatories. Do not invent a degree.
+          text: `${DIPLOMA_EXTRACT_INSTRUCTIONS}
 
 Document text:
 ${text.slice(0, 12000)}`,
         },
+      ],
+    },
+  ]);
+}
+
+async function extractDiplomaFile(file: { bytes: Uint8Array; mime: string }): Promise<DiplomaExtract> {
+  return generateObject(diplomaSchema, [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: `${DIPLOMA_EXTRACT_INSTRUCTIONS}\n\nThe credential file is attached.` },
+        { type: "file", mediaType: file.mime, data: file.bytes },
       ],
     },
   ]);
@@ -376,13 +402,7 @@ async function extractCourses(text: string): Promise<CourseExtract> {
       content: [
         {
           type: "text",
-          text: `Extract this academic transcript into a course-by-course table.
-Group courses by the academic year printed on the page. Keep each year label as printed.
-originalName is the course title as printed. englishName is the English name.
-localCredits and localGrade are the values as printed. localGrade is a string.
-scale is "10" when grades are out of 10, "20" when grades are out of 20, and "letter" when grades are already A–F.
-result is the overall decision printed on the credential, such as Admis, Passed, Réussi, Ajourné, Refusé, or Failed. Use an empty string when no overall result is printed.
-Do not convert grades. Do not invent courses.
+          text: `${COURSE_EXTRACT_INSTRUCTIONS}
 
 Document text:
 ${text.slice(0, 12000)}`,
@@ -390,6 +410,51 @@ ${text.slice(0, 12000)}`,
       ],
     },
   ]);
+}
+
+async function extractCoursesFile(file: { bytes: Uint8Array; mime: string }): Promise<CourseExtract> {
+  return generateObject(courseSchema, [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: `${COURSE_EXTRACT_INSTRUCTIONS}\n\nThe transcript file is attached.` },
+        { type: "file", mediaType: file.mime, data: file.bytes },
+      ],
+    },
+  ]);
+}
+
+export type PrintedCredential = {
+  kind: "diploma" | "transcript";
+  country: string;
+  credential: string;
+};
+
+/**
+ * Country and credential title for an equivalency match.
+ * Uses the same diploma and transcript readers as an official evaluation.
+ * A dense text layer is read as text. A scan or photo is read from the file.
+ */
+export async function extractPrintedCredentials(input: {
+  text: string;
+  file?: { bytes: Uint8Array; mime: string };
+}): Promise<PrintedCredential[]> {
+  const text = input.text.trim();
+  const useText = countWords(text) >= SPARSE_PAGE_WORDS || !input.file;
+  const file = input.file;
+  const diploma = useText || !file ? await extractDiploma(text) : await extractDiplomaFile(file);
+  const degrees = diploma.credentials.flatMap((item) => {
+    const country = item.country.trim();
+    const credential = item.credential.trim();
+    if (!country || !credential) return [];
+    return [{ kind: "diploma" as const, country, credential }];
+  });
+  if (degrees.length > 0) return degrees.slice(0, 5);
+  const courses = useText || !file ? await extractCourses(text) : await extractCoursesFile(file);
+  const country = courses.country.trim();
+  const credential = courses.credential.trim();
+  if (!country || !credential) return [];
+  return [{ kind: "transcript", country, credential }];
 }
 
 type EvaluationContext = {

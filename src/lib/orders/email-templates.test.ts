@@ -10,6 +10,7 @@ import {
   FINAL_DOWNLOAD_SUBJECT,
   renderAuthLinkEmail,
   renderFinalDownloadEmail,
+  renderPreEvaluationEmail,
   renderOrderReceivedEmail,
   renderPaymentReceiptEmail,
   renderPreviewReadyEmail,
@@ -235,5 +236,34 @@ describe("auth link email", () => {
     expect(rendered.html).toContain("#1F5EFF");
     expect(rendered.html).toContain("border-radius:4px");
     expect(rendered.subject).toBe("Confirm your CredPronto account");
+  });
+});
+
+describe("pre-evaluation result email", () => {
+  it("links back to the suggestion and on to the paid evaluation", () => {
+    const preview = new Uint8Array(Buffer.from("%PDF-watermarked-preview"));
+    const original = new Uint8Array(Buffer.from("%PDF-original-diploma"));
+    const rendered = renderPreEvaluationEmail({
+      equivalent: "Bachelor's degree",
+      confidenceLabel: "High",
+      rationale: "The printed Licenciatura from Mexico matches a known credential. This is a free suggestion, not an official evaluation.",
+      resultUrl: "https://credpronto.test/pre-evaluation/token",
+      officialUrl: "https://credpronto.test/sign-up?email=ada%40example.com&next=%2Ftranslate",
+      attachment: { filename: "preview.pdf", content: preview, contentType: "application/pdf" },
+    });
+    expect(rendered.subject).toBe("Your CredPronto equivalency suggestion");
+    expect(rendered.text).toContain("Bachelor's degree");
+    expect(rendered.text).toContain("Confidence: High");
+    expect(rendered.text).toContain("watermarked preview");
+    expect(rendered.text).toContain("https://credpronto.test/pre-evaluation/token");
+    expect(rendered.text).toContain("https://credpronto.test/sign-up?email=ada%40example.com&next=%2Ftranslate");
+    expect(rendered.html).toContain("Order an official evaluation");
+    expect(rendered.attachment.filename).toBe("preview.pdf");
+    expect(rendered.attachment.contentType).toBe("application/pdf");
+    expect(Buffer.compare(Buffer.from(rendered.attachment.content), Buffer.from(preview))).toBe(0);
+    expect(Buffer.compare(Buffer.from(rendered.attachment.content), Buffer.from(original))).not.toBe(0);
+    expect(rendered.html).not.toContain("original-diploma");
+    expect(rendered.text).not.toMatch(/\bEDGE\b/);
+    expect(rendered.html).not.toMatch(/\bEDGE\b/);
   });
 });

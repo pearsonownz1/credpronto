@@ -10,6 +10,7 @@ import type { QaSignal } from "./release-decision";
 import { orderHasEvaluation } from "./service-selection";
 import { downloadObject, uploadObject } from "./storage";
 import type { DocumentRecord, OrderRecord } from "./types";
+import { stampFinishedPdf } from "./verification";
 
 const PDF_TYPE = "application/pdf";
 
@@ -95,12 +96,16 @@ export async function storeCertifiedTranslation(
     documents,
   });
   const footerPages = original ? await pdfPageCount(input.cleanTranslation) : 0;
-  const bytes = original
+  const prepared = original
     ? await stampPacketPageNumbers(await appendPdf(input.cleanTranslation, original), {
         orderId: input.orderId,
         footerPages,
       })
     : input.cleanTranslation;
+  const bytes = await stampFinishedPdf(db, prepared, {
+    orderId: input.orderId,
+    documentType: "translation",
+  });
   const path = certifiedTranslationObjectPath(input.orderId, input.version);
   await uploadObject(db, FINALS_BUCKET, path, bytes, PDF_TYPE);
   return path;

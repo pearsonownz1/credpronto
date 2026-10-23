@@ -21,7 +21,7 @@ const nextConfig: NextConfig = {
   },
   cacheComponents: true,
   partialPrefetching: true,
-  serverExternalPackages: ["sharp", "unpdf", "heic-convert", "@embedpdf/pdfium"],
+  serverExternalPackages: ["sharp", "unpdf", "heic-convert", "@embedpdf/pdfium", "qrcode"],
   outputFileTracingExcludes: {
     // Preview only signs stored PDFs. Keep PDFium and sharp out of this function.
     "/api/orders/[token]/preview": [

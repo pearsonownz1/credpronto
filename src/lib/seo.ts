@@ -30,10 +30,13 @@ export function privateCrawlHeaders(): {
   source: string;
   headers: { key: string; value: string }[];
 }[] {
-  const header = { key: "X-Robots-Tag", value: ROBOTS_NOINDEX };
+  const robots = { key: "X-Robots-Tag", value: ROBOTS_NOINDEX };
+  const noStore = { key: "Cache-Control", value: "private, no-store" };
   return [
-    { source: "/preview/:path*", headers: [header] },
-    { source: "/order/:path*", headers: [header] },
-    { source: "/pre-evaluation/:id", headers: [header] },
+    { source: "/preview/:path*", headers: [robots] },
+    { source: "/order/:path*", headers: [robots] },
+    { source: "/pre-evaluation/:id", headers: [robots] },
+    { source: "/verify", headers: [robots, noStore] },
+    { source: "/verify/:path*", headers: [robots, noStore] },
   ];
 }
