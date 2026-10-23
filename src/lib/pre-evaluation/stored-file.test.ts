@@ -3,7 +3,7 @@ import { carriedFileDetail, formatFileSize, orderPreEvaluationId } from "./store
 
 const file = {
   name: "licenciatura.pdf",
-  mimeType: "application/pdf",
+  mimeType: "application/pdf" as const,
   size: 2048,
   pageCount: 3,
   kind: "diploma" as const,

@@ -30,7 +30,7 @@ import {
 } from "@/lib/evaluations/catalog";
 import { UNIT_PRICE_CENTS } from "@/lib/orders/constants";
 import type { EvaluationService } from "@/lib/orders/types";
-import type { PreEvaluationStoredFile } from "@/lib/pre-evaluation/client";
+import type { PreEvaluationFile } from "@/lib/pre-evaluation/client";
 import { carriedFileDetail, orderPreEvaluationId } from "@/lib/pre-evaluation/stored-file";
 import { buttonClasses } from "./ui";
 import { useQuoteUpload } from "./use-quote-upload";
@@ -157,7 +157,7 @@ export function UploadCard({
   sessionEmail?: string | null;
   initialDegreeCount?: number | null;
   preEvaluationId?: string | null;
-  carriedFile?: PreEvaluationStoredFile | null;
+  carriedFile?: PreEvaluationFile | null;
   onTrackChange?: (track: FlowTrack) => void;
 }) {
   const { mock, pending, error, setError, submit } = useQuoteUpload();

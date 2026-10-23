@@ -1,4 +1,4 @@
-import type { PreEvaluationStoredFile } from "./client";
+import type { PreEvaluationFile } from "./client";
 
 export function formatFileSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return "";
@@ -14,7 +14,7 @@ export function formatFileSize(bytes: number): string {
 }
 
 /** Pages and size for the carried file row. Pages are omitted when the count is missing. */
-export function carriedFileDetail(file: Pick<PreEvaluationStoredFile, "pageCount" | "size">): string {
+export function carriedFileDetail(file: Pick<PreEvaluationFile, "pageCount" | "size">): string {
   const size = formatFileSize(file.size);
   if (!Number.isInteger(file.pageCount) || file.pageCount < 1) return size;
   const pages = file.pageCount === 1 ? "1 page" : `${file.pageCount} pages`;
@@ -24,7 +24,7 @@ export function carriedFileDetail(file: Pick<PreEvaluationStoredFile, "pageCount
 /** Send the id only while the prefill file is still attached. Removing it falls back to a normal upload. */
 export function orderPreEvaluationId(input: {
   id: string | null | undefined;
-  file: PreEvaluationStoredFile | null;
+  file: PreEvaluationFile | null;
   removed: boolean;
 }): string | null {
   if (input.removed || !input.file) return null;

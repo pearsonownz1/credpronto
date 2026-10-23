@@ -15,9 +15,9 @@
  * GET /api/pre-evaluation/{id}/prefill
  *   Email and order fields for signup. 409 until the lead email exists.
  * GET /api/pre-evaluation/{id}/file
+ *   Signed-in owner only. 404 otherwise.
  *   { preEvaluationFile: { name, mimeType, size, pageCount, kind } }
- *   404 when the caller is signed out, the email does not match, or the
- *   document is not classified yet. That 404 means there is no carried file.
+ *   kind is diploma or transcript. The upload form prices from kind.
  */
 
 export const PRE_EVALUATION_POLL_MS = 2_000;
@@ -50,9 +50,9 @@ export type PreEvaluationService = "diploma" | "course_by_course";
 
 export type PreEvaluationFileKind = "diploma" | "transcript";
 
-export type PreEvaluationStoredFile = {
+export type PreEvaluationFile = {
   name: string;
-  mimeType: string;
+  mimeType: "application/pdf" | "image/jpeg" | "image/png";
   size: number;
   pageCount: number;
   kind: PreEvaluationFileKind;
@@ -77,7 +77,6 @@ export type PreEvaluationPrefill = {
 const STATUSES = new Set<PreEvaluationStatus>(["processing", "email_required", "ready", "failed"]);
 const CONFIDENCE = new Set<PreEvaluationConfidence>(["low", "medium", "high"]);
 const SERVICES = new Set<PreEvaluationService>(["diploma", "course_by_course"]);
-const FILE_KINDS = new Set<PreEvaluationFileKind>(["diploma", "transcript"]);
 const PREFILL_STATUSES = new Set<PreEvaluationPrefill["status"]>(["processing", "ready", "failed"]);
 
 export class PreEvaluationClientError extends Error {
@@ -151,7 +150,8 @@ export function parsePreEvaluation(payload: unknown): PreEvaluationRecord {
     throw new PreEvaluationClientError("The preview response was not valid.", 502);
   }
   const parsed = status as PreEvaluationStatus;
-  const kind = parseFileKind((payload as { kind?: unknown }).kind);
+  const rawKind = (payload as { kind?: unknown }).kind;
+  const kind = rawKind === "diploma" || rawKind === "transcript" ? rawKind : null;
   if (parsed !== "ready") {
     return { status: parsed, equivalent: null, confidence: null, previewUrl: null, kind };
   }
@@ -191,36 +191,6 @@ function parseEmailResult(payload: unknown): PreEvaluationEmailResult {
     throw new PreEvaluationClientError("We couldn't save that email. Please try again.", 502);
   }
   return { ok: true };
-}
-
-function parseFileKind(value: unknown): PreEvaluationFileKind | null {
-  return typeof value === "string" && FILE_KINDS.has(value as PreEvaluationFileKind)
-    ? (value as PreEvaluationFileKind)
-    : null;
-}
-
-function parseStoredFile(value: unknown): PreEvaluationStoredFile | null {
-  if (!value || typeof value !== "object") return null;
-  const row = value as Record<string, unknown>;
-  const name = nullableText(row.name);
-  const mimeType = nullableText(row.mimeType);
-  const kind = parseFileKind(row.kind);
-  const size = row.size;
-  const pageCount = row.pageCount;
-  if (
-    !name ||
-    !mimeType ||
-    !kind ||
-    typeof size !== "number" ||
-    !Number.isFinite(size) ||
-    size < 0 ||
-    typeof pageCount !== "number" ||
-    !Number.isInteger(pageCount) ||
-    pageCount < 0
-  ) {
-    return null;
-  }
-  return { name, mimeType, size, pageCount, kind };
 }
 
 export function parsePreEvaluationPrefill(payload: unknown): PreEvaluationPrefill {
@@ -273,15 +243,6 @@ export function parsePreEvaluationPrefill(payload: unknown): PreEvaluationPrefil
   };
 }
 
-export function parsePreEvaluationFile(payload: unknown): PreEvaluationStoredFile {
-  const file =
-    payload && typeof payload === "object"
-      ? parseStoredFile((payload as { preEvaluationFile?: unknown }).preEvaluationFile)
-      : null;
-  if (!file) throw new PreEvaluationClientError("The preview response was not valid.", 502);
-  return file;
-}
-
 /** POST /api/pre-evaluation with multipart field `file`. */
 export async function createPreEvaluation(file: File, fetchImpl: FetchLike = fetch): Promise<PreEvaluationCreated> {
   const body = new FormData();
@@ -320,6 +281,50 @@ export async function submitPreEvaluationEmail(
   return parseEmailResult(payload);
 }
 
+const FILE_MIMES = new Set<PreEvaluationFile["mimeType"]>(["application/pdf", "image/jpeg", "image/png"]);
+const FILE_KINDS = new Set<PreEvaluationFileKind>(["diploma", "transcript"]);
+
+/** Paid-funnel file. The object has exactly these keys. */
+export function parsePreEvaluationFile(payload: unknown): { preEvaluationFile: PreEvaluationFile } {
+  if (!payload || typeof payload !== "object") {
+    throw new PreEvaluationClientError("The preview response was not valid.", 502);
+  }
+  const file = (payload as { preEvaluationFile?: unknown }).preEvaluationFile;
+  if (!file || typeof file !== "object") {
+    throw new PreEvaluationClientError("The preview response was not valid.", 502);
+  }
+  const row = file as Record<string, unknown>;
+  const name = nullableText(row.name);
+  const mimeType = row.mimeType;
+  const kind = row.kind;
+  const size = row.size;
+  const pageCount = row.pageCount;
+  if (
+    !name ||
+    typeof mimeType !== "string" ||
+    !FILE_MIMES.has(mimeType as PreEvaluationFile["mimeType"]) ||
+    typeof kind !== "string" ||
+    !FILE_KINDS.has(kind as PreEvaluationFileKind) ||
+    typeof size !== "number" ||
+    !Number.isInteger(size) ||
+    size < 1 ||
+    typeof pageCount !== "number" ||
+    !Number.isInteger(pageCount) ||
+    pageCount < 1
+  ) {
+    throw new PreEvaluationClientError("The preview response was not valid.", 502);
+  }
+  return {
+    preEvaluationFile: {
+      name,
+      mimeType: mimeType as PreEvaluationFile["mimeType"],
+      size,
+      pageCount,
+      kind: kind as PreEvaluationFileKind,
+    },
+  };
+}
+
 /** GET /api/pre-evaluation/{id}/prefill. Signup and the order form use these fields. */
 export async function getPreEvaluationPrefill(id: string, fetchImpl: FetchLike = fetch): Promise<PreEvaluationPrefill> {
   const safeId = previewId(id);
@@ -331,24 +336,16 @@ export async function getPreEvaluationPrefill(id: string, fetchImpl: FetchLike =
   return parsePreEvaluationPrefill(payload);
 }
 
-/**
- * GET /api/pre-evaluation/{id}/file. A 404 means the stored file cannot be carried:
- * signed out, a different email, or a document that is not classified yet.
- */
+/** GET /api/pre-evaluation/{id}/file. Signed-in owner. The file is already on the order form. */
 export async function getPreEvaluationFile(
   id: string,
   fetchImpl: FetchLike = fetch,
-): Promise<PreEvaluationStoredFile | null> {
+): Promise<{ preEvaluationFile: PreEvaluationFile }> {
   const safeId = previewId(id);
-  try {
-    const { payload } = await send(fetchImpl, `/api/pre-evaluation/${encodeURIComponent(safeId)}/file`, {
-      method: "GET",
-      cache: "no-store",
-      headers: { accept: "application/json" },
-    });
-    return parsePreEvaluationFile(payload);
-  } catch (cause) {
-    if (cause instanceof PreEvaluationClientError && cause.status === 404) return null;
-    throw cause;
-  }
+  const { payload } = await send(fetchImpl, `/api/pre-evaluation/${encodeURIComponent(safeId)}/file`, {
+    method: "GET",
+    cache: "no-store",
+    headers: { accept: "application/json" },
+  });
+  return parsePreEvaluationFile(payload);
 }

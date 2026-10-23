@@ -6,7 +6,7 @@ import {
   DIPLOMA_PRICE_LABEL,
 } from "@/lib/evaluations/catalog";
 import type { FlowTrack } from "@/lib/flow/types";
-import { getPreEvaluationFile, getPreEvaluationPrefill, type PreEvaluationStoredFile } from "@/lib/pre-evaluation/client";
+import { getPreEvaluationFile, getPreEvaluationPrefill, type PreEvaluationFile } from "@/lib/pre-evaluation/client";
 import { FlowHeader } from "./flow-header";
 import { UploadCard } from "./upload-card";
 import { uploadServiceFromQuery } from "./upload-draft";
@@ -29,7 +29,7 @@ type UploadSeedValue = {
   email: string | null;
   degreeCount: number | null;
   preEvaluationId: string | null;
-  carriedFile: PreEvaluationStoredFile | null;
+  carriedFile: PreEvaluationFile | null;
 };
 
 const UploadSeedContext = createContext<(seed: UploadSeedValue) => void>(() => {});
@@ -58,7 +58,10 @@ export function UploadSeed({
     if (!id) return;
     void Promise.all([
       getPreEvaluationPrefill(id).catch(() => null),
-      getPreEvaluationFile(id).catch(() => null),
+      // A 404 means the stored file cannot be carried. Any other failure leaves the normal upload.
+      getPreEvaluationFile(id)
+        .then((body) => body.preEvaluationFile)
+        .catch(() => null),
     ]).then(([prefill, carriedFile]) => {
       if (cancelled || !prefill) return;
       report({
@@ -127,7 +130,7 @@ export function UploadView({
   sessionEmail?: string | null;
   initialDegreeCount?: number | null;
   preEvaluationId?: string | null;
-  carriedFile?: PreEvaluationStoredFile | null;
+  carriedFile?: PreEvaluationFile | null;
 }) {
   const [track, setTrack] = useState<FlowTrack>(() => {
     const service = uploadServiceFromQuery(initialService);
