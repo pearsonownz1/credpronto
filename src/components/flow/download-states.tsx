@@ -24,6 +24,7 @@ import {
 import { deliveryDocumentName, orderDownloadFilename } from "@/lib/orders/download-name";
 import { evaluationSpeedLine } from "@/lib/orders/speed-line";
 import type { CustomerOrder } from "@/lib/orders/view";
+import { CorrectionRequest } from "./correction-request";
 import { FlowHeader } from "./flow-header";
 import { PaidPreview } from "./paid-preview";
 import { FlowStatus } from "./status";
@@ -287,6 +288,7 @@ function Ready({
           href={downloadHref}
         />
       </div>
+      <CorrectionRequest token={token} order={order} />
       <Link
         href="/translate"
         data-testid="start-another-order"
