@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import robots from "@/app/robots";
 import sitemap from "@/app/sitemap";
 import { EVALUATIONS_CANONICAL_URL } from "@/lib/evaluations/catalog";
+import { PRE_EVALUATION_CANONICAL } from "@/lib/pre-evaluation/handoff";
 import { FAQ_CANONICAL, GUIDES_CANONICAL } from "@/lib/content/faq";
 import {
   API_DOCS_CANONICAL,
@@ -31,6 +32,7 @@ describe("crawl policy", () => {
       HOME_CANONICAL,
       TRANSLATE_CANONICAL,
       EVALUATIONS_CANONICAL_URL,
+      PRE_EVALUATION_CANONICAL,
       GUIDES_CANONICAL,
       FAQ_CANONICAL,
       "https://www.credpronto.com/privacy",
