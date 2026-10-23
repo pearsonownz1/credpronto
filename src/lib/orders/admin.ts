@@ -424,7 +424,11 @@ export async function shipOrder(orderId: string, body: unknown) {
   if (!order) throw new HttpError("Order not found", 404);
   if (!order.mailStatus) throw new HttpError("This order has no mail add-on", 409);
   const trackingNumber = parseTrackingNumber(body);
-  await updateOrder(db, order.id, { mail_status: "shipped", mail_tracking: trackingNumber });
+  await updateOrder(db, order.id, {
+    mail_status: "shipped",
+    mail_tracking: trackingNumber,
+    mail_shipped_at: new Date().toISOString(),
+  });
   return { task: "mail" as const, status: "shipped" as const, trackingNumber };
 }
 

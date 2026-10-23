@@ -677,6 +677,8 @@ function FulfillmentTasks({
     setMail({
       status: "shipped",
       trackingNumber: result.data.trackingNumber,
+      carrier: mail?.carrier ?? null,
+      shippedAt: mail?.shippedAt ?? null,
       address: mail?.address ?? null,
     });
     onMessage(`Marked shipped. Tracking ${result.data.trackingNumber}.`);
@@ -753,8 +755,10 @@ function FulfillmentTasks({
           className="grid content-start gap-3 rounded-[var(--cp-radius)] border border-line bg-white p-4"
         >
           <h2 className="text-sm font-semibold">Notarization</h2>
-          <p className="text-sm">{notarization.status === "done" ? "Done" : "Pending"}</p>
-          {notarization.status === "pending" ? (
+          <p className="text-sm">
+            {notarization.status === "done" ? "Done" : notarization.status === "notarized" ? "Notarized" : "Pending"}
+          </p>
+          {notarization.status !== "done" ? (
             <button
               type="button"
               data-testid="mark-notarized"

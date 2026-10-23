@@ -417,6 +417,8 @@ function parseMailTask(value: unknown): StaffDetail["fulfillment"]["mail"] {
   return {
     status,
     trackingNumber: text(row.trackingNumber),
+    carrier: text(row.carrier),
+    shippedAt: text(row.shippedAt),
     address: parseAddress(row.address),
   };
 }
@@ -424,7 +426,7 @@ function parseMailTask(value: unknown): StaffDetail["fulfillment"]["mail"] {
 function parseNotarizationTask(value: unknown): StaffDetail["fulfillment"]["notarization"] {
   if (!value || typeof value !== "object") return null;
   const status = text((value as Record<string, unknown>).status);
-  if (status !== "pending" && status !== "done") return null;
+  if (status !== "pending" && status !== "notarized" && status !== "done") return null;
   return { status };
 }
 
