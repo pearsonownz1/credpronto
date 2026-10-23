@@ -140,6 +140,59 @@ describe("translation line alignment", () => {
     }
     expect(segment).toBe(77);
   });
+
+  it("places out-of-order segments on the source line named by source_index", () => {
+    expect(translationLines("A\n\nB\nC", ["c-text", "a-text", "b-text"], [3, 0, 2])).toEqual({
+      rows: [
+        { source: "A", translation: "a-text", segmentIndex: 1 },
+        { source: "", translation: "", segmentIndex: null },
+        { source: "B", translation: "b-text", segmentIndex: 2 },
+        { source: "C", translation: "c-text", segmentIndex: 0 },
+      ],
+      extra: 0,
+      missing: 0,
+    });
+  });
+
+  it("keeps a source_index with no matching line in the extra count", () => {
+    const alignment = translationLines("A\n\nB", ["on-a", "on-blank", "past-end"], [0, 1, 9]);
+    expect(alignment).toEqual({
+      rows: [
+        { source: "A", translation: "on-a", segmentIndex: 0 },
+        { source: "", translation: "", segmentIndex: null },
+        { source: "B", translation: "", segmentIndex: null },
+        { source: "", translation: "on-blank", segmentIndex: 1 },
+        { source: "", translation: "past-end", segmentIndex: 2 },
+      ],
+      extra: 2,
+      missing: 1,
+    });
+  });
+
+  it("leaves a line read-only when no segment's source_index names it", () => {
+    expect(translationLines("A\nB", ["b-text"], [1])).toEqual({
+      rows: [
+        { source: "A", translation: "", segmentIndex: null },
+        { source: "B", translation: "b-text", segmentIndex: 0 },
+      ],
+      extra: 0,
+      missing: 1,
+    });
+  });
+
+  it("uses positional pairing only for segments whose source_index is absent", () => {
+    const indexes = [3] as number[];
+    expect(translationLines("A\n\nB\nC", ["from-index", "positional-second"], indexes)).toEqual({
+      rows: [
+        { source: "A", translation: "", segmentIndex: null },
+        { source: "", translation: "", segmentIndex: null },
+        { source: "B", translation: "positional-second", segmentIndex: 1 },
+        { source: "C", translation: "from-index", segmentIndex: 0 },
+      ],
+      extra: 0,
+      missing: 1,
+    });
+  });
 });
 
 describe("translation view", () => {
@@ -374,6 +427,133 @@ describe("translation view", () => {
     });
     expect(host.querySelector("input")).toBeNull();
     expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it("saves an out-of-order segment at its stored index, not the visual row", async () => {
+    const onCommit = vi.fn();
+    const reordered = page({
+      id: "p1",
+      sourceText: "A\n\nB\nC",
+      paragraphs: ["c-text", "a-text", "b-text"],
+      sourceIndexes: [3, 0, 2],
+    });
+    const html = renderToStaticMarkup(
+      createElement(TranslationView, {
+        pages: [reordered],
+        drafts: { p1: reordered.paragraphs },
+        canEdit: true,
+        onCommit,
+      }),
+    );
+    expect(html).not.toContain("translation-mismatch");
+    expect(html).toContain('data-segment-index="1"');
+    expect(html.indexOf("a-text")).toBeLessThan(html.indexOf("b-text"));
+    expect(html.indexOf("b-text")).toBeLessThan(html.indexOf("c-text"));
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    roots.push(root);
+    await act(async () => {
+      root.render(
+        createElement(TranslationView, {
+          pages: [reordered],
+          drafts: { p1: reordered.paragraphs },
+          canEdit: true,
+          onCommit,
+        }),
+      );
+    });
+
+    const sourceLine = host.querySelector('[data-testid="translation-row-p1-0"]');
+    const matched = host.querySelector('[data-testid="translation-row-p1-3"]');
+    if (!(sourceLine instanceof HTMLElement) || !(matched instanceof HTMLElement)) throw new Error("missing rows");
+    expect(sourceLine.textContent).toContain("A");
+    expect(sourceLine.textContent).toContain("a-text");
+    expect(sourceLine.getAttribute("data-segment-index")).toBe("1");
+    expect(matched.textContent).toContain("C");
+    expect(matched.textContent).toContain("c-text");
+    expect(matched.getAttribute("data-segment-index")).toBe("0");
+
+    await act(async () => {
+      matched.click();
+    });
+    const input = host.querySelector("input");
+    if (!(input instanceof HTMLInputElement)) throw new Error("missing input");
+    expect(input.value).toBe("c-text");
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, "Cee");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith("p1", 0, "Cee");
+  });
+
+  it("shows a dangling source_index as an extra segment and leaves an unnamed line read-only", async () => {
+    const onCommit = vi.fn();
+    const dangling = page({
+      id: "p1",
+      sourceText: "A\nB",
+      paragraphs: ["b-text", "nowhere"],
+      sourceIndexes: [1, 4],
+    });
+    const html = renderToStaticMarkup(
+      createElement(TranslationView, {
+        pages: [dangling],
+        drafts: { p1: dangling.paragraphs },
+        canEdit: true,
+        onCommit,
+      }),
+    );
+    expect(html).toContain("Translation has 1 extra segment not matched to the source");
+    expect(html).toContain("nowhere");
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    roots.push(root);
+    await act(async () => {
+      root.render(
+        createElement(TranslationView, {
+          pages: [dangling],
+          drafts: { p1: dangling.paragraphs },
+          canEdit: true,
+          onCommit,
+        }),
+      );
+    });
+
+    const missing = host.querySelector('[data-testid="translation-row-p1-0"]');
+    const extra = host.querySelector('[data-segment-index="1"]');
+    if (!(missing instanceof HTMLElement) || !(extra instanceof HTMLElement)) throw new Error("missing rows");
+    expect(missing.textContent).toContain("A");
+    expect(missing.getAttribute("data-segment-index")).toBe("");
+    expect(missing.getAttribute("role")).toBeNull();
+    await act(async () => {
+      missing.click();
+    });
+    expect(host.querySelector("input")).toBeNull();
+    expect(onCommit).not.toHaveBeenCalled();
+
+    await act(async () => {
+      extra.click();
+    });
+    const input = host.querySelector("input");
+    if (!(input instanceof HTMLInputElement)) throw new Error("missing input");
+    expect(input.value).toBe("nowhere");
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, "kept");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(onCommit).toHaveBeenCalledWith("p1", 1, "kept");
   });
 });
 

@@ -15,10 +15,16 @@ export type TranslationAlignment = {
   extra: number;
 };
 
+type SegmentSlot = { text: string; segmentIndex: number };
+
 /**
- * Pair segment k with the k-th non-blank source line.
- * Blank lines stay blank on both sides and do not consume a segment.
- * Segments are already stored with blanks removed, one per non-blank line.
+ * Pair each segment with the non-blank source line whose index equals that
+ * segment's source_index. Several segments may share one line.
+ * A segment whose source_index is absent falls back to positional pairing:
+ * segment k goes with the k-th non-blank source line.
+ * A source_index that does not point at a non-blank line stays unmatched.
+ * Blank source lines stay blank on both sides. A non-blank line with no
+ * segment is missing and carries no segment index, so it stays read-only.
  */
 export function translationLines(
   sourceText: string | null,
@@ -29,10 +35,11 @@ export function translationLines(
   const normalized = (display ?? "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const lines = normalized.length === 0 ? [] : normalized.split("\n");
   if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
-  if (sourceIndexes && sourceIndexes.length === segments.length) {
-    return translationLinesByIndex(lines, segments, sourceIndexes);
-  }
+  if (sourceIndexes != null) return translationLinesByIndex(lines, segments, sourceIndexes);
+  return translationLinesByPosition(lines, segments);
+}
 
+function translationLinesByPosition(lines: readonly string[], segments: readonly string[]): TranslationAlignment {
   const rows: TranslationLine[] = [];
   let segmentCursor = 0;
   for (const line of lines) {
@@ -64,24 +71,48 @@ export function translationLines(
   return { rows, extra, missing };
 }
 
+/** Undefined when this segment has no source_index. A number, even if unusable, is present. */
+function sourceIndexAt(sourceIndexes: readonly number[], segmentIndex: number): number | undefined {
+  if (segmentIndex < 0 || segmentIndex >= sourceIndexes.length) return undefined;
+  if (!Object.prototype.hasOwnProperty.call(sourceIndexes, segmentIndex)) return undefined;
+  const value = sourceIndexes[segmentIndex] as number | null | undefined;
+  if (value == null || typeof value !== "number") return undefined;
+  return value;
+}
+
 function translationLinesByIndex(
   lines: readonly string[],
   segments: readonly string[],
   sourceIndexes: readonly number[],
 ): TranslationAlignment {
-  const groups = new Map<number, Array<{ text: string; segmentIndex: number }>>();
-  const unmatched: Array<{ text: string; segmentIndex: number }> = [];
+  const nonBlank = lines.flatMap((line, index) => (line.trim().length === 0 ? [] : [index]));
+  const groups = new Map<number, SegmentSlot[]>();
+  const unmatched: SegmentSlot[] = [];
+
+  const place = (lineIndex: number, slot: SegmentSlot) => {
+    const group = groups.get(lineIndex) ?? [];
+    group.push(slot);
+    groups.set(lineIndex, group);
+  };
+
   segments.forEach((text, segmentIndex) => {
-    const sourceIndex = sourceIndexes[segmentIndex] ?? -1;
-    const line = lines[sourceIndex];
-    if (line == null || line.trim().length === 0) {
-      unmatched.push({ text, segmentIndex });
+    const slot = { text, segmentIndex };
+    const sourceIndex = sourceIndexAt(sourceIndexes, segmentIndex);
+    if (sourceIndex === undefined) {
+      const lineIndex = nonBlank[segmentIndex];
+      if (lineIndex == null) unmatched.push(slot);
+      else place(lineIndex, slot);
       return;
     }
-    const group = groups.get(sourceIndex) ?? [];
-    group.push({ text, segmentIndex });
-    groups.set(sourceIndex, group);
+    const line = Number.isInteger(sourceIndex) && sourceIndex >= 0 ? lines[sourceIndex] : undefined;
+    if (line == null || line.trim().length === 0) {
+      unmatched.push(slot);
+      return;
+    }
+    place(sourceIndex, slot);
   });
+
+  for (const group of groups.values()) group.sort((left, right) => left.segmentIndex - right.segmentIndex);
 
   const rows: TranslationLine[] = [];
   let missing = 0;
