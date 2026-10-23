@@ -93,10 +93,15 @@ describe("retryFinalCustomerEmail", () => {
       orderId,
       expect.objectContaining({ status: "delivered" }),
     );
-    expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, {
-      status: "delivered",
-      review_reason: null,
-    });
+    expect(db.updateOrder).toHaveBeenCalledWith(
+      expect.anything(),
+      orderId,
+      expect.objectContaining({
+        status: "delivered",
+        evaluation_status: "evaluation_complete",
+        review_reason: null,
+      }),
+    );
     expect(webhooks.notifyLifecycle).toHaveBeenCalledWith(expect.anything(), orderId, "order.completed");
   });
 
@@ -108,10 +113,15 @@ describe("retryFinalCustomerEmail", () => {
       { ...order(), status: "approved", reviewReason: "Credential evaluation is reviewed by staff." } as OrderRecord,
     );
 
-    expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, {
-      status: "delivered",
-      review_reason: null,
-    });
+    expect(db.updateOrder).toHaveBeenCalledWith(
+      expect.anything(),
+      orderId,
+      expect.objectContaining({
+        status: "delivered",
+        evaluation_status: "evaluation_complete",
+        review_reason: null,
+      }),
+    );
     expect(webhooks.notifyOrder).not.toHaveBeenCalled();
   });
 });

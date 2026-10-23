@@ -1,4 +1,5 @@
 import type { AdminList, AdminOrder, CustomerOrder, StaffDetail, StaffNote } from "@/lib/api/types";
+import { adminOrderFields } from "@/lib/orders/admin-order-fields";
 import { expeditedFirst } from "@/lib/orders/fulfillment";
 
 export const MOCK_CUSTOMER_EMAIL = "maria.ruiz@email.com";
@@ -291,6 +292,7 @@ export function mockStaffDetail(id: string): StaffDetail | null {
   if (!summary) return null;
   const fresh = withFreshPaidAt(summary, Date.now());
   const evaluation = summary.serviceType === "evaluation";
+  const service = evaluation ? (MOCK_EVALUATION_SERVICE[id] ?? "diploma") : null;
   return {
     id: summary.id,
     status: summary.status,
@@ -302,7 +304,8 @@ export function mockStaffDetail(id: string): StaffDetail | null {
     currency: summary.currency,
     createdAt: summary.createdAt,
     reviewReason: summary.reviewReason,
-    service: evaluation ? (MOCK_EVALUATION_SERVICE[id] ?? "diploma") : null,
+    service,
+    ...adminOrderFields({ id, service, includeTranslation: false }),
     equivalencyCredentials: [],
     edge: null,
     filename: evaluation ? "diploma.pdf" : "birth-certificate.pdf",

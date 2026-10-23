@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { PaidReviewBody } from "@/components/flow/download-states";
-import { FlowHeader } from "@/components/flow/flow-header";
+import { PaidOrderScreen } from "@/components/flow/download-states";
 import { PaidReviewFixturePreview } from "@/components/flow/paid-review-fixture-preview";
 import type { PreviewOrder } from "@/components/preview/preview-order";
+import { translationInReviewOrder } from "@/lib/dev/paid-order-fixtures";
 import { needsReviewFixture, paidReviewFixtureEnabled } from "@/lib/dev/paid-review-fixture";
 import { ROBOTS_NOINDEX } from "@/lib/seo";
 
@@ -11,11 +11,10 @@ export const instant = false;
 
 export const metadata: Metadata = {
   title: "Paid review · CredPronto",
-  description: "Fixture for a paid translation still in final review.",
+  description: "Fixture for a paid translation still in review.",
   robots: ROBOTS_NOINDEX,
 };
 
-/** Public samples already used by the mock preview. Not loaded from an order. */
 const SAMPLE_ORIGINAL = "/samples/birth-certificate-es.pdf";
 const SAMPLE_TRANSLATION = "/samples/birth-certificate-en.pdf";
 
@@ -52,19 +51,15 @@ export default function PaidReviewFixturePage() {
   if (!paidReviewFixtureEnabled()) notFound();
   const fixture = needsReviewFixture();
   if (!fixture) notFound();
+  const order = translationInReviewOrder(fixture);
 
   return (
     <div data-testid="paid-review-fixture">
-      <FlowHeader current="download" track="translation" />
-      <main className="mx-auto w-full max-w-6xl px-4 pt-10 pb-16">
-        <PaidReviewBody
-          orderId={fixture.id}
-          email={fixture.email}
-          totalCents={fixture.totalCents}
-          paidAt={fixture.paidAt}
-          preview={<PaidReviewFixturePreview order={fixturePreview(fixture)} />}
-        />
-      </main>
+      <PaidOrderScreen
+        order={order}
+        token="paid-review"
+        preview={<PaidReviewFixturePreview order={fixturePreview(fixture)} />}
+      />
     </div>
   );
 }

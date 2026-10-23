@@ -1,3 +1,4 @@
+import { deliveredEvaluationPatch } from "./evaluation-delivered";
 import { FINALS_BUCKET } from "./constants";
 import {
   claimOrderColumn,
@@ -12,7 +13,6 @@ import {
 } from "./db";
 import { accountLink, sendFinalDownload } from "./email";
 import { receiptLineItems, renderFinalDownloadEmail } from "./email-templates";
-import { DELIVERED_REVIEW_CLEAR } from "./review-reason";
 import { resolveCustomerFinal } from "./final-file";
 import { notifyLifecycle, notifyOrder } from "./webhook-delivery";
 import { downloadObject } from "./storage";
@@ -87,10 +87,10 @@ export async function retryFinalCustomerEmail(db: Db, order: OrderRecord): Promi
   const delivery = await getDelivery(db, order.id);
   if (!delivery) return;
   if (delivery.status === "delivered") {
-    await updateOrder(db, order.id, {
-      ...(order.status === "delivered" ? {} : { status: "delivered" as const }),
-      ...DELIVERED_REVIEW_CLEAR,
-    });
+    const complete = deliveredEvaluationPatch(order, delivery.deliveredAt ?? new Date().toISOString());
+    if (order.status !== "delivered" || Object.keys(complete).length > 0) {
+      await updateOrder(db, order.id, { status: "delivered", ...complete });
+    }
     return;
   }
   const sent = await sendFinalCustomerEmail(db, order);
@@ -104,7 +104,7 @@ export async function retryFinalCustomerEmail(db: Db, order: OrderRecord): Promi
     final_path: delivery.finalPath,
     certification_path: delivery.certificationPath,
   });
-  await updateOrder(db, order.id, { status: "delivered", ...DELIVERED_REVIEW_CLEAR });
+  await updateOrder(db, order.id, { status: "delivered", ...deliveredEvaluationPatch(order, new Date().toISOString()) });
   await notifyOrder(db, order.id, "order.delivered");
   await notifyLifecycle(db, order.id, "order.completed");
 }

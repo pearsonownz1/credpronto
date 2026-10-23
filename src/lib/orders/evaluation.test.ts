@@ -206,12 +206,12 @@ describe("assemble evaluation", () => {
     expect(result).toMatchObject({
       kind: "course_by_course",
       totalHours: 6,
-      gpa: 3.7,
+      gpa: 3,
       gradeScale: GRADE_SCALE_20,
       years: [
         {
           year: "2018–2019",
-          courses: [expect.objectContaining({ usGrade: "A-", gradePoints: 22.2, usSemesterHours: 6 })],
+          courses: [expect.objectContaining({ usGrade: "B", gradePoints: 18, usSemesterHours: 6 })],
         },
       ],
     });
@@ -279,6 +279,53 @@ describe("assemble evaluation", () => {
         unitPriceCents: 995,
       }),
     ).toBeNull();
+  });
+
+  it("gives a passed Bac D for a subject under 10 and still reports the GPA", () => {
+    const result = assembleCourse({
+      applicant: "Awa Ngo",
+      institution: "Lycée de Yaoundé",
+      country: "Cameroon",
+      credential: "Baccalauréat",
+      scale: "20",
+      result: "Admis",
+      years: [
+        {
+          year: "2024",
+          courses: [
+            { originalName: "Mathématiques", englishName: "Mathematics", localCredits: 2, localGrade: "8" },
+            { originalName: "Français", englishName: "French", localCredits: 2, localGrade: "12" },
+          ],
+        },
+      ],
+    });
+    expect(result).toMatchObject({ kind: "course_by_course", gpa: 1.5, gradeScale: GRADE_SCALE_20 });
+    if (result?.kind !== "course_by_course") return;
+    expect(result.years[0]?.courses.map((course) => course.usGrade)).toEqual(["D", "C"]);
+    expect(result.years[0]?.courses.some((course) => course.usGrade === "F")).toBe(false);
+  });
+
+  it("gives F for a subject under 10 when the credential was failed", () => {
+    const result = assembleCourse({
+      applicant: "Awa Ngo",
+      institution: "Lycée de Yaoundé",
+      country: "Cameroon",
+      credential: "Baccalauréat",
+      scale: "20",
+      result: "Ajourné",
+      years: [
+        {
+          year: "2024",
+          courses: [
+            { originalName: "Mathématiques", englishName: "Mathematics", localCredits: 2, localGrade: "8" },
+            { originalName: "Français", englishName: "French", localCredits: 2, localGrade: "12" },
+          ],
+        },
+      ],
+    });
+    expect(result).toMatchObject({ kind: "course_by_course", gpa: 1 });
+    if (result?.kind !== "course_by_course") return;
+    expect(result.years[0]?.courses.map((course) => course.usGrade)).toEqual(["F", "C"]);
   });
 
   it("holds a transcript when a grade is off the scale", () => {

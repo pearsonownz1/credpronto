@@ -3,14 +3,16 @@
 import { useEffect } from "react";
 import { formatMoney } from "@/lib/flow/pricing";
 import { TRANSLATION_REVIEW_COPY } from "@/lib/flow/preview-progress";
-import { evaluationTracker, type EvalStatus } from "@/lib/evalStatus";
+import { type EvalStatus } from "@/lib/evalStatus";
 import {
   CONFIRMING_PAYMENT_COPY,
   CONFIRMING_PAYMENT_DETAIL,
   QUICK_CHECK_COPY,
   QUICK_CHECK_DETAIL,
+  downloadReadyCopy,
   isCustomerEvaluation,
   isTranslationBundle,
+  orderPackagePending,
   type DownloadPhase,
 } from "@/lib/flow/present";
 import { TRANSLATION_TIMEOUT_REASON } from "@/lib/orders/translation-failure";
@@ -32,9 +34,12 @@ export function orderLiveMessage(input: {
     reviewReason?: string | null;
     orderType?: CustomerOrder["orderType"];
     service?: CustomerOrder["service"];
+    services?: CustomerOrder["services"];
     serviceType?: string | null;
     includeTranslation?: boolean | null;
+    translationReady?: boolean | null;
     evaluationStatus?: EvalStatus | null;
+    delivery?: CustomerOrder["delivery"];
     progress?: { step?: string | null } | null;
   }) | null;
 }): string {
@@ -53,18 +58,19 @@ export function orderLiveMessage(input: {
   const pageText = `${pages} ${pages === 1 ? "page" : "pages"}`;
   const evaluation = isCustomerEvaluation(order);
   const bundle = isTranslationBundle(order);
-  if (input.phase === "certifying" || order.fulfillment === "awaiting_review") {
-    if (!evaluation) return `${QUICK_CHECK_COPY}. ${QUICK_CHECK_DETAIL}`;
-    return evaluationLiveLine(order.evaluationStatus);
-  }
-  if (
+  const paidLike =
+    input.phase === "certifying" ||
+    input.phase === "ready" ||
+    order.fulfillment === "awaiting_review" ||
     order.fulfillment === "released" ||
     order.status === "paid" ||
     order.status === "approved" ||
-    order.status === "delivered"
-  ) {
-    if (evaluation && order.evaluationStatus === "evaluation_complete") return "Evaluation complete.";
-    return evaluation ? "Your credential evaluation is ready." : "Your translation is ready.";
+    order.status === "delivered";
+  if (paidLike && (input.phase === "certifying" || order.fulfillment === "awaiting_review" || orderPackagePending(order))) {
+    return `${QUICK_CHECK_COPY}. ${QUICK_CHECK_DETAIL}`;
+  }
+  if (paidLike) {
+    return downloadReadyCopy(order).title;
   }
   if (
     order.status === "needs_review" &&
@@ -97,12 +103,6 @@ export function orderLiveMessage(input: {
     return "Translating your document.";
   }
   return "";
-}
-
-function evaluationLiveLine(status: EvalStatus | null | undefined): string {
-  const tracker = evaluationTracker({ evaluationStatus: status });
-  if (tracker.status === "evaluation_complete") return "Evaluation complete.";
-  return tracker.steps.find((step) => step.state === "current")?.detail ?? "We're checking your documents.";
 }
 
 /** The App Router announcer keeps the loading heading after the quote replaces it. */

@@ -1,7 +1,7 @@
+import { deliveredEvaluationPatch } from "./evaluation-delivered";
 import { approvalBlockReason } from "./equivalency";
 import { orderEvaluationKinds, orderHasEvaluation } from "./service-selection";
 import { EVALUATION_REVIEW_REASON } from "./evaluation-price";
-import { DELIVERED_REVIEW_CLEAR } from "./review-reason";
 import { stampEvaluationUnderReview } from "./evaluation-status";
 import { stampApprovedCover } from "./certification";
 import {
@@ -212,7 +212,7 @@ async function autoReleasePaidOrder(db: Db, order: OrderRecord): Promise<Release
     final_path: order.finalTranslationPath,
     certification_path: order.certificationPath,
   });
-  await updateOrder(db, order.id, { status: "delivered", ...DELIVERED_REVIEW_CLEAR });
+  await updateOrder(db, order.id, { status: "delivered", ...deliveredEvaluationPatch(order, new Date().toISOString()) });
   await notifyOrder(db, order.id, "order.delivered");
   await notifyLifecycle(db, order.id, "order.completed");
   return "released";

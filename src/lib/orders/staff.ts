@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { HttpError } from "./errors";
 import { serviceDb, type Db } from "./storage";
 
-export async function requireStaff(): Promise<{ db: Db; userId: string; role: string }> {
+export async function requireStaff(): Promise<{ db: Db; userId: string; role: string; email?: string | null }> {
   let client: Awaited<ReturnType<typeof createClient>>;
   try {
     client = await createClient();
@@ -16,11 +16,11 @@ export async function requireStaff(): Promise<{ db: Db; userId: string; role: st
   const db = serviceDb();
   const staff = await db.from("staff").select("user_id, role").eq("user_id", data.user.id).maybeSingle();
   if (staff.error) throw new Error(staff.error.message);
-  if (staff.data) return { db, userId: data.user.id, role: String(staff.data.role) };
+  if (staff.data) return { db, userId: data.user.id, role: String(staff.data.role), email: data.user.email ?? null };
 
   const profile = await db.from("profiles").select("is_admin").eq("id", data.user.id).maybeSingle();
   if (profile.error) throw new Error(profile.error.message);
-  if (profile.data?.is_admin === true) return { db, userId: data.user.id, role: "admin" };
+  if (profile.data?.is_admin === true) return { db, userId: data.user.id, role: "admin", email: data.user.email ?? null };
 
   throw new HttpError("Staff access required", 403);
 }

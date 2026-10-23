@@ -91,14 +91,130 @@ describe("approveOrder cover stamp", () => {
     expect(certification.stampApprovedCover).not.toHaveBeenCalled();
   });
 
-  it("releases an evaluation when there is no translation text", async () => {
+  it("refuses to release an evaluation order while a purchased report is missing", async () => {
     vi.spyOn(db, "getOrderById").mockResolvedValue({ ...paidOrder, service: "diploma" });
     vi.spyOn(db, "listTranslations").mockResolvedValue([]);
 
     const response = await run(async () => json(await approveOrder(orderId)));
 
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "Upload the diploma evaluation report before releasing this order",
+    });
+    expect(db.updateOrder).not.toHaveBeenCalled();
+    expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
+  });
+
+  it("refuses translation + diploma + course-by-course with only one report uploaded", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue({
+      ...paidOrder,
+      service: null,
+      services: ["translation", "diploma", "course_by_course"],
+      includeTranslation: true,
+      serviceFiles: { diploma: `${orderId}/diploma-evaluation.pdf` },
+    } as OrderRecord);
+
+    const response = await run(async () => json(await approveOrder(orderId)));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "Upload the course-by-course evaluation report before releasing this order",
+    });
+    expect(db.updateOrder).not.toHaveBeenCalled();
+    expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
+  });
+
+  it("releases the whole package (translation + both reports) once every report is uploaded", async () => {
+    const { PDFDocument } = await import("pdf-lib");
+    const onePage = async () => {
+      const doc = await PDFDocument.create();
+      doc.addPage();
+      return doc.save();
+    };
+    vi.spyOn(db, "getOrderById").mockResolvedValue({
+      ...paidOrder,
+      service: null,
+      services: ["translation", "diploma", "course_by_course"],
+      includeTranslation: true,
+      finalTranslationPath: `${orderId}/certified-translation.pdf`,
+      certificationPath: `${orderId}/certified-translation.pdf`,
+      serviceFiles: {
+        diploma: `${orderId}/diploma-evaluation.pdf`,
+        course_by_course: `${orderId}/course_by_course-evaluation.pdf`,
+      },
+    } as OrderRecord);
+    vi.spyOn(db, "ensurePendingDelivery").mockResolvedValue(undefined as never);
+    const download = vi.spyOn(storage, "downloadObject").mockImplementation(async () => onePage());
+    const upload = vi.spyOn(storage, "uploadObject").mockResolvedValue(undefined as never);
+
+    const response = await run(async () => json(await approveOrder(orderId)));
+
     expect(response.status).toBe(200);
-    expect(certification.stampApprovedCover).toHaveBeenCalled();
+    expect(download).toHaveBeenCalledTimes(2);
+    expect(upload).toHaveBeenCalledWith(expect.anything(), expect.anything(), `${orderId}/evaluation.pdf`, expect.any(Uint8Array), "application/pdf");
+    expect(db.updateDelivery).toHaveBeenCalledWith(
+      expect.anything(),
+      orderId,
+      expect.objectContaining({ status: "delivered", final_path: `${orderId}/evaluation.pdf` }),
+    );
+    expect(finalEmail.sendFinalCustomerEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("stamps evaluation_complete on an already-delivered evaluation without sending another email", async () => {
+    const deliveredAt = "2026-10-22T12:00:00.000Z";
+    vi.spyOn(db, "getOrderById").mockResolvedValue({
+      ...paidOrder,
+      status: "delivered",
+      service: "diploma",
+      evaluationStatus: "under_review",
+    });
+    vi.spyOn(db, "getDelivery").mockResolvedValue({
+      ...pendingDelivery,
+      status: "delivered",
+      finalPath: "finals/diploma-evaluation.pdf",
+      certificationPath: "finals/diploma-evaluation.pdf",
+      deliveredAt,
+    });
+
+    const response = await run(async () => json(await approveOrder(orderId)));
+    const body = (await response.json()) as { status?: string; email?: string };
+
+    expect(response.status).toBe(200);
+    expect(body.status).toBe("delivered");
+    expect(body.email).toBeUndefined();
+    expect(db.updateOrder).toHaveBeenCalledTimes(1);
+    expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, {
+      evaluation_status: "evaluation_complete",
+      evaluation_complete_at: deliveredAt,
+      review_reason: null,
+    });
+    expect(db.updateDelivery).not.toHaveBeenCalled();
+    expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
+    expect(webhooks.notifyOrder).not.toHaveBeenCalled();
+    expect(webhooks.notifyLifecycle).not.toHaveBeenCalled();
+    expect(certification.stampApprovedCover).not.toHaveBeenCalled();
+  });
+
+  it("refuses an unpaid order", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue({ ...paidOrder, status: "preview_ready" });
+
+    const response = await run(async () => json(await approveOrder(orderId)));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "Only a paid order can be certified" });
+    expect(db.updateOrder).not.toHaveBeenCalled();
+    expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
+  });
+
+  it("refuses a paid order that has no settled payment", async () => {
+    vi.spyOn(db, "settledPayment").mockResolvedValue(null);
+
+    const response = await run(async () => json(await approveOrder(orderId)));
+
+    expect(response.status).toBe(402);
+    await expect(response.json()).resolves.toEqual({ error: "Payment required" });
+    expect(db.updateOrder).not.toHaveBeenCalled();
+    expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
   });
 
   it("fails the approval and returns the stamp error when the cover restamp throws", async () => {
@@ -168,7 +284,14 @@ describe("approveOrder cover stamp", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ status: "delivered" });
-    expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, { review_reason: null });
+    expect(db.updateOrder).toHaveBeenCalledWith(
+      expect.anything(),
+      orderId,
+      expect.objectContaining({
+        evaluation_status: "evaluation_complete",
+        review_reason: null,
+      }),
+    );
     expect(certification.stampApprovedCover).not.toHaveBeenCalled();
     expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
   });

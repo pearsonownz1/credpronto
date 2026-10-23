@@ -120,6 +120,16 @@ export type StaffDetail = {
   reviewReason: string | null;
   /** Set for credential evaluations. Translation orders leave this null. */
   service: "diploma" | "course_by_course" | null;
+  /** Selected services from resolveServices, in catalog order. */
+  services: Array<"translation" | "diploma" | "course_by_course">;
+  /** True when the resolved services include certified translation. */
+  includesTranslation: boolean;
+  /** One entry for each purchased evaluation report. */
+  evaluationReports: Array<{
+    service: "diploma" | "course_by_course";
+    uploaded: boolean;
+    fileName?: string;
+  }>;
   equivalencyCredentials: Array<{
     credential: string;
     country: string;

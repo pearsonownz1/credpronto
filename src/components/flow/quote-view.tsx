@@ -18,6 +18,7 @@ import {
   languageLine,
   quoteFileGroups,
   orderWithTranslationChoice,
+  quoteTurnaroundCopy,
   servicePriceLines,
   settleTargetLanguageUpdate,
   showTargetLanguagePicker,
@@ -380,14 +381,11 @@ export function QuoteBody({
           {payFirst ? (
             <SummaryRow label="Review" value="After you pay" />
           ) : (
-            <>
-              <SummaryRow
-                label="Preview"
-                value="Free"
-                valueClass="font-semibold text-[var(--cp-ok)]"
-              />
-              <QuoteTurnaround />
-            </>
+            <SummaryRow
+              label="Preview"
+              value="Free"
+              valueClass="font-semibold text-[var(--cp-ok)]"
+            />
           )}
           <SummaryRow
             testId="quote-total"
@@ -395,6 +393,7 @@ export function QuoteBody({
             value={qualityHold ? "Not quoted yet" : totalLabel(live.totalCents)}
             emphasize
           />
+          <QuoteTurnaround order={live} />
         </Summary>
         {payFirst ? null : <BillingNote note={displayedPageRule(live)} />}
         {qualityHold ? (
@@ -452,7 +451,7 @@ export function QuoteBody({
             items={
               payFirst
                 ? ["Pay from this quote", "An evaluator reviews it after you pay", "We'll email you when it's ready"]
-                : ["Pay only after you’ve seen it", "Ready in 3 minutes", "Free corrections"]
+                : ["Pay only after you’ve seen it", "We'll email you when it's ready", "Free corrections"]
             }
           />
         </div>
@@ -475,26 +474,33 @@ function BillingNote({ note }: { note: string }) {
   );
 }
 
-function QuoteTurnaround() {
-  return (
-    <div className="border-t border-line px-3 py-3">
-      <div
-        data-testid="quote-turnaround"
-        className="flex w-full items-center gap-3 rounded-[4px] bg-[#EEF3FF] p-3.5"
-      >
-        <ClockIcon />
-        <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-semibold tracking-[0.08em] text-ink-muted uppercase">
-            Turnaround time
-          </p>
-          <p className="text-[22px] font-bold leading-tight text-primary">3 minutes</p>
-        </div>
-        <span className="shrink-0 rounded-full bg-[#e8f6f0] px-2 py-0.5 text-[12px] font-semibold text-[var(--cp-ok)]">
-          Fast
-        </span>
+export function QuoteTurnaround({
+  order,
+  embedded = true,
+}: {
+  order: Parameters<typeof quoteTurnaroundCopy>[0];
+  /** Inside the price summary. Checkout places the same card above the pay button. */
+  embedded?: boolean;
+}) {
+  const card = (
+    <div
+      data-testid="quote-turnaround"
+      className="flex w-full items-center gap-3 rounded-[4px] bg-[#EEF3FF] p-3.5"
+    >
+      <ClockIcon />
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-semibold tracking-[0.08em] text-ink-muted uppercase">
+          Turnaround time
+        </p>
+        <p className="text-[22px] font-bold leading-tight text-primary">{quoteTurnaroundCopy(order)}</p>
       </div>
+      <span className="shrink-0 rounded-full bg-[#e8f6f0] px-2 py-0.5 text-[12px] font-semibold text-[var(--cp-ok)]">
+        Fast
+      </span>
     </div>
   );
+  if (!embedded) return card;
+  return <div className="border-t border-line px-3 py-3">{card}</div>;
 }
 
 function ClockIcon() {
