@@ -8,7 +8,7 @@ const empty: PreEvaluationRecord = {
   equivalent: null,
   confidence: null,
   previewUrl: null,
-  documentKind: null,
+  kind: null,
 };
 
 const token = "a".repeat(43);
@@ -37,7 +37,7 @@ describe("pre-evaluation flow", () => {
         equivalent: "Bachelor's degree",
         confidence: "high",
         previewUrl: "https://cdn.example/preview.png?token=one",
-        documentKind: null,
+        kind: null,
       },
     });
     expect(phase).toMatchObject({
@@ -47,7 +47,7 @@ describe("pre-evaluation flow", () => {
       equivalent: "Bachelor's degree",
       confidence: "high",
       previewUrl: "https://cdn.example/preview.png?token=one",
-      documentKind: null,
+      kind: null,
     });
   });
 
@@ -62,11 +62,11 @@ describe("pre-evaluation flow", () => {
           equivalent: "Bachelor's degree",
           confidence: "high",
           previewUrl: "https://cdn.example/preview.png",
-          documentKind: "transcript",
+          kind: "transcript",
         },
       },
     );
-    expect(phase).toMatchObject({ step: "result", documentKind: "transcript" });
+    expect(phase).toMatchObject({ step: "result", kind: "transcript" });
   });
 
   it("opens a result link on the server status, including a ready preview with no local email", () => {
@@ -84,7 +84,7 @@ describe("pre-evaluation flow", () => {
         equivalent: "Master's degree",
         confidence: "medium",
         previewUrl: "https://cdn.example/preview.pdf?token=one",
-        documentKind: null,
+        kind: null,
       },
     });
     expect(phase).toMatchObject({
@@ -123,7 +123,7 @@ describe("pre-evaluation flow", () => {
         equivalent: "Bachelor's degree",
         confidence: "high",
         previewUrl: "https://cdn.example/preview.pdf",
-        documentKind: null,
+        kind: null,
       },
       { type: "request-failed", status: 503, message },
     );

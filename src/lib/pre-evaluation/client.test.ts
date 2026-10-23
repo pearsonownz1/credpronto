@@ -24,7 +24,7 @@ const ready = {
   equivalent: "Bachelor's degree",
   confidence: "high" as const,
   previewUrl: "https://cdn.example/preview.png?token=one",
-  documentKind: null,
+  kind: null,
 };
 
 describe("pre-evaluation client", () => {
@@ -70,7 +70,7 @@ describe("pre-evaluation client", () => {
       equivalent: null,
       confidence: null,
       previewUrl: null,
-      documentKind: null,
+      kind: null,
     });
 
     expect(
@@ -79,24 +79,25 @@ describe("pre-evaluation client", () => {
         equivalent: "Bachelor's degree",
         confidence: "high",
         previewUrl: "https://cdn.example/secret.png",
-        documentKind: "transcript",
+        kind: "transcript",
       }),
-    ).toEqual({ status: "processing", equivalent: null, confidence: null, previewUrl: null, documentKind: null });
+    ).toEqual({ status: "processing", equivalent: null, confidence: null, previewUrl: null, kind: "transcript" });
 
     expect(parsePreEvaluation({ ...ready, status: "failed", previewUrl: "https://cdn.example/secret.png" })).toEqual({
       status: "failed",
       equivalent: null,
       confidence: null,
       previewUrl: null,
-      documentKind: null,
+      kind: null,
     });
   });
 
   it("keeps the equivalent once the preview is ready", () => {
     expect(parsePreEvaluation(ready)).toEqual(ready);
-    expect(parsePreEvaluation({ ...ready, documentKind: "diploma" }).documentKind).toBe("diploma");
-    expect(parsePreEvaluation({ ...ready, documentKind: "transcript" }).documentKind).toBe("transcript");
-    expect(parsePreEvaluation({ ...ready, documentKind: "course_by_course" }).documentKind).toBeNull();
+    expect(parsePreEvaluation({ ...ready, kind: "diploma" }).kind).toBe("diploma");
+    expect(parsePreEvaluation({ ...ready, kind: "transcript" }).kind).toBe("transcript");
+    expect(parsePreEvaluation({ ...ready, kind: null }).kind).toBeNull();
+    expect(parsePreEvaluation({ ...ready, kind: "course_by_course" }).kind).toBeNull();
   });
 
   it("replaces an expired signed preview once", () => {

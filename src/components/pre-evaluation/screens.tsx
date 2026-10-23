@@ -431,14 +431,14 @@ export function PreEvaluationResult({
   equivalent,
   confidence,
   previewUrl,
-  documentKind = null,
+  kind = null,
   onPreviewRefreshFailed,
 }: {
   id: string;
   equivalent: string;
   confidence: PreEvaluationConfidence;
   previewUrl: string | null;
-  documentKind?: PreEvaluationFileKind | null;
+  kind?: PreEvaluationFileKind | null;
   onPreviewRefreshFailed?: (error: { status: number; message: string }) => void;
 }) {
   const percent = CONFIDENCE_PERCENT[confidence];
@@ -490,7 +490,7 @@ export function PreEvaluationResult({
               </div>
               <p className="mt-2 text-[12.5px] text-ink-muted">Based on EDGE equivalency data</p>
             </div>
-            <OfficialEvaluationButton id={id} kind={documentKind} />
+            <OfficialEvaluationButton id={id} kind={kind} />
           </aside>
         </div>
       </section>

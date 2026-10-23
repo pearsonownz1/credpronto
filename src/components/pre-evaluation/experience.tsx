@@ -126,7 +126,7 @@ export function PreEvaluationExperience({ initialId = null }: { initialId?: stri
           equivalent={phase.equivalent}
           confidence={phase.confidence}
           previewUrl={phase.previewUrl}
-          documentKind={phase.documentKind}
+          kind={phase.kind}
           onPreviewRefreshFailed={(error) =>
             dispatch({ type: "request-failed", status: error.status, message: error.message })
           }

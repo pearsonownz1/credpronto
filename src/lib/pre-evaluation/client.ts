@@ -5,11 +5,11 @@
  *   multipart field `file` → { id }
  * GET /api/pre-evaluation/{id}
  *   { status: 'email_required' | 'processing' | 'ready' | 'failed',
- *     equivalent, confidence, previewUrl, documentKind? }
+ *     equivalent, confidence, previewUrl, kind }
  *   Until the email is submitted, status is `email_required` and the three
  *   result fields are null. `previewUrl` is a signed link that expires in
- *   about five minutes. Do not store it. `documentKind` is `diploma` or
- *   `transcript` when the result includes it, and is otherwise absent.
+ *   about five minutes. Do not store it. `kind` is `diploma`, `transcript`,
+ *   or null when the document is not classified yet. A missing kind is null.
  * POST /api/pre-evaluation/{id}/email
  *   JSON { email } → { ok: true }
  * GET /api/pre-evaluation/{id}/prefill
@@ -35,7 +35,7 @@ export type PreEvaluationRecord = {
   equivalent: string | null;
   confidence: PreEvaluationConfidence | null;
   previewUrl: string | null;
-  documentKind: PreEvaluationFileKind | null;
+  kind: PreEvaluationFileKind | null;
 };
 
 export type PreEvaluationCreated = {
@@ -151,10 +151,11 @@ export function parsePreEvaluation(payload: unknown): PreEvaluationRecord {
     throw new PreEvaluationClientError("The preview response was not valid.", 502);
   }
   const parsed = status as PreEvaluationStatus;
+  const kind = parseFileKind((payload as { kind?: unknown }).kind);
   if (parsed !== "ready") {
-    return { status: parsed, equivalent: null, confidence: null, previewUrl: null, documentKind: null };
+    return { status: parsed, equivalent: null, confidence: null, previewUrl: null, kind };
   }
-  const row = payload as { equivalent?: unknown; confidence?: unknown; previewUrl?: unknown; documentKind?: unknown };
+  const row = payload as { equivalent?: unknown; confidence?: unknown; previewUrl?: unknown };
   const confidence =
     typeof row.confidence === "string" && CONFIDENCE.has(row.confidence as PreEvaluationConfidence)
       ? (row.confidence as PreEvaluationConfidence)
@@ -164,7 +165,7 @@ export function parsePreEvaluation(payload: unknown): PreEvaluationRecord {
     equivalent: nullableText(row.equivalent),
     confidence,
     previewUrl: nullableText(row.previewUrl),
-    documentKind: parseFileKind(row.documentKind),
+    kind,
   };
 }
 

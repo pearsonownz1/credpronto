@@ -17,7 +17,7 @@ export type PreEvaluationPhase =
       equivalent: string;
       confidence: NonNullable<PreEvaluationRecord["confidence"]>;
       previewUrl: string | null;
-      documentKind: PreEvaluationFileKind | null;
+      kind: PreEvaluationFileKind | null;
     }
   | {
       step: "error";
@@ -158,6 +158,6 @@ function applyStatus(phase: PreEvaluationPhase, record: PreEvaluationRecord): Pr
     equivalent: record.equivalent,
     confidence: record.confidence,
     previewUrl: record.previewUrl,
-    documentKind: record.documentKind ?? null,
+    kind: record.kind ?? null,
   };
 }

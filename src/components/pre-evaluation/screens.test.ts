@@ -144,7 +144,7 @@ describe("pre-evaluation screens", () => {
         equivalent: "Bachelor's degree",
         confidence: "high",
         previewUrl: null,
-        documentKind: "diploma",
+        kind: "diploma",
       }),
     );
     expect(diploma).toContain(">Get my official evaluation · $19.95<");
@@ -154,7 +154,7 @@ describe("pre-evaluation screens", () => {
         equivalent: "Bachelor's degree",
         confidence: "high",
         previewUrl: null,
-        documentKind: "transcript",
+        kind: "transcript",
       }),
     );
     expect(transcript).toContain(">Get my official evaluation · $39.95<");
