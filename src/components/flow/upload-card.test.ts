@@ -24,16 +24,16 @@ function html(sessionEmail?: string | null, initialService?: string | null) {
 }
 
 describe("quote email field", () => {
-  it("asks an anonymous visitor for an email the form validates itself", () => {
+  it("does not ask an anonymous visitor for an email", () => {
     const markup = html(null);
     expect(markup).toContain("noValidate");
-    expect(markup).toContain("Email for your preview link");
-    expect(markup).toContain('data-testid="email"');
+    expect(markup).not.toContain("Email for your preview link");
+    expect(markup).not.toContain("Email for your order");
+    expect(markup).not.toContain('data-testid="email"');
+    expect(markup).not.toContain('type="email"');
     expect(markup).toContain('data-testid="get-quote"');
     expect(markup).toContain("Get my quote");
     expect(markup).not.toContain("Continue to payment");
-    expect(markup).not.toMatch(/data-testid="email"[^>]*required/);
-    expect(markup.match(/type="email"/g)).toHaveLength(1);
     expect(markup).not.toContain("Preview link goes to");
     expect(markup).not.toContain("Wrong email? Fix it");
   });
@@ -118,8 +118,9 @@ describe("service checkboxes", () => {
     expect(diploma).not.toContain("Pages:");
     expect(diploma).toContain("You can add a certified translation at $9.95/page.");
     expect(diploma).toContain("Staff sign off before the report is released.");
-    expect(diploma).toContain("Email for your order");
+    expect(diploma).not.toContain("Email for your order");
     expect(diploma).not.toContain("Email for your preview link");
+    expect(diploma).not.toContain('type="email"');
     expect(diploma).toContain("Continue to payment");
     expect(diploma).not.toContain("Get my quote");
     expect(diploma).toContain('data-testid="get-quote"');

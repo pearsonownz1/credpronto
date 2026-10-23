@@ -177,6 +177,19 @@ describe("auth migrations", () => {
     expect(sql.toLowerCase()).not.toMatch(/for delete/);
   });
 
+  it("lets a guest quote exist before it has an email", () => {
+    const sql = readFileSync(path.join(migrationsDir, "20261023160000_optional_customer_email.sql"), "utf8");
+    const lower = sql.toLowerCase();
+    expect(sql).toMatch(/alter table public\.customers/);
+    expect(sql).toMatch(/alter column email drop not null/);
+    expect(lower).not.toMatch(/\binsert\b/);
+    expect(lower).not.toMatch(/\bupdate\b/);
+    expect(lower).not.toMatch(/\bdelete\b/);
+    expect(lower).not.toMatch(/drop constraint/);
+    expect(lower).not.toMatch(/create type/);
+    expect(lower).not.toMatch(/add value/);
+  });
+
   it("adds evaluation stages without a new order status", () => {
     const sql = readFileSync(path.join(migrationsDir, "20261021130000_evaluation_progress.sql"), "utf8");
     const lower = sql.toLowerCase();
@@ -195,6 +208,18 @@ describe("auth migrations", () => {
     expect(lower).not.toMatch(/add value/);
     expect(lower).not.toMatch(/insert into/);
     expect(lower).not.toMatch(/create policy/);
+  });
+
+  it("keeps Clio tokens behind row level security for the service role", () => {
+    const sql = readFileSync(path.join(migrationsDir, "20261023170000_clio_connections.sql"), "utf8");
+    expect(sql).toMatch(/create table public\.clio_connections/);
+    expect(sql).toMatch(/create table public\.clio_matter_orders/);
+    expect(sql).toMatch(/region in \('us', 'eu', 'ca', 'au'\)/);
+    expect(sql).toMatch(/enable row level security/);
+    expect(sql.toLowerCase()).not.toMatch(/create policy/);
+    expect(sql.toLowerCase()).not.toMatch(/grant [^;]*to (anon|authenticated)/);
+    expect(sql).toMatch(/to service_role/);
+    expect(sql.toLowerCase()).not.toMatch(/insert into/);
   });
 
   it("adds final-file corrections, notarized, and mail fields without rewriting orders", () => {

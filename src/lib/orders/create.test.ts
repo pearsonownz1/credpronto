@@ -29,12 +29,14 @@ describe("resolveOrderCustomer", () => {
     ).toThrow(HttpError);
   });
 
-  it("requires an email when there is no session", () => {
+  it("keeps a guest email and allows a quote with none", () => {
     expect(resolveOrderCustomer({ session: null, bodyEmail: " ada@example.com " })).toEqual({
       email: "ada@example.com",
       userId: null,
     });
-    expect(() => resolveOrderCustomer({ session: null, bodyEmail: null })).toThrow(HttpError);
-    expect(() => resolveOrderCustomer({ session: null, bodyEmail: "" })).toThrow(HttpError);
+    expect(resolveOrderCustomer({ session: null, bodyEmail: null })).toEqual({ email: null, userId: null });
+    expect(resolveOrderCustomer({ session: null, bodyEmail: "" })).toEqual({ email: null, userId: null });
+    expect(resolveOrderCustomer({ session: null, bodyEmail: "   " })).toEqual({ email: null, userId: null });
+    expect(() => resolveOrderCustomer({ session: null, bodyEmail: "not-an-email" })).toThrow(HttpError);
   });
 });
