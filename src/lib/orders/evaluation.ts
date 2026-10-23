@@ -20,6 +20,11 @@ import { sendPreviewReady } from "./email";
 import { AiUnavailableError, HttpError } from "./errors";
 import { needsBundledTranslation } from "./evaluation-price";
 import { paidEvaluationDegreeCount } from "./evaluation-summary";
+import {
+  courseExtractFromTranscript,
+  recoverCourseExtract,
+  type TranscriptRowFailure,
+} from "./evaluation-transcript";
 import { orderEvaluationKinds, orderHasEvaluation, selectionPricePatch } from "./service-selection";
 import { concatPdfs } from "./pdf/merge";
 import { etaFromNow } from "./quote";
@@ -361,11 +366,14 @@ Return the student's granted title even when a field is missing. Do not add degr
 
 const COURSE_EXTRACT_INSTRUCTIONS = `Extract this academic transcript into a course-by-course table.
 Group courses by the academic year printed on the page. Keep each year label as printed.
+When the page is one examination session and has no academic year, use the session year as the year label.
 originalName is the course title as printed. englishName is the English name.
 localCredits and localGrade are the values as printed. localGrade is a string.
+When the columns are Subject, Coefficient, and Note × Coefficient, localCredits is the coefficient and localGrade is the mark out of 20: (Note × Coefficient) / Coefficient. Do not copy the weighted product as the grade.
+Do not include total, average, decision, or bonus rows as courses.
 scale is "10" when grades are out of 10, "20" when grades are out of 20, and "letter" when grades are already A–F.
 result is the overall decision printed on the credential, such as Admis, Passed, Réussi, Ajourné, Refusé, or Failed. Use an empty string when no overall result is printed.
-Do not convert grades. Do not invent courses.`;
+Do not invent courses.`;
 
 async function extractDiploma(text: string): Promise<DiplomaExtract> {
   return generateObject(diplomaSchema, [
@@ -748,25 +756,53 @@ function storedEdgeMatch(built: {
  * Course-by-course does not need a stored degree count. A diploma uses the
  * paid credential count, or one credential when that count was not saved.
  */
+export type ServiceFromText = {
+  result: EvaluationResult | null;
+  failures: TranscriptRowFailure[];
+};
+
 export async function evaluateServiceFromText(
   db: Db,
   order: OrderRecord,
   service: EvaluationService,
   pageText: string,
   filenames: string[],
-): Promise<EvaluationResult | null> {
+): Promise<ServiceFromText> {
   const degreeCount = paidEvaluationDegreeCount(order) ?? (service === "course_by_course" ? 1 : null);
-  if (degreeCount == null) return null;
-  const extracted = service === "diploma" ? await extractDiploma(pageText) : await extractCourses(pageText);
+  if (degreeCount == null) return { result: null, failures: [] };
+  if (service === "course_by_course") {
+    const parsed = courseExtractFromTranscript(pageText);
+    if (parsed.extract) {
+      const fromTranscript = await buildEvaluatedResult(
+        db,
+        service,
+        parsed.extract,
+        degreeCount,
+        filenames,
+        order.edgeCredentialId,
+      );
+      if (fromTranscript.result) return { result: fromTranscript.result, failures: parsed.failures };
+    }
+    const recovered = recoverCourseExtract(await extractCourses(pageText));
+    const built = await buildEvaluatedResult(
+      db,
+      service,
+      recovered.extract,
+      degreeCount,
+      filenames,
+      order.edgeCredentialId,
+    );
+    return { result: built.result, failures: [...parsed.failures, ...recovered.failures] };
+  }
   const built = await buildEvaluatedResult(
     db,
     service,
-    extracted,
+    await extractDiploma(pageText),
     degreeCount,
     filenames,
     order.edgeCredentialId,
   );
-  return built.result;
+  return { result: built.result, failures: [] };
 }
 
 export async function completeEvaluation(

@@ -128,6 +128,31 @@ describe("staffOrder", () => {
     ]);
     expect(console.error).toHaveBeenCalled();
   });
+
+  it("does not sign an evaluation PDF stored outside this order", async () => {
+    vi.mocked(db.getOrderById).mockResolvedValue({
+      id: orderId,
+      customerId: "customer-1",
+      status: "paid",
+      service: null,
+      services: ["diploma", "course_by_course"],
+      includeTranslation: false,
+      serviceFiles: {
+        diploma: "other-order/diploma-evaluation.pdf",
+        course_by_course: `${orderId}/../other-order/course.pdf`,
+      },
+      evaluationStatus: null,
+      progress: { step: "done", pagesRead: 2, pagesTotal: 2 },
+    } as OrderRecord);
+
+    const detail = await staffOrder(orderId);
+
+    expect(detail.evaluationReports).toEqual([
+      { service: "diploma", uploaded: true, fileName: "diploma-evaluation.pdf" },
+      { service: "course_by_course", uploaded: true, fileName: "course.pdf" },
+    ]);
+    expect(storage.signedObjectUrls).not.toHaveBeenCalled();
+  });
 });
 
 describe("parseStaffDetail services", () => {
@@ -147,6 +172,46 @@ describe("parseStaffDetail services", () => {
     expect(detail?.evaluationReports).toEqual([
       { service: "diploma", uploaded: true, fileName: "diploma-evaluation.pdf" },
     ]);
+  });
+
+  it("keeps a stored evaluation failure and segment source indexes", () => {
+    const detail = parseStaffDetail({
+      id: orderId,
+      status: "paid",
+      createdAt: "2026-10-12T00:00:00.000Z",
+      service: "course_by_course",
+      evaluationFailures: [
+        { service: "course_by_course", reason: "Course-by-course evaluation could not be read from the uploaded pages." },
+      ],
+      documents: [
+        {
+          id: "doc-1",
+          filename: "Aristide.pdf",
+          pages: [
+            {
+              id: "page-1",
+              pageNumber: 1,
+              sourceText: "Session de 2001",
+              translation: {
+                paragraphs: [
+                  { text: "Session: 2001", source_index: 0 },
+                  { text: "Sub-center: BAFOUSSAM", source_index: 0 },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(detail?.evaluationFailures).toEqual([
+      {
+        service: "course_by_course",
+        reason: "Course-by-course evaluation could not be read from the uploaded pages.",
+      },
+    ]);
+    expect(detail?.pages[0]?.sourceIndexes).toEqual([0, 0]);
+    expect(detail?.pages[0]?.paragraphs).toEqual(["Session: 2001", "Sub-center: BAFOUSSAM"]);
   });
 
   it("keeps short-lived links for the stored evaluation PDFs", () => {

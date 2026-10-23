@@ -68,6 +68,8 @@ export type StaffPage = {
   pageNumber: number;
   sourceText: string | null;
   paragraphs: string[];
+  /** Source line index for each paragraph, when the translation stores or derives one. */
+  sourceIndexes?: number[];
 };
 
 export type StaffCorrection = {
@@ -137,6 +139,11 @@ export type StaffDetail = {
     service: "diploma" | "course_by_course";
     heading: string;
     lines: string[];
+  }>;
+  /** Reasons from the last paid evaluation run. Empty once that service is stored. */
+  evaluationFailures?: Array<{
+    service: "diploma" | "course_by_course";
+    reason: string;
   }>;
   equivalencyCredentials: Array<{
     credential: string;

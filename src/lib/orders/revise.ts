@@ -23,6 +23,7 @@ import { HttpError } from "./errors";
 import { storeCertifiedTranslation } from "./final-file";
 import { renderOrderPdfs } from "./pdf/render";
 import { uploadObject } from "./storage";
+import { segmentsInSourceOrder } from "./segment-source";
 import { mergeEditedPages, paragraphsForPage, type PageEdit, type PageTranslation } from "./translation-edit";
 
 const EDITABLE = new Set(["preview_ready", "correction_requested", "paid", "approved", "delivered"]);
@@ -113,7 +114,7 @@ export async function editOrderTranslation(orderId: string, body: unknown) {
             return {
               pageNumber: page.pageNumber,
               combinedPageNumber: page.number,
-              paragraphs: rendered?.paragraphs ?? [],
+              paragraphs: segmentsInSourceOrder(page.ocrText, rendered?.paragraphs ?? []),
             };
           }),
         },

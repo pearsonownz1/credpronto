@@ -22,6 +22,7 @@ import {
   translatedProse,
 } from "./pdf/source-mirror";
 import { blocksFromModel, blocksToParagraphs, formBlocksWhenCollapsed, type ModelBlock } from "./pdf/structure";
+import { segmentsInSourceOrder } from "./segment-source";
 import {
   claimOrderColumn,
   clearOrderColumn,
@@ -747,7 +748,7 @@ export async function runTranslationAssemble(
               pages: stored.map((page) => ({
                 pageNumber: page.page.pageNumber,
                 combinedPageNumber: page.page.number,
-                paragraphs: page.paragraphs,
+                paragraphs: segmentsInSourceOrder(page.page.ocrText, page.paragraphs),
                 blocks: page.blocks,
                 ...(page.kind ? { kind: page.kind } : {}),
                 ...(page.layoutFallback ? { layoutFallback: page.layoutFallback } : {}),

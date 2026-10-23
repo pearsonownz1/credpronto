@@ -2,6 +2,7 @@ import { FINALS_BUCKET } from "./constants";
 import { listDocuments, listPages, settledPayment, updateOrder, getOrderById, type Db } from "./db";
 import { HttpError } from "./errors";
 import { evaluateServiceFromText } from "./evaluation";
+import { progressWithEvaluationFailures } from "./evaluation-failures";
 import {
   evaluationServicePath,
   evaluationSummaries,
@@ -11,8 +12,13 @@ import {
   pendingEvaluationWork,
   type ProducedEvaluation,
 } from "./evaluation-summary";
+import {
+  courseExtractFromTranscript,
+  textForPaidEvaluation,
+  type TranscriptRowFailure,
+} from "./evaluation-transcript";
 import { evaluationIssuedLabel, evaluationReportId, renderEvaluationPdfs } from "./pdf/evaluation";
-import { orderHasEvaluation } from "./service-selection";
+import { orderEvaluationKinds, orderHasEvaluation } from "./service-selection";
 import { requireStaff } from "./staff";
 import { uploadObject } from "./storage";
 import type { EvaluationResult, EvaluationService, OrderRecord } from "./types";
@@ -38,6 +44,11 @@ function unreadReason(service: EvaluationService): string {
     : "Diploma evaluation could not be read from the uploaded pages.";
 }
 
+export type EvaluationProduce =
+  | EvaluationResult
+  | null
+  | { result: EvaluationResult | null; failures?: readonly TranscriptRowFailure[] };
+
 export type EvaluationDispatchDeps = {
   produce: (
     db: Db,
@@ -45,7 +56,7 @@ export type EvaluationDispatchDeps = {
     service: EvaluationService,
     pageText: string,
     filenames: string[],
-  ) => Promise<EvaluationResult | null>;
+  ) => Promise<EvaluationProduce>;
   store: (
     db: Db,
     order: OrderRecord,
@@ -79,14 +90,6 @@ async function storeEvaluationPdf(
   return { result: stored, path };
 }
 
-function pageTextOf(pages: Array<{ pageNumber: number; ocrText: string | null }>): string {
-  return [...pages]
-    .sort((a, b) => a.pageNumber - b.pageNumber)
-    .map((page) => page.ocrText ?? "")
-    .filter(Boolean)
-    .join("\n");
-}
-
 /**
  * Builds each purchased evaluation that is still missing. A second call leaves
  * finished reports in place and does not change the amount paid.
@@ -100,14 +103,18 @@ export async function ensurePaidEvaluationReports(
   if (!order || !orderIsPaid(order) || !orderHasEvaluation(order)) return UNCHANGED;
 
   const initial = pendingEvaluationWork(order);
-  if (initial.length === 0) return UNCHANGED;
+  if (initial.length === 0) {
+    const kept = await transcriptRowFailures(db, order);
+    const progress = progressWithEvaluationFailures(order.progress, kept);
+    if (progress) await updateOrder(db, order.id, { progress });
+    return { ...UNCHANGED, failures: kept };
+  }
 
   const documents = await listDocuments(db, order.id);
   const pages = await listPages(
     db,
     documents.map((document) => document.id),
   );
-  const text = pageTextOf(pages);
   const filenames = documents.map((document) => document.filename);
   const produced: ProducedEvaluation[] = [];
   const generated: EvaluationService[] = [];
@@ -118,14 +125,19 @@ export async function ensurePaidEvaluationReports(
     try {
       const degreeCount = paidEvaluationDegreeCount(current);
       const counted = degreeCount == null ? current : { ...current, degreeCount };
+      const text = textForPaidEvaluation(documents, pages, gap.service);
       const existing =
         current.evaluationResults?.find((result) => result.kind === gap.service) ??
         (current.evaluationResult?.kind === gap.service ? current.evaluationResult : null);
       const result = gap.needsResult
         ? await readPaidEvaluation(deps, db, counted, gap.service, text, filenames)
         : existing
-          ? { ok: true as const, result: existing }
-          : { ok: false as const, reason: "The stored evaluation result is missing." };
+          ? { ok: true as const, result: existing, failures: [] }
+          : { ok: false as const, reason: "The stored evaluation result is missing.", failures: [] };
+      for (const failure of result.failures) {
+        console.error(`${failure.service}: ${failure.reason}`);
+        failures.push(failure);
+      }
       if (!result.ok) {
         console.error(`${gap.service}: ${result.reason}`);
         failures.push({ service: gap.service, reason: result.reason });
@@ -157,8 +169,11 @@ export async function ensurePaidEvaluationReports(
     }
   }
 
-  const patch = paidEvaluationPatch(order, produced);
-  if (patch) await updateOrder(db, order.id, patch);
+  const savedFailures = withTranscriptRows(order, documents, pages, failures);
+  const patch = paidEvaluationPatch(order, produced) ?? {};
+  const progress = progressWithEvaluationFailures(order.progress, savedFailures);
+  if (progress) patch.progress = progress;
+  if (Object.keys(patch).length > 0) await updateOrder(db, order.id, patch);
   const pending = pendingEvaluationWork({
     ...order,
     evaluationResult: (patch?.evaluation_result as EvaluationResult | undefined) ?? order.evaluationResult,
@@ -166,9 +181,51 @@ export async function ensurePaidEvaluationReports(
     serviceFiles: (patch?.service_files as OrderRecord["serviceFiles"] | undefined) ?? order.serviceFiles,
   }).map((gap) => gap.service);
 
-  if (pending.length > 0) return { status: "partial", generated, pending, failures };
-  if (generated.length === 0) return { status: "unchanged", generated, pending, failures };
-  return { status: "ready", generated, pending, failures };
+  if (pending.length > 0) return { status: "partial", generated, pending, failures: savedFailures };
+  if (generated.length === 0) return { status: "unchanged", generated, pending, failures: savedFailures };
+  return { status: "ready", generated, pending, failures: savedFailures };
+}
+
+function unpackProduce(value: EvaluationProduce): { result: EvaluationResult | null; failures: TranscriptRowFailure[] } {
+  if (!value || typeof value !== "object") return { result: null, failures: [] };
+  if ("kind" in value) return { result: value, failures: [] };
+  const failures = Array.isArray(value.failures)
+    ? value.failures.flatMap((entry) => {
+        const row = entry?.row?.trim() ?? "";
+        const reason = entry?.reason?.trim() ?? "";
+        return row && reason ? [{ row, reason }] : [];
+      })
+    : [];
+  const result = value.result && typeof value.result === "object" && "kind" in value.result ? value.result : null;
+  return { result, failures };
+}
+
+function storedRowFailure(service: EvaluationService, failure: TranscriptRowFailure): EvaluationFailure {
+  return { service, reason: `${failure.row}: ${failure.reason}` };
+}
+
+function withTranscriptRows(
+  order: OrderRecord,
+  documents: readonly { id: string; position: number }[],
+  pages: readonly { documentId: string; pageNumber: number; ocrText: string | null }[],
+  failures: readonly EvaluationFailure[],
+): EvaluationFailure[] {
+  if (!orderEvaluationKinds(order).includes("course_by_course")) return [...failures];
+  const rows = courseExtractFromTranscript(textForPaidEvaluation(documents, pages, "course_by_course")).failures.map(
+    (failure) => storedRowFailure("course_by_course", failure),
+  );
+  const seen = new Set(failures.map((failure) => `${failure.service}:${failure.reason}`));
+  return [...failures, ...rows.filter((failure) => !seen.has(`${failure.service}:${failure.reason}`))];
+}
+
+/** Row reasons from the transcript parser, kept on the order after the report exists. */
+async function transcriptRowFailures(db: Db, order: OrderRecord): Promise<EvaluationFailure[]> {
+  const documents = await listDocuments(db, order.id);
+  const pages = await listPages(
+    db,
+    documents.map((document) => document.id),
+  );
+  return withTranscriptRows(order, documents, pages, []);
 }
 
 async function readPaidEvaluation(
@@ -178,14 +235,18 @@ async function readPaidEvaluation(
   service: EvaluationService,
   text: string,
   filenames: string[],
-): Promise<{ ok: true; result: EvaluationResult } | { ok: false; reason: string }> {
+): Promise<
+  | { ok: true; result: EvaluationResult; failures: EvaluationFailure[] }
+  | { ok: false; reason: string; failures: EvaluationFailure[] }
+> {
   if (service === "diploma" && order.degreeCount == null) {
-    return { ok: false, reason: "Diploma evaluation needs a credential count before it can be generated." };
+    return { ok: false, reason: "Diploma evaluation needs a credential count before it can be generated.", failures: [] };
   }
-  if (!text.trim()) return { ok: false, reason: "This order has no page text to read for the evaluation." };
-  const result = await deps.produce(db, order, service, text, filenames);
-  if (!result) return { ok: false, reason: unreadReason(service) };
-  return { ok: true, result };
+  if (!text.trim()) return { ok: false, reason: "This order has no page text to read for the evaluation.", failures: [] };
+  const produced = unpackProduce(await deps.produce(db, order, service, text, filenames));
+  const failures = produced.failures.map((failure) => storedRowFailure(service, failure));
+  if (!produced.result) return { ok: false, reason: unreadReason(service), failures };
+  return { ok: true, result: produced.result, failures };
 }
 
 /**
