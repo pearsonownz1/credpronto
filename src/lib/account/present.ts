@@ -105,10 +105,48 @@ function minutesUntil(etaAt: string | null | undefined, now: number): number | n
   return minutes >= 1 ? minutes : null;
 }
 
+function firstLanguage(...values: Array<string | null | undefined>): string | null {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
+function displayLanguage(value: string): string {
+  const label = languageLabel(value);
+  if (label !== "Unknown") return label;
+  const trimmed = value.trim();
+  if (/^[a-z]{2,8}(-[a-z0-9]+)*$/i.test(trimmed)) return label;
+  return trimmed;
+}
+
+/** Order code, then order name, then the same fields on a document. */
+function sourceLanguageOf(order: CustomerOrder): string | null {
+  const direct = firstLanguage(order.sourceLanguage, order.sourceLanguageName);
+  if (direct) return direct;
+  for (const document of order.documents ?? []) {
+    const value = firstLanguage(document.sourceLanguage, document.sourceLanguageName, document.detectedLanguage);
+    if (value) return value;
+  }
+  return null;
+}
+
+function targetLanguageOf(order: CustomerOrder): string | null {
+  const direct = firstLanguage(order.targetLanguage, order.targetLanguageName);
+  if (direct) return direct;
+  for (const document of order.documents ?? []) {
+    const value = firstLanguage(document.targetLanguage, document.targetLanguageName);
+    if (value) return value;
+  }
+  return null;
+}
+
 function languagePair(order: CustomerOrder): string {
-  if (!order.sourceLanguage) return "—";
-  const target = order.targetLanguage ?? "en";
-  return `${languageLabel(order.sourceLanguage)} → ${languageLabel(target)}`;
+  const source = sourceLanguageOf(order);
+  if (!source) return "—";
+  const target = targetLanguageOf(order) ?? "en";
+  return `${displayLanguage(source)} → ${displayLanguage(target)}`;
 }
 
 function evaluationPaysFirst(order: {

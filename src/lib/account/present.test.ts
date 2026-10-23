@@ -165,6 +165,39 @@ describe("customer order presentation", () => {
     expect(presentOrder(parsed!, NOW).documents).toBe("Certified translation");
     expect(presentOrder(parsed!, NOW).pair).toBe("—");
 
+    const named = parseCustomerOrder({
+      id: "ord-named",
+      status: "paid",
+      serviceType: "translation",
+      createdAt: "2026-10-12T00:00:00.000Z",
+      sourceLanguageName: "Spanish",
+      targetLanguageName: "English",
+    });
+    expect(presentOrder(named!, NOW).pair).toBe("Spanish → English");
+
+    const coded = parseCustomerOrder({
+      id: "ord-coded",
+      status: "paid",
+      serviceType: "translation",
+      createdAt: "2026-10-12T00:00:00.000Z",
+      source_language: "fr",
+      target_language: "es",
+    });
+    expect(presentOrder(coded!, NOW).pair).toBe("French → Spanish");
+
+    const fromDocument = parseCustomerOrder({
+      id: "ord-doc",
+      status: "preview_ready",
+      serviceType: "translation",
+      createdAt: "2026-10-12T00:00:00.000Z",
+      documents: [
+        { filename: "blank.pdf" },
+        { detected_language: "pt", targetLanguage: "en" },
+      ],
+    });
+    expect(presentOrder(fromDocument!, NOW).pair).toBe("Portuguese → English");
+    expect(presentOrder({ ...order("paid"), sourceLanguage: null, targetLanguage: "en" }, NOW).pair).toBe("—");
+
     const list = parseAdminList({
       orders: [
         {

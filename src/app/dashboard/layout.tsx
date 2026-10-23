@@ -5,6 +5,7 @@ import { AccountShell } from "@/components/account/account-shell";
 import type { Account } from "@/lib/account/names";
 import { safeNextPath } from "@/lib/auth/redirect";
 import { currentPath, getAccount } from "@/lib/account/session";
+import { attachDashboardLanguages } from "@/lib/account/order-languages";
 import { listMyOrders } from "@/lib/api/server";
 
 export const instant = false;
@@ -35,13 +36,14 @@ async function DashboardGate({
   children: React.ReactNode;
 }) {
   await connection();
-  const orders = await listMyOrders();
-  if (!orders.ok && orders.status === 401) redirect(`/sign-in?next=${encodeURIComponent(next)}`);
+  const listed = await listMyOrders();
+  if (!listed.ok && listed.status === 401) redirect(`/sign-in?next=${encodeURIComponent(next)}`);
+  const orders = listed.ok ? await attachDashboardLanguages(listed.data.orders) : [];
   return (
     <AccountShell
       account={account}
-      orders={orders.ok ? orders.data.orders : []}
-      ordersError={orders.ok ? null : orders.error}
+      orders={orders}
+      ordersError={listed.ok ? null : listed.error}
       // Request time for the translating ETA. It stays fixed for this response.
       // eslint-disable-next-line react-hooks/purity
       now={Date.now()}

@@ -94,6 +94,41 @@ describe("dashboard order rows", () => {
     expect(card).not.toContain("<button");
     expect(html.match(/data-testid="order-CP-/g)).toHaveLength(6);
     expect(html.match(/data-testid="order-card-CP-/g)).toHaveLength(6);
+    expect(row(html, "order-CP-24817")).toContain("Spanish → English");
+    expect(row(html, "order-card-CP-24817")).toContain("Spanish → English");
+  });
+
+  it("shows a document language pair and a dash when the order has no language", () => {
+    const [sample] = mockOrdersFor(MOCK_CUSTOMER_EMAIL, NOW);
+    shell.orders = [
+      {
+        ...sample,
+        id: "order-es",
+        sourceLanguage: null,
+        targetLanguage: null,
+        documents: [{ detectedLanguage: "es", targetLanguage: "en" }],
+      },
+      {
+        ...sample,
+        id: "order-none",
+        sourceLanguage: null,
+        targetLanguage: "en",
+        documents: null,
+        billablePages: 1,
+        totalCents: 995,
+      },
+    ];
+    try {
+      const html = dashboardHtml();
+      expect(row(html, "order-order-es")).toContain("Spanish → English");
+      expect(row(html, "order-card-order-es")).toContain("Spanish → English");
+      const empty = row(html, "order-order-none");
+      expect(empty).toContain(">—</span>");
+      expect(empty).not.toContain("Spanish");
+      expect(empty).not.toContain("English");
+    } finally {
+      shell.orders = undefined;
+    }
   });
 
   it("renders real anchors for a production order that has an id and no raw token", () => {

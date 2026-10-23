@@ -4,6 +4,7 @@ import type {
   AdminList,
   AdminOrder,
   CustomerOrder,
+  CustomerOrderDocument,
   QaIssue,
   QaIssueType,
   QaReport,
@@ -31,6 +32,34 @@ function flag(value: unknown): boolean {
   return value === true;
 }
 
+function parseOrderDocument(value: unknown): CustomerOrderDocument | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  const document: CustomerOrderDocument = {
+    detectedLanguage: text(row.detectedLanguage) ?? text(row.detected_language),
+    sourceLanguage: text(row.sourceLanguage) ?? text(row.source_language),
+    targetLanguage: text(row.targetLanguage) ?? text(row.target_language),
+    sourceLanguageName: text(row.sourceLanguageName) ?? text(row.source_language_name),
+    targetLanguageName: text(row.targetLanguageName) ?? text(row.target_language_name),
+  };
+  if (
+    !document.detectedLanguage &&
+    !document.sourceLanguage &&
+    !document.targetLanguage &&
+    !document.sourceLanguageName &&
+    !document.targetLanguageName
+  ) {
+    return null;
+  }
+  return document;
+}
+
+function parseOrderDocuments(value: unknown): CustomerOrderDocument[] | null {
+  if (!Array.isArray(value)) return null;
+  const documents = value.map(parseOrderDocument).filter((document) => document != null);
+  return documents.length > 0 ? documents : null;
+}
+
 export function parseCustomerOrder(value: unknown): CustomerOrder | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Record<string, unknown>;
@@ -54,8 +83,11 @@ export function parseCustomerOrder(value: unknown): CustomerOrder | null {
     downloadAvailable: flag(row.downloadAvailable),
     documentName: text(row.documentName),
     documentsLabel: text(row.documentsLabel),
-    sourceLanguage: text(row.sourceLanguage),
-    targetLanguage: text(row.targetLanguage),
+    sourceLanguage: text(row.sourceLanguage) ?? text(row.source_language),
+    targetLanguage: text(row.targetLanguage) ?? text(row.target_language),
+    sourceLanguageName: text(row.sourceLanguageName) ?? text(row.source_language_name),
+    targetLanguageName: text(row.targetLanguageName) ?? text(row.target_language_name),
+    documents: parseOrderDocuments(row.documents),
     orderToken: text(row.orderToken),
     etaAt: text(row.etaAt),
     includeTranslation: row.includeTranslation === true,
