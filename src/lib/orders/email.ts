@@ -5,9 +5,11 @@ import {
   renderEvaluationStatusEmail,
   renderOrderReceivedEmail,
   renderPaymentReceiptEmail,
+  renderPreEvaluationEmail,
   renderPreviewReadyEmail,
   renderStaffAlertEmail,
   renderTranslationFailureAlertEmail,
+  type PreEvaluationResultEmail,
   type RenderedEmail,
   type OrderReceivedEmail,
   type PaymentReceiptEmail,
@@ -155,6 +157,32 @@ export function sendPreviewReady(
 export function sendPaymentReceipt(to: string, input: PaymentReceiptEmail): Promise<SendResult> {
   const rendered = renderPaymentReceiptEmail(input);
   return send(to, rendered.subject, rendered.text, rendered.html);
+}
+
+export async function sendPreEvaluationResult(
+  to: string,
+  input: PreEvaluationResultEmail,
+): Promise<SendResult> {
+  const rendered = renderPreEvaluationEmail(input);
+  const client = mailer();
+  if (!client) return { sent: false, skipped: true };
+  try {
+    const { error } = await client.resend.emails.send({
+      from: client.from,
+      to,
+      subject: rendered.subject,
+      text: rendered.text,
+      html: rendered.html,
+    });
+    if (error) {
+      console.error("pre-evaluation email failed");
+      return { sent: false, skipped: false };
+    }
+  } catch {
+    console.error("pre-evaluation email failed");
+    return { sent: false, skipped: false };
+  }
+  return { sent: true, skipped: false };
 }
 
 export function sendEvaluationStatus(
