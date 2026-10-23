@@ -796,7 +796,7 @@ export type ModelBlock = {
   text?: string;
   level?: number;
   electronic?: boolean;
-  rows?: Array<{ label?: string; value?: string }>;
+  rows?: Array<{ label?: string; value?: string } | string[]>;
   lines?: string[];
   align?: string;
   column?: string;
@@ -808,6 +808,7 @@ export type ModelBlock = {
   items?: string[];
   ordered?: boolean;
   cells?: string[][];
+  header?: boolean;
   caption?: string;
 };
 
@@ -852,8 +853,10 @@ function layoutBlock(block: ModelBlock): RenderBlock[] | null {
   if (type === "table" && (block.cells?.length || block.rows?.length)) {
     const rows = block.cells?.length
       ? block.cells.map((row) => row.map((cell) => cell.trim()))
-      : (block.rows ?? []).map((row) => [row.label ?? "", row.value ?? ""]);
-    return [{ type: "table", rows, header: false }];
+      : (block.rows ?? []).map((row) =>
+          Array.isArray(row) ? row.map((cell) => String(cell ?? "").trim()) : [row.label ?? "", row.value ?? ""],
+        );
+    return [{ type: "table", rows, header: block.header ?? false }];
   }
   if (type === "stamp") return [{ type: "stamp", text: (block.text ?? "").trim(), column }];
   if (type === "handwritten") return [{ type: "handwritten", text: (block.text ?? "").trim() }];
@@ -879,6 +882,7 @@ function fromModelBlock(block: ModelBlock): RenderBlock[] {
   const type = block.type ?? "paragraph";
   if (type === "fields" && block.rows?.length) {
     const rows = block.rows
+      .map((row) => (Array.isArray(row) ? { label: row[0], value: row.slice(1).join(" ") } : row))
       .map((row) => ({
         label: lookup(row.label ?? "")?.english ?? (row.label ?? "").trim(),
         value: translateValue(row.value ?? ""),

@@ -28,8 +28,12 @@ export type PlanRect = {
   stroke: number;
 };
 
+export type PlanRule = { x1: number; y1: number; x2: number; y2: number; width: number };
+
 export type DocumentPlan = {
   serif: boolean;
+  /** Table grid lines. */
+  rules?: PlanRule[];
   overflow: boolean;
   frame?: PlanRect;
   boxes: PlanRect[];
@@ -134,6 +138,116 @@ function wrapWords(words: Word[], size: number, maxWidth: number, measure: Measu
   return lines;
 }
 
+const TABLE_PAD = 3;
+
+/** Column widths that fit the available width. Each column gets its natural width when it fits, otherwise wide columns shrink. */
+export function tableColumnWidths(natural: number[], maxWidth: number, minWidth = 24): number[] {
+  const count = natural.length;
+  if (count === 0) return [];
+  const floor = Math.min(minWidth, maxWidth / count);
+  const wants = natural.map((width) => Math.max(floor, width));
+  const total = wants.reduce((sum, width) => sum + width, 0);
+  if (total <= maxWidth) {
+    const extra = (maxWidth - total) / count;
+    return wants.map((width) => width + extra);
+  }
+  let budget = maxWidth;
+  let open = wants.map((_, index) => index);
+  const out = wants.slice();
+  // Columns narrower than an even share keep their width; wider ones split what is left.
+  for (;;) {
+    const share = budget / open.length;
+    const small = open.filter((index) => (wants[index] ?? 0) <= share);
+    if (small.length === 0 || small.length === open.length) {
+      for (const index of open) out[index] = share;
+      break;
+    }
+    for (const index of small) {
+      out[index] = wants[index] ?? share;
+      budget -= out[index] ?? 0;
+    }
+    open = open.filter((index) => !small.includes(index));
+  }
+  return out;
+}
+
+export type TableLayout = { texts: PlanText[]; rules: PlanRule[]; bottom: number; clipped: boolean };
+
+/**
+ * A grid with a bold header row, wrapped cells, and ruled borders.
+ * Rows that would cross `bottom` are left off and the layout reports clipped.
+ */
+export function planTable(input: {
+  rows: string[][];
+  header: boolean;
+  x: number;
+  y: number;
+  width: number;
+  size: number;
+  bottom: number;
+  serif: boolean;
+  measure: Measure;
+}): TableLayout {
+  const { size, serif, measure } = input;
+  const columns = Math.max(0, ...input.rows.map((row) => row.length));
+  const rows = input.rows.map((row) => Array.from({ length: columns }, (_, index) => (row[index] ?? "").trim()));
+  const texts: PlanText[] = [];
+  const rules: PlanRule[] = [];
+  if (columns === 0 || rows.length === 0) return { texts, rules, bottom: input.y, clipped: false };
+  const natural = Array.from({ length: columns }, (_, column) =>
+    Math.max(...rows.map((row, rowIndex) => measure(row[column] ?? "", size, { serif, bold: input.header && rowIndex === 0 }))) + TABLE_PAD * 2,
+  );
+  const widths = tableColumnWidths(natural, input.width);
+  const lefts: number[] = [];
+  let cursor = input.x;
+  for (const width of widths) {
+    lefts.push(cursor);
+    cursor += width;
+  }
+  const right = input.x + input.width;
+  const leading = size * 1.22;
+  let y = input.y;
+  let clipped = false;
+  const numeric = (text: string) => /^[\d\s.,/:%+-]+$/.test(text) && /\d/.test(text);
+  rules.push({ x1: input.x, y1: y, x2: right, y2: y, width: 0.6 });
+  rows.forEach((row, rowIndex) => {
+    if (clipped) return;
+    const bold = input.header && rowIndex === 0;
+    const wrapped = row.map((cell, column) => {
+      const words = wordsOf(cell).map((word) => ({ ...word, bold: word.bold || bold }));
+      return wrapWords(words, size, Math.max(4, (widths[column] ?? 0) - TABLE_PAD * 2), measure, serif);
+    });
+    const lineCount = Math.max(1, ...wrapped.map((lines) => lines.length));
+    const height = lineCount * leading + TABLE_PAD * 2 - (leading - size);
+    if (y - height < input.bottom) {
+      clipped = true;
+      return;
+    }
+    const space = measure(" ", size, { serif });
+    wrapped.forEach((lines, column) => {
+      const cellLeft = lefts[column] ?? input.x;
+      const cellWidth = widths[column] ?? 0;
+      const alignRight = !bold && numeric(row[column] ?? "");
+      lines.forEach((line, lineIndex) => {
+        const lineY = y - TABLE_PAD - size * 0.82 - lineIndex * leading;
+        const natural = lineWidth(line, size, space, measure, serif);
+        let wordX = alignRight ? cellLeft + cellWidth - TABLE_PAD - natural : cellLeft + TABLE_PAD;
+        for (const word of line) {
+          texts.push({ text: word.text, x: wordX, y: lineY, size, color: "ink", bold: word.bold, serif });
+          wordX += measure(word.text, size, { bold: word.bold, serif }) + space;
+        }
+      });
+    });
+    y -= height;
+    rules.push({ x1: input.x, y1: y, x2: right, y2: y, width: bold ? 0.9 : 0.4 });
+  });
+  const top = input.y;
+  for (const [index, left] of [...lefts, right].entries()) {
+    rules.push({ x1: left, y1: top, x2: left, y2: y, width: index === 0 || index === lefts.length ? 0.6 : 0.4 });
+  }
+  return { texts, rules, bottom: y, clipped };
+}
+
 /** Words placed on the page. Text that falls below the page is left out. */
 export function paintedPlanText(plan: DocumentPlan, minY = 12): string {
   return plan.texts
@@ -167,6 +281,7 @@ function planLetter(input: {
   const margin = Math.max(54, Math.min(68, input.width * 0.09));
   const maxWidth = input.width - margin * 2;
   const texts: PlanText[] = [];
+  const rules: PlanRule[] = [];
   let y = input.height - margin;
   const serif = false;
   const size = input.size;
@@ -342,12 +457,25 @@ function planLetter(input: {
       continue;
     }
     if (block.type === "table") {
-      for (const row of block.rows) paintText(row.join("  "), margin, maxWidth, size - 0.5, "left", "ink");
-      y -= 4;
+      const table = planTable({
+        rows: block.rows,
+        header: block.header ?? true,
+        x: margin,
+        y,
+        width: maxWidth,
+        size: size - 1,
+        bottom: input.footer,
+        serif,
+        measure: input.measure,
+      });
+      texts.push(...table.texts);
+      rules.push(...table.rules);
+      y = table.bottom - 8;
+      if (table.clipped) y = Math.min(y, input.footer - 1);
     }
   }
 
-  return { serif, overflow: y < input.footer, boxes: [], texts };
+  return { serif, overflow: y < input.footer, boxes: [], texts, rules };
 }
 
 /**
@@ -364,6 +492,7 @@ function planLabeledCertificate(input: {
   measure: Measure;
 }): DocumentPlan {
   const texts: PlanText[] = [];
+  const rules: PlanRule[] = [];
   const serif = true;
   const size = input.size;
   const inset = 26;
@@ -463,8 +592,21 @@ function planLabeledCertificate(input: {
       continue;
     }
     if (block.type === "table") {
-      for (const row of block.rows) paintLine(row.join("  "), size - 0.5, "left");
-      y -= 2;
+      const table = planTable({
+        rows: block.rows,
+        header: block.header ?? true,
+        x: left,
+        y: y + size * 0.6,
+        width: innerW,
+        size: size - 1,
+        bottom,
+        serif,
+        measure: input.measure,
+      });
+      texts.push(...table.texts);
+      rules.push(...table.rules);
+      if (table.clipped) clipped = true;
+      y = table.bottom - size - 4;
       continue;
     }
     if (block.type === "signature") {
@@ -488,6 +630,7 @@ function planLabeledCertificate(input: {
     frame,
     boxes: [],
     texts,
+    rules,
   };
 }
 
@@ -500,7 +643,7 @@ function planCertificate(input: {
   measure: Measure;
   hasPhoto: boolean;
 }): DocumentPlan {
-  if (input.blocks.some((block) => block.type === "kv" || block.type === "fields")) {
+  if (input.blocks.some((block) => block.type === "kv" || block.type === "fields" || block.type === "table")) {
     return planLabeledCertificate(input);
   }
   const texts: PlanText[] = [];
