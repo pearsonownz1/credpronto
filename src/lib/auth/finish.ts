@@ -15,7 +15,7 @@ type VerifiedUser = {
 /** Attach the current order, then claim earlier orders when the email is verified. */
 export async function finishAuthenticatedUser(user: VerifiedUser, orderToken: string | null): Promise<string[]> {
   const db = serviceDb();
-  await attachOrderToken(db, user.id, orderToken);
+  await attachOrderToken(db, user.id, orderToken, user.email ?? null);
   return claimOrdersForUser(db, {
     id: user.id,
     email: user.email ?? null,
@@ -27,7 +27,11 @@ export async function finishAuthenticatedUser(user: VerifiedUser, orderToken: st
  * Instant sign-up has not proved the inbox. Link only the order this browser
  * holds (request token, next path, or stored token) and leave other guest orders.
  */
-export async function finishInstantSignup(userId: string, orderToken: string | null): Promise<string[]> {
-  const linked = await attachOrderToken(serviceDb(), userId, orderToken);
+export async function finishInstantSignup(
+  userId: string,
+  orderToken: string | null,
+  email: string | null,
+): Promise<string[]> {
+  const linked = await attachOrderToken(serviceDb(), userId, orderToken, email);
   return linked ? [linked] : [];
 }

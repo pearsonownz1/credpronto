@@ -177,6 +177,19 @@ describe("auth migrations", () => {
     expect(sql.toLowerCase()).not.toMatch(/for delete/);
   });
 
+  it("lets a guest quote exist before it has an email", () => {
+    const sql = readFileSync(path.join(migrationsDir, "20261023160000_optional_customer_email.sql"), "utf8");
+    const lower = sql.toLowerCase();
+    expect(sql).toMatch(/alter table public\.customers/);
+    expect(sql).toMatch(/alter column email drop not null/);
+    expect(lower).not.toMatch(/\binsert\b/);
+    expect(lower).not.toMatch(/\bupdate\b/);
+    expect(lower).not.toMatch(/\bdelete\b/);
+    expect(lower).not.toMatch(/drop constraint/);
+    expect(lower).not.toMatch(/create type/);
+    expect(lower).not.toMatch(/add value/);
+  });
+
   it("adds evaluation stages without a new order status", () => {
     const sql = readFileSync(path.join(migrationsDir, "20261021130000_evaluation_progress.sql"), "utf8");
     const lower = sql.toLowerCase();

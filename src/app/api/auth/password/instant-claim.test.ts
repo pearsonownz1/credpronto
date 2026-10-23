@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generateOrderToken } from "@/lib/orders/token";
 
-const { createUser, signInWithPassword, emailHasAccount, claimOrdersByCustomerEmail, getOrderByHash, updateOrder, insertEvent } =
+const { createUser, signInWithPassword, emailHasAccount, claimOrdersByCustomerEmail, getOrderByHash, updateOrder, insertEvent, assignOrderEmail } =
   vi.hoisted(() => ({
     createUser: vi.fn(),
     signInWithPassword: vi.fn(),
@@ -10,6 +10,7 @@ const { createUser, signInWithPassword, emailHasAccount, claimOrdersByCustomerEm
     getOrderByHash: vi.fn(),
     updateOrder: vi.fn(),
     insertEvent: vi.fn(),
+    assignOrderEmail: vi.fn(),
   }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -31,6 +32,7 @@ vi.mock("@/lib/orders/db", () => ({
   getOrderByHash,
   updateOrder,
   insertEvent,
+  assignOrderEmail,
 }));
 
 import { POST } from "./route";
@@ -60,9 +62,11 @@ beforeEach(() => {
   getOrderByHash.mockReset();
   updateOrder.mockReset();
   insertEvent.mockReset();
+  assignOrderEmail.mockReset();
   emailHasAccount.mockResolvedValue(false);
   claimOrdersByCustomerEmail.mockResolvedValue(["other-guest-order"]);
-  getOrderByHash.mockResolvedValue({ id: "token-order", userId: null, customerEmail: "ada@example.com" });
+  assignOrderEmail.mockResolvedValue({ attached: false, customerId: "cust-1" });
+  getOrderByHash.mockResolvedValue({ id: "token-order", userId: null, customerId: "cust-1" });
   updateOrder.mockResolvedValue(true);
   insertEvent.mockResolvedValue({});
   createUser.mockResolvedValue({ data: { user: instantUser }, error: null });
@@ -89,6 +93,7 @@ describe("instant sign-up order claiming", () => {
     expect(payload.claimedOrderIds).not.toContain("other-guest-order");
     expect(claimOrdersByCustomerEmail).not.toHaveBeenCalled();
     expect(updateOrder).toHaveBeenCalledWith(expect.anything(), "token-order", { user_id: "user-1" });
+    expect(assignOrderEmail).toHaveBeenCalledWith(expect.anything(), "token-order", "cust-1", "ada@example.com");
     expect(createUser).toHaveBeenCalledWith(
       expect.objectContaining({
         email: "ada@example.com",

@@ -5,6 +5,7 @@ import type { OrderRecord } from "@/lib/orders/types";
 import type { ClioFetch } from "./api";
 import { createMemoryClioStore } from "./memory-store";
 import type { ClioConnectionRecord, ClioMatterOrderRecord } from "./types";
+import { HttpError } from "@/lib/orders/errors";
 import { uploadLinkedTranslation } from "./upload-back";
 
 const pdf = new Uint8Array([9, 9, 9]);
@@ -59,6 +60,7 @@ function translationOrder(patch: Partial<OrderRecord> = {}): OrderRecord {
     includeTranslation: false,
     finalTranslationPath: "finals/certified.pdf",
     certificationPath: "finals/cert.pdf",
+    status: "approved",
     ...patch,
   } as OrderRecord;
 }
@@ -159,6 +161,34 @@ describe("uploadLinkedTranslation", () => {
     putStatus = 200;
     const second = await uploadLinkedTranslation(db, translationOrder(), { store, fetchImpl });
     expect(second).toEqual({ status: "uploaded", clioDocumentId: "88" });
+  });
+
+  it("also uploads a delivered translation", async () => {
+    const store = createMemoryClioStore();
+    await store.saveConnection(connection);
+    await store.putMatterOrder(link());
+    const { fetchImpl } = uploadFetch(() => 200);
+    const result = await uploadLinkedTranslation(db, translationOrder({ status: "delivered" }), { store, fetchImpl });
+    expect(result).toEqual({ status: "uploaded", clioDocumentId: "88" });
+  });
+
+  it("refuses to upload before the translation is approved", async () => {
+    const store = createMemoryClioStore();
+    await store.saveConnection(connection);
+    await store.putMatterOrder(link());
+    const fetchImpl = vi.fn();
+    const attempt = uploadLinkedTranslation(db, translationOrder({ status: "paid" }), {
+      store,
+      fetchImpl: fetchImpl as unknown as ClioFetch,
+    });
+    await expect(attempt).rejects.toBeInstanceOf(HttpError);
+    await expect(attempt).rejects.toMatchObject({
+      status: 409,
+      message: "This translation is not approved yet",
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(storage.downloadObject).not.toHaveBeenCalled();
+    expect((await store.matterOrder("order-1"))?.uploadStatus).toBe("pending");
   });
 
   it("does not call Clio for an evaluation order", async () => {

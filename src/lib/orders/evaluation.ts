@@ -2,7 +2,7 @@ import { z } from "zod";
 import { generateObject } from "./ai";
 import { LOW_LANGUAGE_CONFIDENCE, FINALS_BUCKET, PREVIEWS_BUCKET } from "./constants";
 import {
-  customerEmail,
+  orderCustomerEmail,
   insertEvent,
   insertPreview,
   listDocuments,
@@ -791,7 +791,7 @@ export async function completeEvaluation(
     await insertEvent(db, order.id, "preview_ready", { version, pageCount: files.pageCount });
     const { notifyLifecycle } = await import("./webhook-delivery");
     await notifyLifecycle(db, order.id, "order.preview_ready");
-    const email = await customerEmail(db, order.customerId);
+    const email = await orderCustomerEmail(db, order.id);
     if (email) {
       await sendPreviewReady(email, {
         token: input.token,
@@ -931,7 +931,7 @@ async function completeSelectedEvaluations(
     await insertEvent(db, order.id, "preview_ready", { version, services: kinds });
     const { notifyLifecycle } = await import("./webhook-delivery");
     await notifyLifecycle(db, order.id, "order.preview_ready");
-    const email = await customerEmail(db, order.customerId);
+    const email = await orderCustomerEmail(db, order.id);
     if (email) {
       await sendPreviewReady(email, {
         token: input.token,

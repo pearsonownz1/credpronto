@@ -26,6 +26,7 @@ import {
   claimOrderColumn,
   clearOrderColumn,
   customerEmail,
+  orderCustomerEmail,
   getOrderById,
   insertEvent,
   insertQaRun,
@@ -855,8 +856,9 @@ export async function runTranslationAssemble(
         });
         await resolveCorrections(db, open.map((correction) => correction.id), input.version);
 
-        if (clientEmail) {
-          await sendPreviewReady(clientEmail, {
+        const previewEmail = await orderCustomerEmail(db, order.id);
+        if (previewEmail) {
+          await sendPreviewReady(previewEmail, {
             token: run.token,
             orderId: order.id,
             sourceLanguage,

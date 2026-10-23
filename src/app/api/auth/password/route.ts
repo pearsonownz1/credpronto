@@ -61,7 +61,7 @@ export async function POST(request: Request) {
 
       // email_confirm lets them in immediately. It is not proof of the inbox, so
       // only the order token is linked. Email claiming waits for a magic link or confirm OTP.
-      const claimed = await finishInstantSignup(created.data.user.id, orderToken).catch(() => []);
+      const claimed = await finishInstantSignup(created.data.user.id, orderToken, email).catch(() => []);
       const signed = await supabase.auth.signInWithPassword({ email, password });
       if (signed.error || !signed.data.session || !signed.data.user) {
         throw new HttpError(signed.error?.message || "Could not sign in", 401);
