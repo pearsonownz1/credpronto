@@ -195,6 +195,14 @@ describe("document rows", () => {
 });
 
 describe("direct order body", () => {
+  it("accepts a guest quote with no email", () => {
+    const parsed = parseDirectOrder({
+      sessionId: SESSION,
+      files: [{ path: objectPath(1), filename: "notes.pdf", mime: "application/pdf", size: 10 }],
+    });
+    expect(parsed.email).toBeNull();
+  });
+
   it("rejects a multipart body", async () => {
     const request = new Request("https://credpronto.test/api/orders", { method: "POST", body: "email=a" });
     await expect(readDirectOrder(request)).rejects.toThrow("Expected a JSON body");

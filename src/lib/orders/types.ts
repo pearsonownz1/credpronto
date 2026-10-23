@@ -118,6 +118,11 @@ export type EvaluationResult =
 
 export type AddonId = "notarization" | "mail" | "expedited";
 
+export type NotarizationStatus = "pending" | "notarized" | "done";
+
+/** Final-file correction. Distinct from preview corrections (open / resolved / dismissed). */
+export type FinalCorrectionStatus = "open" | "in_progress" | "fixed";
+
 export type ShippingAddress = {
   name: string;
   line1: string;
@@ -171,7 +176,11 @@ export type OrderRecord = {
   shippingAddress: ShippingAddress | null;
   mailStatus: "pending" | "shipped" | null;
   mailTracking: string | null;
-  notarizationStatus: "pending" | "done" | null;
+  /** Absent on rows and fixtures from before mail_carrier existed. */
+  mailCarrier?: string | null;
+  /** Absent on rows and fixtures from before mail_shipped_at existed. */
+  mailShippedAt?: string | null;
+  notarizationStatus: NotarizationStatus | null;
   edgeCredentialId: string | null;
   edgeGradingScaleId: string | null;
   /** base or fuzzy. Staff only. Omitted from customer and partner payloads. */
@@ -252,6 +261,18 @@ export type CorrectionRecord = {
   note: string | null;
   status: string;
   resolvedPreviewVersion: number | null;
+  createdAt: string;
+};
+
+export type FinalCorrectionRecord = {
+  id: string;
+  orderId: string;
+  text: string;
+  status: FinalCorrectionStatus;
+  finalPath: string | null;
+  finalVersion: number | null;
+  claimedAt: string | null;
+  fixedAt: string | null;
   createdAt: string;
 };
 

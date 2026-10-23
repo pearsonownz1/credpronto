@@ -2,7 +2,6 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { customerEmailError } from "@/lib/flow/customer-email";
 import {
   SERVICE_IDS,
   checksAfterToggle,
@@ -31,7 +30,7 @@ import {
 } from "@/lib/evaluations/catalog";
 import { UNIT_PRICE_CENTS } from "@/lib/orders/constants";
 import type { EvaluationService } from "@/lib/orders/types";
-import { buttonClasses, fieldClass } from "./ui";
+import { buttonClasses } from "./ui";
 import { useQuoteUpload } from "./use-quote-upload";
 
 type ListedFile = {
@@ -152,10 +151,7 @@ export function UploadCard({
   const { mock, pending, error, setError, submit } = useQuoteUpload();
   const signedInEmail = useQuoteEmail(sessionEmail);
   const inputRef = useRef<HTMLInputElement>(null);
-  const emailRef = useRef<HTMLInputElement>(null);
   const [start] = useState(() => uploadStateFromDraft(initialService));
-  const [email, setEmail] = useState(start.email || (mock ? "maria.ruiz@email.com" : ""));
-  const [emailError, setEmailError] = useState<string | null>(null);
   const [picked, setPicked] = useState<File[]>(start.files);
   const [checks, setChecks] = useState<ServiceChecks>(start.checks);
   const [degrees, setDegrees] = useState(() => String(clampDegreeCount(Number(start.degrees))));
@@ -178,14 +174,13 @@ export function UploadCard({
     const form = inputRef.current?.form ?? null;
     const domChecks = form ? readDomChecks(form) : null;
     const adopted = adoptUploadInputs(
-      { email, files: picked, checks },
+      { email: "", files: picked, checks },
       {
-        email: emailRef.current?.value ?? "",
+        email: "",
         files: inputRef.current?.files ? Array.from(inputRef.current.files) : [],
         checks: domChecks,
       },
     );
-    if (adopted.email !== email) setEmail(adopted.email);
     if (picked.length === 0 && adopted.files.length > 0) setPicked(adopted.files);
     if (adopted.checks !== checks) setChecks(adopted.checks);
     // Adopt the DOM once, before the first toggle can render empty React state over it.
@@ -202,13 +197,13 @@ export function UploadCard({
 
   useEffect(() => {
     writeUploadDraft({
-      email,
+      email: "",
       files: picked,
       checks,
       degrees,
       serviceKey: seenService.current,
     });
-  }, [email, picked, checks, degrees]);
+  }, [picked, checks, degrees]);
 
   useEffect(() => {
     const evaluation = checks.diploma || checks.courseByCourse;
@@ -256,16 +251,6 @@ export function UploadCard({
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!signedInEmail) {
-      const problem = customerEmailError(email);
-      if (problem) {
-        setEmailError(problem);
-        setError(null);
-        emailRef.current?.focus();
-        return;
-      }
-    }
-    setEmailError(null);
     const selected = choice();
     if (!selected) {
       setError(choiceError());
@@ -276,7 +261,6 @@ export function UploadCard({
       return;
     }
     await submit({
-      email: signedInEmail ?? email,
       files: picked,
       choice: selected,
       pageCount: null,
@@ -439,33 +423,6 @@ export function UploadCard({
               ? "Order updates go to"
               : "Preview link goes to"}{" "}
             {signedInEmail}
-          </p>
-        ) : (
-          <label className="mt-4 block">
-            <span className="mb-1.5 block text-[13px] font-semibold">
-              {(checks.diploma || checks.courseByCourse) && !checks.translation
-                ? "Email for your order"
-                : "Email for your preview link"}
-            </span>
-            <input
-              ref={emailRef}
-              data-testid="email"
-              type="email"
-              autoComplete="email"
-              value={email}
-              aria-invalid={emailError ? true : undefined}
-              aria-describedby={emailError ? "email-error" : undefined}
-              onChange={(event) => {
-                setEmail(event.target.value);
-                if (emailError) setEmailError(null);
-              }}
-              className={fieldClass}
-            />
-          </label>
-        )}
-        {emailError ? (
-          <p id="email-error" role="alert" data-testid="email-error" className="mt-1.5 text-sm text-[var(--cp-warn)]">
-            {emailError}
           </p>
         ) : null}
         {error ? (

@@ -34,18 +34,19 @@ const order: ApiOrder = {
 };
 
 describe("integrations presentation", () => {
-  it("lists Clio as a coming-soon app with a letter mark and no connect action", () => {
+  it("lists Clio as an available app and keeps coming-soon copy for other apps", () => {
     expect(PARTNER_APPS).toEqual([
       {
         id: "clio",
         name: "Clio",
-        description: "Send evaluation and translation orders from a Clio matter and save finished reports back to it.",
+        description: "Order certified translations from a Clio matter and save them back to it.",
         mark: "C",
-        status: "coming_soon",
+        status: "available",
       },
     ]);
     expect(partnerStatusLabel("coming_soon")).toBe("Coming soon");
     expect(PARTNER_APPS[0]).not.toHaveProperty("href");
+    expect(JSON.stringify(PARTNER_APPS)).not.toContain("Coming soon");
     expect(JSON.stringify(PARTNER_APPS)).not.toMatch(/oauth|connect/i);
   });
 

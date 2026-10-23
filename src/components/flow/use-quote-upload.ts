@@ -5,7 +5,7 @@ import { useState } from "react";
 import { trackOrderUpload } from "@/lib/analytics/gtag-events";
 import { flowUsesMock, getFlowClient } from "@/lib/flow/client";
 import type { UploadChoice } from "@/lib/flow/order-choice";
-import { writeEmail, writeToken } from "@/lib/flow/session";
+import { writeToken } from "@/lib/flow/session";
 import { rememberUpload } from "@/lib/flow/upload-blobs";
 import { clearUploadDraft } from "./upload-draft";
 import { useReadingHandoff } from "./reading-handoff";
@@ -19,7 +19,6 @@ export function useQuoteUpload() {
   const [error, setError] = useState<string | null>(null);
 
   async function submit(input: {
-    email: string;
     files: File[];
     choice: UploadChoice;
     pageCount: number | null;
@@ -29,9 +28,7 @@ export function useQuoteUpload() {
     beginUpload(input.files.map((file) => ({ name: file.name, ratio: 0 })));
     setPending(true);
     try {
-      const email = input.email.trim();
       const result = await getFlowClient().upload({
-        email,
         files: input.files,
         choice: input.choice,
         onProgress: setUploadRatio,
@@ -39,7 +36,6 @@ export function useQuoteUpload() {
       });
       trackOrderUpload(result.orderId, input.pageCount);
       writeToken(result.orderToken);
-      writeEmail(email);
       rememberUpload(result.orderToken, input.files);
       clearUploadDraft();
       const payFirst =
@@ -55,7 +51,7 @@ export function useQuoteUpload() {
           : "/quote";
       if (!input.signedIn) {
         endHandoff();
-        const params = new URLSearchParams({ next: nextPath, email });
+        const params = new URLSearchParams({ next: nextPath });
         router.push(`/sign-up?${params.toString()}`);
         return;
       }

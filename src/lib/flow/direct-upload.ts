@@ -143,7 +143,7 @@ function choicePayload(choice: UploadChoice): Record<string, unknown> {
 }
 
 export async function uploadOrderFiles(input: {
-  email: string;
+  email?: string | null;
   files: File[];
   choice?: UploadChoice;
   onProgress?: (ratio: number) => void;
@@ -189,8 +189,9 @@ export async function uploadOrderFiles(input: {
     report();
   }
 
+  const email = input.email?.trim();
   return postJson("/api/orders", {
-    email: input.email,
+    ...(email ? { email } : {}),
     sessionId: session.sessionId,
     files: session.uploads.map((upload) => ({
       path: upload.path,

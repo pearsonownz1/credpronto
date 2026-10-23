@@ -28,6 +28,7 @@ import { QaPanel } from "@/components/admin/qa-panel";
 import { StaffFiles } from "@/components/admin/staff-files";
 import { approveButtonLabel, runStudioAction, type StudioTaskResult } from "@/components/admin/studio-action";
 import { NeedsReviewBanner } from "@/components/admin/needs-review-banner";
+import { OrderFulfillment } from "@/components/admin/order-fulfillment";
 import {
   applyReportOverrides,
   evaluationReportsFor,
@@ -358,6 +359,8 @@ export function OrderStudio({
         setPending={setPending}
       />
 
+      <OrderFulfillment key={detail.id} orderId={detail.id} />
+
       {awaitingEquivalencyPublish(detail.reviewReason) ? (
         <form
           className="grid gap-3 rounded-[var(--cp-radius)] border border-line bg-white p-4"
@@ -677,6 +680,8 @@ function FulfillmentTasks({
     setMail({
       status: "shipped",
       trackingNumber: result.data.trackingNumber,
+      carrier: mail?.carrier ?? null,
+      shippedAt: mail?.shippedAt ?? null,
       address: mail?.address ?? null,
     });
     onMessage(`Marked shipped. Tracking ${result.data.trackingNumber}.`);
@@ -753,8 +758,10 @@ function FulfillmentTasks({
           className="grid content-start gap-3 rounded-[var(--cp-radius)] border border-line bg-white p-4"
         >
           <h2 className="text-sm font-semibold">Notarization</h2>
-          <p className="text-sm">{notarization.status === "done" ? "Done" : "Pending"}</p>
-          {notarization.status === "pending" ? (
+          <p className="text-sm">
+            {notarization.status === "done" ? "Done" : notarization.status === "notarized" ? "Notarized" : "Pending"}
+          </p>
+          {notarization.status !== "done" ? (
             <button
               type="button"
               data-testid="mark-notarized"

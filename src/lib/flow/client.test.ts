@@ -143,6 +143,16 @@ describe("order upload", () => {
     expect(progress.at(-1)).toBe(1);
   });
 
+  it("leaves email off the order request when the quote form does not send one", async () => {
+    const { requests } = stubUpload();
+    await getFlowClient().upload({
+      files: [new File(["hello"], "notes.pdf", { type: "application/pdf" })],
+    });
+    const order = requests.find((request) => request.url === "/api/orders");
+    expect(order?.body).toMatchObject({ sessionId });
+    expect(order?.body).not.toHaveProperty("email");
+  });
+
   it("does not invent a ratio when the browser cannot report a total", async () => {
     const fileProgress: Array<Array<{ name: string; ratio: number }>> = [];
     class FakeXHR {

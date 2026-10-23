@@ -2,7 +2,7 @@ import { z } from "zod";
 import { generateObject } from "./ai";
 import { LOW_LANGUAGE_CONFIDENCE, FINALS_BUCKET, PREVIEWS_BUCKET, SPARSE_PAGE_WORDS } from "./constants";
 import {
-  customerEmail,
+  orderCustomerEmail,
   insertEvent,
   insertPreview,
   listDocuments,
@@ -57,6 +57,7 @@ import {
 } from "./grades";
 import { IMAGE_QUALITY_REASON } from "./image-quality";
 import { evaluationIssuedLabel, evaluationReportId, renderEvaluationPdfs } from "./pdf/evaluation";
+import { stampFinishedPdf } from "./verification";
 import { uploadObject } from "./storage";
 import { countWords } from "./words";
 import { watermarkedTranslationPreview } from "./translation";
@@ -248,7 +249,8 @@ export async function publishDiplomaEquivalency(
     detectedPages: order.billablePages,
   });
   const cleanPath = `${order.id}/evaluation-v${version}.pdf`;
-  await uploadObject(db, FINALS_BUCKET, cleanPath, files.clean, "application/pdf");
+  const clean = await stampFinishedPdf(db, files.clean, { orderId: order.id, documentType: "evaluation" });
+  await uploadObject(db, FINALS_BUCKET, cleanPath, clean, "application/pdf");
   await uploadObject(db, PREVIEWS_BUCKET, reportPath, files.preview, "application/pdf");
   await updateOrder(db, order.id, {
     review_reason: null,
@@ -281,7 +283,8 @@ export async function publishCourseEquivalency(db: Db, order: OrderRecord, equiv
     detectedPages: order.billablePages,
   });
   const cleanPath = `${order.id}/evaluation-v${version}.pdf`;
-  await uploadObject(db, FINALS_BUCKET, cleanPath, files.clean, "application/pdf");
+  const clean = await stampFinishedPdf(db, files.clean, { orderId: order.id, documentType: "evaluation" });
+  await uploadObject(db, FINALS_BUCKET, cleanPath, clean, "application/pdf");
   await uploadObject(db, PREVIEWS_BUCKET, reportPath, files.preview, "application/pdf");
   await updateOrder(db, order.id, {
     review_reason: null,
@@ -853,7 +856,7 @@ export async function completeEvaluation(
     await insertEvent(db, order.id, "preview_ready", { version, pageCount: files.pageCount });
     const { notifyLifecycle } = await import("./webhook-delivery");
     await notifyLifecycle(db, order.id, "order.preview_ready");
-    const email = await customerEmail(db, order.customerId);
+    const email = await orderCustomerEmail(db, order.id);
     if (email) {
       await sendPreviewReady(email, {
         token: input.token,
@@ -993,7 +996,7 @@ async function completeSelectedEvaluations(
     await insertEvent(db, order.id, "preview_ready", { version, services: kinds });
     const { notifyLifecycle } = await import("./webhook-delivery");
     await notifyLifecycle(db, order.id, "order.preview_ready");
-    const email = await customerEmail(db, order.customerId);
+    const email = await orderCustomerEmail(db, order.id);
     if (email) {
       await sendPreviewReady(email, {
         token: input.token,

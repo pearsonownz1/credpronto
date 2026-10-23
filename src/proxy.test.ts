@@ -170,6 +170,21 @@ describe("dashboard server auth", () => {
     expect(response.headers.get("x-middleware-rewrite")).toContain("/missing");
   });
 
+  it("serves document verification without storing the response", async () => {
+    vi.stubEnv("CREDPRONTO_MOCK", "");
+    vi.stubEnv("NEXT_PUBLIC_CREDPRONTO_MOCK", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
+
+    const response = await proxy(new NextRequest("http://127.0.0.1:3000/verify/access-token"));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+  });
+
   it("leaves public pages open", async () => {
     vi.stubEnv("CREDPRONTO_MOCK", "");
     vi.stubEnv("NEXT_PUBLIC_CREDPRONTO_MOCK", "");

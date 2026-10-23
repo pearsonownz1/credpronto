@@ -13,6 +13,7 @@ import { orderEvaluationKinds } from "./service-selection";
 import { concatPdfs } from "./pdf/merge";
 import { downloadObject } from "./storage";
 import type { EvaluationService, OrderRecord } from "./types";
+import { stampFinishedPdf } from "./verification";
 
 export type EvaluationQueueOrder = {
   id: string;
@@ -102,7 +103,8 @@ export async function deliverEvaluationReport(orderId: string, request: Request)
 
   if (kinds.length === 1) {
     const path = evaluationDeliverablePath(order.id);
-    await uploadObject(db, FINALS_BUCKET, path, bytes, "application/pdf");
+    const stamped = await stampFinishedPdf(db, bytes, { orderId: order.id, documentType: "evaluation" });
+    await uploadObject(db, FINALS_BUCKET, path, stamped, "application/pdf");
     return publishEvaluationDelivery({ db, userId, order, path });
   }
 
@@ -124,7 +126,8 @@ export async function deliverEvaluationReport(orderId: string, request: Request)
       : await downloadObject(db, FINALS_BUCKET, files.course_by_course as string);
   const merged = await concatPdfs([diplomaBytes, courseBytes]);
   const path = evaluationDeliverablePath(order.id);
-  await uploadObject(db, FINALS_BUCKET, path, merged, "application/pdf");
+  const stamped = await stampFinishedPdf(db, merged, { orderId: order.id, documentType: "evaluation" });
+  await uploadObject(db, FINALS_BUCKET, path, stamped, "application/pdf");
   return publishEvaluationDelivery({ db, userId, order, path, serviceFiles: files });
 }
 
@@ -174,7 +177,8 @@ export async function releaseEvaluationPackage(
   }
   const parts = await Promise.all(kinds.map((kind) => downloadObject(db, FINALS_BUCKET, files[kind] as string)));
   const bytes = parts.length === 1 ? parts[0]! : await concatPdfs(parts);
-  await uploadObject(db, FINALS_BUCKET, path, bytes, "application/pdf");
+  const stamped = await stampFinishedPdf(db, bytes, { orderId: order.id, documentType: "evaluation" });
+  await uploadObject(db, FINALS_BUCKET, path, stamped, "application/pdf");
   return publishEvaluationDelivery({ db, userId, order, path, serviceFiles: files });
 }
 

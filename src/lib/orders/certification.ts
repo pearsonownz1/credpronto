@@ -20,6 +20,7 @@ import {
 import { renderCertificationPdf, replaceCoverPage } from "./pdf/render";
 import { downloadObject, uploadObject } from "./storage";
 import type { OrderRecord } from "./types";
+import { stampFinishedPdf } from "./verification";
 
 /** Evaluations keep the credential report. Approval does not swap in a translation certificate. */
 export function keepsEvaluationReport(order: { service: string | null }): boolean {
@@ -80,6 +81,7 @@ export async function stampApprovedCover(db: Db, order: OrderRecord, approverNam
         footerPages,
       });
     }
+    clean = await stampFinishedPdf(db, clean, { orderId: order.id, documentType: "translation" });
     await uploadObject(db, FINALS_BUCKET, order.finalTranslationPath, clean, "application/pdf");
     // Leave the paths split when the original could not be read so the download can merge later.
     if (original || (!order.combinedOriginalPath && documents.length === 0)) {
@@ -93,5 +95,6 @@ export async function stampApprovedCover(db: Db, order: OrderRecord, approverNam
   if (total > footerPages) {
     clean = await stampPacketPageNumbers(clean, { orderId: order.id, footerPages });
   }
+  clean = await stampFinishedPdf(db, clean, { orderId: order.id, documentType: "translation" });
   await uploadObject(db, FINALS_BUCKET, order.finalTranslationPath, clean, "application/pdf");
 }
