@@ -4,6 +4,7 @@ import {
   REJECTED_FILE_MESSAGE,
   createPreEvaluation,
   getPreEvaluation,
+  getPreEvaluationFile,
   getPreEvaluationPrefill,
   parsePreEvaluation,
   parsePreEvaluationPrefill,
@@ -23,6 +24,7 @@ const ready = {
   equivalent: "Bachelor's degree",
   confidence: "high" as const,
   previewUrl: "https://cdn.example/preview.png?token=one",
+  documentKind: null,
 };
 
 describe("pre-evaluation client", () => {
@@ -68,6 +70,7 @@ describe("pre-evaluation client", () => {
       equivalent: null,
       confidence: null,
       previewUrl: null,
+      documentKind: null,
     });
 
     expect(
@@ -76,19 +79,24 @@ describe("pre-evaluation client", () => {
         equivalent: "Bachelor's degree",
         confidence: "high",
         previewUrl: "https://cdn.example/secret.png",
+        documentKind: "transcript",
       }),
-    ).toEqual({ status: "processing", equivalent: null, confidence: null, previewUrl: null });
+    ).toEqual({ status: "processing", equivalent: null, confidence: null, previewUrl: null, documentKind: null });
 
     expect(parsePreEvaluation({ ...ready, status: "failed", previewUrl: "https://cdn.example/secret.png" })).toEqual({
       status: "failed",
       equivalent: null,
       confidence: null,
       previewUrl: null,
+      documentKind: null,
     });
   });
 
   it("keeps the equivalent once the preview is ready", () => {
     expect(parsePreEvaluation(ready)).toEqual(ready);
+    expect(parsePreEvaluation({ ...ready, documentKind: "diploma" }).documentKind).toBe("diploma");
+    expect(parsePreEvaluation({ ...ready, documentKind: "transcript" }).documentKind).toBe("transcript");
+    expect(parsePreEvaluation({ ...ready, documentKind: "course_by_course" }).documentKind).toBeNull();
   });
 
   it("replaces an expired signed preview once", () => {
@@ -139,32 +147,8 @@ describe("pre-evaluation client", () => {
       service: "course_by_course",
       degreeCount: 2,
       equivalent: "Bachelor's degree",
-      preEvaluationFile: null,
     });
-    expect(
-      parsePreEvaluationPrefill({
-        ...prefill,
-        preEvaluationFile: { name: " ", mimeType: "application/pdf", size: 10, pageCount: 1, kind: "diploma" },
-      }).preEvaluationFile,
-    ).toBeNull();
-    expect(
-      parsePreEvaluationPrefill({
-        ...prefill,
-        preEvaluationFile: {
-          name: "licenciatura.pdf",
-          mimeType: "application/pdf",
-          size: 4096,
-          pageCount: 2,
-          kind: "transcript",
-        },
-      }).preEvaluationFile,
-    ).toEqual({
-      name: "licenciatura.pdf",
-      mimeType: "application/pdf",
-      size: 4096,
-      pageCount: 2,
-      kind: "transcript",
-    });
+    expect(prefill).not.toHaveProperty("preEvaluationFile");
     expect(
       parsePreEvaluationPrefill({
         ...prefill,
@@ -174,6 +158,29 @@ describe("pre-evaluation client", () => {
         country: "Mexico",
       }),
     ).toMatchObject({ status: "processing", equivalent: null, confidence: null, country: null, email: "ada@example.com" });
+  });
+
+  it("reads the stored file and treats a 404 as no carried file", async () => {
+    const file = {
+      name: "licenciatura.pdf",
+      mimeType: "application/pdf",
+      size: 4096,
+      pageCount: 2,
+      kind: "transcript" as const,
+    };
+    const loaded = await getPreEvaluationFile("prev-1", async (url, init) => {
+      expect(url).toBe("/api/pre-evaluation/prev-1/file");
+      expect(init?.method).toBe("GET");
+      expect(init?.cache).toBe("no-store");
+      return jsonResponse({ preEvaluationFile: file });
+    });
+    expect(loaded).toEqual(file);
+    await expect(
+      getPreEvaluationFile("prev-1", async () => jsonResponse({ error: "Pre-evaluation not found" }, 404)),
+    ).resolves.toBeNull();
+    await expect(getPreEvaluationFile("prev-1", async () => jsonResponse({ preEvaluationFile: { name: " " } }))).rejects.toMatchObject({
+      status: 502,
+    });
   });
 
   it("turns HTTP 429 and rejected file types into the API messages", async () => {

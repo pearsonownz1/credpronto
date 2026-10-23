@@ -6,7 +6,7 @@ import {
   DIPLOMA_PRICE_LABEL,
 } from "@/lib/evaluations/catalog";
 import type { FlowTrack } from "@/lib/flow/types";
-import { getPreEvaluationPrefill, type PreEvaluationStoredFile } from "@/lib/pre-evaluation/client";
+import { getPreEvaluationFile, getPreEvaluationPrefill, type PreEvaluationStoredFile } from "@/lib/pre-evaluation/client";
 import { FlowHeader } from "./flow-header";
 import { UploadCard } from "./upload-card";
 import { uploadServiceFromQuery } from "./upload-draft";
@@ -56,19 +56,19 @@ export function UploadSeed({
     });
     const id = preEvaluationId?.trim();
     if (!id) return;
-    void getPreEvaluationPrefill(id)
-      .then((prefill) => {
-        if (cancelled) return;
-        const carriedFile = prefill.preEvaluationFile;
-        report({
-          service: prefill.service,
-          email: sessionEmail ?? prefill.email,
-          degreeCount: prefill.degreeCount,
-          preEvaluationId: carriedFile ? id : null,
-          carriedFile,
-        });
-      })
-      .catch(() => undefined);
+    void Promise.all([
+      getPreEvaluationPrefill(id).catch(() => null),
+      getPreEvaluationFile(id).catch(() => null),
+    ]).then(([prefill, carriedFile]) => {
+      if (cancelled || !prefill) return;
+      report({
+        service: prefill.service,
+        email: sessionEmail ?? prefill.email,
+        degreeCount: prefill.degreeCount,
+        preEvaluationId: carriedFile ? id : null,
+        carriedFile,
+      });
+    });
     return () => {
       cancelled = true;
     };

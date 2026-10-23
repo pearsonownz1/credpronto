@@ -5,16 +5,19 @@
  *   multipart field `file` → { id }
  * GET /api/pre-evaluation/{id}
  *   { status: 'email_required' | 'processing' | 'ready' | 'failed',
- *     equivalent, confidence, previewUrl }
+ *     equivalent, confidence, previewUrl, documentKind? }
  *   Until the email is submitted, status is `email_required` and the three
  *   result fields are null. `previewUrl` is a signed link that expires in
- *   about five minutes. Do not store it.
+ *   about five minutes. Do not store it. `documentKind` is `diploma` or
+ *   `transcript` when the result includes it, and is otherwise absent.
  * POST /api/pre-evaluation/{id}/email
  *   JSON { email } → { ok: true }
  * GET /api/pre-evaluation/{id}/prefill
  *   Email and order fields for signup. 409 until the lead email exists.
- *   `preEvaluationFile` is optional until the stored document is attached:
- *   { name, mimeType, size, pageCount, kind: 'diploma' | 'transcript' }.
+ * GET /api/pre-evaluation/{id}/file
+ *   { preEvaluationFile: { name, mimeType, size, pageCount, kind } }
+ *   404 when the caller is signed out, the email does not match, or the
+ *   document is not classified yet. That 404 means there is no carried file.
  */
 
 export const PRE_EVALUATION_POLL_MS = 2_000;
@@ -32,6 +35,7 @@ export type PreEvaluationRecord = {
   equivalent: string | null;
   confidence: PreEvaluationConfidence | null;
   previewUrl: string | null;
+  documentKind: PreEvaluationFileKind | null;
 };
 
 export type PreEvaluationCreated = {
@@ -68,7 +72,6 @@ export type PreEvaluationPrefill = {
   signupPath: string;
   orderPath: string;
   resultPath: string;
-  preEvaluationFile: PreEvaluationStoredFile | null;
 };
 
 const STATUSES = new Set<PreEvaluationStatus>(["processing", "email_required", "ready", "failed"]);
@@ -149,9 +152,9 @@ export function parsePreEvaluation(payload: unknown): PreEvaluationRecord {
   }
   const parsed = status as PreEvaluationStatus;
   if (parsed !== "ready") {
-    return { status: parsed, equivalent: null, confidence: null, previewUrl: null };
+    return { status: parsed, equivalent: null, confidence: null, previewUrl: null, documentKind: null };
   }
-  const row = payload as { equivalent?: unknown; confidence?: unknown; previewUrl?: unknown };
+  const row = payload as { equivalent?: unknown; confidence?: unknown; previewUrl?: unknown; documentKind?: unknown };
   const confidence =
     typeof row.confidence === "string" && CONFIDENCE.has(row.confidence as PreEvaluationConfidence)
       ? (row.confidence as PreEvaluationConfidence)
@@ -161,6 +164,7 @@ export function parsePreEvaluation(payload: unknown): PreEvaluationRecord {
     equivalent: nullableText(row.equivalent),
     confidence,
     previewUrl: nullableText(row.previewUrl),
+    documentKind: parseFileKind(row.documentKind),
   };
 }
 
@@ -188,19 +192,24 @@ function parseEmailResult(payload: unknown): PreEvaluationEmailResult {
   return { ok: true };
 }
 
+function parseFileKind(value: unknown): PreEvaluationFileKind | null {
+  return typeof value === "string" && FILE_KINDS.has(value as PreEvaluationFileKind)
+    ? (value as PreEvaluationFileKind)
+    : null;
+}
+
 function parseStoredFile(value: unknown): PreEvaluationStoredFile | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Record<string, unknown>;
   const name = nullableText(row.name);
   const mimeType = nullableText(row.mimeType);
-  const kind = row.kind;
+  const kind = parseFileKind(row.kind);
   const size = row.size;
   const pageCount = row.pageCount;
   if (
     !name ||
     !mimeType ||
-    typeof kind !== "string" ||
-    !FILE_KINDS.has(kind as PreEvaluationFileKind) ||
+    !kind ||
     typeof size !== "number" ||
     !Number.isFinite(size) ||
     size < 0 ||
@@ -210,7 +219,7 @@ function parseStoredFile(value: unknown): PreEvaluationStoredFile | null {
   ) {
     return null;
   }
-  return { name, mimeType, size, pageCount, kind: kind as PreEvaluationFileKind };
+  return { name, mimeType, size, pageCount, kind };
 }
 
 export function parsePreEvaluationPrefill(payload: unknown): PreEvaluationPrefill {
@@ -260,8 +269,16 @@ export function parsePreEvaluationPrefill(payload: unknown): PreEvaluationPrefil
     signupPath,
     orderPath,
     resultPath,
-    preEvaluationFile: parseStoredFile(row.preEvaluationFile),
   };
+}
+
+export function parsePreEvaluationFile(payload: unknown): PreEvaluationStoredFile {
+  const file =
+    payload && typeof payload === "object"
+      ? parseStoredFile((payload as { preEvaluationFile?: unknown }).preEvaluationFile)
+      : null;
+  if (!file) throw new PreEvaluationClientError("The preview response was not valid.", 502);
+  return file;
 }
 
 /** POST /api/pre-evaluation with multipart field `file`. */
@@ -311,4 +328,26 @@ export async function getPreEvaluationPrefill(id: string, fetchImpl: FetchLike =
     headers: { accept: "application/json" },
   });
   return parsePreEvaluationPrefill(payload);
+}
+
+/**
+ * GET /api/pre-evaluation/{id}/file. A 404 means the stored file cannot be carried:
+ * signed out, a different email, or a document that is not classified yet.
+ */
+export async function getPreEvaluationFile(
+  id: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<PreEvaluationStoredFile | null> {
+  const safeId = previewId(id);
+  try {
+    const { payload } = await send(fetchImpl, `/api/pre-evaluation/${encodeURIComponent(safeId)}/file`, {
+      method: "GET",
+      cache: "no-store",
+      headers: { accept: "application/json" },
+    });
+    return parsePreEvaluationFile(payload);
+  } catch (cause) {
+    if (cause instanceof PreEvaluationClientError && cause.status === 404) return null;
+    throw cause;
+  }
 }

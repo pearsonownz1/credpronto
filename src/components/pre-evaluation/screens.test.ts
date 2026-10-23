@@ -96,6 +96,8 @@ describe("pre-evaluation screens", () => {
     expect(html).toContain("Based on EDGE equivalency data");
     expect(html).toContain('aria-valuenow="100"');
     expect(html).toContain(">Get my official evaluation<");
+    expect(html).not.toContain("$19.95");
+    expect(html).not.toContain("$39.95");
     expect(html).toContain("ready in about 5 minutes");
     expect(html).not.toContain('href="/sign-up');
     expect(html).toContain("https://cdn.example/preview.png");
@@ -133,5 +135,28 @@ describe("pre-evaluation screens", () => {
     expect(html).toContain("pointer-events:none");
     expect(html).toContain('data-confidence="low"');
     expect(html).toContain('aria-valuenow="33"');
+  });
+
+  it("prices the official button from the result document kind", () => {
+    const diploma = renderToStaticMarkup(
+      createElement(PreEvaluationResult, {
+        id: "prev-1",
+        equivalent: "Bachelor's degree",
+        confidence: "high",
+        previewUrl: null,
+        documentKind: "diploma",
+      }),
+    );
+    expect(diploma).toContain(">Get my official evaluation · $19.95<");
+    const transcript = renderToStaticMarkup(
+      createElement(PreEvaluationResult, {
+        id: "prev-1",
+        equivalent: "Bachelor's degree",
+        confidence: "high",
+        previewUrl: null,
+        documentKind: "transcript",
+      }),
+    );
+    expect(transcript).toContain(">Get my official evaluation · $39.95<");
   });
 });

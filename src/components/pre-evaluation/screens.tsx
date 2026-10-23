@@ -388,24 +388,9 @@ function SignedPreview({
   );
 }
 
-function OfficialEvaluationButton({ id }: { id: string }) {
+function OfficialEvaluationButton({ id, kind }: { id: string; kind: PreEvaluationFileKind | null }) {
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [kind, setKind] = useState<PreEvaluationFileKind | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void getPreEvaluationPrefill(id)
-      .then((prefill) => {
-        if (!cancelled) setKind(prefill.preEvaluationFile?.kind ?? null);
-      })
-      .catch(() => {
-        if (!cancelled) setKind(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
 
   async function openAccount() {
     setPending(true);
@@ -446,12 +431,14 @@ export function PreEvaluationResult({
   equivalent,
   confidence,
   previewUrl,
+  documentKind = null,
   onPreviewRefreshFailed,
 }: {
   id: string;
   equivalent: string;
   confidence: PreEvaluationConfidence;
   previewUrl: string | null;
+  documentKind?: PreEvaluationFileKind | null;
   onPreviewRefreshFailed?: (error: { status: number; message: string }) => void;
 }) {
   const percent = CONFIDENCE_PERCENT[confidence];
@@ -503,7 +490,7 @@ export function PreEvaluationResult({
               </div>
               <p className="mt-2 text-[12.5px] text-ink-muted">Based on EDGE equivalency data</p>
             </div>
-            <OfficialEvaluationButton id={id} />
+            <OfficialEvaluationButton id={id} kind={documentKind} />
           </aside>
         </div>
       </section>

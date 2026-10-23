@@ -1,5 +1,5 @@
 import { isOrderToken } from "@/lib/orders/token";
-import type { PreEvaluationRecord } from "./client";
+import type { PreEvaluationFileKind, PreEvaluationRecord } from "./client";
 
 export const FAILED_PREVIEW_MESSAGE = "We couldn't prepare a preview from this document. Try a clearer photo or a PDF.";
 
@@ -17,6 +17,7 @@ export type PreEvaluationPhase =
       equivalent: string;
       confidence: NonNullable<PreEvaluationRecord["confidence"]>;
       previewUrl: string | null;
+      documentKind: PreEvaluationFileKind | null;
     }
   | {
       step: "error";
@@ -157,5 +158,6 @@ function applyStatus(phase: PreEvaluationPhase, record: PreEvaluationRecord): Pr
     equivalent: record.equivalent,
     confidence: record.confidence,
     previewUrl: record.previewUrl,
+    documentKind: record.documentKind ?? null,
   };
 }
