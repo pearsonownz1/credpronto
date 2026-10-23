@@ -198,7 +198,7 @@ describe("auth migrations", () => {
   });
 
   it("keeps Clio tokens behind row level security for the service role", () => {
-    const sql = readFileSync(path.join(migrationsDir, "20261023160000_clio_connections.sql"), "utf8");
+    const sql = readFileSync(path.join(migrationsDir, "20261023170000_clio_connections.sql"), "utf8");
     expect(sql).toMatch(/create table public\.clio_connections/);
     expect(sql).toMatch(/create table public\.clio_matter_orders/);
     expect(sql).toMatch(/region in \('us', 'eu', 'ca', 'au'\)/);
