@@ -289,7 +289,7 @@ describe("download page", () => {
     expect(html).toContain("release-indeterminate");
     expect(html).toContain("motion-reduce:animate-none");
     expect(html).toContain("Back to dashboard");
-    expect(html).toContain('href="/account"');
+    expect(html).toContain('href="/dashboard"');
     expect(html).not.toMatch(/second|minute|countdown|usually/i);
     expect(html).not.toContain("being certified");
     expect(html).toContain('data-testid="paid-preview"');

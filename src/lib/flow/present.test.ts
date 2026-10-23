@@ -564,7 +564,7 @@ describe("download phase", () => {
     );
     expect(QUICK_CHECK_DETAIL).not.toMatch(/second|minute|countdown|usually|\d+/i);
     expect(CLOSE_PAGE_NOTE).toBe("You can close this page.");
-    expect(ORDERS_DASHBOARD_HREF).toBe("/account");
+    expect(ORDERS_DASHBOARD_HREF).toBe("/dashboard");
     expect(paidReviewEmailLine("ada@example.com")).toBe(
       "There's nothing you need to do. We'll email ada@example.com when your certified PDF is ready.",
     );

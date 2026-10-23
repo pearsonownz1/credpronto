@@ -553,8 +553,8 @@ export const QUICK_CHECK_DETAIL =
 
 export const CLOSE_PAGE_NOTE = "You can close this page.";
 
-/** Marketing header "My orders" and this waiting page both return here. */
-export const ORDERS_DASHBOARD_HREF = "/account";
+/** Customer's orders dashboard. */
+export const ORDERS_DASHBOARD_HREF = "/dashboard";
 
 export function paidReviewEmailLine(email: string | null | undefined): string {
   const address = email?.trim();
