@@ -146,11 +146,23 @@ export async function uploadOrderFiles(input: {
   email?: string | null;
   files: File[];
   choice?: UploadChoice;
+  preEvaluationId?: string | null;
   onProgress?: (ratio: number) => void;
   onFileProgress?: (files: FileUploadProgress[]) => void;
   putFile?: typeof putSignedFile;
 }): Promise<{ orderToken: string; orderId: string }> {
   const choice = input.choice ?? { orderType: "translation" as const };
+  const preEvaluationId = input.preEvaluationId?.trim() || "";
+  if (input.files.length === 0) {
+    if (!preEvaluationId) throw new FlowApiError("Upload at least one file", 400);
+    const email = input.email?.trim();
+    input.onProgress?.(1);
+    return postJson("/api/orders", {
+      ...(email ? { email } : {}),
+      preEvaluationId,
+      ...choicePayload(choice),
+    });
+  }
   const files = await filesToUpload(input.files);
   const ratios = files.map(() => 0);
   const report = () => {
@@ -192,6 +204,7 @@ export async function uploadOrderFiles(input: {
   const email = input.email?.trim();
   return postJson("/api/orders", {
     ...(email ? { email } : {}),
+    ...(preEvaluationId ? { preEvaluationId } : {}),
     sessionId: session.sessionId,
     files: session.uploads.map((upload) => ({
       path: upload.path,

@@ -23,14 +23,23 @@ export function useQuoteUpload() {
     choice: UploadChoice;
     pageCount: number | null;
     signedIn?: boolean;
+    preEvaluationId?: string | null;
+    carriedName?: string | null;
   }) {
     setError(null);
-    beginUpload(input.files.map((file) => ({ name: file.name, ratio: 0 })));
+    const started =
+      input.files.length > 0
+        ? input.files.map((file) => ({ name: file.name, ratio: 0 }))
+        : input.carriedName
+          ? [{ name: input.carriedName, ratio: 0 }]
+          : [];
+    beginUpload(started);
     setPending(true);
     try {
       const result = await getFlowClient().upload({
         files: input.files,
         choice: input.choice,
+        preEvaluationId: input.preEvaluationId,
         onProgress: setUploadRatio,
         onFileProgress: setUploadFiles,
       });

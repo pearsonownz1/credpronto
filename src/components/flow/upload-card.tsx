@@ -30,6 +30,8 @@ import {
 } from "@/lib/evaluations/catalog";
 import { UNIT_PRICE_CENTS } from "@/lib/orders/constants";
 import type { EvaluationService } from "@/lib/orders/types";
+import type { PreEvaluationStoredFile } from "@/lib/pre-evaluation/client";
+import { carriedFileDetail, orderPreEvaluationId } from "@/lib/pre-evaluation/stored-file";
 import { buttonClasses } from "./ui";
 import { useQuoteUpload } from "./use-quote-upload";
 
@@ -37,12 +39,16 @@ type ListedFile = {
   id: string;
   name: string;
   kind: "pdf" | "image";
+  detail: string | null;
+  carried: boolean;
 };
 
 const SAMPLE_FILES: ListedFile[] = sampleCustomerOrder().documents.map((document) => ({
   id: document.id,
   name: document.filename,
   kind: document.filename.toLowerCase().endsWith(".pdf") ? "pdf" : "image",
+  detail: null,
+  carried: false,
 }));
 
 /** Rate only. Billable pages are counted on the server after it reads the document. */
@@ -142,12 +148,16 @@ export function UploadCard({
   initialService,
   sessionEmail,
   initialDegreeCount = null,
+  preEvaluationId = null,
+  carriedFile = null,
   onTrackChange,
 }: {
   intro?: { title: string; lede: string };
   initialService?: string | null;
   sessionEmail?: string | null;
   initialDegreeCount?: number | null;
+  preEvaluationId?: string | null;
+  carriedFile?: PreEvaluationStoredFile | null;
   onTrackChange?: (track: FlowTrack) => void;
 }) {
   const { mock, pending, error, setError, submit } = useQuoteUpload();
@@ -155,6 +165,7 @@ export function UploadCard({
   const inputRef = useRef<HTMLInputElement>(null);
   const [start] = useState(() => uploadStateFromDraft(initialService));
   const [picked, setPicked] = useState<File[]>(start.files);
+  const [removedFor, setRemovedFor] = useState<string | null>(null);
   const [checks, setChecks] = useState<ServiceChecks>(start.checks);
   const [degrees, setDegrees] = useState(() => String(clampDegreeCount(Number(start.degrees))));
   const seenService = useRef(start.serviceKey);
@@ -218,14 +229,36 @@ export function UploadCard({
     onTrackChange?.(evaluation && checks.translation ? "bundle" : evaluation ? "evaluation" : "translation");
   }, [checks.diploma, checks.courseByCourse, checks.translation, onTrackChange]);
 
-  const files: ListedFile[] =
+  const trimmedPreEvaluationId = preEvaluationId?.trim() || "";
+  const carriedId = orderPreEvaluationId({
+    id: trimmedPreEvaluationId,
+    file: carriedFile ?? null,
+    removed: removedFor != null && removedFor === trimmedPreEvaluationId,
+  });
+  const files: ListedFile[] = [];
+  if (carriedId && carriedFile) {
+    const pdf = carriedFile.mimeType === "application/pdf" || carriedFile.name.toLowerCase().endsWith(".pdf");
+    files.push({
+      id: `pre-evaluation-${carriedId}`,
+      name: carriedFile.name,
+      kind: pdf ? "pdf" : "image",
+      detail: carriedFileDetail(carriedFile),
+      carried: true,
+    });
+  }
+  const localFiles: ListedFile[] =
     mock && picked.length === 0
-      ? SAMPLE_FILES
+      ? files.length > 0
+        ? []
+        : SAMPLE_FILES
       : picked.map((file) => ({
           id: `${file.name}-${file.size}`,
           name: file.name,
           kind: file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf") ? "pdf" : "image",
+          detail: null,
+          carried: false,
         }));
+  files.push(...localFiles);
   const quote = uploadServiceQuote({
     checks,
     degreeCount: clampDegreeCount(Number(degrees)),
@@ -239,7 +272,13 @@ export function UploadCard({
   }
 
   function removeFile(index: number) {
-    setPicked((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    const file = files[index];
+    if (file?.carried) {
+      if (trimmedPreEvaluationId) setRemovedFor(trimmedPreEvaluationId);
+      return;
+    }
+    const localIndex = index - files.filter((row) => row.carried).length;
+    setPicked((current) => current.filter((_, currentIndex) => currentIndex !== localIndex));
   }
 
   function choice(): UploadChoice | null {
@@ -264,15 +303,18 @@ export function UploadCard({
       setError(choiceError());
       return;
     }
-    if (!mock && picked.length === 0) {
+    const keepingCarry = Boolean(carriedId && carriedFile);
+    if (!mock && picked.length === 0 && !keepingCarry) {
       setError("Add at least one PDF or photo.");
       return;
     }
     await submit({
       files: picked,
       choice: selected,
-      pageCount: null,
+      pageCount: keepingCarry && carriedFile && picked.length === 0 ? carriedFile.pageCount : null,
       signedIn: Boolean(signedInEmail),
+      preEvaluationId: keepingCarry ? carriedId : null,
+      carriedName: keepingCarry && carriedFile ? carriedFile.name : null,
     });
   }
 
@@ -403,10 +445,11 @@ export function UploadCard({
             className="mt-3 overflow-hidden rounded-[var(--cp-radius)] border border-line text-[13.5px]"
           >
             {files.map((file, index) => {
-              const removable = !(mock && picked.length === 0);
+              const removable = file.carried || !(mock && picked.length === 0);
               return (
                 <li
                   key={file.id}
+                  data-testid={file.carried ? "carried-file" : undefined}
                   className="flex items-center justify-between gap-3 border-t border-line px-3 py-2.5 first:border-t-0"
                 >
                   <span className="min-w-0 truncate">
@@ -414,7 +457,9 @@ export function UploadCard({
                     {file.name}
                   </span>
                   <span className="flex shrink-0 items-center gap-3">
-                    <span className="text-ink-muted">Added</span>
+                    <span className="text-ink-muted" data-testid={file.carried ? "carried-file-meta" : undefined}>
+                      {file.detail ?? "Added"}
+                    </span>
                     {removable ? (
                       <button
                         type="button"

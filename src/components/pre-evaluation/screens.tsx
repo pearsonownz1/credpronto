@@ -8,9 +8,11 @@ import {
   preEvaluationErrorStatus,
   replacementPreviewUrl,
   type PreEvaluationConfidence,
+  type PreEvaluationFileKind,
 } from "@/lib/pre-evaluation/client";
 import { PRE_EVALUATION_ACCEPT, preEvaluationFileError } from "@/lib/pre-evaluation/file";
 import { signupHrefFromPrefill } from "@/lib/pre-evaluation/handoff";
+import { officialEvaluationButtonLabel } from "@/lib/pre-evaluation/official-label";
 import { watchPreviewLink } from "@/lib/pre-evaluation/preview-link";
 import type { PreEvaluationProgress } from "@/lib/pre-evaluation/progress";
 import { previewWatermarkDataUrl } from "@/lib/pre-evaluation/watermark";
@@ -389,6 +391,21 @@ function SignedPreview({
 function OfficialEvaluationButton({ id }: { id: string }) {
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [kind, setKind] = useState<PreEvaluationFileKind | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getPreEvaluationPrefill(id)
+      .then((prefill) => {
+        if (!cancelled) setKind(prefill.preEvaluationFile?.kind ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setKind(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   async function openAccount() {
     setPending(true);
@@ -412,7 +429,7 @@ function OfficialEvaluationButton({ id }: { id: string }) {
         onClick={() => void openAccount()}
         className={buttonClasses("primary", "h-12 w-full text-[15px] disabled:opacity-60")}
       >
-        Get my official evaluation
+        {officialEvaluationButtonLabel(kind)}
       </button>
       <p className="mt-2 text-center text-[13px] text-ink-muted">ready in about 5 minutes</p>
       {message ? (

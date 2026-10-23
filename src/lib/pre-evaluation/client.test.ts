@@ -139,6 +139,31 @@ describe("pre-evaluation client", () => {
       service: "course_by_course",
       degreeCount: 2,
       equivalent: "Bachelor's degree",
+      preEvaluationFile: null,
+    });
+    expect(
+      parsePreEvaluationPrefill({
+        ...prefill,
+        preEvaluationFile: { name: " ", mimeType: "application/pdf", size: 10, pageCount: 1, kind: "diploma" },
+      }).preEvaluationFile,
+    ).toBeNull();
+    expect(
+      parsePreEvaluationPrefill({
+        ...prefill,
+        preEvaluationFile: {
+          name: "licenciatura.pdf",
+          mimeType: "application/pdf",
+          size: 4096,
+          pageCount: 2,
+          kind: "transcript",
+        },
+      }).preEvaluationFile,
+    ).toEqual({
+      name: "licenciatura.pdf",
+      mimeType: "application/pdf",
+      size: 4096,
+      pageCount: 2,
+      kind: "transcript",
     });
     expect(
       parsePreEvaluationPrefill({

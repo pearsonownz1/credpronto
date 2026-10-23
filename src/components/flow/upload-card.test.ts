@@ -178,6 +178,28 @@ describe("service checkboxes", () => {
     expect(markup).not.toMatch(/data-testid="choice-translation"[^>]*checked=""/);
   });
 
+  it("lists the stored pre-evaluation file with its pages, size, and remove control", () => {
+    const markup = renderToStaticMarkup(
+      createElement(UploadCard, {
+        sessionEmail: null,
+        initialService: "diploma",
+        preEvaluationId: "prev-1",
+        carriedFile: {
+          name: "licenciatura.pdf",
+          mimeType: "application/pdf",
+          size: 2048,
+          pageCount: 3,
+          kind: "diploma",
+        },
+      }),
+    );
+    expect(markup).toContain('data-testid="carried-file"');
+    expect(markup).toContain("licenciatura.pdf");
+    expect(markup).toContain("3 pages · 2 KB");
+    expect(markup).toContain('aria-label="Remove licenciatura.pdf"');
+    expect(markup).toContain("Continue to payment");
+  });
+
   it("shows the flat fee and the pay step when the page is a diploma upload", () => {
     const markup = renderToStaticMarkup(
       createElement(UploadView, { initialService: "diploma", sessionEmail: null }),

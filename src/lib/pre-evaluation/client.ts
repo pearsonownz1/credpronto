@@ -13,6 +13,8 @@
  *   JSON { email } → { ok: true }
  * GET /api/pre-evaluation/{id}/prefill
  *   Email and order fields for signup. 409 until the lead email exists.
+ *   `preEvaluationFile` is optional until the stored document is attached:
+ *   { name, mimeType, size, pageCount, kind: 'diploma' | 'transcript' }.
  */
 
 export const PRE_EVALUATION_POLL_MS = 2_000;
@@ -42,6 +44,16 @@ export type PreEvaluationEmailResult = {
 
 export type PreEvaluationService = "diploma" | "course_by_course";
 
+export type PreEvaluationFileKind = "diploma" | "transcript";
+
+export type PreEvaluationStoredFile = {
+  name: string;
+  mimeType: string;
+  size: number;
+  pageCount: number;
+  kind: PreEvaluationFileKind;
+};
+
 export type PreEvaluationPrefill = {
   email: string;
   orderType: "evaluation";
@@ -56,11 +68,13 @@ export type PreEvaluationPrefill = {
   signupPath: string;
   orderPath: string;
   resultPath: string;
+  preEvaluationFile: PreEvaluationStoredFile | null;
 };
 
 const STATUSES = new Set<PreEvaluationStatus>(["processing", "email_required", "ready", "failed"]);
 const CONFIDENCE = new Set<PreEvaluationConfidence>(["low", "medium", "high"]);
 const SERVICES = new Set<PreEvaluationService>(["diploma", "course_by_course"]);
+const FILE_KINDS = new Set<PreEvaluationFileKind>(["diploma", "transcript"]);
 const PREFILL_STATUSES = new Set<PreEvaluationPrefill["status"]>(["processing", "ready", "failed"]);
 
 export class PreEvaluationClientError extends Error {
@@ -174,6 +188,31 @@ function parseEmailResult(payload: unknown): PreEvaluationEmailResult {
   return { ok: true };
 }
 
+function parseStoredFile(value: unknown): PreEvaluationStoredFile | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  const name = nullableText(row.name);
+  const mimeType = nullableText(row.mimeType);
+  const kind = row.kind;
+  const size = row.size;
+  const pageCount = row.pageCount;
+  if (
+    !name ||
+    !mimeType ||
+    typeof kind !== "string" ||
+    !FILE_KINDS.has(kind as PreEvaluationFileKind) ||
+    typeof size !== "number" ||
+    !Number.isFinite(size) ||
+    size < 0 ||
+    typeof pageCount !== "number" ||
+    !Number.isInteger(pageCount) ||
+    pageCount < 0
+  ) {
+    return null;
+  }
+  return { name, mimeType, size, pageCount, kind: kind as PreEvaluationFileKind };
+}
+
 export function parsePreEvaluationPrefill(payload: unknown): PreEvaluationPrefill {
   if (!payload || typeof payload !== "object") {
     throw new PreEvaluationClientError("The preview response was not valid.", 502);
@@ -221,6 +260,7 @@ export function parsePreEvaluationPrefill(payload: unknown): PreEvaluationPrefil
     signupPath,
     orderPath,
     resultPath,
+    preEvaluationFile: parseStoredFile(row.preEvaluationFile),
   };
 }
 
