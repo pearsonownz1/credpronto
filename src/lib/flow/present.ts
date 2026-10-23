@@ -546,6 +546,20 @@ export function orderContents(order: {
   return { translation: true, evaluation: false };
 }
 
+export const TRANSLATION_TURNAROUND_COPY = "Translation ready in about 1 minute.";
+export const EVALUATION_TURNAROUND_COPY = "Evaluation ready in about 5 minutes.";
+
+/** Shown on the quote, before payment. Any evaluation sets the longer time, with or without a translation. */
+export function quoteTurnaroundCopy(order: {
+  services?: readonly string[] | null;
+  service?: string | null;
+  orderType?: string | null;
+  serviceType?: string | null;
+  includeTranslation?: boolean | null;
+}): string {
+  return orderContents(order).evaluation ? EVALUATION_TURNAROUND_COPY : TRANSLATION_TURNAROUND_COPY;
+}
+
 /** Payment has been recorded. The checkout stepper is no longer the status. */
 export function orderIsPaid(order: {
   status?: string | null;

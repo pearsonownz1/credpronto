@@ -38,6 +38,7 @@ import {
   paidReviewEmailLine,
   fileCountLabel,
   quoteCounts,
+  quoteTurnaroundCopy,
   quoteFileGroups,
   quotePageRows,
   quoteSummaryLabel,
@@ -1007,6 +1008,21 @@ describe("download copy", () => {
       translation: false,
       evaluation: true,
     });
+    expect(quoteTurnaroundCopy({ services: ["translation"], service: "diploma" })).toBe(
+      "Translation ready in about 1 minute.",
+    );
+    expect(quoteTurnaroundCopy({ orderType: "translation", service: null })).toBe(
+      "Translation ready in about 1 minute.",
+    );
+    expect(quoteTurnaroundCopy({ services: ["diploma"], orderType: "translation", service: null })).toBe(
+      "Evaluation ready in about 5 minutes.",
+    );
+    expect(
+      quoteTurnaroundCopy({ services: ["translation", "course_by_course"], includeTranslation: false }),
+    ).toBe("Evaluation ready in about 5 minutes.");
+    expect(quoteTurnaroundCopy({ orderType: "evaluation", service: "diploma", includeTranslation: true })).toBe(
+      "Evaluation ready in about 5 minutes.",
+    );
     expect(downloadReadyCopy({ services: ["translation", "course_by_course"], service: null })).toMatchObject({
       title: "Your order is ready.",
       primaryFile: "evaluation",

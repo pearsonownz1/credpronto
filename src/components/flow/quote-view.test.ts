@@ -86,11 +86,13 @@ describe("quote step actions", () => {
     const turnaround = html.indexOf('data-testid="quote-turnaround"');
     const total = html.indexOf('data-testid="quote-total"');
     expect(preview).toBeGreaterThan(-1);
-    expect(turnaround).toBeGreaterThan(preview);
-    expect(total).toBeGreaterThan(turnaround);
+    expect(total).toBeGreaterThan(preview);
+    expect(turnaround).toBeGreaterThan(total);
     expect(html).toContain("Turnaround time");
     expect(html).toContain("uppercase");
-    expect(html).toContain("3 minutes");
+    expect(html).toContain("Translation ready in about 1 minute.");
+    expect(html).not.toContain("Evaluation ready in about 5 minutes.");
+    expect(html).not.toContain("3 minutes");
     expect(html).toContain(">Fast<");
     expect(html).toContain("bg-[#EEF3FF]");
     expect(html).toContain("rounded-[4px]");
@@ -191,6 +193,8 @@ describe("quote step actions", () => {
     expect(html).toContain('data-testid="continue"');
     expect(html).not.toContain("Pay only after");
     expect(html).not.toContain("3 minutes");
+    expect(html).toContain("Evaluation ready in about 5 minutes.");
+    expect(html).not.toContain("Translation ready in about 1 minute.");
     expect(html).not.toContain(">Preview<");
     expect(html).toContain("Pay from this quote");
   });
@@ -227,5 +231,19 @@ describe("quote step actions", () => {
     expect(html).toContain(">Preview<");
     expect(html).toContain("Pay only after");
     expect(html).not.toContain("Pay from this quote");
+    expect(html).toContain("Evaluation ready in about 5 minutes.");
+    expect(html).not.toContain("Translation ready in about 1 minute.");
+  });
+
+  it("uses the evaluation time when the service list includes a diploma", () => {
+    const html = htmlFor({
+      ...sampleCustomerOrder(),
+      orderType: "translation",
+      service: null,
+      services: ["translation", "course_by_course"],
+      includeTranslation: false,
+    });
+    expect(html).toContain("Evaluation ready in about 5 minutes.");
+    expect(html).not.toContain("Translation ready in about 1 minute.");
   });
 });
