@@ -19,6 +19,7 @@ import type {
   EvaluationLine,
   EvaluationResult,
   EvaluationService,
+  FinalCorrectionStatus,
   OrderRecord,
   OrderType,
   PageOrderBasis,
@@ -140,6 +141,14 @@ export type CustomerOrder = {
   evaluationStatusAt?: Partial<Record<EvalStatus, string>>;
   /** Detected document title, or a readable form of the upload name. */
   documentTitle: string;
+  /**
+   * Final-file correction already on this order, when the order payload includes one.
+   * Open and in-progress requests replace the correction form.
+   */
+  finalCorrection?: {
+    status: FinalCorrectionStatus;
+    text?: string;
+  } | null;
 };
 
 export function toCustomerOrder(input: {
