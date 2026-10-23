@@ -7,6 +7,7 @@ import { FAQ_CANONICAL, GUIDES_CANONICAL } from "@/lib/content/faq";
 import {
   API_DOCS_CANONICAL,
   HOME_CANONICAL,
+  PREVAL_CANONICAL,
   ROBOTS_NOINDEX,
   SITE_ORIGIN,
   TRANSLATE_CANONICAL,
@@ -32,6 +33,7 @@ describe("crawl policy", () => {
       HOME_CANONICAL,
       TRANSLATE_CANONICAL,
       EVALUATIONS_CANONICAL_URL,
+      PREVAL_CANONICAL,
       PRE_EVALUATION_CANONICAL,
       GUIDES_CANONICAL,
       FAQ_CANONICAL,
@@ -47,6 +49,8 @@ describe("crawl policy", () => {
       "https://www.credpronto.com/guides/preview-your-translation-before-you-pay",
       "https://www.credpronto.com/guides/prepare-a-document-for-translation",
     ]);
+    expect(sitemap().some((entry) => entry.url === PREVAL_CANONICAL)).toBe(true);
+    expect(sitemap().some((entry) => entry.url.includes("/pre-evaluation/"))).toBe(false);
     expect(sitemap().some((entry) => entry.url.includes("/blog"))).toBe(false);
     expect(
       sitemap().some((entry) =>

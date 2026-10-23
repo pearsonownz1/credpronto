@@ -37,7 +37,7 @@ describe("pre-evaluation flow", () => {
         equivalent: "Bachelor's degree",
         confidence: "high",
         previewUrl: "https://cdn.example/preview.png?token=one",
-        kind: null,
+        kind: "diploma",
       },
     });
     expect(phase).toMatchObject({
@@ -47,7 +47,7 @@ describe("pre-evaluation flow", () => {
       equivalent: "Bachelor's degree",
       confidence: "high",
       previewUrl: "https://cdn.example/preview.png?token=one",
-      kind: null,
+      kind: "diploma",
     });
   });
 
@@ -84,7 +84,7 @@ describe("pre-evaluation flow", () => {
         equivalent: "Master's degree",
         confidence: "medium",
         previewUrl: "https://cdn.example/preview.pdf?token=one",
-        kind: null,
+        kind: "transcript",
       },
     });
     expect(phase).toMatchObject({
@@ -92,6 +92,7 @@ describe("pre-evaluation flow", () => {
       email: null,
       equivalent: "Master's degree",
       previewUrl: "https://cdn.example/preview.pdf?token=one",
+      kind: "transcript",
     });
   });
 

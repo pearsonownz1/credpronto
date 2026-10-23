@@ -7,6 +7,7 @@ export type PreEvalGate = {
   status: PreEvalStatus;
   usEquivalency: string | null;
   confidence: PreEvalConfidence | null;
+  documentKind: "diploma" | "transcript" | null;
 };
 
 export type PreEvalPublic = {
@@ -14,12 +15,21 @@ export type PreEvalPublic = {
   equivalent: string | null;
   confidence: PreEvalConfidence | null;
   previewUrl: string | null;
+  kind: "diploma" | "transcript" | null;
 };
 
-/** The suggestion stays empty until a lead email is stored. */
+/** Classification only. Null until the document is a diploma or a transcript. */
+export function publicPreEvaluationKind(
+  kind: "diploma" | "transcript" | null | undefined,
+): "diploma" | "transcript" | null {
+  return kind === "diploma" || kind === "transcript" ? kind : null;
+}
+
+/** The suggestion stays empty until a lead email is stored. `kind` is visible on every status. */
 export function publicPreEvaluation(record: PreEvalGate, previewUrl: string | null): PreEvalPublic {
+  const kind = publicPreEvaluationKind(record.documentKind);
   if (!record.email) {
-    return { status: "email_required", equivalent: null, confidence: null, previewUrl: null };
+    return { status: "email_required", equivalent: null, confidence: null, previewUrl: null, kind };
   }
   if (record.status !== "ready") {
     return {
@@ -27,6 +37,7 @@ export function publicPreEvaluation(record: PreEvalGate, previewUrl: string | nu
       equivalent: null,
       confidence: null,
       previewUrl: null,
+      kind,
     };
   }
   return {
@@ -34,6 +45,7 @@ export function publicPreEvaluation(record: PreEvalGate, previewUrl: string | nu
     equivalent: record.usEquivalency,
     confidence: record.confidence,
     previewUrl,
+    kind,
   };
 }
 

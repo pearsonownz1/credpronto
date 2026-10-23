@@ -3,6 +3,7 @@ import {
   customerEmail,
   earliestReadyPreviewAt,
   getDelivery,
+  getFinalCorrection,
   getOrderById,
   latestPayment,
   latestReadyPreview,
@@ -24,7 +25,7 @@ export async function loadCustomerOrder(db: Db, order: OrderRecord): Promise<Cus
   const priced = await withQuotedPages(db, order);
   const documents = await listDocuments(db, priced.id);
   const documentIds = documents.map((document) => document.id);
-  const [pages, confirmations, preview, payment, delivery, email, addons, translationReadyAt, translations, qaRuns, corrections] =
+  const [pages, confirmations, preview, payment, delivery, email, addons, translationReadyAt, translations, qaRuns, corrections, finalCorrection] =
     await Promise.all([
       listPages(db, documentIds),
       listConfirmations(db, order.id),
@@ -37,6 +38,7 @@ export async function loadCustomerOrder(db: Db, order: OrderRecord): Promise<Cus
       listTranslations(db, documentIds),
       listQaRuns(db, order.id),
       listCorrections(db, order.id),
+      getFinalCorrection(db, order.id),
     ]);
   const latestQa = qaRuns.at(-1);
 
@@ -56,6 +58,7 @@ export async function loadCustomerOrder(db: Db, order: OrderRecord): Promise<Cus
     email,
     addons,
     translationOutputs: translations.map((translation) => translation.output),
+    finalCorrection,
   });
 }
 

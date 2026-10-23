@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapPreEvaluation, suggestionClaimable } from "./db";
+import { linkPreEvaluationOrder, mapPreEvaluation, releasePreEvaluationOrder, suggestionClaimable } from "./db";
 import { PRE_EVAL_STALE_MS } from "./constants";
 
 describe("pre-evaluation rows", () => {
@@ -47,5 +47,73 @@ describe("pre-evaluation rows", () => {
     expect(suggestionClaimable("2026-10-23T17:59:30.000Z", now)).toBe(false);
     const stale = new Date(Date.parse(now) - PRE_EVAL_STALE_MS).toISOString();
     expect(suggestionClaimable(stale, now)).toBe(true);
+  });
+
+  it("claims the first order only while order_id is null", async () => {
+    const steps: string[] = [];
+    let patch: Record<string, unknown> | null = null;
+    let rows: Array<{ id: string }> = [{ id: "pre-1" }];
+    const query = {
+      update(next: Record<string, unknown>) {
+        patch = next;
+        steps.push("update");
+        return query;
+      },
+      eq(column: string, value: string) {
+        steps.push(`eq:${column}=${value}`);
+        return query;
+      },
+      is(column: string, value: null) {
+        steps.push(`is:${column}=${String(value)}`);
+        return query;
+      },
+      select(columns: string) {
+        steps.push(`select:${columns}`);
+        return query;
+      },
+      then(onFulfilled: (value: { data: Array<{ id: string }>; error: null }) => unknown) {
+        return Promise.resolve({ data: rows, error: null }).then(onFulfilled);
+      },
+    };
+    const claimed = await linkPreEvaluationOrder(
+      { from: () => query } as never,
+      "pre-1",
+      "order-1",
+      "2026-10-23T00:00:00.000Z",
+    );
+    expect(claimed).toBe(true);
+    expect(patch).toEqual({ order_id: "order-1", updated_at: "2026-10-23T00:00:00.000Z" });
+    expect(steps).toEqual(["update", "eq:id=pre-1", "is:order_id=null", "select:id"]);
+
+    rows = [];
+    const lost = await linkPreEvaluationOrder(
+      { from: () => query } as never,
+      "pre-1",
+      "order-2",
+      "2026-10-23T00:00:01.000Z",
+    );
+    expect(lost).toBe(false);
+  });
+
+  it("releases a claim only for the order that holds it", async () => {
+    const steps: string[] = [];
+    let patch: Record<string, unknown> | null = null;
+    const query = {
+      update(next: Record<string, unknown>) {
+        patch = next;
+        steps.push("update");
+        return query;
+      },
+      eq(column: string, value: string) {
+        steps.push(`eq:${column}=${value}`);
+        return query;
+      },
+      then(onFulfilled: (value: { error: null }) => unknown) {
+        return Promise.resolve({ error: null }).then(onFulfilled);
+      },
+    };
+    await releasePreEvaluationOrder({ from: () => query } as never, "pre-1", "order-1", "2026-10-23T00:00:02.000Z");
+    expect(patch).toEqual({ order_id: null, updated_at: "2026-10-23T00:00:02.000Z" });
+    expect(steps).toEqual(["update", "eq:id=pre-1", "eq:order_id=order-1"]);
   });
 });

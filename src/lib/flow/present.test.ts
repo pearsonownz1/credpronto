@@ -125,6 +125,7 @@ function order(patch: Partial<CustomerOrder> = {}): CustomerOrder {
     evaluationStatus: patch.evaluationStatus ?? null,
     evaluationStatusAt: patch.evaluationStatusAt ?? {},
     documentTitle: patch.documentTitle ?? "Document",
+    finalCorrection: patch.finalCorrection ?? null,
   };
 }
 

@@ -12,6 +12,12 @@ export const TRANSLATE_TITLE =
 export const TRANSLATE_DESCRIPTION =
   "Upload a PDF or phone photos for a certified translation from $9.95 per page. Preview the finished translation free before you pay.";
 
+export const PREVAL_PATH = "/preval";
+export const PREVAL_CANONICAL = `${SITE_ORIGIN}${PREVAL_PATH}`;
+export const PREVAL_TITLE = "See your likely U.S. equivalent in about a minute | CredPronto";
+export const PREVAL_DESCRIPTION =
+  "Upload a diploma or transcript. Our AI checks it against EDGE equivalency data and shows the likely U.S. degree, with a confidence level. No account needed.";
+
 /** Permanent moves from the old blog URLs onto /guides. statusCode 301, not 308. */
 export function blogRedirects() {
   return [

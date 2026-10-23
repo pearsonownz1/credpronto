@@ -100,8 +100,9 @@ Signed URLs expire in 10 minutes. `translation.url` is a watermarked preview onl
 | Field | Required | Notes |
 | --- | --- | --- |
 | `email` | when signed out | Upserts `customers` by email. A valid Supabase session uses that user's email, sets `orders.user_id`, and ignores this field. |
-| `sessionId` | yes | Upload session from `POST /api/uploads`. Stored as `orders.id`. |
-| `files` | yes | `{ path, filename, mime, size }`. No file-count cap. 50MB each, taken from the stored object. |
+| `sessionId` | when `files` is not empty | Upload session from `POST /api/uploads`. Stored as `orders.id`. Omitted when the only file is `preEvaluationId`; the server then generates the order id. |
+| `files` | when `preEvaluationId` is omitted | `{ path, filename, mime, size }`. No file-count cap. 50MB each, taken from the stored object. An empty list is valid together with `preEvaluationId`. |
+| `preEvaluationId` | no | Public pre-evaluation id from `/translate?preEvaluation=`. The signed-in account email must match the lead email. The pre-evaluation must be `ready` and classified (`document_kind` is `diploma` or `transcript`); a pending or unclassified row is `404` `{ "error": "Pre-evaluation not found" }`, the same body as `GET /api/pre-evaluation/{id}/file`. The server inserts the order, then claims it with `update pre_evaluations set order_id = <order id> where id = <pre-evaluation id> and order_id is null` before copying the stored original into `originals`. A lost claim is `409` `{ "error": "This pre-evaluation was already ordered", "code": "already_ordered" }` and does not copy the file. Client paths, bucket names, and page counts are ignored. |
 | `utm_source`, `utm_medium`, `utm_campaign`, `gclid`, `landing_path` | no | Stored on the order |
 
 Allowed types: PDF, JPEG, PNG, WEBP, HEIC/HEIF. HEIC is converted when the runtime can decode it.
@@ -112,7 +113,49 @@ Allowed types: PDF, JPEG, PNG, WEBP, HEIC/HEIF. HEIC is converted when the runti
 { "orderToken": "…", "orderId": "…" }
 ```
 
-`400` validation, `415` unsupported type, `503` when the service role is not configured.
+`400` validation, `415` unsupported type, `503` when the service role is not configured. `404` `{ "error": "Pre-evaluation not found" }` when `preEvaluationId` is present and the caller is signed out, the id is unknown, the account email does not match the lead email, the pre-evaluation is still pending, or it has not been classified. `409` `{ "error": "This pre-evaluation was already ordered", "code": "already_ordered" }` when `order_id` is already set. A matching `preEvaluationId` with no other files satisfies the one-file check. The copied document's `page_count` is the physical page count: one for a photo, the PDF page count otherwise. `order_id` references `orders`, so the order row is inserted before the claim. If the claim loses, or the copy fails before the file is stored, that order row is deleted and a won claim is cleared.
+
+## `GET /api/pre-evaluation/{id}`
+
+Public result the page reads before signup. `kind` is the document classification and is present on every status. It is `null` until `document_kind` is `diploma` or `transcript`. The response never includes the file name, byte size, page count, mime type, or storage path.
+
+```json
+{
+  "status": "email_required",
+  "equivalent": null,
+  "confidence": null,
+  "previewUrl": null,
+  "kind": "diploma"
+}
+```
+
+`equivalent`, `confidence`, and `previewUrl` stay null until the lead email is stored and the read is `ready`. `kind` is not hidden behind that email gate.
+
+## `GET /api/pre-evaluation/{id}/file`
+
+Signed-in paid-funnel prefill. `id` is the public pre-evaluation id (the same value as `preEvaluation` on `/translate`). The response is exactly this object and nothing else. `kind` is the pre-evaluation's document classification. The upload form prices from `kind`.
+
+```json
+{
+  "preEvaluationFile": {
+    "name": "diploma.pdf",
+    "mimeType": "application/pdf",
+    "size": 48211,
+    "pageCount": 2,
+    "kind": "diploma"
+  }
+}
+```
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `name` | string | Stored filename. |
+| `mimeType` | `application/pdf` \| `image/jpeg` \| `image/png` | Stored type. |
+| `size` | integer | Byte length of the stored original. |
+| `pageCount` | integer | Physical pages. A photo is 1. A PDF is its page count. |
+| `kind` | `diploma` \| `transcript` | `document_kind` on the pre-evaluation. |
+
+`404` `{ "error": "Pre-evaluation not found" }` when the caller is signed out, the id is unknown, the account email does not match the lead email, the pre-evaluation is still pending, or the document has not been classified. `503` `{ "error": "Could not read the upload" }` when the original cannot be counted. No storage path is returned.
 
 ## `POST /api/orders/[token]/process`
 
