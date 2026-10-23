@@ -1,3 +1,11 @@
+export type CustomerOrderDocument = {
+  detectedLanguage?: string | null;
+  sourceLanguage?: string | null;
+  targetLanguage?: string | null;
+  sourceLanguageName?: string | null;
+  targetLanguageName?: string | null;
+};
+
 export type ApiOk<T> = { ok: true; status: number; data: T };
 export type ApiFail = { ok: false; status: number; error: string };
 export type ApiResult<T> = ApiOk<T> | ApiFail;
@@ -20,6 +28,11 @@ export type CustomerOrder = {
   documentsLabel?: string | null;
   sourceLanguage?: string | null;
   targetLanguage?: string | null;
+  /** Display name when the payload sends a name instead of a language code. */
+  sourceLanguageName?: string | null;
+  targetLanguageName?: string | null;
+  /** Languages on the order's files, when the list includes them. */
+  documents?: CustomerOrderDocument[] | null;
   orderToken?: string | null;
   etaAt?: string | null;
   /** True when this evaluation also includes a certified translation. */
