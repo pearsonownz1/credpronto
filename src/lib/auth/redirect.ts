@@ -19,7 +19,7 @@ export function confirmUrl(
   const url = new URL("/auth/confirm", origin.replace(/\/$/, ""));
   url.searchParams.set("token_hash", input.tokenHash);
   url.searchParams.set("type", input.type);
-  url.searchParams.set("next", safeNextPath(input.next, "/account"));
+  url.searchParams.set("next", safeNextPath(input.next, "/dashboard"));
   if (input.orderToken && isOrderToken(input.orderToken)) url.searchParams.set("order", input.orderToken);
   return url.toString();
 }

@@ -447,7 +447,7 @@ test("the homepage preview is on the page, and a signed-in header shows My order
   await signIn(page, "maria.ruiz@email.com");
   await expect(page).toHaveURL(/\/dashboard$/);
   await page.goto("/");
-  await expect(page.getByTestId("nav-my-orders")).toHaveAttribute("href", "/account");
+  await expect(page.getByTestId("nav-my-orders")).toHaveAttribute("href", "/dashboard");
   await expect(page.getByTestId("nav-log-in")).toHaveCount(0);
   await expect(page.getByTestId("nav-create-account")).toHaveCount(0);
   await expect(page.getByTestId("nav-get-started")).toHaveAttribute("href", "/translate");

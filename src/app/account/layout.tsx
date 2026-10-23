@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 
 export default async function AccountLayout({ children }: { children: React.ReactNode }) {
   const account = await getAccount();
-  const next = safeNextPath(await currentPath(), "/account");
+  const next = safeNextPath(await currentPath(), "/dashboard");
   if (!account) redirect(`/sign-in?next=${encodeURIComponent(next)}`);
   return children;
 }

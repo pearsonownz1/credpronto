@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const origin = requestOrigin(request);
-  const next = safeNextPath(url.searchParams.get("next"), "/account");
+  const next = safeNextPath(url.searchParams.get("next"), "/dashboard");
   const tokenHash = url.searchParams.get("token_hash");
   const type = url.searchParams.get("type");
   const orderToken = url.searchParams.get("order");

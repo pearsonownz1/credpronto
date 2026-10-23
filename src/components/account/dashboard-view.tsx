@@ -126,7 +126,7 @@ export function DashboardView() {
       <div className="overflow-hidden rounded-[var(--cp-radius)] border border-line bg-white">
         <div className="flex items-center gap-4 overflow-x-auto border-b border-line px-[18px] py-3 text-[13.5px]" role="tablist">
           {DASHBOARD_TABS.map((item) => {
-            const count = item.id === "all" ? orders.length : ordersInTab(orders, item.id, now).length;
+            const count = ordersInTab(searched, item.id, now).length;
             const selected = tab === item.id;
             return (
               <button

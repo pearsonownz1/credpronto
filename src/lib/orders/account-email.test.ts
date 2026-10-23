@@ -26,7 +26,7 @@ describe("customer emails that open the account", () => {
     vi.stubEnv("APP_URL", "https://credpronto.com");
   });
 
-  it("sends the preview-ready link to /account", async () => {
+  it("sends the preview-ready link to /dashboard", async () => {
     await sendPreviewReady("ada@example.com", {
       token: "order-token-secret",
       orderId: "order-9",
@@ -40,8 +40,8 @@ describe("customer emails that open the account", () => {
 
     expect(send).toHaveBeenCalledTimes(1);
     const body = sentMail();
-    expect(body.text).toContain("https://credpronto.com/account");
-    expect(body.html).toContain("https://credpronto.com/account");
+    expect(body.text).toContain("https://credpronto.com/dashboard");
+    expect(body.html).toContain("https://credpronto.com/dashboard");
     expect(body.text).not.toContain("order-token-secret");
     expect(body.html).not.toContain("order-token-secret");
   });

@@ -60,7 +60,7 @@ export function OrderAccountCard({
         email,
         password,
         mode: mode === "sign-in" ? "sign-in" : "sign-up",
-        next: "/account",
+        next: "/dashboard",
         orderToken,
       }),
     });
@@ -99,7 +99,7 @@ export function OrderAccountCard({
     setMessage(null);
     const result = await browserJson<{ sent: boolean }>("/api/auth/magic-link", {
       method: "POST",
-      body: JSON.stringify({ email, next: "/account", orderToken }),
+      body: JSON.stringify({ email, next: "/dashboard", orderToken }),
     });
     setPending(false);
     if (!result.ok) setError(result.error);
@@ -115,7 +115,7 @@ export function OrderAccountCard({
         action={publicMockMode() ? mockPassword : undefined}
         onSubmit={onPassword}
       >
-        <input type="hidden" name="next" value="/account" />
+        <input type="hidden" name="next" value="/dashboard" />
         <label className="block">
           <span className="mb-1.5 block text-[13px] font-semibold">Email</span>
           <input

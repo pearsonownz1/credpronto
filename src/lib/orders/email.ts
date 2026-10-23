@@ -32,7 +32,7 @@ export function orderLink(token: string): string {
 
 /** Signed-in order list. Preview-ready and payment emails use this. */
 export function accountLink(): string {
-  return `${appOrigin()}/account`;
+  return `${appOrigin()}/dashboard`;
 }
 
 /** Order page for a signed-in owner. The raw email token is not stored on the order. */

@@ -65,14 +65,14 @@ export async function generateConfirmLink(input: {
           email: input.email,
           password: input.password ?? "",
           options: {
-            redirectTo: `${input.origin.replace(/\/$/, "")}/account`,
+            redirectTo: `${input.origin.replace(/\/$/, "")}/dashboard`,
             ...(input.name ? { data: { full_name: input.name } } : {}),
           },
         })
       : await admin.generateLink({
           type: "magiclink",
           email: input.email,
-          options: { redirectTo: `${input.origin.replace(/\/$/, "")}/account` },
+          options: { redirectTo: `${input.origin.replace(/\/$/, "")}/dashboard` },
         });
 
   if (generated.error || !generated.data.user || !generated.data.properties?.hashed_token) {
@@ -86,7 +86,7 @@ export async function generateConfirmLink(input: {
     confirmUrl: confirmUrl(input.origin, {
       tokenHash: generated.data.properties.hashed_token,
       type: otpType,
-      next: input.next ?? "/account",
+      next: input.next ?? "/dashboard",
       orderToken: input.orderToken,
     }),
   };

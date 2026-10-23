@@ -4,7 +4,7 @@ import { accountLink, buildContactEmail, deliveryReadyMessage, emailFromHeader }
 
 describe("account link", () => {
   it("uses the signed-in order list", () => {
-    expect(accountLink()).toMatch(/\/account$/);
+    expect(accountLink()).toMatch(/\/dashboard$/);
   });
 });
 
