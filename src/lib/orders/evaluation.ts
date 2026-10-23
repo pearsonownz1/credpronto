@@ -106,6 +106,8 @@ const diplomaSchema = z.object({
       institution: z.string(),
       country: z.string(),
       credential: z.string(),
+      /** English name of the credential when the printed title is not in English or not in Latin script. */
+      englishCredential: z.string().optional(),
       field: z.string(),
       dates: z.string(),
     }),
@@ -129,6 +131,7 @@ const courseSchema = z.object({
   institution: z.string(),
   country: z.string(),
   credential: z.string(),
+  englishCredential: z.string().optional(),
   scale: z.enum(["10", "20", "letter"]),
   /** Overall decision as printed, such as Admis or Ajourné. Empty when the document does not state one. */
   result: z.string().optional(),
@@ -357,7 +360,8 @@ async function extractDiploma(text: string): Promise<DiplomaExtract> {
 Return one credential per degree that is printed. Copy names, institutions, countries, fields, and dates as printed.
 credential is the degree title as printed (for example Licence, Licenciatura, Licenciada, Licenciado, Maîtrise, Bachillerato).
 field is the subject. For "Licenciada en Administración de Empresas", field is "Administración de Empresas".
-country is the country of the institution. If the country is not printed, infer it from the city or state (Guadalajara, Jalisco is Mexico). Use an empty string only when no place is printed.
+country is the country of the institution that awarded the credential, written in English (Dominican Republic, not República Dominicana). If the country is not printed, infer it from the city or state (Guadalajara, Jalisco is Mexico). For a regional examination board such as CXC (Caribbean Examinations Council) or WAEC (West African Examinations Council), country is the candidate's own country, taken from the school, centre, or address. Use an empty string only when no place is printed.
+englishCredential is the usual English name of the credential (for example Higher Secondary Certificate, Bachelor of Medicine). Leave it empty when credential is already in English.
 dates is the examination or conferral date as printed.
 Return the student's granted title even when a field is missing. Do not add degrees for the rector or other signatories. Do not invent a degree.
 
@@ -378,6 +382,8 @@ async function extractCourses(text: string): Promise<CourseExtract> {
           type: "text",
           text: `Extract this academic transcript into a course-by-course table.
 Group courses by the academic year printed on the page. Keep each year label as printed.
+credential is the credential title as printed. englishCredential is its usual English name, empty when it is already in English.
+country is the country of the institution that awarded the credential, written in English (Dominican Republic, not República Dominicana). If the country is not printed, infer it from the city or state (Guadalajara, Jalisco is Mexico). For a regional examination board such as CXC (Caribbean Examinations Council) or WAEC (West African Examinations Council), country is the candidate's own country, taken from the school, centre, or address. Use an empty string only when no place is printed.
 originalName is the course title as printed. englishName is the English name.
 localCredits and localGrade are the values as printed. localGrade is a string.
 scale is "10" when grades are out of 10, "20" when grades are out of 20, and "letter" when grades are already A–F.
@@ -589,7 +595,7 @@ async function buildEvaluatedResult(
       if (!catalogs.has(slug)) catalogs.set(slug, await edgeCatalog(db, item.country));
       const catalog = catalogs.get(slug) ?? { credentials: [], scales: [] };
       hits.push({
-        credential: matchEdgeCredential(catalog.credentials, { country: item.country, title: item.credential }),
+        credential: matchEitherTitle(catalog.credentials, item),
         scale: matchEdgeGradingScale(catalog.scales, { country: item.country, title: item.credential, grades: [] }),
       });
     }
@@ -629,7 +635,7 @@ async function buildEvaluatedResult(
   const catalog = await edgeCatalog(db, courses.country);
   const grades = courses.years.flatMap((year) => year.courses.map((course) => course.localGrade));
   const hit: EdgeHit = {
-    credential: matchEdgeCredential(catalog.credentials, { country: courses.country, title: courses.credential }),
+    credential: matchEitherTitle(catalog.credentials, courses),
     scale: matchEdgeGradingScale(catalog.scales, { country: courses.country, title: courses.credential, grades }),
   };
   const drafted = await draftForCredential(db, courses.credential, hit, storedCredentialId, true);
@@ -645,6 +651,18 @@ async function buildEvaluatedResult(
       hit.credential && drafted.edgeCredentialId === hit.credential.id ? hit.credential.matchMethod : null,
     route: drafted.draft.route,
   };
+}
+
+/** The printed title first, then the English name the extractor gave for it. */
+export function matchEitherTitle(
+  rows: readonly EdgeCredentialRecord[],
+  item: { country: string; credential: string; englishCredential?: string },
+): EdgeCredentialMatch | null {
+  const printed = matchEdgeCredential(rows, { country: item.country, title: item.credential });
+  if (printed) return printed;
+  const english = item.englishCredential?.trim();
+  if (!english || english === item.credential.trim()) return null;
+  return matchEdgeCredential(rows, { country: item.country, title: english });
 }
 
 function chosenEdgeMatch(
