@@ -42,6 +42,9 @@ export async function uploadLinkedTranslation(
   const link = await store.matterOrder(order.id);
   if (!link) return { status: "skipped" };
   if (link.uploadStatus === "uploaded") return { status: "uploaded", clioDocumentId: link.clioDocumentId };
+  if (order.status !== "approved" && order.status !== "delivered") {
+    throw new HttpError("This translation is not approved yet", 409);
+  }
   const fail = async (error: unknown): Promise<ClioUploadResult> => {
     const message = safeClioMessage(error);
     console.error(`clio upload failed for order ${order.id}: ${message}`);

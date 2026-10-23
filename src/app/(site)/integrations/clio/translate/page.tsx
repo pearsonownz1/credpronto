@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
+import { clioNow } from "@/lib/clio/now";
 import { clioStore } from "@/lib/clio/store";
 import { serviceDb } from "@/lib/orders/storage";
 import { ROBOTS_NOINDEX } from "@/lib/seo";
@@ -27,7 +28,7 @@ export default async function ClioTranslatePage({
   let found = false;
   if (handoffId && UUID.test(handoffId)) {
     try {
-      const handoff = await clioStore(serviceDb()).readHandoff(handoffId, Date.now());
+      const handoff = await clioStore(serviceDb()).readHandoff(handoffId, clioNow());
       if (handoff) {
         found = true;
         documents = handoff.documents.map((document) => ({ id: document.id, name: document.name }));
