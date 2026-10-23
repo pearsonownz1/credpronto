@@ -66,36 +66,79 @@ function page(patch: Partial<StaffPage> & Pick<StaffPage, "id" | "sourceText" | 
 }
 
 describe("translation line alignment", () => {
-  it("pairs each source line with the segment at the same index", () => {
-    expect(translationLines("Alpha\nBeta\nGamma", ["One", "Two", "Three"])).toEqual([
-      { source: "Alpha", translation: "One", segmentIndex: 0 },
-      { source: "Beta", translation: "Two", segmentIndex: 1 },
-      { source: "Gamma", translation: "Three", segmentIndex: 2 },
-    ]);
+  it("pairs segment k with the k-th non-blank source line", () => {
+    expect(translationLines("A\n\nB", ["a", "b"])).toEqual({
+      rows: [
+        { source: "A", translation: "a", segmentIndex: 0 },
+        { source: "", translation: "", segmentIndex: null },
+        { source: "B", translation: "b", segmentIndex: 1 },
+      ],
+      extra: 0,
+      missing: 0,
+    });
   });
 
-  it("keeps a blank source line blank on both sides and does not shift later segments", () => {
-    expect(translationLines("Alpha\n\nGamma", ["One", "Hidden", "Three", "Extra"])).toEqual([
-      { source: "Alpha", translation: "One", segmentIndex: 0 },
-      { source: "", translation: "", segmentIndex: null },
-      { source: "Gamma", translation: "Three", segmentIndex: 2 },
-    ]);
+  it("pairs each non-blank diploma line with its own segment", () => {
+    const source = "Ministère de l'Education Nationale\n\nOffice du Baccalauréat du Cameroun";
+    expect(translationLines(source, ["Ministry of National Education", "Cameroon Baccalaureate Office"])).toEqual({
+      rows: [
+        { source: "Ministère de l'Education Nationale", translation: "Ministry of National Education", segmentIndex: 0 },
+        { source: "", translation: "", segmentIndex: null },
+        { source: "Office du Baccalauréat du Cameroun", translation: "Cameroon Baccalaureate Office", segmentIndex: 1 },
+      ],
+      extra: 0,
+      missing: 0,
+    });
   });
 
-  it("leaves a blank translation cell when a segment is missing", () => {
-    expect(translationLines("Alpha\nBeta\nGamma", ["Only"])).toEqual([
-      { source: "Alpha", translation: "Only", segmentIndex: 0 },
-      { source: "Beta", translation: "", segmentIndex: 1 },
-      { source: "Gamma", translation: "", segmentIndex: 2 },
-    ]);
+  it("shows extra segments after the source and counts them", () => {
+    expect(translationLines("A\n\nB", ["a", "b", "c"])).toEqual({
+      rows: [
+        { source: "A", translation: "a", segmentIndex: 0 },
+        { source: "", translation: "", segmentIndex: null },
+        { source: "B", translation: "b", segmentIndex: 1 },
+        { source: "", translation: "c", segmentIndex: 2 },
+      ],
+      extra: 1,
+      missing: 0,
+    });
   });
 
-  it("drops a trailing newline without dropping a real blank line", () => {
-    expect(translationLines("Alpha\n", ["One"])).toEqual([{ source: "Alpha", translation: "One", segmentIndex: 0 }]);
-    expect(translationLines("Alpha\n\n", ["One", "Hidden"])).toEqual([
-      { source: "Alpha", translation: "One", segmentIndex: 0 },
-      { source: "", translation: "", segmentIndex: null },
-    ]);
+  it("leaves unmatched source lines blank and counts the missing segments", () => {
+    expect(translationLines("A\nB\n\nC", ["a"])).toEqual({
+      rows: [
+        { source: "A", translation: "a", segmentIndex: 0 },
+        { source: "B", translation: "", segmentIndex: 1 },
+        { source: "", translation: "", segmentIndex: null },
+        { source: "C", translation: "", segmentIndex: 2 },
+      ],
+      extra: 0,
+      missing: 2,
+    });
+  });
+
+  it("lines up when blank rows explain the gap between source rows and segments", () => {
+    const blankAt = new Set([3, 10, 20, 30, 40, 50, 60, 70]);
+    const sourceRows = Array.from({ length: 85 }, (_, index) => (blankAt.has(index) ? "" : `Line ${index}`));
+    const segments = sourceRows.filter((line) => line.trim().length > 0).map((line) => `T ${line}`);
+    expect(sourceRows).toHaveLength(85);
+    expect(segments).toHaveLength(77);
+
+    const alignment = translationLines(sourceRows.join("\n"), segments);
+    expect(alignment.rows).toHaveLength(85);
+    expect(alignment.extra).toBe(0);
+    expect(alignment.missing).toBe(0);
+
+    let segment = 0;
+    for (const [index, row] of alignment.rows.entries()) {
+      if (blankAt.has(index)) {
+        expect(row).toEqual({ source: "", translation: "", segmentIndex: null });
+        continue;
+      }
+      expect(row).toEqual({ source: `Line ${index}`, translation: segments[segment], segmentIndex: segment });
+      segment += 1;
+    }
+    expect(segment).toBe(77);
   });
 });
 
@@ -103,7 +146,7 @@ describe("translation view", () => {
   const aligned = page({
     id: "p1",
     sourceText: "Alpha\n\nGamma",
-    paragraphs: ["One", "Hidden", "Three", "Extra"],
+    paragraphs: ["One", "Two"],
   });
 
   function markup(canEdit = true) {
@@ -123,9 +166,8 @@ describe("translation view", () => {
     expect(html).toContain("Alpha");
     expect(html).toContain("Gamma");
     expect(html).toContain("One");
-    expect(html).toContain("Three");
-    expect(html).not.toContain("Hidden");
-    expect(html).not.toContain("Extra");
+    expect(html).toContain("Two");
+    expect(html).not.toContain("translation-mismatch");
     expect(html).not.toContain("<textarea");
     expect(html).not.toContain("Add segment");
     expect(html).toContain("hover:bg-[var(--cp-blue-l)]");
@@ -215,7 +257,100 @@ describe("translation view", () => {
     await act(async () => {
       input?.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
     });
-    expect(onCommit).toHaveBeenCalledWith("p1", 2, "Tres");
+    expect(onCommit).toHaveBeenCalledWith("p1", 1, "Tres");
+    expect(third.getAttribute("data-segment-index")).toBe("1");
+  });
+
+  it("warns about extra segments and saves an edit to that segment index", async () => {
+    const onCommit = vi.fn();
+    const html = renderToStaticMarkup(
+      createElement(TranslationView, {
+        pages: [page({ id: "p1", sourceText: "A\n\nB", paragraphs: ["a", "b", "spare"] })],
+        drafts: { p1: ["a", "b", "spare"] },
+        canEdit: true,
+        onCommit,
+      }),
+    );
+    expect(html).toContain("Translation has 1 extra segment not matched to the source");
+    expect(html).toContain("spare");
+    expect(html).toContain('data-segment-index="2"');
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    roots.push(root);
+    await act(async () => {
+      root.render(
+        createElement(TranslationView, {
+          pages: [page({ id: "p1", sourceText: "A\n\nB", paragraphs: ["a", "b", "spare"] })],
+          drafts: { p1: ["a", "b", "spare"] },
+          canEdit: true,
+          onCommit,
+        }),
+      );
+    });
+    const extra = host.querySelector('[data-segment-index="2"]');
+    if (!(extra instanceof HTMLElement)) throw new Error("missing extra row");
+    await act(async () => {
+      extra.click();
+    });
+    const input = host.querySelector("input");
+    if (!(input instanceof HTMLInputElement)) throw new Error("missing input");
+    expect(input.value).toBe("spare");
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, "kept");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(onCommit).toHaveBeenCalledWith("p1", 2, "kept");
+  });
+
+  it("warns when source lines have no segment and still edits the real index", async () => {
+    const onCommit = vi.fn();
+    const html = renderToStaticMarkup(
+      createElement(TranslationView, {
+        pages: [page({ id: "p1", sourceText: "A\nB", paragraphs: ["a"] })],
+        drafts: { p1: ["a"] },
+        canEdit: true,
+        onCommit,
+      }),
+    );
+    expect(html).toContain("Translation is missing 1 segment for the source");
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    roots.push(root);
+    await act(async () => {
+      root.render(
+        createElement(TranslationView, {
+          pages: [page({ id: "p1", sourceText: "A\n\nB", paragraphs: ["a"] })],
+          drafts: { p1: ["a"] },
+          canEdit: true,
+          onCommit,
+        }),
+      );
+    });
+    const second = host.querySelector('[data-segment-index="1"]');
+    if (!(second instanceof HTMLElement)) throw new Error("missing unmatched row");
+    expect(second.textContent).toContain("B");
+    await act(async () => {
+      second.click();
+    });
+    const input = host.querySelector("input");
+    if (!(input instanceof HTMLInputElement)) throw new Error("missing input");
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, "b");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(onCommit).toHaveBeenCalledWith("p1", 1, "b");
   });
 
   it("does not edit a read-only order", async () => {

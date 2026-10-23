@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import type { StaffPage } from "@/lib/api/types";
-import { translationLines } from "@/components/admin/translation-lines";
+import { segmentMismatchWarning, translationLines } from "@/components/admin/translation-lines";
 
 const ROW =
   "grid grid-cols-2 items-stretch outline-none hover:bg-[var(--cp-blue-l)] focus:bg-[var(--cp-blue-l)] focus-visible:bg-[var(--cp-blue-l)] focus-within:bg-[var(--cp-blue-l)]";
@@ -42,7 +42,9 @@ export function TranslationView({
   return (
     <div className="grid gap-4">
       {pages.map((page) => {
-        const lines = translationLines(page.sourceText, drafts[page.id] ?? []);
+        const alignment = translationLines(page.sourceText, drafts[page.id] ?? []);
+        const lines = alignment.rows;
+        const warning = segmentMismatchWarning(alignment);
         return (
           <article
             key={page.id}
@@ -56,6 +58,11 @@ export function TranslationView({
                 Translation
               </p>
             </div>
+            {warning ? (
+              <p data-testid="translation-mismatch" className="bg-[#fff8ee] px-4 py-1.5 text-[13px] text-[#b45309]">
+                {warning}
+              </p>
+            ) : null}
             {lines.length === 0 ? (
               <p className="px-4 py-6 text-ink-muted">No source text</p>
             ) : (
@@ -63,12 +70,13 @@ export function TranslationView({
                 const editingThis =
                   editing?.pageId === page.id && line.segmentIndex !== null && editing.index === line.segmentIndex;
                 const interactive = canEdit && line.segmentIndex !== null && !editingThis;
-                const label = `Translation page ${page.pageNumber} segment ${index + 1}`;
+                const label = `Translation page ${page.pageNumber} segment ${(line.segmentIndex ?? index) + 1}`;
                 return (
                   <div
                     key={`${page.id}-${index}`}
                     data-testid={`translation-row-${page.id}-${index}`}
                     data-blank={line.segmentIndex === null ? "true" : "false"}
+                    data-segment-index={line.segmentIndex ?? ""}
                     role={interactive ? "button" : undefined}
                     tabIndex={interactive ? 0 : undefined}
                     aria-label={interactive ? label : undefined}
