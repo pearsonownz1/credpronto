@@ -290,11 +290,22 @@ function PreviewFrame({ url, onError }: { url: string; onError?: () => void }) {
 /**
  * Shows the current signed link. Images retry a failed load once.
  * PDFs sit in an iframe, which does not report load errors, so a visible tab
- * fetches a new link 30 seconds before the 5 minute expiry.
+ * fetches a new link 30 seconds before the 5 minute expiry. A failed refresh
+ * retries while the tab is visible, then the existing error state takes over.
  */
-function SignedPreview({ id, previewUrl }: { id: string; previewUrl: string | null }) {
+function SignedPreview({
+  id,
+  previewUrl,
+  onRefreshExhausted,
+}: {
+  id: string;
+  previewUrl: string | null;
+  onRefreshExhausted?: (error: { status: number; message: string }) => void;
+}) {
   const [link, setLink] = useState({ source: previewUrl, url: previewUrl, attempt: 0 });
   const refreshing = useRef(false);
+  const issuedAtRef = useRef(0);
+  const onRefreshExhaustedRef = useRef(onRefreshExhausted);
   if (link.source !== previewUrl) {
     setLink({ source: previewUrl, url: previewUrl, attempt: 0 });
   }
@@ -302,27 +313,41 @@ function SignedPreview({ id, previewUrl }: { id: string; previewUrl: string | nu
   const shownUrl = active.url;
 
   useEffect(() => {
+    onRefreshExhaustedRef.current = onRefreshExhausted;
+  }, [onRefreshExhausted]);
+
+  useEffect(() => {
     if (!shownUrl) return;
+    issuedAtRef.current = Date.now();
     let cancelled = false;
+    let failure: unknown;
     const stop = watchPreviewLink({
-      issuedAt: Date.now(),
+      issuedAt: issuedAtRef.current,
+      getIssuedAt: () => issuedAtRef.current,
       isVisible: () => document.visibilityState !== "hidden",
       listen: (onChange) => {
         document.addEventListener("visibilitychange", onChange);
         return () => document.removeEventListener("visibilitychange", onChange);
       },
-      onRefresh: () => {
+      onRefresh: async () => {
         if (cancelled || refreshing.current) return;
         refreshing.current = true;
-        void getPreEvaluation(id)
-          .then((record) => {
-            if (cancelled || record.status !== "ready" || !record.previewUrl || record.previewUrl === shownUrl) return;
-            setLink({ source: previewUrl, url: record.previewUrl, attempt: 0 });
-          })
-          .catch(() => undefined)
-          .finally(() => {
-            refreshing.current = false;
-          });
+        try {
+          const record = await getPreEvaluation(id);
+          if (cancelled || record.status !== "ready" || !record.previewUrl || record.previewUrl === shownUrl) return;
+          issuedAtRef.current = Date.now();
+          setLink({ source: previewUrl, url: record.previewUrl, attempt: 0 });
+        } catch (cause) {
+          if (cancelled) return;
+          failure = cause;
+          throw cause;
+        } finally {
+          refreshing.current = false;
+        }
+      },
+      onExhausted: () => {
+        if (cancelled) return;
+        onRefreshExhaustedRef.current?.(preEvaluationErrorStatus(failure));
       },
     });
     return () => {
@@ -404,11 +429,13 @@ export function PreEvaluationResult({
   equivalent,
   confidence,
   previewUrl,
+  onPreviewRefreshFailed,
 }: {
   id: string;
   equivalent: string;
   confidence: PreEvaluationConfidence;
   previewUrl: string | null;
+  onPreviewRefreshFailed?: (error: { status: number; message: string }) => void;
 }) {
   const percent = CONFIDENCE_PERCENT[confidence];
   return (
@@ -429,7 +456,7 @@ export function PreEvaluationResult({
                   {equivalent}
                 </p>
               </div>
-              <SignedPreview id={id} previewUrl={previewUrl} />
+              <SignedPreview id={id} previewUrl={previewUrl} onRefreshExhausted={onPreviewRefreshFailed} />
             </div>
             <div className="absolute inset-x-0 bottom-0 bg-[#0b1220] px-4 py-3 text-center text-[12px] font-semibold tracking-[0.04em] text-white">
               PREVIEW ONLY · OFFICIAL EVALUATION REQUIRED
