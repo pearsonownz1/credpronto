@@ -45,7 +45,7 @@ export function gradeScaleText(scale: GradeScale): string {
 export function usEquivalency(credential: string): string | null {
   const value = credential.toLowerCase();
   if (/doctor|doctorado|doctorat|doctoral|\bph\.?\s*d\b/.test(value)) return "Doctoral degree";
-  if (/master|maestr|maîtrise|maitrise|\bm\.?\s*sc\b/.test(value)) return "Master's degree";
+  if (/master|maestr[ií]a|magister|maîtrise|maitrise|\bm\.?\s*sc\b/.test(value)) return "Master's degree";
   if (/bachelor|licenciatura|licence|license|bacharel/.test(value)) return "Bachelor's degree";
   if (/associate/.test(value)) return "Associate degree";
   if (/high school|bachillerato|baccalaur/.test(value)) return "High school diploma";
