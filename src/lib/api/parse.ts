@@ -1,4 +1,6 @@
 import { adminOrderFields } from "@/lib/orders/admin-order-fields";
+import { parseEvaluationResult } from "@/lib/orders/evaluation-price";
+import { collectedEvaluationResults, evaluationSummaries, type EvaluationSummary } from "@/lib/orders/evaluation-summary";
 import { fulfillmentState } from "@/lib/orders/release-decision";
 import { sourceTextForDisplay } from "@/lib/orders/source-text";
 import type {
@@ -311,6 +313,7 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
       text(delivery?.finalPath),
     ),
     equivalencyCredentials: equivalencyCredentials(row.evaluationResult),
+    evaluations: storedEvaluations(row),
     edge: parseEdge(row.edge),
     filename,
     pages,
@@ -333,6 +336,34 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
     evaluationStatusAt: parseEvaluationStatusAt(row.evaluationStatusAt),
     fulfillment: parseFulfillment(row.fulfillment),
   };
+}
+
+function storedEvaluations(row: Record<string, unknown>): EvaluationSummary[] {
+  const listed = listedSummaries(row.evaluations);
+  if (listed.length > 0) return listed;
+  const evaluationResult = parseEvaluationResult(row.evaluationResult ?? row.evaluation_result);
+  const raw = row.evaluationResults ?? row.evaluation_results;
+  const evaluationResults = Array.isArray(raw)
+    ? raw.flatMap((item) => {
+        const parsed = parseEvaluationResult(item);
+        return parsed ? [parsed] : [];
+      })
+    : [];
+  return evaluationSummaries(collectedEvaluationResults({ evaluationResult, evaluationResults }));
+}
+
+function listedSummaries(value: unknown): EvaluationSummary[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const item = entry as Record<string, unknown>;
+    const service = item.service === "diploma" || item.service === "course_by_course" ? item.service : null;
+    const heading = text(item.heading);
+    if (!service || !heading || !Array.isArray(item.lines)) return [];
+    const lines = item.lines.filter((line): line is string => typeof line === "string" && line.trim() !== "");
+    if (lines.length === 0) return [];
+    return [{ service, heading, lines }];
+  });
 }
 
 function stringList(value: unknown): string[] | null {

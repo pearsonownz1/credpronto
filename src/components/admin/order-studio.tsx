@@ -15,6 +15,7 @@ import {
   notarizeOrder,
   patchOrderTranslation,
   refundOrder,
+  regenerateEvaluations,
   regenerateOrder,
   resolveReview,
   shipOrder,
@@ -37,6 +38,7 @@ import {
   type ReportOverride,
 } from "@/components/admin/evaluation-report-model";
 import { EvaluationReportBoxes, MissingEvaluationReports } from "@/components/admin/evaluation-reports";
+import { EvaluationSummaries } from "@/components/admin/evaluation-summaries";
 import { sourceTextForDisplay } from "@/lib/orders/source-text";
 import { emptyTranslationMessage } from "@/lib/orders/translation-edit";
 import type { ViewerFocus } from "@/components/preview/side-by-side-viewer";
@@ -288,7 +290,7 @@ export function OrderStudio({
             ) : null}
           </div>
         </div>
-        {detail.service &&
+        {(detail.service || reports.length > 0) &&
         (detail.payment?.status === "paid" ||
           detail.payment?.status === "paid_test" ||
           status === "paid" ||
@@ -480,6 +482,32 @@ export function OrderStudio({
           }}
         />
       ) : null}
+
+      <EvaluationSummaries
+        reports={reports}
+        summaries={detail.evaluations ?? []}
+        canGenerate={status === "paid" || status === "approved" || status === "delivered"}
+        pending={pending}
+        onGenerate={() =>
+          void run("regenerate-evaluations", async () => {
+            const result = await regenerateEvaluations(detail.id);
+            if (!result.ok) return { ok: false, error: result.error };
+            const data =
+              result.data && typeof result.data === "object"
+                ? (result.data as { status?: unknown; pending?: unknown })
+                : {};
+            const state = typeof data.status === "string" ? data.status : "";
+            const still = Array.isArray(data.pending) ? data.pending.length : 0;
+            const message =
+              state === "unchanged"
+                ? "Evaluations are already stored. Nothing was charged."
+                : still > 0
+                  ? "Some evaluations were saved. The rest can be generated again. Nothing was charged."
+                  : "Evaluations generated. Nothing was charged.";
+            return { ok: true, message };
+          })
+        }
+      />
 
       <section data-testid="page-editor" className="grid gap-3">
         <h2 className="text-lg font-semibold">Translation text</h2>

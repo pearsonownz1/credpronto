@@ -1,4 +1,5 @@
 import { deliveredEvaluationPatch } from "./evaluation-delivered";
+import { ensurePaidEvaluationReports } from "./evaluation-dispatch";
 import { approvalBlockReason } from "./equivalency";
 import { orderEvaluationKinds, orderHasEvaluation } from "./service-selection";
 import { EVALUATION_REVIEW_REASON } from "./evaluation-price";
@@ -95,7 +96,14 @@ export async function settlePaidOrder(
   const sent = await sendFirstStaffAlert(db, stamped);
   await notifyEvaluationPaidAlert(db, stamped);
   if (isEvaluation) await stampEvaluationUnderReview(db, stamped, paidAt);
-  // Evaluations stay with staff until the report is uploaded. Do not arm the two-minute reminder.
+  if (isEvaluation) {
+    try {
+      await ensurePaidEvaluationReports(db, stamped.id);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : "evaluation reports failed");
+    }
+  }
+  // Evaluations stay with staff until the report is approved. Do not arm the two-minute reminder.
   if (sent && options.scheduleUrgent !== false && !isEvaluation) {
     const schedule = options.scheduleUrgent ?? scheduleDefault;
     await schedule(order.id);
