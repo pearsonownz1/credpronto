@@ -1,3 +1,4 @@
+import { deliveredEvaluationPatch } from "./evaluation-delivered";
 import { adminOrderFields } from "./admin-order-fields";
 import { evaluationReleaseBlock, missingEvaluationReports, releaseEvaluationPackage } from "./evaluation-review";
 import { orderEvaluationKinds } from "./service-selection";
@@ -202,6 +203,8 @@ export async function approveOrder(orderId: string) {
   const delivery = await getDelivery(db, order.id);
   if (!delivery) throw new HttpError("Payment has not created a delivery", 409);
   if (delivery.status === "delivered") {
+    const complete = deliveredEvaluationPatch(order, delivery.deliveredAt ?? new Date().toISOString());
+    if (Object.keys(complete).length > 0) await updateOrder(db, order.id, complete);
     const files = await signedFinals(db, order, delivery.finalPath, delivery.certificationPath);
     return { status: "delivered" as const, ...files };
   }
@@ -270,7 +273,10 @@ export async function approveOrder(orderId: string) {
     final_path: order.finalTranslationPath,
     certification_path: order.certificationPath,
   });
-  await updateOrder(db, order.id, { status: "delivered" });
+  await updateOrder(db, order.id, {
+    status: "delivered",
+    ...deliveredEvaluationPatch(order, new Date().toISOString()),
+  });
   await notifyOrder(db, order.id, "order.delivered");
   await notifyLifecycle(db, order.id, "order.completed");
   return {

@@ -144,6 +144,34 @@ describe("deliverEvaluationReport", () => {
       expect.objectContaining({ id: orderId }),
     );
     expect(webhooks.notifyOrder).toHaveBeenCalledWith(expect.anything(), orderId, "order.delivered");
+    expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, {
+      evaluation_status: "evaluation_complete",
+      evaluation_complete_at: expect.any(String),
+    });
+  });
+
+  it("marks an under-review evaluation complete so the customer page shows Ready", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue(order({ evaluationStatus: "under_review" }));
+    const body = new FormData();
+    body.set("file", new File([pdf], "evaluation.pdf", { type: "application/pdf" }));
+    await deliverEvaluationReport(orderId, new Request("https://credpronto.com", { method: "POST", body }));
+    expect(db.updateOrder).toHaveBeenCalledWith(
+      expect.anything(),
+      orderId,
+      expect.objectContaining({ evaluation_status: "evaluation_complete" }),
+    );
+  });
+
+  it("does not mark the evaluation complete while the email failed", async () => {
+    vi.spyOn(finalEmail, "sendFinalCustomerEmail").mockResolvedValue({ sent: false, skipped: false });
+    const body = new FormData();
+    body.set("file", new File([pdf], "evaluation.pdf", { type: "application/pdf" }));
+    await deliverEvaluationReport(orderId, new Request("https://credpronto.com", { method: "POST", body }));
+    expect(db.updateOrder).not.toHaveBeenCalledWith(
+      expect.anything(),
+      orderId,
+      expect.objectContaining({ evaluation_status: "evaluation_complete" }),
+    );
   });
 
   it("leaves the report downloadable and retries later when the email fails", async () => {
