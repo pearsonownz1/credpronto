@@ -7,14 +7,7 @@ import { signOut } from "@/lib/account/actions";
 import { initials } from "@/lib/account/present";
 import type { Account } from "@/lib/account/names";
 import { Wordmark } from "@/components/wordmark";
-
-const NAV = [
-  { href: "/admin", label: "Orders", exact: true },
-  { href: "/admin/certification", label: "Certification", exact: false },
-  { href: "/admin/review", label: "Needs review", exact: false },
-  { href: "/admin/refunds", label: "Refunds", exact: false },
-  { href: "/admin/settings", label: "Settings", exact: false },
-] as const;
+import { ADMIN_NAV } from "./nav";
 
 export function AdminShell({ account, children }: { account: Account; children: ReactNode }) {
   const pathname = usePathname();
@@ -38,7 +31,7 @@ export function AdminShell({ account, children }: { account: Account; children: 
         </div>
         <p className="mx-2 mb-1.5 font-mono text-[11.5px] uppercase tracking-[0.06em] text-ink-muted">Staff</p>
         <nav className="grid gap-0.5">
-          {NAV.map((item) => {
+          {ADMIN_NAV.map((item) => {
             const active = item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link
