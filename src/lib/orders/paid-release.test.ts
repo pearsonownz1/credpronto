@@ -211,6 +211,38 @@ describe("settlePaidOrder", () => {
     expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
   });
 
+  it("puts a multi-service evaluation (service null, services list) under review after payment", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue(
+      order({
+        serviceType: "evaluation",
+        orderType: "evaluation",
+        service: null,
+        services: ["translation", "diploma", "course_by_course"],
+        degreeCount: 1,
+        includeTranslation: true,
+        evaluationCents: 5990,
+        translationCents: 2985,
+        totalCents: 8975,
+      } as Partial<OrderRecord>),
+    );
+    const schedule = vi.fn();
+
+    const result = await settlePaidOrder(dbHandle, orderId, { scheduleUrgent: schedule });
+
+    expect(result.fulfillment).toBe("awaiting_review");
+    expect(email.sendStaffOrderAlert).toHaveBeenCalledTimes(1);
+    expect(db.updateOrder).toHaveBeenCalledWith(dbHandle, orderId, {
+      review_reason: "Credential evaluation is reviewed by staff.",
+    });
+    expect(db.updateOrder).toHaveBeenCalledWith(
+      dbHandle,
+      orderId,
+      expect.objectContaining({ evaluation_status: "under_review", under_review_at: expect.any(String) }),
+    );
+    expect(schedule).not.toHaveBeenCalled();
+    expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
+  });
+
   it("emails staff once for a paid evaluation with translation and does not arm the urgent reminder", async () => {
     vi.spyOn(db, "getOrderById").mockResolvedValue(
       order({

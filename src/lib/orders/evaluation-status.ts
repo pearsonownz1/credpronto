@@ -1,3 +1,4 @@
+import { orderHasEvaluation } from "./service-selection";
 import { customerEmail, getOrderById, updateOrder, type Db } from "./db";
 import { orderPageLink, sendEvaluationStatus } from "./email";
 import { HttpError } from "./errors";
@@ -82,7 +83,7 @@ function withStage(order: OrderRecord, status: EvaluationStatus, at: string): Or
 
 /** Payment records the first stage. It does not email the customer; the receipt already went out. */
 export async function stampEvaluationUnderReview(db: Db, order: OrderRecord, paidAt: string): Promise<void> {
-  if (order.service !== "diploma" && order.service !== "course_by_course") return;
+  if (!orderHasEvaluation(order)) return;
   if (order.evaluationStatus) return;
   try {
     await updateOrder(db, order.id, timestampPatch("under_review", paidAt));
@@ -92,7 +93,7 @@ export async function stampEvaluationUnderReview(db: Db, order: OrderRecord, pai
 }
 
 function paidEvaluation(order: OrderRecord): boolean {
-  if (order.service !== "diploma" && order.service !== "course_by_course") return false;
+  if (!orderHasEvaluation(order)) return false;
   if (order.paidAt) return true;
   return order.status === "paid" || order.status === "approved" || order.status === "delivered";
 }
@@ -119,7 +120,7 @@ export async function setEvaluationStatus(orderId: string, body: unknown): Promi
   const status = readStatus(body);
   const order = await getOrderById(db, orderId);
   if (!order) throw new HttpError("Order not found", 404);
-  if (order.service !== "diploma" && order.service !== "course_by_course") {
+  if (!orderHasEvaluation(order)) {
     throw new HttpError("This order is not an evaluation.", 409);
   }
   if (!paidEvaluation(order)) {
