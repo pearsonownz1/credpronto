@@ -19,6 +19,7 @@ import {
 import { sendPreviewReady } from "./email";
 import { AiUnavailableError, HttpError } from "./errors";
 import { needsBundledTranslation } from "./evaluation-price";
+import { paidEvaluationDegreeCount } from "./evaluation-summary";
 import { orderEvaluationKinds, orderHasEvaluation, selectionPricePatch } from "./service-selection";
 import { concatPdfs } from "./pdf/merge";
 import { etaFromNow } from "./quote";
@@ -742,7 +743,11 @@ function storedEdgeMatch(built: {
   return patch;
 }
 
-/** One purchased evaluation from page text already stored on the order. Null when the degree count is missing. */
+/**
+ * One purchased evaluation from page text already stored on the order.
+ * Course-by-course does not need a stored degree count. A diploma uses the
+ * paid credential count, or one credential when that count was not saved.
+ */
 export async function evaluateServiceFromText(
   db: Db,
   order: OrderRecord,
@@ -750,13 +755,14 @@ export async function evaluateServiceFromText(
   pageText: string,
   filenames: string[],
 ): Promise<EvaluationResult | null> {
-  if (order.degreeCount == null) return null;
+  const degreeCount = paidEvaluationDegreeCount(order) ?? (service === "course_by_course" ? 1 : null);
+  if (degreeCount == null) return null;
   const extracted = service === "diploma" ? await extractDiploma(pageText) : await extractCourses(pageText);
   const built = await buildEvaluatedResult(
     db,
     service,
     extracted,
-    order.degreeCount,
+    degreeCount,
     filenames,
     order.edgeCredentialId,
   );

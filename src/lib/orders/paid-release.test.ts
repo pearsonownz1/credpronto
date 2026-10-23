@@ -69,6 +69,7 @@ describe("settlePaidOrder", () => {
       status: "unchanged",
       generated: [],
       pending: [],
+      failures: [],
     });
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(db, "markOrderPaidAt").mockResolvedValue(undefined);

@@ -1,7 +1,7 @@
 import { after } from "next/server";
 import { uploadApprovedClioTranslationById } from "@/lib/clio/upload-back";
 import { deliveredEvaluationPatch } from "./evaluation-delivered";
-import { adminOrderFields } from "./admin-order-fields";
+import { adminOrderFields, type AdminOrderFields } from "./admin-order-fields";
 import { collectedEvaluationResults, evaluationSummaries } from "./evaluation-summary";
 import { evaluationReleaseBlock, missingEvaluationReports, releaseEvaluationPackage } from "./evaluation-review";
 import { orderEvaluationKinds } from "./service-selection";
@@ -44,7 +44,7 @@ import { sourceTextForDisplay } from "./source-text";
 import { signedObjectUrl, signedObjectUrls } from "./storage";
 import { ensureStaffRow, requireStaff } from "./staff";
 import { EMPTY_TRANSLATION_MESSAGE, emptyTranslationMessage, paragraphsForPage } from "./translation-edit";
-import { ORDER_STATUSES, type OrderStatus } from "./types";
+import { ORDER_STATUSES, type OrderRecord, type OrderStatus } from "./types";
 import { translateOrder } from "./translation";
 
 export { requireStaff } from "./staff";
@@ -84,6 +84,7 @@ export async function staffOrder(orderId: string) {
     listQaRuns(db, order.id),
   ]);
   const latestQa = qaRuns[qaRuns.length - 1] ?? null;
+  const fields = adminOrderFields(order, delivery?.finalPath);
   const originals = order.service ? await signedOriginals(db, documents) : [];
   const [edgeCredential, edgeScale] = await Promise.all([
     order.edgeCredentialId ? getEdgeCredential(db, order.edgeCredentialId) : Promise.resolve(null),
@@ -92,7 +93,8 @@ export async function staffOrder(orderId: string) {
 
   return {
     ...order,
-    ...adminOrderFields(order, delivery?.finalPath),
+    ...fields,
+    evaluationReports: await signedEvaluationReports(db, order, fields.evaluationReports),
     evaluationStatus: evaluationStatusValue(order.evaluationStatus),
     evaluationStatusAt: evaluationStatusAt(order),
     email,
@@ -143,6 +145,31 @@ export async function staffOrder(orderId: string) {
     originals,
     evaluations: evaluationSummaries(collectedEvaluationResults(order)),
   };
+}
+
+/** Short-lived staff links for evaluation PDFs already stored on the order. */
+async function signedEvaluationReports(
+  db: Parameters<typeof signedObjectUrls>[0],
+  order: { serviceFiles?: OrderRecord["serviceFiles"] },
+  reports: AdminOrderFields["evaluationReports"],
+) {
+  const paths = reports.flatMap((report) => {
+    const path = order.serviceFiles?.[report.service]?.trim();
+    return path ? [path] : [];
+  });
+  if (paths.length === 0) return reports;
+  let urls: Map<string, string>;
+  try {
+    urls = await signedObjectUrls(db, FINALS_BUCKET, paths, DOWNLOAD_URL_SECONDS);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "evaluation links failed");
+    return reports;
+  }
+  return reports.map((report) => {
+    const path = order.serviceFiles?.[report.service]?.trim();
+    const url = path ? urls.get(path) : undefined;
+    return url ? { ...report, url } : report;
+  });
 }
 
 async function signedOriginals(

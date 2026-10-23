@@ -6,6 +6,7 @@ import {
   evaluationServicePath,
   evaluationSummaries,
   orderIsPaid,
+  paidEvaluationDegreeCount,
   paidEvaluationPatch,
   pendingEvaluationWork,
   type ProducedEvaluation,
@@ -17,11 +18,25 @@ import { uploadObject } from "./storage";
 import type { EvaluationResult, EvaluationService, OrderRecord } from "./types";
 import { stampFinishedPdf } from "./verification";
 
+export type EvaluationFailure = {
+  service: EvaluationService;
+  reason: string;
+};
+
 export type EnsureEvaluationsResult = {
   status: "ready" | "partial" | "unchanged";
   generated: EvaluationService[];
   pending: EvaluationService[];
+  failures: EvaluationFailure[];
 };
+
+const UNCHANGED: EnsureEvaluationsResult = { status: "unchanged", generated: [], pending: [], failures: [] };
+
+function unreadReason(service: EvaluationService): string {
+  return service === "course_by_course"
+    ? "Course-by-course evaluation could not be read from the uploaded pages."
+    : "Diploma evaluation could not be read from the uploaded pages.";
+}
 
 export type EvaluationDispatchDeps = {
   produce: (
@@ -82,12 +97,10 @@ export async function ensurePaidEvaluationReports(
   deps: EvaluationDispatchDeps = defaultDeps,
 ): Promise<EnsureEvaluationsResult> {
   const order = await getOrderById(db, orderId);
-  if (!order || !orderIsPaid(order) || !orderHasEvaluation(order)) {
-    return { status: "unchanged", generated: [], pending: [] };
-  }
+  if (!order || !orderIsPaid(order) || !orderHasEvaluation(order)) return UNCHANGED;
 
   const initial = pendingEvaluationWork(order);
-  if (initial.length === 0) return { status: "unchanged", generated: [], pending: [] };
+  if (initial.length === 0) return UNCHANGED;
 
   const documents = await listDocuments(db, order.id);
   const pages = await listPages(
@@ -98,25 +111,33 @@ export async function ensurePaidEvaluationReports(
   const filenames = documents.map((document) => document.filename);
   const produced: ProducedEvaluation[] = [];
   const generated: EvaluationService[] = [];
+  const failures: EvaluationFailure[] = [];
   let current = order;
 
   for (const gap of initial) {
     try {
-      const existing = current.evaluationResults?.find((result) => result.kind === gap.service) ??
+      const degreeCount = paidEvaluationDegreeCount(current);
+      const counted = degreeCount == null ? current : { ...current, degreeCount };
+      const existing =
+        current.evaluationResults?.find((result) => result.kind === gap.service) ??
         (current.evaluationResult?.kind === gap.service ? current.evaluationResult : null);
       const result = gap.needsResult
-        ? current.degreeCount == null
-          ? null
-          : await deps.produce(db, current, gap.service, text, filenames)
-        : existing;
-      if (!result) continue;
+        ? await readPaidEvaluation(deps, db, counted, gap.service, text, filenames)
+        : existing
+          ? { ok: true as const, result: existing }
+          : { ok: false as const, reason: "The stored evaluation result is missing." };
+      if (!result.ok) {
+        console.error(`${gap.service}: ${result.reason}`);
+        failures.push({ service: gap.service, reason: result.reason });
+        continue;
+      }
       if (gap.needsFile) {
-        const stored = await deps.store(db, current, gap.service, result);
+        const stored = await deps.store(db, counted, gap.service, result.result);
         produced.push({ service: gap.service, result: stored.result, path: stored.path });
       } else {
         produced.push({
           service: gap.service,
-          result,
+          result: result.result,
           path: current.serviceFiles?.[gap.service] ?? null,
         });
       }
@@ -130,7 +151,9 @@ export async function ensurePaidEvaluationReports(
           (patch?.service_files as OrderRecord["serviceFiles"] | undefined) ?? current.serviceFiles,
       };
     } catch (error) {
-      console.error(error instanceof Error ? error.message : "evaluation report failed");
+      const reason = error instanceof Error && error.message ? error.message : "evaluation report failed";
+      console.error(`${gap.service}: ${reason}`);
+      failures.push({ service: gap.service, reason });
     }
   }
 
@@ -143,9 +166,26 @@ export async function ensurePaidEvaluationReports(
     serviceFiles: (patch?.service_files as OrderRecord["serviceFiles"] | undefined) ?? order.serviceFiles,
   }).map((gap) => gap.service);
 
-  if (pending.length > 0) return { status: "partial", generated, pending };
-  if (generated.length === 0) return { status: "unchanged", generated, pending };
-  return { status: "ready", generated, pending };
+  if (pending.length > 0) return { status: "partial", generated, pending, failures };
+  if (generated.length === 0) return { status: "unchanged", generated, pending, failures };
+  return { status: "ready", generated, pending, failures };
+}
+
+async function readPaidEvaluation(
+  deps: EvaluationDispatchDeps,
+  db: Db,
+  order: OrderRecord,
+  service: EvaluationService,
+  text: string,
+  filenames: string[],
+): Promise<{ ok: true; result: EvaluationResult } | { ok: false; reason: string }> {
+  if (service === "diploma" && order.degreeCount == null) {
+    return { ok: false, reason: "Diploma evaluation needs a credential count before it can be generated." };
+  }
+  if (!text.trim()) return { ok: false, reason: "This order has no page text to read for the evaluation." };
+  const result = await deps.produce(db, order, service, text, filenames);
+  if (!result) return { ok: false, reason: unreadReason(service) };
+  return { ok: true, result };
 }
 
 /**

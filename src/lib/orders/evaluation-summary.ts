@@ -1,3 +1,4 @@
+import { COURSE_BY_COURSE_UNIT_CENTS, DIPLOMA_UNIT_CENTS, MAX_DEGREE_COUNT } from "./evaluation-price";
 import { orderEvaluationKinds } from "./service-selection";
 import type { EvaluationResult, EvaluationService } from "./types";
 
@@ -25,6 +26,48 @@ type EvaluationSource = {
   finalTranslationPath?: string | null;
   certificationPath?: string | null;
 };
+
+/**
+ * Credential count used to build a paid evaluation.
+ * A stored count wins. Otherwise the paid evaluation fees imply the count
+ * (each selected evaluation is its unit price times that count). A paid
+ * evaluation with no count stored is one credential, which is what checkout
+ * charges when the customer does not pick a higher number.
+ */
+export function paidEvaluationDegreeCount(order: {
+  degreeCount?: number | null;
+  evaluationCents?: number | null;
+  translationCents?: number | null;
+  totalCents?: number | null;
+  services?: readonly string[] | null;
+  service?: string | null;
+  includeTranslation?: boolean | null;
+  orderType?: string | null;
+  serviceType?: string | null;
+}): number | null {
+  const kinds = orderEvaluationKinds(order);
+  if (kinds.length === 0) return null;
+  const stored = order.degreeCount;
+  if (stored != null && Number.isInteger(stored) && stored >= 1 && stored <= MAX_DEGREE_COUNT) return stored;
+
+  const unit =
+    (kinds.includes("diploma") ? DIPLOMA_UNIT_CENTS : 0) +
+    (kinds.includes("course_by_course") ? COURSE_BY_COURSE_UNIT_CENTS : 0);
+  const fromFees = degreeCountFromCents(order.evaluationCents, unit);
+  if (fromFees) return fromFees;
+  if (order.totalCents != null && order.translationCents != null) {
+    const fromTotal = degreeCountFromCents(order.totalCents - order.translationCents, unit);
+    if (fromTotal) return fromTotal;
+  }
+  return 1;
+}
+
+function degreeCountFromCents(cents: number | null | undefined, unit: number): number | null {
+  if (cents == null || !Number.isInteger(cents) || unit < 1 || cents < unit || cents % unit !== 0) return null;
+  const count = cents / unit;
+  if (count < 1 || count > MAX_DEGREE_COUNT) return null;
+  return count;
+}
 
 export function orderIsPaid(order: { status: string; paidAt?: string | null }): boolean {
   return (

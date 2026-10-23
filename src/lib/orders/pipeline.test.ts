@@ -127,6 +127,7 @@ describe("processOrder paid evaluations", () => {
       status: "unchanged",
       generated: [],
       pending: [],
+      failures: [],
     });
     vi.spyOn(translation, "translateOrder").mockResolvedValue(undefined);
     vi.spyOn(analysis, "analyzeOrder").mockResolvedValue(undefined);

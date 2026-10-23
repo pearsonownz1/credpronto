@@ -50,6 +50,18 @@ const SideBySideViewer = dynamic(
 
 const EDITABLE = new Set(["preview_ready", "correction_requested", "paid", "approved", "delivered"]);
 
+function evaluationProblemsFrom(value: unknown): Array<{ service: "diploma" | "course_by_course"; reason: string }> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const item = entry as { service?: unknown; reason?: unknown };
+    const service = item.service === "diploma" || item.service === "course_by_course" ? item.service : null;
+    const reason = typeof item.reason === "string" ? item.reason.trim() : "";
+    if (!service || !reason) return [];
+    return [{ service, reason }];
+  });
+}
+
 function EdgeReference({ edge }: { edge: NonNullable<StaffDetail["edge"]> }) {
   const level = [edge.levelNumber != null ? `Level ${edge.levelNumber}` : null, edge.levelTitle]
     .filter(Boolean)
@@ -122,6 +134,9 @@ export function OrderStudio({
   const activity = activityFor(detail, thread);
   const canEdit = EDITABLE.has(detail.status);
   const [reportOverrides, setReportOverrides] = useState<Record<string, ReportOverride>>({});
+  const [evaluationProblems, setEvaluationProblems] = useState<
+    Array<{ service: "diploma" | "course_by_course"; reason: string }>
+  >([]);
   const blobUrls = useRef<string[]>([]);
   useEffect(() => {
     const stored = blobUrls;
@@ -486,6 +501,7 @@ export function OrderStudio({
       <EvaluationSummaries
         reports={reports}
         summaries={detail.evaluations ?? []}
+        problems={evaluationProblems}
         canGenerate={status === "paid" || status === "approved" || status === "delivered"}
         pending={pending}
         onGenerate={() =>
@@ -494,16 +510,21 @@ export function OrderStudio({
             if (!result.ok) return { ok: false, error: result.error };
             const data =
               result.data && typeof result.data === "object"
-                ? (result.data as { status?: unknown; pending?: unknown })
+                ? (result.data as { status?: unknown; pending?: unknown; failures?: unknown })
                 : {};
             const state = typeof data.status === "string" ? data.status : "";
             const still = Array.isArray(data.pending) ? data.pending.length : 0;
+            const problems = evaluationProblemsFrom(data.failures);
+            setEvaluationProblems(problems);
+            const reasons = problems.map((problem) => problem.reason).join(" ");
             const message =
-              state === "unchanged"
-                ? "Evaluations are already stored. Nothing was charged."
-                : still > 0
-                  ? "Some evaluations were saved. The rest can be generated again. Nothing was charged."
-                  : "Evaluations generated. Nothing was charged.";
+              reasons.length > 0
+                ? `${reasons} Nothing was charged.`
+                : state === "unchanged"
+                  ? "Evaluations are already stored. Nothing was charged."
+                  : still > 0
+                    ? "Some evaluations were saved. The rest can be generated again. Nothing was charged."
+                    : "Evaluations generated. Nothing was charged.";
             return { ok: true, message };
           })
         }
