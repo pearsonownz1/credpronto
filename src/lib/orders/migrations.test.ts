@@ -267,6 +267,24 @@ describe("auth migrations", () => {
     expect(sql.toLowerCase()).not.toMatch(/insert into/);
   });
 
+  it("counts add-on cents in the paid translation price check", () => {
+    const sql = readFileSync(
+      path.join(migrationsDir, "20261023190000_translation_priced_when_paid.sql"),
+      "utf8",
+    );
+    const lower = sql.toLowerCase();
+    expect(sql).toMatch(/drop constraint orders_translation_priced_when_paid_chk/);
+    expect(sql).toMatch(/add constraint orders_translation_priced_when_paid_chk/);
+    expect(sql).toContain("total_cents = billable_pages * unit_price_cents + addon_cents");
+    expect(sql).toMatch(/language_confirmed/);
+    expect(sql).toMatch(/billable_pages is not null/);
+    expect(sql).toMatch(/billable_pages > 0/);
+    expect(sql).toMatch(/status not in \('paid', 'approved', 'delivered'\)/);
+    expect(lower).not.toMatch(/\bupdate\b/);
+    expect(lower).not.toMatch(/\binsert\b/);
+    expect(lower).not.toMatch(/\bdelete\b/);
+  });
+
   it("adds final-file corrections, notarized, and mail fields without rewriting orders", () => {
     const sql = readFileSync(path.join(migrationsDir, "20261023180000_admin_fulfillment.sql"), "utf8");
     const lower = sql.toLowerCase();

@@ -75,6 +75,7 @@ import { sourceFileBody, sourceFileTarget, type SourceFileResponse } from "./sou
 import { serviceDb, signedObjectUrl, uploadObject, type Db } from "./storage";
 import { checkoutOrigin, checkoutReturnUrl } from "./checkout-return";
 import { parseCorrectionBody } from "./corrections";
+import { ORDER_STATUSES } from "./types";
 import { decideChargeRefunded, decideCheckoutCompleted, decideCheckoutExpired } from "./webhook";
 import { checkedProgress } from "./translation-watch";
 import { orderForToken } from "./order-access";
@@ -687,6 +688,53 @@ export async function startCheckout(token: string, body: unknown = {}, requestUr
   return { url: session.url, sessionId: session.id };
 }
 
+const PRE_PAID_ORDER_STATUSES = ORDER_STATUSES.filter(
+  (status) => status !== "paid" && status !== "approved" && status !== "delivered" && status !== "cancelled",
+);
+
+function orderIsPrePaid(status: string): boolean {
+  return (PRE_PAID_ORDER_STATUSES as readonly string[]).includes(status);
+}
+
+/**
+ * Records a Stripe payment on the order. Safe to run again after a partial apply:
+ * status moves to paid only from a pre-paid status, and the paid event is inserted once.
+ */
+async function recordStripeOrderPaid(
+  db: Db,
+  orderId: string,
+  fallback: { serviceType?: string | null; orderType?: string | null } | null = null,
+): Promise<void> {
+  const fresh = await getOrderById(db, orderId);
+  const order = fresh ?? fallback;
+  if (fresh && orderIsPrePaid(fresh.status)) {
+    try {
+      const moved = await updateOrder(
+        db,
+        orderId,
+        { status: "paid" },
+        { statuses: PRE_PAID_ORDER_STATUSES },
+      );
+      if (!moved) {
+        const latest = await getOrderById(db, orderId);
+        if (!latest || orderIsPrePaid(latest.status)) {
+          throw new Error(`order ${orderId} paid status update matched no row`);
+        }
+      }
+    } catch (error) {
+      console.error(
+        `ALERT: Stripe payment could not mark order ${orderId} paid`,
+        error instanceof Error ? error.message : error,
+      );
+      throw error;
+    }
+  }
+  if (await hasEvent(db, orderId, "paid")) return;
+  await insertEvent(db, orderId, "paid", { mode: "stripe" });
+  const { notifyLifecycle } = await import("./webhook-delivery");
+  await notifyLifecycle(db, orderId, paidWebhookEvent(order));
+}
+
 export async function handleStripeWebhook(request: Request) {
   const key = process.env.STRIPE_SECRET_KEY;
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -734,6 +782,7 @@ export async function handleStripeWebhook(request: Request) {
 
   if (decision.action === "duplicate" || decision.action === "ignore") {
     if (decision.action === "duplicate" && payment) {
+      await recordStripeOrderPaid(db, payment.orderId, chargedOrder);
       const { settlePaidOrder } = await import("./paid-release");
       await settlePaidOrder(db, payment.orderId);
     }
@@ -747,21 +796,7 @@ export async function handleStripeWebhook(request: Request) {
 
   await markPaymentPaid(db, payment.id, decision.paymentIntentId);
   await ensurePendingDelivery(db, payment.orderId);
-  const paidOrder = await getOrderById(db, payment.orderId);
-  if (
-    paidOrder &&
-    paidOrder.status !== "paid" &&
-    paidOrder.status !== "approved" &&
-    paidOrder.status !== "delivered" &&
-    paidOrder.status !== "cancelled"
-  ) {
-    await updateOrder(db, paidOrder.id, { status: "paid" });
-  }
-  if (!(await hasEvent(db, payment.orderId, "paid"))) {
-    await insertEvent(db, payment.orderId, "paid", { mode: "stripe" });
-    const { notifyLifecycle } = await import("./webhook-delivery");
-    await notifyLifecycle(db, payment.orderId, paidWebhookEvent(paidOrder ?? chargedOrder));
-  }
+  await recordStripeOrderPaid(db, payment.orderId, chargedOrder);
   const { settlePaidOrder } = await import("./paid-release");
   await settlePaidOrder(db, payment.orderId);
   return { received: true };
