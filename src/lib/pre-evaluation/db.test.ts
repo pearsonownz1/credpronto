@@ -27,11 +27,16 @@ describe("pre-evaluation rows", () => {
       email_submitted_at: "2026-10-23T18:00:00.000Z",
       result_email_sent_at: null,
       suggestion_started_at: null,
+      preview_path: "11111111-1111-4111-8111-111111111111/renders/preview.pdf",
+      preview_mime: "application/pdf",
       created_at: "2026-10-23T17:00:00.000Z",
     };
     const mapped = mapPreEvaluation(row);
     expect(mapped?.confidence).toBe("high");
     expect(mapped?.email).toBe("ada@example.com");
+    expect(mapped?.previewPath).toBe("11111111-1111-4111-8111-111111111111/renders/preview.pdf");
+    expect(mapped?.previewMime).toBe("application/pdf");
+    expect(mapPreEvaluation({ ...row, preview_path: row.storage_path })?.previewPath).toBeNull();
     expect(mapPreEvaluation({ ...row, confidence: "certain" })?.confidence).toBeNull();
     expect(mapPreEvaluation({ ...row, status: "nope" })).toBeNull();
   });

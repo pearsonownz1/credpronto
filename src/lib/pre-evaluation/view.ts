@@ -41,6 +41,7 @@ export function preEvaluationResultPath(id: string): string {
   return `/pre-evaluation/${encodeURIComponent(id)}`;
 }
 
+/** Direct preview route. The public previewUrl is a short-lived signed URL of the watermarked file. */
 export function preEvaluationPreviewPath(id: string): string {
   return `/api/pre-evaluation/${encodeURIComponent(id)}/preview`;
 }

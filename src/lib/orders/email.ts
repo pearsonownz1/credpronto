@@ -21,6 +21,7 @@ import {
 export type EmailAttachment = {
   filename: string;
   content: Buffer;
+  contentType?: string;
 };
 
 export function appOrigin(): string {
@@ -164,6 +165,11 @@ export async function sendPreEvaluationResult(
   input: PreEvaluationResultEmail,
 ): Promise<SendResult> {
   const rendered = renderPreEvaluationEmail(input);
+  const file = rendered.attachment;
+  if (!file.content.byteLength || !file.filename.startsWith("preview.")) {
+    console.error("pre-evaluation email failed");
+    return { sent: false, skipped: false };
+  }
   const client = mailer();
   if (!client) return { sent: false, skipped: true };
   try {
@@ -173,6 +179,13 @@ export async function sendPreEvaluationResult(
       subject: rendered.subject,
       text: rendered.text,
       html: rendered.html,
+      attachments: [
+        {
+          filename: file.filename,
+          content: Buffer.from(file.content),
+          contentType: file.contentType,
+        },
+      ],
     });
     if (error) {
       console.error("pre-evaluation email failed");

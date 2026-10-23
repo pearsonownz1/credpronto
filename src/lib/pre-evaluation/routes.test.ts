@@ -1,17 +1,33 @@
+import { extractText, getDocumentProxy } from "unpdf";
+import { PDFDocument, StandardFonts } from "pdf-lib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isOrderId, isOrderToken } from "@/lib/orders/token";
-import { PRE_EVAL_DAILY_UPLOADS } from "./constants";
-import { preEvalIpHash, resetPreEvalBursts } from "./rate-limit";
+import { PRE_EVAL_BURST, PRE_EVAL_DAILY_UPLOADS, type PreEvalBurstKind } from "./constants";
+import { preEvalIpHash } from "./rate-limit";
 
 const send = vi.hoisted(() =>
-  vi.fn(async (to: string, input: { equivalent: string; resultUrl: string; officialUrl: string }) => ({
-    sent: Boolean(to && input.equivalent),
-    skipped: false,
-  })),
+  vi.fn(
+    async (
+      to: string,
+      input: {
+        equivalent: string;
+        resultUrl: string;
+        officialUrl: string;
+        attachment?: { filename: string; content: Uint8Array; contentType: string };
+      },
+    ) => ({
+      sent: Boolean(to && input.equivalent && input.attachment?.content.byteLength),
+      skipped: false,
+    }),
+  ),
 );
 const memory = vi.hoisted(() => ({
   rows: [] as Array<Record<string, unknown>>,
   pending: [] as Promise<unknown>[],
+  objects: new Map<string, Uint8Array>(),
+  downloads: [] as string[],
+  signs: [] as Array<{ bucket: string; path: string; expiresIn: number }>,
+  windows: new Map<string, number>(),
 }));
 
 vi.mock("next/server", async () => {
@@ -26,8 +42,19 @@ vi.mock("next/server", async () => {
 
 vi.mock("@/lib/orders/storage", () => ({
   serviceDb: () => ({ kind: "db" }),
-  uploadObject: vi.fn(async () => undefined),
-  downloadObject: vi.fn(async () => new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34])),
+  uploadObject: vi.fn(async (_db: unknown, _bucket: unknown, path: string, bytes: Uint8Array) => {
+    memory.objects.set(path, Uint8Array.from(bytes));
+  }),
+  downloadObject: vi.fn(async (_db: unknown, _bucket: unknown, path: string) => {
+    memory.downloads.push(path);
+    const found = memory.objects.get(path);
+    if (!found) throw new Error("missing object");
+    return found;
+  }),
+  signedObjectUrl: vi.fn(async (_db: unknown, bucket: string, path: string, expiresIn: number) => {
+    memory.signs.push({ bucket, path, expiresIn });
+    return `https://files.example/sign/${bucket}?token=signed&path=${encodeURIComponent(path)}&expires=${expiresIn}`;
+  }),
 }));
 
 vi.mock("@/lib/orders/pdf-text", () => ({
@@ -61,6 +88,17 @@ vi.mock("./suggest", () => ({
 }));
 
 vi.mock("./db", () => ({
+  consumePreEvalWindow: async (_db: unknown, subjectHash: string, kind: PreEvalBurstKind, nowMs: number) => {
+    const rule = PRE_EVAL_BURST[kind];
+    const start = Math.floor(nowMs / rule.windowMs) * rule.windowMs;
+    const key = `${kind}:${subjectHash}:${start}`;
+    const count = memory.windows.get(key) ?? 0;
+    if (count >= rule.max) {
+      return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil((start + rule.windowMs - nowMs) / 1000)) };
+    }
+    memory.windows.set(key, count + 1);
+    return { allowed: true, retryAfterSeconds: 0 };
+  },
   countPreEvaluationsByIp: async (_db: unknown, ipHash: string, since: string) =>
     memory.rows.filter((row) => row.ipHash === ipHash && String(row.createdAt) >= since).length,
   countPreEvaluationEmailsByIp: async (_db: unknown, ipHash: string, since: string) =>
@@ -84,6 +122,8 @@ vi.mock("./db", () => ({
       emailSubmittedAt: null,
       resultEmailSentAt: null,
       suggestionStartedAt: null,
+      previewPath: null,
+      previewMime: null,
       createdAt: new Date().toISOString(),
     });
   },
@@ -96,7 +136,13 @@ vi.mock("./db", () => ({
     row.suggestionStartedAt = new Date().toISOString();
     return row;
   },
-  finishPreEvaluation: async (_db: unknown, id: string, suggestion: Record<string, unknown>) => {
+  finishPreEvaluation: async (
+    _db: unknown,
+    id: string,
+    suggestion: Record<string, unknown>,
+    _now: string,
+    preview: { path: string; mime: string },
+  ) => {
     const row = memory.rows.find((item) => item.id === id && item.status === "processing");
     if (!row) return;
     row.status = "ready";
@@ -109,6 +155,8 @@ vi.mock("./db", () => ({
     row.degreeCount = suggestion.degreeCount;
     row.edgeCredentialId = suggestion.edgeCredentialId;
     row.edgeMatchMethod = suggestion.edgeMatchMethod;
+    row.previewPath = preview.path;
+    row.previewMime = preview.mime;
   },
   failPreEvaluation: async (_db: unknown, id: string) => {
     const row = memory.rows.find((item) => item.id === id && item.status === "processing");
@@ -141,9 +189,9 @@ import { POST as submitEmail } from "@/app/api/pre-evaluation/[id]/email/route";
 import { GET as readPreview } from "@/app/api/pre-evaluation/[id]/preview/route";
 import { GET as readPrefill } from "@/app/api/pre-evaluation/[id]/prefill/route";
 
-const PDF = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a]);
+let samplePdf = new Uint8Array();
 
-function uploadRequest(ip = "203.0.113.20", bytes: Uint8Array = PDF, name = "credential.pdf", type = "application/pdf") {
+function uploadRequest(ip = "203.0.113.20", bytes = samplePdf, name = "credential.pdf", type = "application/pdf") {
   const form = new FormData();
   form.set("file", new File([Buffer.from(bytes)], name, { type }));
   return new Request("https://credpronto.test/api/pre-evaluation", {
@@ -160,19 +208,33 @@ async function settle(): Promise<void> {
   }
 }
 
-beforeEach(() => {
+async function pdfText(bytes: Uint8Array): Promise<string> {
+  const proxy = await getDocumentProxy(bytes.slice());
+  const extracted = await extractText(proxy, { mergePages: true });
+  return Array.isArray(extracted.text) ? extracted.text.join("\n") : extracted.text;
+}
+
+beforeEach(async () => {
   memory.rows.length = 0;
   memory.pending.length = 0;
+  memory.objects.clear();
+  memory.downloads.length = 0;
+  memory.signs.length = 0;
+  memory.windows.clear();
+  const doc = await PDFDocument.create();
+  const page = doc.addPage();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  page.drawText("ORIGINAL-ONLY", { x: 72, y: 720, size: 18, font });
+  samplePdf = new Uint8Array(await doc.save());
   send.mockClear();
   send.mockResolvedValue({ sent: true, skipped: false });
   vi.mocked(extractPrintedCredentials).mockResolvedValue([
     { kind: "diploma", country: "Mexico", credential: "Licenciatura en Derecho" },
   ]);
-  resetPreEvalBursts();
 });
 
-afterEach(() => {
-  resetPreEvalBursts();
+afterEach(async () => {
+  await settle();
 });
 
 describe("pre-evaluation HTTP contract", () => {
@@ -197,6 +259,7 @@ describe("pre-evaluation HTTP contract", () => {
       confidence: null,
       previewUrl: null,
     });
+    expect(memory.signs).toHaveLength(0);
 
     const lockedPreview = await readPreview(
       new Request("https://credpronto.test/api/pre-evaluation/" + id + "/preview", { headers: { "x-forwarded-for": "203.0.113.20" } }),
@@ -225,11 +288,25 @@ describe("pre-evaluation HTTP contract", () => {
     expect(await emailed.json()).toEqual({ ok: true });
     expect(send).toHaveBeenCalledTimes(1);
     const mailed = send.mock.calls[0]?.[1];
-    if (!mailed) throw new Error("missing result email");
+    if (!mailed?.attachment) throw new Error("missing result email");
     expect(mailed.equivalent).toBe("Bachelor's degree");
     expect(mailed.resultUrl).toBe(`https://credpronto.test/pre-evaluation/${id}`);
     expect(mailed.officialUrl).toContain("email=Ada%40Example.com");
     expect(mailed.officialUrl).toContain("preEvaluation");
+    expect(mailed.attachment.filename).toBe("preview.pdf");
+    expect(mailed.attachment.contentType).toBe("application/pdf");
+    const row = memory.rows.find((item) => item.accessToken === id);
+    const storedOriginal = memory.objects.get(String(row?.storagePath));
+    const storedPreview = memory.objects.get(String(row?.previewPath));
+    if (!storedOriginal || !storedPreview) throw new Error("missing stored files");
+    expect(Buffer.compare(Buffer.from(mailed.attachment.content), Buffer.from(storedOriginal))).not.toBe(0);
+    expect(Buffer.compare(Buffer.from(mailed.attachment.content), Buffer.from(storedPreview))).toBe(0);
+    expect(Buffer.compare(Buffer.from(mailed.attachment.content), Buffer.from(samplePdf))).not.toBe(0);
+    expect(await pdfText(mailed.attachment.content)).toContain("PREVIEW");
+    expect(row?.previewPath).not.toBe(row?.storagePath);
+    expect(String(row?.previewPath)).toContain("/renders/preview.pdf");
+    expect(memory.downloads.filter((path) => path === row?.storagePath)).toHaveLength(1);
+    expect(memory.downloads).toContain(row?.previewPath);
     expect(errors.mock.calls.flat().join(" ")).not.toContain("Ada@Example.com");
     expect(errors.mock.calls.flat().join(" ")).not.toContain(id);
 
@@ -237,14 +314,23 @@ describe("pre-evaluation HTTP contract", () => {
       new Request("https://credpronto.test/api/pre-evaluation/" + id, { headers: { "x-forwarded-for": "203.0.113.22" } }),
       { params: Promise.resolve({ id }) },
     );
-    expect(await shown.json()).toEqual({
+    const shownBody = await shown.json();
+    expect(shownBody).toMatchObject({
       status: "ready",
       equivalent: "Bachelor's degree",
       confidence: "high",
-      previewUrl: `https://credpronto.test/api/pre-evaluation/${encodeURIComponent(id)}/preview`,
     });
+    expect(shownBody.previewUrl).toContain("token=signed");
+    expect(shownBody.previewUrl).toContain("expires=300");
+    expect(shownBody.previewUrl).toContain(encodeURIComponent(String(row?.previewPath)));
+    expect(shownBody.previewUrl).not.toContain("/api/pre-evaluation/");
+    expect(shownBody.previewUrl).not.toContain(encodeURIComponent(String(row?.storagePath)));
+    expect(memory.signs).toEqual([
+      { bucket: "pre-evaluations", path: row?.previewPath, expiresIn: 300 },
+    ]);
     expect(send).toHaveBeenCalledTimes(1);
 
+    const downloadsBeforePreview = memory.downloads.length;
     const preview = await readPreview(
       new Request("https://credpronto.test/api/pre-evaluation/" + id + "/preview", { headers: { "x-forwarded-for": "203.0.113.22" } }),
       { params: Promise.resolve({ id }) },
@@ -253,6 +339,11 @@ describe("pre-evaluation HTTP contract", () => {
     expect(preview.headers.get("content-type")).toBe("application/pdf");
     expect(preview.headers.get("content-disposition")).toBe('inline; filename="document.pdf"');
     expect(preview.headers.get("x-robots-tag")).toContain("noindex");
+    const previewBytes = new Uint8Array(await preview.arrayBuffer());
+    expect(Buffer.compare(Buffer.from(previewBytes), Buffer.from(samplePdf))).not.toBe(0);
+    expect(await pdfText(previewBytes)).toContain("PREVIEW");
+    expect(memory.downloads.slice(downloadsBeforePreview)).toEqual([row?.previewPath]);
+    expect(memory.downloads.slice(downloadsBeforePreview)).not.toContain(row?.storagePath);
 
     const prefill = await readPrefill(
       new Request("https://credpronto.test/api/pre-evaluation/" + id + "/prefill", { headers: { "x-forwarded-for": "203.0.113.22" } }),
@@ -348,5 +439,16 @@ describe("pre-evaluation HTTP contract", () => {
     expect(errors.mock.calls.flat().join(" ")).not.toContain("Ada Lovelace");
     expect(errors.mock.calls.flat().join(" ")).not.toContain("ada@example.com");
     errors.mockRestore();
+  });
+
+  it("holds the short upload window in the database", async () => {
+    const ip = "203.0.113.77";
+    for (let index = 0; index < PRE_EVAL_BURST.upload.max; index += 1) {
+      const created = await upload(uploadRequest(ip));
+      expect(created.status).toBe(200);
+    }
+    const blocked = await upload(uploadRequest(ip));
+    expect(blocked.status).toBe(429);
+    expect((await blocked.json()).code).toBe("rate_limited");
   });
 });

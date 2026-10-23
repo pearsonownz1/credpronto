@@ -1,6 +1,13 @@
 import { HttpError } from "@/lib/orders/errors";
 import type { Db } from "@/lib/orders/storage";
-import { PRE_EVAL_STALE_MS, type PreEvalConfidence, type PreEvalMime, type PreEvalStatus } from "./constants";
+import {
+  PRE_EVAL_BURST,
+  PRE_EVAL_STALE_MS,
+  type PreEvalBurstKind,
+  type PreEvalConfidence,
+  type PreEvalMime,
+  type PreEvalStatus,
+} from "./constants";
 import type { PreEvalSuggestion } from "./suggest";
 
 export type PreEvaluationRecord = {
@@ -26,6 +33,8 @@ export type PreEvaluationRecord = {
   emailSubmittedAt: string | null;
   resultEmailSentAt: string | null;
   suggestionStartedAt: string | null;
+  previewPath: string | null;
+  previewMime: "application/pdf" | null;
   createdAt: string;
 };
 
@@ -60,6 +69,13 @@ function mime(value: unknown): PreEvalMime | null {
   return null;
 }
 
+/** A preview that points at the original upload is treated as missing. */
+function previewPath(row: Row, storagePath: string): string | null {
+  const path = text(row.preview_path);
+  if (!path || path === storagePath || row.preview_mime !== "application/pdf") return null;
+  return path;
+}
+
 export function mapPreEvaluation(row: Row): PreEvaluationRecord | null {
   const id = text(row.id);
   const tokenHash = text(row.token_hash);
@@ -77,6 +93,7 @@ export function mapPreEvaluation(row: Row): PreEvaluationRecord | null {
   const kind = row.document_kind === "diploma" || row.document_kind === "transcript" ? row.document_kind : null;
   const match = row.edge_match_method === "base" || row.edge_match_method === "fuzzy" ? row.edge_match_method : null;
   const degree = typeof row.degree_count === "number" ? row.degree_count : Number(row.degree_count);
+  const storedPreview = previewPath(row, storagePath);
   return {
     id,
     tokenHash,
@@ -100,12 +117,46 @@ export function mapPreEvaluation(row: Row): PreEvaluationRecord | null {
     emailSubmittedAt: text(row.email_submitted_at),
     resultEmailSentAt: text(row.result_email_sent_at),
     suggestionStartedAt: text(row.suggestion_started_at),
+    previewPath: storedPreview,
+    previewMime: storedPreview ? "application/pdf" : null,
     createdAt: text(row.created_at) ?? new Date(0).toISOString(),
   };
 }
 
 const COLUMNS =
-  "id, token_hash, access_token, status, storage_path, filename, mime, size_bytes, ip_hash, country, credential_name, us_equivalency, confidence, rationale, document_kind, degree_count, edge_credential_id, edge_match_method, email, email_submitted_at, result_email_sent_at, suggestion_started_at, created_at";
+  "id, token_hash, access_token, status, storage_path, filename, mime, size_bytes, ip_hash, country, credential_name, us_equivalency, confidence, rationale, document_kind, degree_count, edge_credential_id, edge_match_method, email, email_submitted_at, result_email_sent_at, suggestion_started_at, preview_path, preview_mime, created_at";
+
+type RateLimitArgs = {
+  p_subject_hash: string;
+  p_kind: PreEvalBurstKind;
+  p_window_start: string;
+  p_max: number;
+};
+
+/** One shared counter for this subject and window. Null from the database means the window is full. */
+export async function consumePreEvalWindow(
+  db: Db,
+  subjectHash: string,
+  kind: PreEvalBurstKind,
+  nowMs: number,
+): Promise<{ allowed: boolean; retryAfterSeconds: number }> {
+  const rule = PRE_EVAL_BURST[kind];
+  const startMs = Math.floor(nowMs / rule.windowMs) * rule.windowMs;
+  const args: RateLimitArgs = {
+    p_subject_hash: subjectHash,
+    p_kind: kind,
+    p_window_start: new Date(startMs).toISOString(),
+    p_max: rule.max,
+  };
+  const { data, error } = await db.rpc("consume_pre_evaluation_rate_limit", args);
+  fail(error);
+  const count = typeof data === "number" ? data : typeof data === "string" ? Number(data) : Number.NaN;
+  if (!Number.isInteger(count) || count <= 0) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((startMs + rule.windowMs - nowMs) / 1000));
+    return { allowed: false, retryAfterSeconds };
+  }
+  return { allowed: true, retryAfterSeconds: 0 };
+}
 
 export async function countPreEvaluationsByIp(db: Db, ipHash: string, sinceIso: string): Promise<number> {
   const { count, error } = await db
@@ -194,7 +245,13 @@ export async function claimPreEvaluation(db: Db, id: string, nowIso: string): Pr
   return row ? mapPreEvaluation(row) : null;
 }
 
-export async function finishPreEvaluation(db: Db, id: string, suggestion: PreEvalSuggestion, nowIso: string): Promise<void> {
+export async function finishPreEvaluation(
+  db: Db,
+  id: string,
+  suggestion: PreEvalSuggestion,
+  nowIso: string,
+  preview: { path: string; mime: "application/pdf" },
+): Promise<void> {
   const { error } = await db
     .from("pre_evaluations")
     .update({
@@ -208,6 +265,8 @@ export async function finishPreEvaluation(db: Db, id: string, suggestion: PreEva
       degree_count: suggestion.degreeCount,
       edge_credential_id: suggestion.edgeCredentialId,
       edge_match_method: suggestion.edgeMatchMethod,
+      preview_path: preview.path,
+      preview_mime: preview.mime,
       updated_at: nowIso,
     })
     .eq("id", id)

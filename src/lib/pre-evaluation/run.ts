@@ -2,14 +2,14 @@ import { randomUUID } from "node:crypto";
 import { after } from "next/server";
 import { readJson } from "@/lib/auth/body";
 import { PRE_EVALUATIONS_BUCKET } from "@/lib/orders/constants";
-import { appOrigin, sendPreEvaluationResult } from "@/lib/orders/email";
+import { sendPreEvaluationResult } from "@/lib/orders/email";
 import { HttpError } from "@/lib/orders/errors";
 import { extractPrintedCredentials } from "@/lib/orders/evaluation";
 import { assertEmail } from "@/lib/orders/files";
 import { pdfPageTexts } from "@/lib/orders/pdf-text";
-import { downloadObject, uploadObject, type Db } from "@/lib/orders/storage";
+import { downloadObject, signedObjectUrl, uploadObject, type Db } from "@/lib/orders/storage";
 import { generateOrderToken, hashOrderToken, isOrderToken } from "@/lib/orders/token";
-import { PRE_EVAL_STALE_MS, type PreEvalMime } from "./constants";
+import { PRE_EVAL_PREVIEW_URL_SECONDS, PRE_EVAL_STALE_MS, type PreEvalMime } from "./constants";
 import {
   claimPreEvaluation,
   claimResultEmail,
@@ -31,7 +31,6 @@ import {
   absoluteAppUrl,
   confidenceLabel,
   orderPrefill,
-  preEvaluationPreviewPath,
   preEvaluationResultPath,
   preEvaluationSignupPath,
   prefillService,
@@ -40,11 +39,11 @@ import {
   type PreEvalPrefill,
   type PreEvalPublic,
 } from "./view";
+import { preEvaluationPreviewObjectPath, renderWatermarkedPreview } from "./watermark";
 
 type Hooks = {
   schedule?: (internalId: string) => void;
   now?: Date;
-  origin?: string;
 };
 
 function assertPublicId(id: string): string {
@@ -87,9 +86,26 @@ async function documentText(bytes: Uint8Array, mime: string): Promise<string> {
   }
 }
 
+async function watermarkedAttachment(
+  db: Db,
+  record: PreEvaluationRecord,
+): Promise<{ filename: "preview.pdf"; content: Uint8Array; contentType: "application/pdf" } | null> {
+  if (!record.previewPath || record.previewPath === record.storagePath) return null;
+  try {
+    const bytes = await downloadObject(db, PRE_EVALUATIONS_BUCKET, record.previewPath);
+    if (bytes.byteLength === 0) return null;
+    return { filename: "preview.pdf", content: bytes, contentType: "application/pdf" };
+  } catch {
+    console.error("pre-evaluation email failed");
+    return null;
+  }
+}
+
 async function deliverResultEmail(db: Db, record: PreEvaluationRecord, now: Date): Promise<void> {
   if (!record.email || record.status !== "ready" || record.resultEmailSentAt) return;
   if (!record.usEquivalency || !record.confidence) return;
+  const attachment = await watermarkedAttachment(db, record);
+  if (!attachment) return;
   const nowIso = now.toISOString();
   const claimed = await claimResultEmail(db, record.id, nowIso);
   if (!claimed) return;
@@ -100,6 +116,7 @@ async function deliverResultEmail(db: Db, record: PreEvaluationRecord, now: Date
     rationale: record.rationale ?? "This is a free suggestion, not an official evaluation.",
     resultUrl: absoluteAppUrl(preEvaluationResultPath(record.accessToken)),
     officialUrl: absoluteAppUrl(preEvaluationSignupPath(record.accessToken, record.email, service)),
+    attachment,
   });
   if (!sent.sent) {
     try {
@@ -124,7 +141,14 @@ export async function completePreEvaluation(db: Db, internalId: string, now = ne
     const text = await documentText(bytes, claimed.mime);
     const printed = await extractPrintedCredentials({ text, file: { bytes, mime: claimed.mime } });
     const suggestion = await suggestPrintedCredentials(db, printed);
-    await finishPreEvaluation(db, claimed.id, suggestion, new Date().toISOString());
+    const previewPath = preEvaluationPreviewObjectPath(claimed.id);
+    if (previewPath === claimed.storagePath) throw new Error("preview path");
+    const preview = await renderWatermarkedPreview(bytes, claimed.mime);
+    await uploadObject(db, PRE_EVALUATIONS_BUCKET, previewPath, preview, "application/pdf");
+    await finishPreEvaluation(db, claimed.id, suggestion, new Date().toISOString(), {
+      path: previewPath,
+      mime: "application/pdf",
+    });
   } catch {
     console.error("pre-evaluation suggestion failed");
     try {
@@ -149,7 +173,7 @@ export async function startPreEvaluation(
 ): Promise<{ id: string }> {
   const now = hooks?.now ?? new Date();
   const ipHash = requestIpHash(request);
-  assertPreEvalBurst(ipHash, "upload", now.getTime());
+  await assertPreEvalBurst(db, ipHash, "upload", now.getTime());
   const uploads = await countPreEvaluationsByIp(db, ipHash, utcDayStart(now));
   assertDailyAllowance(uploads, "upload", now);
   const uploaded = await readPreEvalMultipart(request);
@@ -184,14 +208,27 @@ export async function readPreEvaluation(
   hooks?: Hooks,
 ): Promise<PreEvalPublic> {
   const now = hooks?.now ?? new Date();
-  assertPreEvalBurst(requestIpHash(request), "read", now.getTime());
-  const { token, record } = await load(db, publicId);
+  await assertPreEvalBurst(db, requestIpHash(request), "read", now.getTime());
+  const { record } = await load(db, publicId);
   resume(db, record, hooks?.schedule);
   if (record.email && record.status === "ready") await deliverResultEmail(db, record, now);
-  const origin = hooks?.origin ?? appOrigin();
-  const previewUrl =
-    record.email && record.status === "ready" ? absoluteAppUrl(preEvaluationPreviewPath(token), origin) : null;
-  return publicPreEvaluation(record, previewUrl);
+  return publicPreEvaluation(record, await signedPreviewUrl(db, record));
+}
+
+async function signedPreviewUrl(db: Db, record: PreEvaluationRecord): Promise<string | null> {
+  if (!record.email || record.status !== "ready" || !record.previewPath) return null;
+  if (record.previewPath === record.storagePath) return null;
+  try {
+    return await signedObjectUrl(
+      db,
+      PRE_EVALUATIONS_BUCKET,
+      record.previewPath,
+      PRE_EVAL_PREVIEW_URL_SECONDS,
+    );
+  } catch {
+    console.error("pre-evaluation preview failed");
+    return null;
+  }
 }
 
 function emailFromBody(body: unknown): string {
@@ -211,8 +248,8 @@ export async function submitPreEvaluationEmail(
   const token = assertPublicId(publicId);
   const tokenHash = hashOrderToken(token);
   const ipHash = requestIpHash(request);
-  assertPreEvalBurst(ipHash, "email", now.getTime());
-  assertPreEvalBurst(tokenHash, "email", now.getTime());
+  await assertPreEvalBurst(db, ipHash, "email", now.getTime());
+  await assertPreEvalBurst(db, tokenHash, "email", now.getTime());
   const email = assertEmail(emailFromBody(await readJson(request)));
   const existing = await preEvaluationByTokenHash(db, tokenHash);
   if (!existing) throw new HttpError("Pre-evaluation not found", 404);
@@ -240,12 +277,15 @@ export async function readPreEvaluationPreview(
   request: Request,
   now = new Date(),
 ): Promise<{ bytes: Uint8Array; mime: PreEvalMime }> {
-  assertPreEvalBurst(requestIpHash(request), "read", now.getTime());
+  await assertPreEvalBurst(db, requestIpHash(request), "read", now.getTime());
   const { record } = await load(db, publicId);
-  if (!record.email || record.status !== "ready") throw new HttpError("Pre-evaluation not found", 404);
+  if (!record.email || record.status !== "ready" || !record.previewPath) {
+    throw new HttpError("Pre-evaluation not found", 404);
+  }
+  if (record.previewPath === record.storagePath) throw new HttpError("Pre-evaluation not found", 404);
   try {
-    const bytes = await downloadObject(db, PRE_EVALUATIONS_BUCKET, record.storagePath);
-    return { bytes, mime: record.mime };
+    const bytes = await downloadObject(db, PRE_EVALUATIONS_BUCKET, record.previewPath);
+    return { bytes, mime: "application/pdf" };
   } catch {
     console.error("pre-evaluation preview failed");
     throw new HttpError("Pre-evaluation not found", 404);
@@ -258,7 +298,7 @@ export async function readPreEvaluationPrefill(
   request: Request,
   now = new Date(),
 ): Promise<PreEvalPrefill> {
-  assertPreEvalBurst(requestIpHash(request), "read", now.getTime());
+  await assertPreEvalBurst(db, requestIpHash(request), "read", now.getTime());
   const { token, record } = await load(db, publicId);
   const prefill = orderPrefill(record, token);
   if (!prefill) throw new HttpError("Enter your email to see this suggestion", 409, "email_required");

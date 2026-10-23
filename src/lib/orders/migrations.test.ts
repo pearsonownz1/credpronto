@@ -198,6 +198,28 @@ describe("auth migrations", () => {
     expect(sql.toLowerCase()).not.toMatch(/insert into public\.pre_evaluations/);
     expect(sql).toMatch(/insert into storage\.buckets/);
     expect(sql).toMatch(/'pre-evaluations', 'pre-evaluations', false/);
+    expect(sql).not.toMatch(/preview_path/);
+    expect(sql).not.toMatch(/consume_pre_evaluation_rate_limit/);
+  });
+
+  it("stores the watermarked preview and the short rate window separately from the applied pre-evaluation migration", () => {
+    const file = "20261023210000_pre_evaluation_preview_rate.sql";
+    expect(files).toContain(file);
+    expect(file > "20261023200000").toBe(true);
+    const sql = readFileSync(path.join(migrationsDir, file), "utf8");
+    const lower = sql.toLowerCase();
+    expect(sql).toMatch(/add column preview_path text/);
+    expect(sql).toMatch(/preview_path <> storage_path/);
+    expect(sql).toMatch(/create table public\.pre_evaluation_rate_windows/);
+    expect(sql).toMatch(/consume_pre_evaluation_rate_limit/);
+    expect(sql).toMatch(/on conflict \(subject_hash, kind, window_start\)/);
+    expect(sql).toMatch(/where rate_window\.hit_count < p_max/);
+    expect(sql).toMatch(/enable row level security/);
+    expect(lower).not.toMatch(/create policy/);
+    expect(lower).not.toMatch(/grant [^;]*to (anon|authenticated)/);
+    expect(sql).toMatch(/to service_role/);
+    expect(sql).toMatch(/revoke all on function public\.consume_pre_evaluation_rate_limit/);
+    expect(lower).not.toMatch(/insert into public\.pre_evaluations/);
   });
 
   it("adds evaluation stages without a new order status", () => {

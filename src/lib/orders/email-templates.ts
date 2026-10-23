@@ -450,24 +450,35 @@ ${button("View your order", input.trackUrl)}`,
   return { subject, text, html };
 }
 
+export type PreEvaluationEmailFile = {
+  filename: "preview.pdf" | "preview.jpg" | "preview.png";
+  content: Uint8Array;
+  contentType: "application/pdf" | "image/jpeg" | "image/png";
+};
+
 export type PreEvaluationResultEmail = {
   equivalent: string;
   confidenceLabel: string;
   rationale: string;
   resultUrl: string;
   officialUrl: string;
+  attachment: PreEvaluationEmailFile;
 };
 
-/** Free suggestion. The result link returns to the same pre-evaluation. The other link starts the paid evaluation. */
-export function renderPreEvaluationEmail(input: PreEvaluationResultEmail): RenderedEmail {
+/** Free suggestion. The result link returns to the same pre-evaluation. The other link starts the paid evaluation. The attachment is the watermarked preview, never the original file. */
+export function renderPreEvaluationEmail(
+  input: PreEvaluationResultEmail,
+): RenderedEmail & { attachment: PreEvaluationEmailFile } {
   const heading = "Your equivalency suggestion is ready.";
   const intro =
     "This is a free suggestion based on the document you uploaded. It is not an official evaluation. Create an account to order the paid evaluation.";
+  const attached = "A watermarked preview of the document is attached. It is not the original file.";
   const html = layout({
     preheader: `${input.equivalent}. This is a free suggestion, not an official evaluation.`,
     body: `${badge("Free suggestion", "#EEF3FF", "#1F5EFF")}
 <h1 style="margin:14px 0 8px;font-size:24px;letter-spacing:-.4px;line-height:1.25">${escapeHtml(heading)}</h1>
 <p style="margin:0;color:#5B6575">${escapeHtml(intro)}</p>
+<p style="margin:12px 0 0;color:#5B6575">${escapeHtml(attached)}</p>
 ${detailTable([
   ["Suggested U.S. equivalent", input.equivalent, false],
   ["Confidence", input.confidenceLabel, false],
@@ -481,6 +492,8 @@ ${button("Order an official evaluation", input.officialUrl)}`,
     "",
     intro,
     "",
+    attached,
+    "",
     `Suggested U.S. equivalent: ${input.equivalent}`,
     `Confidence: ${input.confidenceLabel}`,
     input.rationale,
@@ -492,6 +505,7 @@ ${button("Order an official evaluation", input.officialUrl)}`,
     subject: "Your CredPronto equivalency suggestion",
     text,
     html,
+    attachment: input.attachment,
   };
 }
 
