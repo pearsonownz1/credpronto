@@ -16,9 +16,9 @@ test("a quote file shows a large page viewer and opens it full size", async ({ p
   await expect(page.getByTestId("file-turnaround")).toHaveCount(0);
   const turnaround = page.getByTestId("quote-turnaround").filter({ visible: true });
   await expect(turnaround).toContainText(/turnaround time/i);
-  await expect(turnaround).toContainText("3 minutes");
+  await expect(turnaround).toContainText("Translation ready in about 1 minute.");
   await expect(turnaround).toContainText("Fast");
-  const time = turnaround.getByText("3 minutes");
+  const time = turnaround.getByText("Translation ready in about 1 minute.");
   const pill = turnaround.getByText("Fast", { exact: true });
   const timeBox = await time.boundingBox();
   const pillBox = await pill.boundingBox();
@@ -70,7 +70,9 @@ test("a missing source file hides the page viewer", async ({ page }) => {
   await expect(page.getByTestId("file-thumb-fallback")).toHaveCount(0);
   await expect(page.getByTestId("file-thumb-skeleton")).toHaveCount(0);
   await expect(page.getByTestId("file-turnaround")).toHaveCount(0);
-  await expect(page.getByTestId("quote-turnaround").filter({ visible: true })).toContainText("3 minutes");
+  await expect(page.getByTestId("quote-turnaround").filter({ visible: true })).toContainText(
+    "Translation ready in about 1 minute.",
+  );
 });
 
 test("a loaded quote replaces the loading announcement", async ({ page }) => {

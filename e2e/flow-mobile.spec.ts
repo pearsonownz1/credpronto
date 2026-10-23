@@ -8,12 +8,12 @@ test("the turnaround row stays full width on a phone", async ({ page }) => {
   await expect(page.getByTestId("file-turnaround")).toHaveCount(0);
   const turnaround = page.getByTestId("quote-turnaround").filter({ visible: true });
   await expect(turnaround).toContainText(/turnaround time/i);
-  await expect(turnaround).toContainText("3 minutes");
+  await expect(turnaround).toContainText("Translation ready in about 1 minute.");
   const summary = turnaround.locator("xpath=ancestor::div[contains(@class,'border-line')][1]");
   const summaryBox = await summary.boundingBox();
   const turnBox = await turnaround.boundingBox();
   const label = turnaround.getByText(/turnaround time/i);
-  const time = turnaround.getByText("3 minutes");
+  const time = turnaround.getByText("Translation ready in about 1 minute.");
   const pill = turnaround.getByText("Fast", { exact: true });
   const labelBox = await label.boundingBox();
   const timeBox = await time.boundingBox();

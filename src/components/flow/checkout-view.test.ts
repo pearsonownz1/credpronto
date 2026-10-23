@@ -106,6 +106,8 @@ describe("evaluation checkout", () => {
     expect(html).toContain("Evaluation report");
     expect(html).toContain("CredPronto Certification Team");
     expect(html).toContain("Pay $19.95");
+    expect(html).toContain("Evaluation ready in about 5 minutes.");
+    expect(html.indexOf('data-testid="quote-turnaround"')).toBeLessThan(html.indexOf('data-testid="pay-button"'));
     expect(html).not.toContain("reviewed the report");
     expect(html).not.toContain("Confirm the credential details");
     expect(html).toContain('data-step="confirm"');
@@ -141,6 +143,7 @@ describe("evaluation checkout", () => {
     expect(html).toContain("Certified translation");
     expect(html).toContain("1 billable page");
     expect(html).toContain("Pay $29.90");
+    expect(html).toContain("Evaluation ready in about 5 minutes.");
     expect(html).toContain('data-step="pay"');
     expect(html).toContain('data-step="preview"');
     expect(html).not.toContain('data-step="review"');
@@ -167,6 +170,8 @@ describe("evaluation checkout", () => {
     expect(html).toContain("$12.95 per order");
     expect(html).toContain("acta-nacimiento.pdf");
     expect(html).toContain("Spanish → English");
+    expect(html).toContain("Translation ready in about 1 minute.");
+    expect(html).not.toContain("Evaluation ready in about 5 minutes.");
     expect(html).toContain("2 pages");
 
     state.order = {

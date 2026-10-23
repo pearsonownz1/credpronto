@@ -22,8 +22,10 @@ import {
   ORDERS_DASHBOARD_HREF,
   QUICK_CHECK_COPY,
   QUICK_CHECK_DETAIL,
-  RELEASE_PROGRESS_STEPS,
   downloadEmailedLine,
+  orderContents,
+  packageProgress,
+  packageProgressSteps,
   downloadReadyCopy,
   documentIdForPage,
   downloadPhase,
@@ -36,6 +38,7 @@ import {
   paidReviewEmailLine,
   fileCountLabel,
   quoteCounts,
+  quoteTurnaroundCopy,
   quoteFileGroups,
   quotePageRows,
   quoteSummaryLabel,
@@ -553,22 +556,71 @@ describe("download phase", () => {
         }),
       ),
     ).toBe("certifying");
+    const comboPending = order({
+      status: "paid",
+      payment: { status: "paid" },
+      delivery: { status: "pending" },
+      fulfillment: "awaiting_review",
+      services: ["translation", "diploma"],
+      service: null,
+      orderType: "translation",
+      includeTranslation: false,
+      translationReady: true,
+      evaluationStatus: "under_review",
+    });
+    expect(downloadPhase(comboPending)).toBe("certifying");
+    expect(packageProgress(comboPending)).toBe("almost_ready");
+    expect(
+      packageProgress(
+        order({
+          status: "paid",
+          payment: { status: "paid" },
+          delivery: { status: "pending" },
+          fulfillment: "awaiting_review",
+          services: ["diploma"],
+          service: null,
+          orderType: "translation",
+          evaluationStatus: "under_review",
+        }),
+      ),
+    ).toBe("quick_review");
+    expect(
+      packageProgress(
+        order({
+          status: "paid",
+          payment: { status: "paid" },
+          delivery: { status: "pending" },
+          fulfillment: "awaiting_review",
+          services: ["diploma"],
+          service: null,
+          evaluationStatus: "evaluation_complete",
+        }),
+      ),
+    ).toBe("almost_ready");
+    expect(
+      packageProgress(
+        order({
+          status: "delivered",
+          payment: { status: "paid" },
+          delivery: { status: "delivered" },
+          fulfillment: "released",
+          services: ["translation", "course_by_course"],
+          translationReady: true,
+          evaluationStatus: "evaluation_complete",
+        }),
+      ),
+    ).toBe("ready");
     expect(orderStatusPollDelay("certifying")).toBe(ORDER_STATUS_POLL_MS);
     expect(orderStatusPollDelay("finalizing")).toBe(FINALIZING_POLL_MS);
     expect(orderStatusPollDelay("ready")).toBeNull();
     expect(CONFIRMING_PAYMENT_COPY).toBe("Confirming payment");
     expect(CONFIRMING_PAYMENT_DETAIL).not.toMatch(/second|minute|countdown|usually/i);
     expect(QUICK_CHECK_COPY).toBe("Paid. We're finishing your certified PDF.");
-    expect(QUICK_CHECK_DETAIL).toBe(
-      "There's nothing you need to do. We'll email you when your certified PDF is ready.",
-    );
+    expect(QUICK_CHECK_DETAIL).toBe("Nothing to do. We'll email you when it's ready.");
     expect(QUICK_CHECK_DETAIL).not.toMatch(/second|minute|countdown|usually|\d+/i);
     expect(CLOSE_PAGE_NOTE).toBe("You can close this page.");
     expect(ORDERS_DASHBOARD_HREF).toBe("/dashboard");
-    expect(paidReviewEmailLine("ada@example.com")).toBe(
-      "There's nothing you need to do. We'll email ada@example.com when your certified PDF is ready.",
-    );
-    expect(paidReviewEmailLine("  ")).toBe(QUICK_CHECK_DETAIL);
+    expect(paidReviewEmailLine()).toBe(QUICK_CHECK_DETAIL);
     expect(paidReceiptLine({ totalCents: 1990, paidAt: "2026-04-01T00:00:00.000Z" })).toBe(
       "Paid $19.90 on April 1, 2026",
     );
@@ -578,14 +630,20 @@ describe("download phase", () => {
     );
     expect(paidReceiptLine({ totalCents: null, paidAt: null })).toBe("Paid");
     expect(paidReceiptLine({ totalCents: null, paidAt: "not-a-date" })).toBe("Paid");
-    expect(RELEASE_PROGRESS_STEPS.map((step) => [step.label, step.state])).toEqual([
-      ["Paid", "done"],
-      ["Translated", "done"],
-      ["Final review", "current"],
+    expect(packageProgressSteps("quick_review").map((step) => [step.label, step.state])).toEqual([
+      ["Quick Review", "current"],
+      ["Almost Ready", "upcoming"],
       ["Ready", "upcoming"],
     ]);
-    expect(downloadEmailedLine("ada@example.com")).toBe("We also emailed it to ada@example.com.");
-    expect(downloadEmailedLine("  ")).toBe("We also emailed it to you.");
+    expect(packageProgressSteps("almost_ready").map((step) => step.state)).toEqual([
+      "done",
+      "current",
+      "upcoming",
+    ]);
+    expect(packageProgressSteps("ready").map((step) => step.state)).toEqual(["done", "done", "current"]);
+    expect(downloadEmailedLine({ status: "delivered" })).toBe("We also emailed you a copy.");
+    expect(downloadEmailedLine({ status: "paid", delivery: { status: "pending" } })).toBeNull();
+    expect(downloadEmailedLine({ status: "approved", delivery: { status: "approved" } })).toBeNull();
   });
 });
 
@@ -938,6 +996,36 @@ describe("download copy", () => {
       primaryFile: "translation",
       secondary: null,
       again: "Need another document translated?",
+    });
+    expect(
+      orderContents({ services: ["translation", "diploma"], service: null, orderType: "translation" }),
+    ).toEqual({ translation: true, evaluation: true });
+    expect(orderContents({ services: ["translation"], service: "diploma", orderType: "evaluation" })).toEqual({
+      translation: true,
+      evaluation: false,
+    });
+    expect(orderContents({ services: ["diploma"], service: null, orderType: "translation" })).toEqual({
+      translation: false,
+      evaluation: true,
+    });
+    expect(quoteTurnaroundCopy({ services: ["translation"], service: "diploma" })).toBe(
+      "Translation ready in about 1 minute.",
+    );
+    expect(quoteTurnaroundCopy({ orderType: "translation", service: null })).toBe(
+      "Translation ready in about 1 minute.",
+    );
+    expect(quoteTurnaroundCopy({ services: ["diploma"], orderType: "translation", service: null })).toBe(
+      "Evaluation ready in about 5 minutes.",
+    );
+    expect(
+      quoteTurnaroundCopy({ services: ["translation", "course_by_course"], includeTranslation: false }),
+    ).toBe("Evaluation ready in about 5 minutes.");
+    expect(quoteTurnaroundCopy({ orderType: "evaluation", service: "diploma", includeTranslation: true })).toBe(
+      "Evaluation ready in about 5 minutes.",
+    );
+    expect(downloadReadyCopy({ services: ["translation", "course_by_course"], service: null })).toMatchObject({
+      title: "Your order is ready.",
+      primaryFile: "evaluation",
     });
   });
 });

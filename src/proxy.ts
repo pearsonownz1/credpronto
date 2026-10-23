@@ -37,7 +37,7 @@ function withPrivateRobots(response: NextResponse, pathname: string): NextRespon
 }
 
 function productionFixtureHidden(pathname: string): boolean {
-  return process.env.VERCEL_ENV === "production" && (pathname === "/dev/paid-review" || pathname.startsWith("/dev/paid-review/"));
+  return process.env.VERCEL_ENV === "production" && pathname.startsWith("/dev/paid-");
 }
 
 export async function proxy(request: NextRequest) {
