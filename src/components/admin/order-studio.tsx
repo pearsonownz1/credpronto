@@ -28,6 +28,7 @@ import { QaPanel } from "@/components/admin/qa-panel";
 import { StaffFiles } from "@/components/admin/staff-files";
 import { approveButtonLabel, runStudioAction, type StudioTaskResult } from "@/components/admin/studio-action";
 import { NeedsReviewBanner } from "@/components/admin/needs-review-banner";
+import { OrderFulfillment } from "@/components/admin/order-fulfillment";
 import {
   applyReportOverrides,
   evaluationReportsFor,
@@ -357,6 +358,8 @@ export function OrderStudio({
         pending={pending}
         setPending={setPending}
       />
+
+      <OrderFulfillment key={detail.id} orderId={detail.id} />
 
       {awaitingEquivalencyPublish(detail.reviewReason) ? (
         <form
