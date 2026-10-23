@@ -4,8 +4,10 @@ import {
   REJECTED_FILE_MESSAGE,
   createPreEvaluation,
   getPreEvaluation,
+  getPreEvaluationFile,
   getPreEvaluationPrefill,
   parsePreEvaluation,
+  parsePreEvaluationFile,
   parsePreEvaluationPrefill,
   replacementPreviewUrl,
   submitPreEvaluationEmail,
@@ -23,6 +25,7 @@ const ready = {
   equivalent: "Bachelor's degree",
   confidence: "high" as const,
   previewUrl: "https://cdn.example/preview.png?token=one",
+  kind: "diploma" as const,
 };
 
 describe("pre-evaluation client", () => {
@@ -68,6 +71,7 @@ describe("pre-evaluation client", () => {
       equivalent: null,
       confidence: null,
       previewUrl: null,
+      kind: null,
     });
 
     expect(
@@ -76,14 +80,19 @@ describe("pre-evaluation client", () => {
         equivalent: "Bachelor's degree",
         confidence: "high",
         previewUrl: "https://cdn.example/secret.png",
+        kind: "transcript",
+        name: "credential.pdf",
+        size: 12,
+        pageCount: 2,
       }),
-    ).toEqual({ status: "processing", equivalent: null, confidence: null, previewUrl: null });
+    ).toEqual({ status: "processing", equivalent: null, confidence: null, previewUrl: null, kind: "transcript" });
 
-    expect(parsePreEvaluation({ ...ready, status: "failed", previewUrl: "https://cdn.example/secret.png" })).toEqual({
+    expect(parsePreEvaluation({ ...ready, status: "failed", previewUrl: "https://cdn.example/secret.png", kind: "nope" })).toEqual({
       status: "failed",
       equivalent: null,
       confidence: null,
       previewUrl: null,
+      kind: null,
     });
   });
 
@@ -163,6 +172,38 @@ describe("pre-evaluation client", () => {
     await expect(
       createPreEvaluation(file, async () => jsonResponse({ error: "Upload a PDF, JPG, or PNG" }, 415)),
     ).rejects.toMatchObject({ status: 415, message: REJECTED_FILE_MESSAGE });
+  });
+
+  it("loads the owned file and keeps only name, mimeType, size, pageCount, and kind", async () => {
+    const loaded = await getPreEvaluationFile("prev 1", async (url, init) => {
+      expect(url).toBe("/api/pre-evaluation/prev%201/file");
+      expect(init?.method).toBe("GET");
+      expect(init?.cache).toBe("no-store");
+      return jsonResponse({
+        email: "ada@example.com",
+        preEvaluationFile: {
+          name: "diploma.pdf",
+          mimeType: "application/pdf",
+          size: 12,
+          pageCount: 2,
+          kind: "transcript",
+          path: "secret/diploma.pdf",
+        },
+      });
+    });
+    expect(loaded).toEqual({
+      preEvaluationFile: {
+        name: "diploma.pdf",
+        mimeType: "application/pdf",
+        size: 12,
+        pageCount: 2,
+        kind: "transcript",
+      },
+    });
+    expect(Object.keys(loaded.preEvaluationFile).sort()).toEqual(["kind", "mimeType", "name", "pageCount", "size"]);
+    expect(() =>
+      parsePreEvaluationFile({ preEvaluationFile: { ...loaded.preEvaluationFile, kind: "course" } }),
+    ).toThrow(/not valid/);
   });
 
   it("reports a network failure without a response", async () => {

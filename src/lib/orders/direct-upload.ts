@@ -38,6 +38,8 @@ export type StoredOriginal = {
   filename: string;
   mime: string;
   size: number;
+  /** Physical pages when this server already counted the file. Photos are 1. */
+  pageCount?: number | null;
 };
 
 export function assertDirectFile(file: {
@@ -164,8 +166,11 @@ function asText(value: unknown): string | null {
 
 export type DirectOrderFields = {
   email: string | null;
+  /** Empty when the only file is a pre-evaluation the server will copy. */
   sessionId: string;
   files: DirectOrderFile[];
+  /** Public pre-evaluation id. The server loads the stored object itself. */
+  preEvaluationId: string | null;
   orderType: string | null;
   service: string | null;
   degreeCount: string | null;
@@ -178,6 +183,13 @@ export type DirectOrderFields = {
   landingPath: string | null;
 };
 
+function readPreEvaluationId(value: unknown): string | null {
+  if (value == null || value === "") return null;
+  if (typeof value !== "string") throw new HttpError("Pre-evaluation not found", 404);
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
 export function parseDirectOrder(body: unknown): DirectOrderFields {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new HttpError("Expected a JSON body", 400);
@@ -185,14 +197,22 @@ export function parseDirectOrder(body: unknown): DirectOrderFields {
   const record = body as Record<string, unknown>;
   rejectCustomerPageCount(record);
   rejectCustomerTotal(record);
+  const preEvaluationId = readPreEvaluationId(record.preEvaluationId);
   const sessionId = typeof record.sessionId === "string" ? record.sessionId.trim() : "";
-  if (!UUID.test(sessionId)) throw new HttpError("Unknown upload", 400);
   const files = record.files;
-  if (!Array.isArray(files) || files.length < 1) throw new HttpError("Upload at least one file", 400);
+  const listed = Array.isArray(files) ? files : null;
+  if (files != null && !listed) throw new HttpError("Upload at least one file", 400);
+  if ((!listed || listed.length < 1) && !preEvaluationId) throw new HttpError("Upload at least one file", 400);
+  if (listed && listed.length > 0) {
+    if (!UUID.test(sessionId)) throw new HttpError("Unknown upload", 400);
+  } else if (sessionId && !UUID.test(sessionId)) {
+    throw new HttpError("Unknown upload", 400);
+  }
   return {
     email: asText(record.email),
     sessionId,
-    files: files.map((file) => {
+    preEvaluationId,
+    files: (listed ?? []).map((file) => {
       if (!file || typeof file !== "object") throw new HttpError("Upload at least one file", 400);
       const row = file as Record<string, unknown>;
       const path = typeof row.path === "string" ? row.path : "";
@@ -309,6 +329,7 @@ export async function storeReferencedFiles(db: Db, orderId: string, files: reado
       mime: file.mime,
       size: file.size,
       position: index + 1,
+      pageCount: file.pageCount ?? null,
     });
   }
 }
