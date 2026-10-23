@@ -39,7 +39,7 @@ describe("integrations presentation", () => {
       {
         id: "clio",
         name: "Clio",
-        description: "Send evaluation and translation orders from a Clio matter and save finished reports back to it.",
+        description: "Order certified translations from a Clio matter and save them back to it.",
         mark: "C",
         status: "available",
       },

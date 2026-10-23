@@ -56,7 +56,7 @@ function hasErrorParam(params: URLSearchParams): boolean {
 
 /**
  * Read the integrations landing query.
- * `?clio=connected` asks the card to show connected until status replies.
+ * `?clio=connected` is a return flag for the success notice. It is not a connection.
  * Any error query param becomes a fixed notice. The raw value is never shown.
  */
 export function clioLandingFromSearch(search: string): ClioLanding {
@@ -76,19 +76,77 @@ export function clioLandingFromSearch(search: string): ClioLanding {
   return { showConnected: false, notice: null };
 }
 
-export function clioConnectionFromLanding(landing: ClioLanding): ClioConnectionState {
-  return landing.showConnected ? "connected" : "loading";
+/** Status has not arrived yet. The landing query never counts as connected. */
+export function clioConnectionFromLanding(): ClioConnectionState {
+  return "loading";
 }
 
-/** A successful status response decides connected vs disconnected. */
+export type ClioUrl = {
+  pathname: string;
+  search: string;
+  hash: string;
+};
+
+export type ClioHistory = {
+  readonly state: unknown;
+  replaceState(data: unknown, unused: string, url?: string | URL | null): void;
+};
+
+/**
+ * Remove `clio=connected` from a query string.
+ * Also drops the paired `clio_action` flag so the leftover query is not read as a new error.
+ * Returns null when that flag is absent. Returns "" when nothing else remains.
+ */
+export function clioSearchWithoutConnected(search: string): string | null {
+  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  if ((params.get("clio") ?? "").trim().toLowerCase() !== "connected") return null;
+  params.delete("clio");
+  params.delete("clio_action");
+  const next = params.toString();
+  return next ? `?${next}` : "";
+}
+
+/** Drop `?clio=connected` so a reload cannot pretend Clio is connected. */
+export function stripClioConnectedParam(location: ClioUrl, history: ClioHistory): void {
+  const next = clioSearchWithoutConnected(location.search);
+  if (next === null) return;
+  history.replaceState(history.state, "", `${location.pathname}${next}${location.hash}`);
+}
+
+let rememberedClioLanding: ClioLanding | null = null;
+
+/**
+ * Keep the return notice for this document.
+ * The page removes the flag immediately, including a second effect pass in development,
+ * and a reload starts clean because this memory does not survive it.
+ */
+export function rememberClioLanding(search: string): ClioLanding {
+  const parsed = clioLandingFromSearch(search);
+  if (clioSearchWithoutConnected(search) !== null) {
+    rememberedClioLanding = parsed;
+    return parsed;
+  }
+  return rememberedClioLanding ?? parsed;
+}
+
+export function resetRememberedClioLanding(): void {
+  rememberedClioLanding = null;
+}
+
+/** Only a successful status response may show Connected. A failed call shows Connect and an error. */
 export function clioConnectionFromStatus(
   status: ApiResult<ClioStatus>,
   landing: ClioLanding,
 ): { connection: "connected" | "disconnected"; notice: ClioNotice | null } {
   if (!status.ok) {
+    const failure: ClioNotice = {
+      tone: "error",
+      message: clioPublicError(status.error, CLIO_STATUS_ERROR_NOTICE),
+    };
+    const keepLandingError = landing.notice?.tone === "error" && !landing.showConnected;
     return {
-      connection: landing.showConnected ? "connected" : "disconnected",
-      notice: landing.notice ?? { tone: "error", message: clioPublicError(status.error, CLIO_STATUS_ERROR_NOTICE) },
+      connection: "disconnected",
+      notice: keepLandingError ? landing.notice : failure,
     };
   }
   if (status.data.connected) return { connection: "connected", notice: landing.notice };

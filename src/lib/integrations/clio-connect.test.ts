@@ -13,12 +13,17 @@ import {
   clioConnectionFromStatus,
   clioLandingFromSearch,
   clioPublicError,
+  clioSearchWithoutConnected,
   disconnectClio,
   loadClioStatus,
   parseClioStatus,
+  rememberClioLanding,
+  resetRememberedClioLanding,
+  stripClioConnectedParam,
 } from "./clio-connect";
 
 afterEach(() => {
+  resetRememberedClioLanding();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -127,13 +132,13 @@ describe("clio disconnect", () => {
 });
 
 describe("clio landing query", () => {
-  it("shows connected with a success notice for ?clio=connected", () => {
+  it("records a success notice for ?clio=connected and still waits for status", () => {
     const landing = clioLandingFromSearch("?clio=connected");
     expect(landing).toEqual({
       showConnected: true,
       notice: { tone: "success", message: CLIO_CONNECTED_NOTICE },
     });
-    expect(clioConnectionFromLanding(landing)).toBe("connected");
+    expect(clioConnectionFromLanding()).toBe("loading");
     expect(clioLandingFromSearch("?clio=Connected").showConnected).toBe(true);
   });
 
@@ -174,7 +179,7 @@ describe("clio landing query", () => {
   it("ignores unrelated query params", () => {
     expect(clioLandingFromSearch("")).toEqual({ showConnected: false, notice: null });
     expect(clioLandingFromSearch("?redirect_status=succeeded")).toEqual({ showConnected: false, notice: null });
-    expect(clioConnectionFromLanding(clioLandingFromSearch(""))).toBe("loading");
+    expect(clioConnectionFromLanding()).toBe("loading");
   });
 
   it("lets a successful status response decide the card", () => {
@@ -201,6 +206,73 @@ describe("clio landing query", () => {
     });
     expect(
       clioConnectionFromStatus({ ok: false, status: 503, error: "nope" }, connected),
-    ).toEqual({ connection: "connected", notice: connected.notice });
+    ).toEqual({
+      connection: "disconnected",
+      notice: { tone: "error", message: "nope" },
+    });
+  });
+
+  it("stays on Connect when status fails even if the url says clio=connected", () => {
+    const landing = clioLandingFromSearch("?clio=connected");
+    const failures = [
+      { ok: false as const, status: 401, error: "Sign in required" },
+      { ok: false as const, status: 500, error: "Clio status failed" },
+      { ok: false as const, status: 503, error: "Request failed" },
+    ];
+    for (const status of failures) {
+      expect(clioConnectionFromStatus(status, landing), String(status.status)).toEqual({
+        connection: "disconnected",
+        notice: { tone: "error", message: status.error },
+      });
+      expect(clioConnectionFromStatus(status, landing).notice?.message, String(status.status)).not.toBe(
+        CLIO_CONNECTED_NOTICE,
+      );
+    }
+    expect(
+      clioConnectionFromStatus({ ok: false, status: 500, error: "<script>alert(1)</script>" }, landing),
+    ).toEqual({
+      connection: "disconnected",
+      notice: { tone: "error", message: CLIO_STATUS_ERROR_NOTICE },
+    });
+  });
+});
+
+describe("clio connected query cleanup", () => {
+  it("removes clio=connected and leaves the rest of the query", () => {
+    expect(clioSearchWithoutConnected("?clio=connected")).toBe("");
+    expect(clioSearchWithoutConnected("?clio=Connected&clio_action=failed")).toBe("");
+    expect(clioSearchWithoutConnected("?clio=connected&clio_action=failed&foo=1")).toBe("?foo=1");
+    expect(clioSearchWithoutConnected("?foo=1&clio=connected")).toBe("?foo=1");
+    expect(clioSearchWithoutConnected("?clio=error")).toBeNull();
+    expect(clioSearchWithoutConnected("?error=access_denied")).toBeNull();
+    expect(clioSearchWithoutConnected("")).toBeNull();
+  });
+
+  it("replaces the url so a reload cannot fake a connection", () => {
+    const replaceState = vi.fn();
+    stripClioConnectedParam(
+      { pathname: "/dashboard/integrations", search: "?clio=connected", hash: "#apps" },
+      { state: { idx: 1 }, replaceState },
+    );
+    expect(replaceState).toHaveBeenCalledWith({ idx: 1 }, "", "/dashboard/integrations#apps");
+
+    const untouched = vi.fn();
+    stripClioConnectedParam(
+      { pathname: "/dashboard/integrations", search: "?clio=error", hash: "" },
+      { state: null, replaceState: untouched },
+    );
+    expect(untouched).not.toHaveBeenCalled();
+  });
+
+  it("keeps the return notice after the connected flag is stripped", () => {
+    const landing = rememberClioLanding("?clio=connected&clio_action=failed");
+    expect(landing).toEqual({
+      showConnected: true,
+      notice: { tone: "error", message: CLIO_ACTION_FAILED_NOTICE },
+    });
+    expect(rememberClioLanding("")).toEqual(landing);
+    expect(rememberClioLanding("?clio_action=failed")).toEqual(landing);
+    resetRememberedClioLanding();
+    expect(rememberClioLanding("?clio=error").notice).toEqual({ tone: "error", message: CLIO_ERROR_NOTICE });
   });
 });

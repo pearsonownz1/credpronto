@@ -23,7 +23,7 @@ describe("integrations apps", () => {
     expect(start).toBeGreaterThan(-1);
     expect(card).toContain("Clio");
     expect(card).toContain(">C<");
-    expect(card).toContain("Send evaluation and translation orders from a Clio matter and save finished reports back to it.");
+    expect(card).toContain("Order certified translations from a Clio matter and save them back to it.");
     expect(card).toContain('data-testid="integration-clio-status"');
     expect(card).toContain("Loading…");
     expect(card).not.toContain("Coming soon");

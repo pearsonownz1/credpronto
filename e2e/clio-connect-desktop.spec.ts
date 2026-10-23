@@ -44,7 +44,7 @@ async function signInThenOpen(page: Page, path: string) {
 test("?clio=connected shows the connected card and a success notice", async ({ page }) => {
   await stubIntegrations(page, { connected: true });
   await signInThenOpen(page, "/dashboard/integrations?clio=connected");
-  await expect(page).toHaveURL(/\/dashboard\/integrations\?clio=connected$/);
+  await expect(page).toHaveURL(/\/dashboard\/integrations$/);
   await expect(page.getByTestId("integration-clio-status")).toHaveText("Connected");
   await expect(page.getByTestId("clio-notice")).toHaveText("Clio is connected.");
   await expect(page.getByTestId("clio-disconnect")).toBeVisible();
@@ -52,9 +52,21 @@ test("?clio=connected shows the connected card and a success notice", async ({ p
   await page.screenshot({ path: "artifacts/clio-connected.png", fullPage: true });
 });
 
+test("?clio=connected stays on Connect when status fails and the param is removed", async ({ page }) => {
+  await stubIntegrations(page, { statusStatus: 500, statusError: "Clio status failed" });
+  await signInThenOpen(page, "/dashboard/integrations?clio=connected");
+  await expect(page).toHaveURL(/\/dashboard\/integrations$/);
+  await expect(page.getByTestId("clio-notice")).toHaveText("Clio status failed");
+  await expect(page.getByTestId("clio-connect")).toHaveAttribute("href", "/api/integrations/clio/connect");
+  await expect(page.getByTestId("clio-disconnect")).toHaveCount(0);
+  await expect(page.getByTestId("integration-clio-status")).toHaveCount(0);
+  await expect(page.getByTestId("integration-clio")).not.toContainText("Clio is connected.");
+});
+
 test("a failed matter action stays connected and explains what did not finish", async ({ page }) => {
   await stubIntegrations(page, { connected: true });
   await signInThenOpen(page, "/dashboard/integrations?clio=connected&clio_action=failed");
+  await expect(page).toHaveURL(/\/dashboard\/integrations$/);
   await expect(page.getByTestId("integration-clio-status")).toHaveText("Connected");
   await expect(page.getByTestId("clio-notice")).toHaveText("Clio is connected. The matter action could not be added.");
   await expect(page.getByTestId("clio-disconnect")).toBeVisible();

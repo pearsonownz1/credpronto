@@ -6,7 +6,7 @@ import { PARTNER_APPS } from "@/lib/integrations/present";
 import { ClioCard, ComingSoonPartnerCard } from "./clio-card";
 
 const clio = PARTNER_APPS[0];
-const description = "Send evaluation and translation orders from a Clio matter and save finished reports back to it.";
+const description = "Order certified translations from a Clio matter and save them back to it.";
 
 function clioHtml(connection: "loading" | "connected" | "disconnected", notice: { tone: "success" | "error"; message: string } | null = null) {
   return renderToStaticMarkup(

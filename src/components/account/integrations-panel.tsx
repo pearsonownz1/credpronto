@@ -25,9 +25,10 @@ import {
   clioAfterDisconnect,
   clioConnectionFromLanding,
   clioConnectionFromStatus,
-  clioLandingFromSearch,
   disconnectClio,
   loadClioStatus,
+  rememberClioLanding,
+  stripClioConnectedParam,
   type ClioConnectionState,
   type ClioNotice,
   type ClioStatus,
@@ -458,7 +459,7 @@ function clioSearchServerSnapshot() {
 
 function PartnerApps() {
   const search = useSyncExternalStore(subscribeClioSearch, clioSearchSnapshot, clioSearchServerSnapshot);
-  const landing = clioLandingFromSearch(search);
+  const landing = rememberClioLanding(search);
   const [status, setStatus] = useState<ApiResult<ClioStatus> | null>(null);
   const [disconnectState, setDisconnectState] = useState<{
     connection: "connected" | "disconnected";
@@ -467,6 +468,9 @@ function PartnerApps() {
   const [disconnecting, setDisconnecting] = useState(false);
 
   useEffect(() => {
+    rememberClioLanding(window.location.search);
+    stripClioConnectedParam(window.location, window.history);
+
     let cancel = false;
     void loadClioStatus().then((result) => {
       if (!cancel) setStatus(result);
@@ -488,7 +492,10 @@ function PartnerApps() {
 
   const fromStatus = status
     ? clioConnectionFromStatus(status, landing)
-    : { connection: clioConnectionFromLanding(landing), notice: landing.notice };
+    : {
+        connection: clioConnectionFromLanding(),
+        notice: landing.notice?.tone === "error" ? landing.notice : null,
+      };
   const view = disconnectState ?? fromStatus;
   const connection: ClioConnectionState = view.connection;
   const notice = view.notice;
