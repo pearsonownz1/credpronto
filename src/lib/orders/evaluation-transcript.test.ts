@@ -70,9 +70,21 @@ const DIPLOMA = `Baccalauréat de l'Enseignement Secondaire
 Le diplôme du Baccalauréat de l'Enseignement Secondaire Technique et Professionnel
 est conféré à M. KOUAMOU NANA MYRTHE ARISTIDE`;
 
+function headedReleve(rows: string, columns = ""): string {
+  return `RELEVE DE NOTES
+OFFICE DU BACCALAUREAT DU CAMEROUN
+M KOUAMOU NANA MYRTHE ARISTIDE
+BACCALAUREAT DE L'ENSEIGNEMENT SECONDAIRE
+Session de 2001
+${columns}
+${rows}`;
+}
+
 describe("course extract from the coefficient transcript", () => {
   it("turns note × coefficient into the mark out of 20 and skips totals", () => {
-    const extracted = courseExtractFromTranscript(TRANSCRIPT);
+    const parsed = courseExtractFromTranscript(TRANSCRIPT);
+    const extracted = parsed.extract;
+    expect(parsed.failures).toEqual([]);
     expect(extracted).toMatchObject({
       applicant: "KOUAMOU NANA MYRTHE ARISTIDE",
       country: "Cameroon",
@@ -115,6 +127,61 @@ describe("course extract from the coefficient transcript", () => {
     ]);
   });
 
+  it("keeps a mark already out of 20 and divides only a value over 20", () => {
+    const parsed = courseExtractFromTranscript(
+      headedReleve(`Histoire | 2 | 12
+Mathématiques | 3 | 14
+Français | 2 | 11
+Sciences | 2 | 25`),
+    );
+    expect(parsed.extract?.years[0]?.courses.map((course) => [course.originalName, course.localGrade])).toEqual([
+      ["Histoire", "12"],
+      ["Mathématiques", "14"],
+      ["Français", "11"],
+      ["Sciences", "12.5"],
+    ]);
+    expect(parsed.failures).toEqual([]);
+  });
+
+  it("divides a mark of 12 when the column is Note × Coef", () => {
+    const parsed = courseExtractFromTranscript(
+      headedReleve(
+        `Histoire | 2 | 12
+Anglais | 2 | 15
+Mathématiques | 2 | 17`,
+        "MATIERES | COEF. | Note x Coef",
+      ),
+    );
+    expect(parsed.extract?.years[0]?.courses.map((course) => [course.originalName, course.localGrade])).toEqual([
+      ["Histoire", "6"],
+      ["Anglais", "7.5"],
+      ["Mathématiques", "8.5"],
+    ]);
+  });
+
+  it("records a coefficient of 0, a result over 20, and a missing coefficient", () => {
+    const parsed = courseExtractFromTranscript(
+      headedReleve(`Histoire | 2 | 12
+Mathématiques | 3 | 14
+Français | 2 | 11
+Sport | 0 | 15
+Chimie | 2 | 50
+Physique | 18
+Biologie | | 16`),
+    );
+    expect(parsed.extract?.years[0]?.courses.map((course) => course.originalName)).toEqual([
+      "Histoire",
+      "Mathématiques",
+      "Français",
+    ]);
+    expect(parsed.failures).toEqual([
+      { row: "Sport | 0 | 15", reason: "Coefficient is 0" },
+      { row: "Chimie | 2 | 50", reason: "Result is over 20" },
+      { row: "Physique | 18", reason: "No coefficient" },
+      { row: "Biologie | | 16", reason: "No coefficient" },
+    ]);
+  });
+
   it("recovers a model extract that copied the weighted column and dropped the total row", () => {
     const recovered = recoverCourseExtract({
       applicant: "KOUAMOU NANA MYRTHE ARISTIDE",
@@ -133,10 +200,40 @@ describe("course extract from the coefficient transcript", () => {
         },
       ],
     });
-    expect(recovered.years[0]?.courses).toEqual([
+    expect(recovered.extract.years[0]?.courses).toEqual([
       { originalName: "Mathématiques", englishName: "Mathematics", localCredits: 2, localGrade: "12.5" },
     ]);
-    expect(assembleCourse(recovered)?.kind).toBe("course_by_course");
+    expect(recovered.failures).toEqual([]);
+    expect(assembleCourse(recovered.extract)?.kind).toBe("course_by_course");
+  });
+
+  it("records model rows with no coefficient, a zero coefficient, or a result over 20", () => {
+    const recovered = recoverCourseExtract({
+      applicant: "KOUAMOU NANA MYRTHE ARISTIDE",
+      institution: "Office du Baccalauréat du Cameroun",
+      country: "Cameroon",
+      credential: "Baccalauréat",
+      scale: "20",
+      years: [
+        {
+          year: "2001",
+          courses: [
+            { originalName: "Histoire", englishName: "History", localCredits: 2, localGrade: "12" },
+            { originalName: "Sport", englishName: "Sport", localCredits: 0, localGrade: "15" },
+            { originalName: "Chimie", englishName: "Chemistry", localCredits: 2, localGrade: "50" },
+            { originalName: "Physique", englishName: "Physics", localCredits: Number.NaN, localGrade: "16" },
+          ],
+        },
+      ],
+    });
+    expect(recovered.extract.years[0]?.courses).toEqual([
+      { originalName: "Histoire", englishName: "History", localCredits: 2, localGrade: "12" },
+    ]);
+    expect(recovered.failures).toEqual([
+      { row: "Sport | 0 | 15", reason: "Coefficient is 0" },
+      { row: "Chimie | 2 | 50", reason: "Result is over 20" },
+      { row: "Physique | NaN | 16", reason: "No coefficient" },
+    ]);
   });
 
   it("gives course-by-course the transcript page and the diploma the other page", () => {

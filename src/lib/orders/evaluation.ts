@@ -763,11 +763,12 @@ export async function evaluateServiceFromText(
   if (degreeCount == null) return null;
   if (service === "course_by_course") {
     const parsed = courseExtractFromTranscript(pageText);
-    if (parsed) {
+    for (const failure of parsed.failures) console.error(`course_by_course: ${failure.row}: ${failure.reason}`);
+    if (parsed.extract) {
       const fromTranscript = await buildEvaluatedResult(
         db,
         service,
-        parsed,
+        parsed.extract,
         degreeCount,
         filenames,
         order.edgeCredentialId,
@@ -775,8 +776,12 @@ export async function evaluateServiceFromText(
       if (fromTranscript.result) return fromTranscript.result;
     }
   }
-  const extracted =
-    service === "diploma" ? await extractDiploma(pageText) : recoverCourseExtract(await extractCourses(pageText));
+  const recovered = service === "course_by_course" ? recoverCourseExtract(await extractCourses(pageText)) : null;
+  if (recovered) {
+    for (const failure of recovered.failures) console.error(`course_by_course: ${failure.row}: ${failure.reason}`);
+  }
+  const extracted = service === "diploma" ? await extractDiploma(pageText) : recovered ? recovered.extract : null;
+  if (!extracted) return null;
   const built = await buildEvaluatedResult(
     db,
     service,

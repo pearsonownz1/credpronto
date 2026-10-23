@@ -59,16 +59,14 @@ function overlap(segment: string, line: string): number {
   return total;
 }
 
-/**
- * Source line index for each segment. Indexes are non-decreasing and point at
- * non-blank source lines, so several segments can belong to one printed line.
- */
-export function assignSourceIndexes(sourceText: string | null, segments: readonly string[]): number[] {
-  const lines = sourceLines(sourceText);
-  const content = lines.flatMap((line, index) => (line.trim() ? [{ line, index }] : []));
-  if (segments.length === 0) return [];
-  if (content.length === 0) return segments.map(() => 0);
+type SourceLine = { line: string; index: number };
 
+/**
+ * Order-preserving pass. Several segments may share one printed line, and the
+ * walk only moves forward, so a segment stored before its source line cannot
+ * reach that line.
+ */
+function assignForward(segments: readonly string[], content: readonly SourceLine[]): number[] {
   const segmentCount = segments.length;
   const lineCount = content.length;
   const floor = Number.NEGATIVE_INFINITY;
@@ -118,6 +116,47 @@ export function assignSourceIndexes(sourceText: string | null, segments: readonl
     }
   }
   return assigned;
+}
+
+function bestSourceLine(
+  segment: string,
+  content: readonly SourceLine[],
+): { index: number; score: number; second: number } {
+  let index = content[0]?.index ?? 0;
+  let score = -1;
+  let second = -1;
+  for (const line of content) {
+    const value = overlap(segment, line.line);
+    if (value > score) {
+      second = score;
+      score = value;
+      index = line.index;
+    } else if (value > second) {
+      second = value;
+    }
+  }
+  return { index, score, second };
+}
+
+/**
+ * Source line index for each segment. A segment stored out of order is matched
+ * to the source line it actually resembles, so several segments can still share
+ * one printed line.
+ */
+export function assignSourceIndexes(sourceText: string | null, segments: readonly string[]): number[] {
+  const lines = sourceLines(sourceText);
+  const content = lines.flatMap((line, index) => (line.trim() ? [{ line, index }] : []));
+  if (segments.length === 0) return [];
+  if (content.length === 0) return segments.map(() => 0);
+
+  const forward = assignForward(segments, content);
+  return forward.map((sourceIndex, segmentAt) => {
+    const segment = segments[segmentAt] ?? "";
+    const best = bestSourceLine(segment, content);
+    const current = overlap(segment, lines[sourceIndex] ?? "");
+    if (best.score >= 2 && best.score > current && best.score > best.second) return best.index;
+    return sourceIndex;
+  });
 }
 
 export function segmentsInSourceOrder(sourceText: string | null, paragraphs: readonly string[]): StoredSegment[] {
