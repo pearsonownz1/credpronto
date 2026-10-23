@@ -9,8 +9,8 @@ import {
   CONFIRMING_PAYMENT_COPY,
   CONFIRMING_PAYMENT_DETAIL,
   ORDERS_DASHBOARD_HREF,
-  QUICK_CHECK_COPY,
   QUICK_CHECK_DETAIL,
+  paidReviewHeading,
   downloadEmailedLine,
   downloadPhase,
   downloadReadyCopy,
@@ -168,7 +168,7 @@ function InReview({ order, preview }: { order: CustomerOrder; preview: ReactNode
       <div data-testid="download-phase" data-phase="review" className="mx-auto w-full max-w-[720px] text-center">
         <OrderNumber orderId={order.orderId} />
         <h1 className="mt-3 text-[28px] font-bold leading-tight tracking-[-0.5px] md:text-[32px]">
-          {QUICK_CHECK_COPY}
+          {paidReviewHeading(order)}
         </h1>
         <p data-testid="email-note" className="mt-3 text-base text-ink-muted">
           {QUICK_CHECK_DETAIL}

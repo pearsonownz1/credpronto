@@ -655,6 +655,26 @@ export const CONFIRMING_PAYMENT_DETAIL =
 /** Heading while a paid translation is still awaiting release of the certified PDF. */
 export const QUICK_CHECK_COPY = "Paid. We're finishing your certified PDF.";
 
+/** Heading while a paid evaluation report is still being finished. */
+export const EVALUATION_REVIEW_COPY = "Paid. We're finishing your credential evaluation report.";
+
+/** Heading while a paid translation and evaluation are still being finished together. */
+export const COMBO_REVIEW_COPY = "Paid. We're finishing your certified translation and credential evaluation.";
+
+/** Post-payment heading. Translation-only keeps the certified PDF line. */
+export function paidReviewHeading(order: {
+  services?: readonly string[] | null;
+  service?: string | null;
+  orderType?: string | null;
+  serviceType?: string | null;
+  includeTranslation?: boolean | null;
+}): string {
+  const contents = orderContents(order);
+  if (contents.evaluation && contents.translation) return COMBO_REVIEW_COPY;
+  if (contents.evaluation) return EVALUATION_REVIEW_COPY;
+  return QUICK_CHECK_COPY;
+}
+
 /**
  * Nothing for the customer to do on this hold.
  * No customer-facing turnaround is stated for the post-payment review, so this line does not name one.

@@ -22,6 +22,7 @@ import {
   ORDERS_DASHBOARD_HREF,
   QUICK_CHECK_COPY,
   QUICK_CHECK_DETAIL,
+  paidReviewHeading,
   downloadEmailedLine,
   orderContents,
   packageProgress,
@@ -616,6 +617,20 @@ describe("download phase", () => {
     expect(CONFIRMING_PAYMENT_COPY).toBe("Confirming payment");
     expect(CONFIRMING_PAYMENT_DETAIL).not.toMatch(/second|minute|countdown|usually/i);
     expect(QUICK_CHECK_COPY).toBe("Paid. We're finishing your certified PDF.");
+    expect(paidReviewHeading({ services: ["translation"], service: "diploma" })).toBe(QUICK_CHECK_COPY);
+    expect(paidReviewHeading({ orderType: "translation", service: null })).toBe(QUICK_CHECK_COPY);
+    expect(paidReviewHeading({ services: ["diploma"], orderType: "translation", service: null })).toBe(
+      "Paid. We're finishing your credential evaluation report.",
+    );
+    expect(paidReviewHeading({ orderType: "evaluation", service: "course_by_course", includeTranslation: false })).toBe(
+      "Paid. We're finishing your credential evaluation report.",
+    );
+    expect(
+      paidReviewHeading({ services: ["translation", "diploma"], orderType: "translation", service: null }),
+    ).toBe("Paid. We're finishing your certified translation and credential evaluation.");
+    expect(paidReviewHeading({ orderType: "evaluation", service: "diploma", includeTranslation: true })).toBe(
+      "Paid. We're finishing your certified translation and credential evaluation.",
+    );
     expect(QUICK_CHECK_DETAIL).toBe("Nothing to do. We'll email you when it's ready.");
     expect(QUICK_CHECK_DETAIL).not.toMatch(/second|minute|countdown|usually|\d+/i);
     expect(CLOSE_PAGE_NOTE).toBe("You can close this page.");

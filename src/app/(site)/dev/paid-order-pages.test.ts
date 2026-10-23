@@ -35,7 +35,8 @@ describe("paid order fixture pages", () => {
 
   it("keeps a finished translation and a pending evaluation on Almost Ready without a download", () => {
     const html = renderToStaticMarkup(createElement(ComboPage));
-    expect(html).toContain("finishing your certified PDF");
+    expect(html).toContain("Paid. We&#x27;re finishing your certified translation and credential evaluation.");
+    expect(html).not.toContain("certified PDF");
     expect(html).toContain("Nothing to do. We&#x27;ll email you when it&#x27;s ready.");
     expect(html).toContain('data-testid="package-step-almost_ready" data-state="current"');
     expect(html).toContain("Order 9b80cd30");
@@ -49,7 +50,8 @@ describe("paid order fixture pages", () => {
 
   it("shows a paid evaluation on Quick Review without a download", () => {
     const html = renderToStaticMarkup(createElement(EvaluationPage));
-    expect(html).toContain("finishing your certified PDF");
+    expect(html).toContain("Paid. We&#x27;re finishing your credential evaluation report.");
+    expect(html).not.toContain("certified PDF");
     expect(html).toContain('data-testid="package-step-quick_review" data-state="current"');
     expect(html).toContain("Order 22222222");
     expect(html).not.toContain('data-testid="download-evaluation"');

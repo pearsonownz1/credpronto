@@ -117,7 +117,8 @@ describe("download page", () => {
     const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
     expect(html).toContain("Order CP-24817");
     expect(html.match(/Order CP-24817/g)).toHaveLength(1);
-    expect(html).toContain("finishing your certified PDF");
+    expect(html).toContain("Paid. We&#x27;re finishing your credential evaluation report.");
+    expect(html).not.toContain("certified PDF");
     expect(html).toContain("Nothing to do. We&#x27;ll email you when it&#x27;s ready.");
     expect(html).toContain('data-testid="package-step-quick_review" data-state="current"');
     expect(html).toContain('data-testid="package-step-almost_ready" data-state="upcoming"');
@@ -157,7 +158,8 @@ describe("download page", () => {
     expect(html).toContain("Order 9b80cd30");
     expect(html).not.toContain("9b80cd30-57e1-4630-8354-9607210dbeac");
     expect(html.match(/Order 9b80cd30/g)).toHaveLength(1);
-    expect(html).toContain("finishing your certified PDF");
+    expect(html).toContain("Paid. We&#x27;re finishing your certified translation and credential evaluation.");
+    expect(html).not.toContain("certified PDF");
     expect(html).toContain("Nothing to do. We&#x27;ll email you when it&#x27;s ready.");
     expect(html).toContain('data-testid="package-step-quick_review" data-state="done"');
     expect(html).toContain('data-testid="package-step-almost_ready" data-state="current"');
