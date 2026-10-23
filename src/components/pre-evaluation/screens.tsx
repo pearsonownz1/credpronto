@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type DragEvent, type FormEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { buttonClasses, fieldClass } from "@/components/flow/ui";
 import {
   getPreEvaluation,
@@ -11,6 +11,7 @@ import {
 } from "@/lib/pre-evaluation/client";
 import { PRE_EVALUATION_ACCEPT, preEvaluationFileError } from "@/lib/pre-evaluation/file";
 import { signupHrefFromPrefill } from "@/lib/pre-evaluation/handoff";
+import { watchPreviewLink } from "@/lib/pre-evaluation/preview-link";
 import type { PreEvaluationProgress } from "@/lib/pre-evaluation/progress";
 import { previewWatermarkDataUrl } from "@/lib/pre-evaluation/watermark";
 
@@ -273,7 +274,7 @@ function previewFrameKind(url: string): "image" | "document" {
   return /\.(png|jpe?g|gif|webp)$/.test(path) ? "image" : "document";
 }
 
-function PreviewFrame({ url, onError }: { url: string; onError: () => void }) {
+function PreviewFrame({ url, onError }: { url: string; onError?: () => void }) {
   if (previewFrameKind(url) === "image") {
     return (
       // The signed host comes from the API. next/image cannot allow it ahead of time.
@@ -282,44 +283,82 @@ function PreviewFrame({ url, onError }: { url: string; onError: () => void }) {
     );
   }
   return (
-    <iframe
-      title="Likely U.S. equivalent preview"
-      src={url}
-      className="mt-4 h-72 w-full border-0 bg-white"
-      referrerPolicy="no-referrer"
-      onError={onError}
-    />
+    <iframe title="Likely U.S. equivalent preview" src={url} className="mt-4 h-72 w-full border-0 bg-white" referrerPolicy="no-referrer" />
   );
 }
 
-/** Shows the current signed link. A failed load fetches a fresh one once. */
+/**
+ * Shows the current signed link. Images retry a failed load once.
+ * PDFs sit in an iframe, which does not report load errors, so a visible tab
+ * fetches a new link 30 seconds before the 5 minute expiry.
+ */
 function SignedPreview({ id, previewUrl }: { id: string; previewUrl: string | null }) {
   const [link, setLink] = useState({ source: previewUrl, url: previewUrl, attempt: 0 });
-  const refreshing = useRef<string | null>(null);
+  const refreshing = useRef(false);
   if (link.source !== previewUrl) {
     setLink({ source: previewUrl, url: previewUrl, attempt: 0 });
   }
   const active = link.source === previewUrl ? link : { source: previewUrl, url: previewUrl, attempt: 0 };
+  const shownUrl = active.url;
+
+  useEffect(() => {
+    if (!shownUrl) return;
+    let cancelled = false;
+    const stop = watchPreviewLink({
+      issuedAt: Date.now(),
+      isVisible: () => document.visibilityState !== "hidden",
+      listen: (onChange) => {
+        document.addEventListener("visibilitychange", onChange);
+        return () => document.removeEventListener("visibilitychange", onChange);
+      },
+      onRefresh: () => {
+        if (cancelled || refreshing.current) return;
+        refreshing.current = true;
+        void getPreEvaluation(id)
+          .then((record) => {
+            if (cancelled || record.status !== "ready" || !record.previewUrl || record.previewUrl === shownUrl) return;
+            setLink({ source: previewUrl, url: record.previewUrl, attempt: 0 });
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            refreshing.current = false;
+          });
+      },
+    });
+    return () => {
+      cancelled = true;
+      stop();
+    };
+  }, [id, previewUrl, shownUrl]);
 
   async function onLoadError() {
+    if (!shownUrl || previewFrameKind(shownUrl) !== "image") return;
     if (active.attempt >= 1) {
       setLink({ source: previewUrl, url: null, attempt: active.attempt + 1 });
       return;
     }
-    if (refreshing.current === previewUrl) return;
-    refreshing.current = previewUrl;
+    if (refreshing.current) return;
+    refreshing.current = true;
     try {
       const record = await getPreEvaluation(id);
-      setLink({ source: previewUrl, url: replacementPreviewUrl(record, 1), attempt: 1 });
+      const next = replacementPreviewUrl(record, 1);
+      setLink({ source: previewUrl, url: next, attempt: 1 });
     } catch {
       setLink({ source: previewUrl, url: null, attempt: 1 });
     } finally {
-      if (refreshing.current === previewUrl) refreshing.current = null;
+      refreshing.current = false;
     }
   }
 
   if (!active.url) return null;
-  return <PreviewFrame key={`${active.attempt}:${active.url}`} url={active.url} onError={() => void onLoadError()} />;
+  const image = previewFrameKind(active.url) === "image";
+  return (
+    <PreviewFrame
+      key={`${active.attempt}:${active.url}`}
+      url={active.url}
+      onError={image ? () => void onLoadError() : undefined}
+    />
+  );
 }
 
 function OfficialEvaluationButton({ id }: { id: string }) {
