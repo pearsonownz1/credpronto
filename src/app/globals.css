@@ -209,14 +209,42 @@ body {
   }
 }
 
+.release-indeterminate {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(31, 94, 255, 0) 30%,
+    #1f5eff 50%,
+    rgba(31, 94, 255, 0) 70%,
+    transparent 100%
+  );
+  animation: release-indeterminate 1.4s ease-in-out infinite;
+}
+
+@keyframes release-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .reading-fill {
     transition: none;
   }
 
   .reading-shine,
-  .reading-spinner {
+  .reading-spinner,
+  .release-indeterminate {
     animation: none;
+  }
+
+  .release-indeterminate {
+    transform: none;
+    background: #1f5eff;
+    opacity: 0.45;
   }
 
   .reading-spinner {

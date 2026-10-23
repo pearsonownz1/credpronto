@@ -118,6 +118,28 @@ describe("dashboard server auth", () => {
     expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
 
+  it("rewrites the paid-review fixture to the 404 page in production", async () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+
+    const response = await proxy(new NextRequest("http://127.0.0.1:3000/dev/paid-review"));
+
+    expect(response.headers.get("x-middleware-rewrite")).toContain("/missing");
+    expect(response.headers.get("location")).toBeNull();
+  });
+
+  it("leaves the paid-review fixture open outside production", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("CREDPRONTO_MOCK", "");
+    vi.stubEnv("NEXT_PUBLIC_CREDPRONTO_MOCK", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
+
+    const response = await proxy(new NextRequest("http://127.0.0.1:3000/dev/paid-review"));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+  });
+
   it("leaves public pages open", async () => {
     vi.stubEnv("CREDPRONTO_MOCK", "");
     vi.stubEnv("NEXT_PUBLIC_CREDPRONTO_MOCK", "");

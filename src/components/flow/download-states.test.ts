@@ -136,7 +136,7 @@ describe("download page", () => {
     expect(html).toContain('data-state="current" data-step="download"');
     expect(html).toContain('data-step="pay"');
     expect(html).not.toContain('data-step="review"');
-    expect(html).not.toContain("Quick final check");
+    expect(html).not.toContain("finishing your certified PDF");
     expect(html).not.toContain('data-testid="paid-preview"');
     expect(html).not.toContain('data-testid="download-certified"');
   });
@@ -271,10 +271,25 @@ describe("download page", () => {
       service: null,
     });
     const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
-    expect(html).toContain("Quick final check");
-    expect(html).toContain("The certified PDF is not released yet.");
+    expect(html).toContain("finishing your certified PDF");
+    expect(html).toContain("nothing you need to do");
     expect(html).toContain("buyer@example.com");
-    expect(html).toContain("when it is released.");
+    expect(html).toContain("when your certified PDF is ready.");
+    expect(html).toContain("You can close this page.");
+    expect(html).toContain('data-testid="paid-receipt"');
+    expect(html).toContain("Paid $19.90 on April 1, 2026");
+    expect(html).toContain('data-testid="release-progress"');
+    expect(html).toContain('aria-valuetext="Final review"');
+    expect(html).not.toContain("aria-valuenow");
+    expect(html).not.toMatch(/\d+%/);
+    expect(html).toContain('data-testid="release-step-paid" data-state="done"');
+    expect(html).toContain('data-testid="release-step-translated" data-state="done"');
+    expect(html).toContain('data-testid="release-step-review" data-state="current"');
+    expect(html).toContain('data-testid="release-step-ready" data-state="upcoming"');
+    expect(html).toContain("release-indeterminate");
+    expect(html).toContain("motion-reduce:animate-none");
+    expect(html).toContain("Back to dashboard");
+    expect(html).toContain('href="/dashboard"');
     expect(html).not.toMatch(/second|minute|countdown|usually/i);
     expect(html).not.toContain("being certified");
     expect(html).toContain('data-testid="paid-preview"');
@@ -300,7 +315,7 @@ describe("download page", () => {
       service: null,
     });
     const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
-    expect(html).toContain("Quick final check");
+    expect(html).toContain("finishing your certified PDF");
     expect(html).toContain('data-testid="paid-preview"');
     expect(html).not.toContain('data-testid="download-certified"');
   });
@@ -321,7 +336,7 @@ describe("download page", () => {
     expect(html).toContain(">Download<");
     expect(html).not.toContain("Evaluated in");
     expect(html).not.toContain("Confirming payment");
-    expect(html).not.toContain("Quick final check");
+    expect(html).not.toContain("finishing your certified PDF");
   });
 
   it("shows the download button as soon as a paid order is released", () => {
@@ -355,7 +370,7 @@ describe("download page", () => {
     expect(html).toContain('data-state="done" data-step="preview"');
     expect(html).not.toContain('data-testid="paid-preview"');
     expect(html).not.toContain('data-testid="download-certified"');
-    expect(html).not.toContain("Quick final check");
+    expect(html).not.toContain("finishing your certified PDF");
     expect(html).not.toMatch(/second|minute|countdown|usually/i);
   });
 

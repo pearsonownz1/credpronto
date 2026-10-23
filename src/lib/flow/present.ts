@@ -541,17 +541,65 @@ export const CONFIRMING_PAYMENT_COPY = "Confirming payment";
 export const CONFIRMING_PAYMENT_DETAIL =
   "Stripe sent you back before the payment showed on this order. This page keeps checking.";
 
-/** Heading while a paid order is still awaiting release. */
-export const QUICK_CHECK_COPY = "Quick final check";
+/** Heading while a paid translation is still awaiting release of the certified PDF. */
+export const QUICK_CHECK_COPY = "Paid. We're finishing your certified PDF.";
 
+/**
+ * Nothing for the customer to do on this hold.
+ * No customer-facing turnaround is stated for the post-payment review, so this line does not name one.
+ */
 export const QUICK_CHECK_DETAIL =
-  "The certified PDF is not released yet. This page switches to Download when it is.";
+  "There's nothing you need to do. We'll email you when your certified PDF is ready.";
+
+export const CLOSE_PAGE_NOTE = "You can close this page.";
+
+/** Customer's orders dashboard. */
+export const ORDERS_DASHBOARD_HREF = "/dashboard";
 
 export function paidReviewEmailLine(email: string | null | undefined): string {
   const address = email?.trim();
-  return address
-    ? `We'll email ${address} when it is released.`
-    : "We'll email you when it is released.";
+  if (!address) return QUICK_CHECK_DETAIL;
+  return `There's nothing you need to do. We'll email ${address} when your certified PDF is ready.`;
+}
+
+export type ReleaseProgressState = "done" | "current" | "upcoming";
+
+/** Paid translation still in final review. No percentage: the current step is indeterminate. */
+export const RELEASE_PROGRESS_STEPS: Array<{
+  id: "paid" | "translated" | "review" | "ready";
+  label: string;
+  state: ReleaseProgressState;
+}> = [
+  { id: "paid", label: "Paid", state: "done" },
+  { id: "translated", label: "Translated", state: "done" },
+  { id: "review", label: "Final review", state: "current" },
+  { id: "ready", label: "Ready", state: "upcoming" },
+];
+
+/** Receipt from fields already on the order. Omits an amount or date the order does not have. */
+export function paidReceiptLine(order: { totalCents: number | null; paidAt: string | null }): string {
+  const amount = order.totalCents == null ? null : totalLabel(order.totalCents);
+  const date = paidDateLabel(order.paidAt);
+  if (amount && date) return `Paid ${amount} on ${date}`;
+  if (amount) return `Paid ${amount}`;
+  if (date) return `Paid on ${date}`;
+  return "Paid";
+}
+
+function paidDateLabel(iso: string | null | undefined): string | null {
+  const trimmed = iso?.trim();
+  if (!trimmed) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
+  const date = match
+    ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])))
+    : new Date(trimmed);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
 }
 
 /** Ready-state line. The certified file is already in the customer's inbox. */

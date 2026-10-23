@@ -1,18 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { flowUsesMock, getFlowClient } from "@/lib/flow/client";
 import {
   CONFIRMING_PAYMENT_COPY,
   CONFIRMING_PAYMENT_DETAIL,
+  CLOSE_PAGE_NOTE,
+  ORDERS_DASHBOARD_HREF,
   QUICK_CHECK_COPY,
-  QUICK_CHECK_DETAIL,
+  RELEASE_PROGRESS_STEPS,
   downloadEmailedLine,
   downloadPhase,
   downloadReadyCopy,
   isCustomerEvaluation,
   isTranslationBundle,
+  paidReceiptLine,
   paidReviewEmailLine,
   totalLabel,
   type DownloadFileKind,
@@ -182,24 +185,108 @@ function Certifying({
   email: string;
 }) {
   return (
+    <PaidReviewBody
+      orderId={order.orderId}
+      email={email}
+      totalCents={order.totalCents}
+      paidAt={order.paidAt}
+      preview={<PaidPreview token={token} order={order} />}
+    />
+  );
+}
+
+/** Paid translation held for final review. `preview` is the read-only viewer for that order. */
+export function PaidReviewBody({
+  orderId,
+  email,
+  totalCents,
+  paidAt,
+  preview,
+}: {
+  orderId: string;
+  email: string | null;
+  totalCents: number | null;
+  paidAt: string | null;
+  preview: ReactNode;
+}) {
+  return (
     <>
       <div data-testid="download-phase" data-phase="review" className="mx-auto w-full max-w-[720px] text-center">
-        <p className="preview-kicker blue">Order {order.orderId}</p>
+        <p className="preview-kicker blue">Order {orderId}</p>
         <h1 className="mt-3 text-[28px] font-bold leading-tight tracking-[-0.5px] md:text-[32px]">
           {QUICK_CHECK_COPY}
         </h1>
-        <p className="mt-3 text-base text-ink-muted">{QUICK_CHECK_DETAIL}</p>
-        <p data-testid="email-note" className="mt-2 text-base text-ink-muted">
+        <p data-testid="email-note" className="mt-3 text-base text-ink-muted">
           {paidReviewEmailLine(email)}
         </p>
+        <p data-testid="paid-receipt" className="mt-3 text-base text-ink">
+          {paidReceiptLine({ totalCents, paidAt })}
+        </p>
+        <ReleaseProgress />
+        <p data-testid="close-page-note" className="mt-6 text-base font-semibold text-ink">
+          {CLOSE_PAGE_NOTE}
+        </p>
+        <Link
+          href={ORDERS_DASHBOARD_HREF}
+          data-testid="back-to-dashboard"
+          className={buttonClasses("secondary", "mt-4 h-11 px-5 text-[15px]")}
+        >
+          Back to dashboard
+        </Link>
       </div>
       <div
         data-testid="paid-preview"
         className="mt-8 h-[min(70vh,720px)] min-h-[420px] overflow-hidden rounded-[var(--cp-radius)] border border-line"
       >
-        <PaidPreview token={token} order={order} />
+        {preview}
       </div>
     </>
+  );
+}
+
+function ReleaseProgress() {
+  return (
+    <ol
+      data-testid="release-progress"
+      role="progressbar"
+      aria-label="Certified PDF progress"
+      aria-valuetext="Final review"
+      className="mx-auto mt-8 grid w-full max-w-[560px] grid-cols-4 gap-2"
+    >
+      {RELEASE_PROGRESS_STEPS.map((step) => (
+        <li
+          key={step.id}
+          data-testid={`release-step-${step.id}`}
+          data-state={step.state}
+          aria-current={step.state === "current" ? "step" : undefined}
+          className="min-w-0"
+        >
+          <div
+            className={`h-1.5 overflow-hidden rounded-full ${
+              step.state === "done" ? "bg-primary" : step.state === "current" ? "relative bg-[#d6e2ff]" : "bg-line"
+            }`}
+          >
+            {step.state === "current" ? (
+              <span
+                className="release-indeterminate pointer-events-none absolute inset-y-0 left-0 w-full motion-reduce:animate-none"
+                aria-hidden
+              />
+            ) : null}
+          </div>
+          <p
+            className={`mt-2 text-[12px] leading-tight md:text-[13px] ${
+              step.state === "current"
+                ? "font-semibold text-primary"
+                : step.state === "done"
+                  ? "font-medium text-ink"
+                  : "text-ink-muted"
+            }`}
+          >
+            {step.label}
+          </p>
+        </li>
+      ))}
+    </ol>
   );
 }
 
