@@ -208,7 +208,7 @@ describe("customer order", () => {
     expect(JSON.stringify(order)).not.toContain("edge_match");
   });
 
-  it("releases a clean bundle translation on payment and holds a flagged one", () => {
+  it("holds a bundle translation after payment until the whole order is delivered", () => {
     const translation = "order-1/certified-translation-v1.pdf";
     const shared = {
       order: {
@@ -252,7 +252,7 @@ describe("customer order", () => {
       openCorrections: false,
       email: "ada@example.com",
     };
-    expect(toCustomerOrder(shared).translationReady).toBe(true);
+    expect(toCustomerOrder(shared).translationReady).toBe(false);
     expect(
       toCustomerOrder({
         ...shared,
@@ -268,7 +268,7 @@ describe("customer order", () => {
         deliveryStatus: "delivered",
         deliveryFinalPath: "order-1/evaluation.pdf",
       }).translationReady,
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("copies evaluation status and step timestamps onto the customer order", () => {

@@ -95,8 +95,11 @@ describe("evaluation download", () => {
       deliveryStatus: "pending",
       deliveryFinalPath: null,
     };
-    expect(bundleTranslationReady(clean)).toBe(true);
-    expect(bundleTranslationDecision(clean)).toEqual({ ok: true });
+    // One package: a paid, clean translation still waits for the whole order.
+    expect(bundleTranslationReady(clean)).toBe(false);
+    expect(bundleTranslationDecision(clean)).toEqual({ ok: false, status: 403, error: "Certification is not approved" });
+    expect(bundleTranslationReady({ ...clean, status: "approved" })).toBe(true);
+    expect(bundleTranslationDecision({ ...clean, status: "delivered" })).toEqual({ ok: true });
     expect(
       bundleTranslationReady({
         ...clean,
@@ -113,7 +116,7 @@ describe("evaluation download", () => {
     ).toEqual({ ok: false, status: 402, error: "Payment required" });
   });
 
-  it("keeps a paid flagged bundle locked until staff approve the translation", () => {
+  it("keeps a paid bundle locked until the whole order is approved, even after translation approval", () => {
     const translation = "order-1/certified-translation-v1.pdf";
     const flagged: BundleTranslationInput = {
       includeTranslation: true,
@@ -146,16 +149,16 @@ describe("evaluation download", () => {
     expect(
       bundleTranslationReady({
         ...flagged,
-        status: "delivered",
-        deliveryStatus: "delivered",
-        deliveryFinalPath: "order-1/evaluation.pdf",
+        deliveryStatus: "approved",
+        deliveryFinalPath: translation,
       }),
     ).toBe(false);
     expect(
       bundleTranslationReady({
         ...flagged,
-        deliveryStatus: "approved",
-        deliveryFinalPath: translation,
+        status: "delivered",
+        deliveryStatus: "delivered",
+        deliveryFinalPath: "order-1/evaluation.pdf",
       }),
     ).toBe(true);
   });

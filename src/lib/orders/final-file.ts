@@ -2,12 +2,11 @@ import type { DownloadDecision } from "./access";
 import { FINALS_BUCKET, ORIGINALS_BUCKET } from "./constants";
 import { listDocuments, listPages, listTranslations, type Db } from "./db";
 import { deliveryDocumentName, detectDocumentTitle, orderDownloadFilename } from "./download-name";
-import { EVALUATION_REVIEW_REASON } from "./evaluation-price";
 import { inReadingOrder } from "./page-order";
 import { buildCombinedOriginal, type SourceFile } from "./pdf/combine";
 import { appendPdf, concatPdfs, mergeCertifiedPacket } from "./pdf/merge";
 import { pdfPageCount, stampPacketPageNumbers } from "./pdf/page-numbers";
-import { autoReleaseEnabled, releaseAction, type QaSignal } from "./release-decision";
+import type { QaSignal } from "./release-decision";
 import { orderHasEvaluation } from "./service-selection";
 import { downloadObject, uploadObject } from "./storage";
 import type { DocumentRecord, OrderRecord } from "./types";
@@ -57,44 +56,15 @@ function bundleSettled(order: BundleTranslationInput): boolean {
   );
 }
 
-/** The evaluation hold is not a translation flag. Every other reason still is. */
-function translationReviewReason(reason: string | null | undefined): string | null {
-  const trimmed = reason?.trim() ?? "";
-  if (!trimmed || trimmed === EVALUATION_REVIEW_REASON) return null;
-  return trimmed;
-}
-
 /**
- * Staff released the translation packet. Uploading the evaluation report
- * stores a different file and does not approve the translation.
- */
-function translationStaffApproved(order: BundleTranslationInput): boolean {
-  if (order.deliveryStatus !== "approved" && order.deliveryStatus !== "delivered") return false;
-  return isCertifiedTranslationPath(order.deliveryFinalPath);
-}
-
-/**
- * Same release rule as a translation-only order. A clean high-confidence pass
- * is downloadable once the bundle is paid, while the evaluation stays in review.
- * A flagged translation, or one that failed QA, stays locked until staff approve
- * that packet. Delivering the evaluation report does not unlock it.
+ * Evaluation bundles are one package: the certified translation stays locked
+ * until the whole order is approved or delivered, then ships with the report.
  */
 export function bundleTranslationReady(order: BundleTranslationInput): boolean {
   if (order.includeTranslation !== true || !isCertifiedTranslationPath(order.finalTranslationPath)) return false;
   if (!bundleSettled(order)) return false;
-  if (translationStaffApproved(order)) return true;
-  const action = releaseAction({
-    status: "paid",
-    reviewReason: translationReviewReason(order.reviewReason),
-    qa: order.qa ?? null,
-    languageConfidence: order.languageConfidence ?? null,
-    pageNeedsReview: order.pageNeedsReview === true,
-    openCorrections: order.openCorrections === true,
-    finalsReady: Boolean(order.finalTranslationPath && order.certificationPath),
-    enabled: order.enabled ?? autoReleaseEnabled(),
-    manualEvaluation: false,
-  });
-  return action === "release";
+  // One package: nothing downloads until the whole order is approved or delivered.
+  return order.status === "approved" || order.status === "delivered";
 }
 
 /** Download API status for that same check. Unpaid is 402. A hold is 403. */

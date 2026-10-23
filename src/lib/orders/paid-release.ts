@@ -75,8 +75,10 @@ export async function settlePaidOrder(
   const paidAt = order.paidAt ?? payment?.paidAt ?? new Date().toISOString();
   if (!order.paidAt) await markOrderPaidAt(db, order.id, paidAt);
   const stamped = { ...order, paidAt };
+  // Multi-service orders keep evaluations in `services`; `service` is null there.
+  const isEvaluation = orderHasEvaluation(stamped);
 
-  if (stamped.service && !stamped.reviewReason) {
+  if (isEvaluation && !stamped.reviewReason) {
     await updateOrder(db, stamped.id, { review_reason: EVALUATION_REVIEW_REASON });
     stamped.reviewReason = EVALUATION_REVIEW_REASON;
   }
@@ -91,9 +93,9 @@ export async function settlePaidOrder(
 
   const sent = await sendFirstStaffAlert(db, stamped);
   await notifyEvaluationPaidAlert(db, stamped);
-  if (stamped.service) await stampEvaluationUnderReview(db, stamped, paidAt);
+  if (isEvaluation) await stampEvaluationUnderReview(db, stamped, paidAt);
   // Evaluations stay with staff until the report is uploaded. Do not arm the two-minute reminder.
-  if (sent && options.scheduleUrgent !== false && !stamped.service) {
+  if (sent && options.scheduleUrgent !== false && !isEvaluation) {
     const schedule = options.scheduleUrgent ?? scheduleDefault;
     await schedule(order.id);
   }

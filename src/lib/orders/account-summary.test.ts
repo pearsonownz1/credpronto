@@ -62,7 +62,7 @@ describe("customer order summary", () => {
     expect(refunded.translationReady).toBe(false);
   });
 
-  it("marks a paid bundle ready to download its certified translation", () => {
+  it("keeps a paid bundle locked until the whole order is approved", () => {
     const translation = "0301d079-8368-40d8-854d-95475933124f/certified-translation-v1.pdf";
     const input = {
       id: "0301d079-8368-40d8-854d-95475933124f",
@@ -88,8 +88,9 @@ describe("customer order summary", () => {
     };
     const bundle = summarizeCustomerOrder(input);
     expect(bundle.downloadAvailable).toBe(false);
-    expect(bundle.translationReady).toBe(true);
+    expect(bundle.translationReady).toBe(false);
     expect(bundle.includeTranslation).toBe(true);
+    expect(summarizeCustomerOrder({ ...input, status: "delivered", deliveryStatus: "delivered" as never }).translationReady).toBe(true);
 
     const flagged = summarizeCustomerOrder({
       ...input,
