@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts, rgb, type PDFPage } from "pdf-lib";
 import { create } from "qrcode";
+import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "../constants";
 import { HttpError } from "../errors";
 
 export const VERIFY_ORIGIN = "https://www.credpronto.com";
@@ -27,20 +28,20 @@ export function qrMatrix(text: string): QrMatrix {
 
 const BLACK = rgb(0, 0, 0);
 const WHITE = rgb(1, 1, 1);
-const INK = rgb(11 / 255, 18 / 255, 32 / 255);
-const LINE = rgb(228 / 255, 231 / 255, 236 / 255);
+const GRAY = rgb(91 / 255, 100 / 255, 116 / 255);
 const QUIET_MODULES = 4;
-const PAD_X = 16;
-const PAD_Y = 12;
-const COLUMN_GAP = 14;
-const CAPTION = "Verify this CredPronto document";
-const CAPTION_SIZE = 8;
-const URL_SIZE = 7;
-const URL_LEADING = 9;
-const CAPTION_GAP = 4;
-const TARGET_QR = 88;
-const MIN_MODULE = 1.6;
-const MAX_MODULE = 2.5;
+
+/** Finished page 1 stays US Letter. The top 72pt is the verify band; the page sits in the 720pt below it. */
+const PAGE_W = LETTER_WIDTH_PT;
+const PAGE_H = LETTER_HEIGHT_PT;
+const BAND_H = 72;
+const CONTENT_H = PAGE_H - BAND_H;
+const QR_SIZE = 56;
+const QR_INSET = (BAND_H - QR_SIZE) / 2;
+const URL_SIZE = 8;
+const URL_LEADING = 11;
+const URL_LEFT = 16;
+const URL_GAP = 12;
 
 export type StampRect = {
   x: number;
@@ -56,79 +57,71 @@ export type StampText = {
   size: number;
 };
 
-/** QR, caption, and verify URL, all inside a band added above the original page. */
+/** Letter page, top band, and the scaled original page inside the remaining area. */
 export type VerificationStampPlacement = {
+  page: { width: number; height: number };
   band: StampRect;
-  card: StampRect;
   qr: StampRect;
   label: StampRect;
+  content: StampRect;
+  scale: number;
   moduleSize: number;
-  caption: StampText;
   urlLines: StampText[];
 };
 
 /**
- * Place the QR and the verify URL in a new band above the page.
- * Existing marks, including the signature line and the footer, stay where they are.
+ * Fit page 1 on US Letter. The QR and verify URL occupy a 72pt band at the top.
+ * The original page is scaled uniformly into the 612x720 area under that band.
  */
 export function verificationStampPlacement(
-  media: { x: number; y: number; width: number; height: number },
+  source: { width: number; height: number },
   url: string,
   widthOf: (text: string, size: number) => number,
   modules: number,
 ): VerificationStampPlacement {
-  const cells = modules + QUIET_MODULES * 2;
-  const maxSide = Math.max(64, media.width - PAD_X * 2);
-  const moduleSize = Math.min(MAX_MODULE, Math.max(MIN_MODULE, Math.min(TARGET_QR, maxSide) / cells));
-  const qrSide = cells * moduleSize;
-  const sideTextWidth = media.width - PAD_X * 2 - qrSide - COLUMN_GAP;
-  const stacked = sideTextWidth < 160;
-  const textWidth = Math.max(40, stacked ? media.width - PAD_X * 2 : sideTextWidth);
-  const lines = wrapUrl(url, (line) => widthOf(line, URL_SIZE), textWidth);
-  const textHeight = CAPTION_SIZE + CAPTION_GAP + URL_SIZE + Math.max(0, lines.length - 1) * URL_LEADING;
-  const innerHeight = stacked ? qrSide + 8 + textHeight : Math.max(qrSide, textHeight);
-  const band: StampRect = {
-    x: media.x,
-    y: media.y + media.height,
-    width: media.width,
-    height: innerHeight + PAD_Y * 2,
+  const scale = Math.min(PAGE_W / source.width, CONTENT_H / source.height);
+  const contentWidth = Math.min(PAGE_W, source.width * scale);
+  const contentHeight = Math.min(CONTENT_H, source.height * scale);
+  const content: StampRect = {
+    x: (PAGE_W - contentWidth) / 2,
+    y: (CONTENT_H - contentHeight) / 2,
+    width: contentWidth,
+    height: contentHeight,
   };
-  const qr: StampRect = stacked
-    ? {
-        x: band.x + (band.width - qrSide) / 2,
-        y: band.y + band.height - PAD_Y - qrSide,
-        width: qrSide,
-        height: qrSide,
-      }
-    : {
-        x: band.x + PAD_X,
-        y: band.y + (band.height - qrSide) / 2,
-        width: qrSide,
-        height: qrSide,
-      };
-  const textX = stacked ? band.x + PAD_X : qr.x + qrSide + COLUMN_GAP;
-  const blockTop = stacked ? qr.y - 8 : band.y + (band.height + textHeight) / 2;
-  const captionBaseline = blockTop - CAPTION_SIZE;
+  const band: StampRect = { x: 0, y: CONTENT_H, width: PAGE_W, height: BAND_H };
+  const qr: StampRect = {
+    x: PAGE_W - QR_INSET - QR_SIZE,
+    y: band.y + QR_INSET,
+    width: QR_SIZE,
+    height: QR_SIZE,
+  };
+  const textWidth = Math.max(40, qr.x - URL_GAP - URL_LEFT);
+  const lines = wrapUrl(url, (line) => widthOf(line, URL_SIZE), textWidth);
+  const textHeight = URL_SIZE + Math.max(0, lines.length - 1) * URL_LEADING;
+  const blockTop = band.y + (BAND_H + textHeight) / 2;
   const urlLines = lines.map((text, index) => ({
     text,
-    x: textX,
-    y: captionBaseline - CAPTION_GAP - URL_SIZE - index * URL_LEADING,
+    x: URL_LEFT,
+    y: blockTop - URL_SIZE - index * URL_LEADING,
     size: URL_SIZE,
   }));
-  const lowest = urlLines.length > 0 ? (urlLines[urlLines.length - 1]?.y ?? captionBaseline) : captionBaseline;
+  const lowest = urlLines.length > 0 ? (urlLines[urlLines.length - 1]?.y ?? blockTop) : blockTop;
+  const labelWidth = lines.reduce((widest, line) => Math.max(widest, widthOf(line, URL_SIZE)), 0);
   const label: StampRect = {
-    x: textX,
+    x: URL_LEFT,
     y: lowest - 2,
-    width: textWidth,
-    height: captionBaseline + CAPTION_SIZE - (lowest - 2),
+    width: labelWidth,
+    height: blockTop - (lowest - 2),
   };
+  const cells = modules + QUIET_MODULES * 2;
   return {
+    page: { width: PAGE_W, height: PAGE_H },
     band,
-    card: { ...band },
     qr,
     label,
-    moduleSize,
-    caption: { text: CAPTION, x: textX, y: captionBaseline, size: CAPTION_SIZE },
+    content,
+    scale,
+    moduleSize: QR_SIZE / cells,
     urlLines,
   };
 }
@@ -148,59 +141,44 @@ export async function stampVerificationQr(bytes: Uint8Array, token: string): Pro
 
   const url = verificationUrl(token);
   const matrix = qrMatrix(url);
-  const page = doc.getPage(0);
+  const donor = await PDFDocument.load(bytes, { updateMetadata: false });
+  const source = donor.getPage(0);
+  if (!source.node.Contents()) source.drawRectangle({ x: 0, y: 0, width: 0, height: 0 });
+  const embedded = await doc.embedPage(source);
   const font = await doc.embedFont(StandardFonts.Helvetica);
-  const placement = verificationStampPlacement(page.getMediaBox(), url, (text, size) => font.widthOfTextAtSize(text, size), matrix.size);
-  reserveTopBand(page, placement.band.height);
+  const placement = verificationStampPlacement(
+    embedded.size(),
+    url,
+    (text, size) => font.widthOfTextAtSize(text, size),
+    matrix.size,
+  );
 
+  doc.removePage(0);
+  const page = doc.insertPage(0, [PAGE_W, PAGE_H]);
+  page.setMediaBox(0, 0, PAGE_W, PAGE_H);
+  page.setCropBox(0, 0, PAGE_W, PAGE_H);
+  page.drawPage(embedded, {
+    x: placement.content.x,
+    y: placement.content.y,
+    width: placement.content.width,
+    height: placement.content.height,
+  });
   page.drawRectangle({
-    x: placement.card.x,
-    y: placement.card.y,
-    width: placement.card.width,
-    height: placement.card.height,
+    x: placement.band.x,
+    y: placement.band.y,
+    width: placement.band.width,
+    height: placement.band.height,
     color: WHITE,
   });
-  const seam = placement.card.y + 0.8;
-  page.drawLine({
-    start: { x: placement.card.x, y: seam },
-    end: { x: placement.card.x + placement.card.width, y: seam },
-    thickness: 0.6,
-    color: LINE,
-  });
   drawModules(page, matrix, placement.qr.x, placement.qr.y, placement.moduleSize);
-  page.drawText(placement.caption.text, {
-    x: placement.caption.x,
-    y: placement.caption.y,
-    size: placement.caption.size,
-    font,
-    color: INK,
-  });
   for (const line of placement.urlLines) {
-    page.drawText(line.text, { x: line.x, y: line.y, size: line.size, font, color: INK });
+    page.drawText(line.text, { x: line.x, y: line.y, size: line.size, font, color: GRAY });
   }
 
   return doc.save();
 }
 
-/** Grow the page upward. Marks already on the page keep their coordinates. */
-function reserveTopBand(page: PDFPage, bandHeight: number): void {
-  const media = page.getMediaBox();
-  const crop = page.getCropBox();
-  const mediaTop = media.y + media.height;
-  const cropTop = crop.y + crop.height;
-  page.setMediaBox(media.x, media.y, media.width, media.height + bandHeight);
-  if (cropTop >= mediaTop - 0.5) {
-    page.setCropBox(crop.x, crop.y, crop.width, crop.height + (mediaTop - cropTop) + bandHeight);
-  }
-}
-
-function drawModules(
-  page: PDFPage,
-  matrix: QrMatrix,
-  originX: number,
-  originY: number,
-  moduleSize: number,
-): void {
+function drawModules(page: PDFPage, matrix: QrMatrix, originX: number, originY: number, moduleSize: number): void {
   for (let row = 0; row < matrix.size; row += 1) {
     for (let col = 0; col < matrix.size; col += 1) {
       if (!matrix.get(row, col)) continue;
