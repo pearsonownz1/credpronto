@@ -1,3 +1,4 @@
+import { adminOrderFields } from "./admin-order-fields";
 import { evaluationReleaseBlock, missingEvaluationReports, releaseEvaluationPackage } from "./evaluation-review";
 import { orderEvaluationKinds } from "./service-selection";
 import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET, ORIGINALS_BUCKET } from "./constants";
@@ -87,6 +88,7 @@ export async function staffOrder(orderId: string) {
 
   return {
     ...order,
+    ...adminOrderFields(order, delivery?.finalPath),
     evaluationStatus: evaluationStatusValue(order.evaluationStatus),
     evaluationStatusAt: evaluationStatusAt(order),
     email,

@@ -1,3 +1,4 @@
+import { adminOrderFields } from "@/lib/orders/admin-order-fields";
 import { fulfillmentState } from "@/lib/orders/release-decision";
 import { sourceTextForDisplay } from "@/lib/orders/source-text";
 import type {
@@ -299,6 +300,16 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
     createdAt,
     reviewReason: text(row.reviewReason),
     service: row.service === "diploma" || row.service === "course_by_course" ? row.service : null,
+    ...adminOrderFields(
+      {
+        id,
+        services: stringList(row.services),
+        service: row.service === "diploma" || row.service === "course_by_course" ? row.service : null,
+        includeTranslation: row.includeTranslation === true,
+        serviceFiles: serviceFileMap(row.serviceFiles),
+      },
+      text(delivery?.finalPath),
+    ),
     equivalencyCredentials: equivalencyCredentials(row.evaluationResult),
     edge: parseEdge(row.edge),
     filename,
@@ -322,6 +333,23 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
     evaluationStatusAt: parseEvaluationStatusAt(row.evaluationStatusAt),
     fulfillment: parseFulfillment(row.fulfillment),
   };
+}
+
+function stringList(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const names = value.filter((item): item is string => typeof item === "string");
+  return names.length > 0 ? names : null;
+}
+
+function serviceFileMap(value: unknown): Partial<Record<"diploma" | "course_by_course", string>> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const files: Partial<Record<"diploma" | "course_by_course", string>> = {};
+  if (typeof row.diploma === "string" && row.diploma.trim()) files.diploma = row.diploma;
+  if (typeof row.course_by_course === "string" && row.course_by_course.trim()) {
+    files.course_by_course = row.course_by_course;
+  }
+  return files.diploma || files.course_by_course ? files : null;
 }
 
 function parseEvaluationStatus(value: unknown): StaffDetail["evaluationStatus"] {
