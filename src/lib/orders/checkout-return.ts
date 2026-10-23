@@ -1,3 +1,27 @@
+const PROD_HOSTS = new Set(["credpronto.com", "www.credpronto.com"]);
+const PREVIEW_HOST = /^[a-z0-9-]+-guy-gcsorgs-projects\.vercel\.app$/;
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1"]);
+
+/**
+ * Where Stripe sends the customer back. Production keeps the configured site origin.
+ * A Vercel preview or localhost returns to itself. Any other host, including a forged
+ * Host header, falls back to the configured origin, so this can never redirect off-site.
+ */
+export function checkoutOrigin(requestUrl: string | null | undefined, fallback: string): string {
+  if (!requestUrl) return fallback;
+  let parsed: URL;
+  try {
+    parsed = new URL(requestUrl);
+  } catch {
+    return fallback;
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (PROD_HOSTS.has(host)) return fallback;
+  if (parsed.protocol === "https:" && !parsed.port && PREVIEW_HOST.test(host)) return `https://${host}`;
+  if ((parsed.protocol === "http:" || parsed.protocol === "https:") && LOCAL_HOSTS.has(host)) return parsed.origin;
+  return fallback;
+}
+
 /** Stripe sends the customer here. The token stays in the path, percent-encoded. */
 export function checkoutReturnUrl(origin: string, token: string, result: "success" | "cancel"): string {
   const base = origin.replace(/\/$/, "");
