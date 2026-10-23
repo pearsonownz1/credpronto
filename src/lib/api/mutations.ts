@@ -1,4 +1,4 @@
-import { browserJson, publicMockMode } from "@/lib/api/browser";
+import { browserForm, browserJson, publicMockMode } from "@/lib/api/browser";
 import { type ApiResult, type StaffNote } from "@/lib/api/types";
 
 export type PageEdit = { documentId: string; pageNumber: number; paragraphs: string[] };
@@ -36,6 +36,20 @@ export async function resolveReview(id: string, sourceLanguage: string): Promise
     method: "POST",
     body: JSON.stringify(sourceLanguage ? { sourceLanguage } : {}),
   });
+}
+
+export async function uploadEvaluationReport(
+  id: string,
+  service: "diploma" | "course_by_course",
+  file: File,
+): Promise<ApiResult<unknown>> {
+  if (publicMockMode()) {
+    return { ok: true, status: 200, data: { status: "delivered", email: "skipped" } };
+  }
+  const body = new FormData();
+  body.set("file", file);
+  body.set("service", service);
+  return browserForm(`/api/admin/orders/${encodeURIComponent(id)}/evaluation`, body);
 }
 
 export async function setEvaluationStatus(id: string, status: string): Promise<ApiResult<unknown>> {

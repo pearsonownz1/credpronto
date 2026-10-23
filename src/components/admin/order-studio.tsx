@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { activityFor } from "@/lib/account/activity";
 import { formatOrderDate, formatOrderMoney } from "@/lib/account/present";
@@ -11,6 +11,7 @@ import {
   assignEquivalency,
   approveOrder,
   setEvaluationStatus,
+  uploadEvaluationReport,
   notarizeOrder,
   patchOrderTranslation,
   refundOrder,
@@ -25,6 +26,14 @@ import type { PreviewOrder, PreviewPageSize } from "@/components/preview/preview
 import { humanStatus } from "@/components/admin/orders-board";
 import { QaPanel } from "@/components/admin/qa-panel";
 import { approveButtonLabel, runStudioAction, type StudioTaskResult } from "@/components/admin/studio-action";
+import {
+  applyReportOverrides,
+  evaluationReportsFor,
+  evaluationUploadMessage,
+  evaluationUploadStatus,
+  type ReportOverride,
+} from "@/components/admin/evaluation-report-model";
+import { EvaluationReportBoxes, MissingEvaluationReports } from "@/components/admin/evaluation-reports";
 import { sourceTextForDisplay } from "@/lib/orders/source-text";
 import { emptyTranslationMessage } from "@/lib/orders/translation-edit";
 import type { ViewerFocus } from "@/components/preview/side-by-side-viewer";
@@ -107,6 +116,15 @@ export function OrderStudio({
   const preview = useMemo(() => staffPreview(detail), [detail]);
   const activity = activityFor(detail, thread);
   const canEdit = EDITABLE.has(detail.status);
+  const [reportOverrides, setReportOverrides] = useState<Record<string, ReportOverride>>({});
+  const blobUrls = useRef<string[]>([]);
+  useEffect(() => {
+    const stored = blobUrls;
+    return () => {
+      for (const url of stored.current) URL.revokeObjectURL(url);
+    };
+  }, []);
+  const reports = applyReportOverrides(evaluationReportsFor(detail), reportOverrides);
 
   function updateParagraph(pageId: string, index: number, value: string) {
     setDrafts((current) => {
@@ -151,6 +169,25 @@ export function OrderStudio({
     });
   }
 
+  function uploadReport(service: "diploma" | "course_by_course", file: File) {
+    void run(`report-${service}`, async () => {
+      const result = await uploadEvaluationReport(detail.id, service, file);
+      if (!result.ok) return { ok: false, error: result.error };
+      const url = URL.createObjectURL(file);
+      blobUrls.current.push(url);
+      setReportOverrides((current) => {
+        const previous = current[service]?.url;
+        if (previous?.startsWith("blob:")) URL.revokeObjectURL(previous);
+        return { ...current, [service]: { fileName: file.name, url } };
+      });
+      return {
+        ok: true,
+        message: evaluationUploadMessage(service, result.data),
+        status: evaluationUploadStatus(result.data),
+      };
+    });
+  }
+
   return (
     <div data-testid="order-studio" className="grid gap-6">
       <div>
@@ -167,7 +204,7 @@ export function OrderStudio({
               {languageLabel(detail.targetLanguage)} · {formatOrderMoney(detail.totalCents)}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {canEdit ? (
               <button
                 type="button"
@@ -196,6 +233,8 @@ export function OrderStudio({
               {pending === "regenerate" ? "Regenerating…" : "Regenerate preview"}
             </button>
             {status === "paid" || status === "approved" ? (
+              <>
+              <MissingEvaluationReports reports={reports} />
               <button
                 type="button"
                 data-testid="approve-order"
@@ -229,7 +268,10 @@ export function OrderStudio({
               >
                 {approveButtonLabel(pending)}
               </button>
-            ) : null}
+              </>
+            ) : (
+              <MissingEvaluationReports reports={reports} />
+            )}
             {detail.payment && detail.payment.status !== "refunded" ? (
               <button
                 type="button"
@@ -292,6 +334,16 @@ export function OrderStudio({
           </p>
         ) : null}
       </div>
+
+      <EvaluationReportBoxes
+        reports={reports}
+        pending={pending}
+        onReject={(message) => {
+          setError(message);
+          setMessage(null);
+        }}
+        onUpload={uploadReport}
+      />
 
       <FulfillmentTasks
         key={detail.id}

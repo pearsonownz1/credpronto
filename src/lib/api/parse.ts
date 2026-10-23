@@ -11,6 +11,7 @@ import type {
   QaStatus,
   StaffCorrection,
   StaffDetail,
+  StaffEvaluationReport,
   StaffNote,
   StaffPage,
 } from "./types";
@@ -286,6 +287,9 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
 
   const payment = row.payment && typeof row.payment === "object" ? (row.payment as Record<string, unknown>) : null;
   const delivery = row.delivery && typeof row.delivery === "object" ? (row.delivery as Record<string, unknown>) : null;
+  const services = parseServices(row.services);
+  const includesTranslation = parseIncludesTranslation(row.includesTranslation);
+  const evaluationReports = parseEvaluationReports(row.evaluationReports);
 
   return {
     id,
@@ -299,6 +303,9 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
     createdAt,
     reviewReason: text(row.reviewReason),
     service: row.service === "diploma" || row.service === "course_by_course" ? row.service : null,
+    ...(services !== undefined ? { services } : {}),
+    ...(includesTranslation !== undefined ? { includesTranslation } : {}),
+    ...(evaluationReports !== undefined ? { evaluationReports } : {}),
     equivalencyCredentials: equivalencyCredentials(row.evaluationResult),
     edge: parseEdge(row.edge),
     filename,
@@ -322,6 +329,55 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
     evaluationStatusAt: parseEvaluationStatusAt(row.evaluationStatusAt),
     fulfillment: parseFulfillment(row.fulfillment),
   };
+}
+
+function parseServices(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.flatMap((item) => {
+    if (typeof item !== "string") return [];
+    const name = item.trim();
+    return name ? [name] : [];
+  });
+}
+
+function parseIncludesTranslation(value: unknown): boolean | undefined {
+  return value === true || value === false ? value : undefined;
+}
+
+function parseReportUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const url = value.trim();
+  if (url.startsWith("/") && !url.startsWith("//")) return url;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "https:" || parsed.protocol === "http:") return url;
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function parseEvaluationReports(value: unknown): StaffEvaluationReport[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const seen = new Set<string>();
+  const reports: StaffEvaluationReport[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    const service = row.service === "diploma" || row.service === "course_by_course" ? row.service : null;
+    if (!service || seen.has(service)) continue;
+    seen.add(service);
+    const uploaded = row.uploaded === true;
+    const fileName = typeof row.fileName === "string" ? row.fileName.trim() : "";
+    const url = parseReportUrl(row.url);
+    reports.push({
+      service,
+      uploaded,
+      ...(uploaded && fileName ? { fileName } : {}),
+      ...(url ? { url } : {}),
+    });
+  }
+  return reports;
 }
 
 function parseEvaluationStatus(value: unknown): StaffDetail["evaluationStatus"] {
