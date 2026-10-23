@@ -93,7 +93,7 @@ describe("retryFinalCustomerEmail", () => {
       orderId,
       expect.objectContaining({ status: "delivered" }),
     );
-    expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, { status: "delivered" });
+    expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, expect.objectContaining({ status: "delivered", evaluation_status: "evaluation_complete" }));
     expect(webhooks.notifyLifecycle).toHaveBeenCalledWith(expect.anything(), orderId, "order.completed");
   });
 });

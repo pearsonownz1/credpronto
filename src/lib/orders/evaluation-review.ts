@@ -1,3 +1,4 @@
+import { deliveredEvaluationPatch } from "./evaluation-delivered";
 import { MAX_FILE_BYTES, FINALS_BUCKET } from "./constants";
 import { ensurePendingDelivery, getDelivery, getOrderById, hasEvent, insertEvent, listEvaluationQueueOrders, settledPayment, updateDelivery, updateOrder, type Db } from "./db";
 import { sendFinalCustomerEmail } from "./final-email";
@@ -236,6 +237,8 @@ async function publishEvaluationDelivery(input: {
   }
 
   if (alreadyDelivered) {
+    const complete = deliveredEvaluationPatch(order, now);
+    if (Object.keys(complete).length > 0) await updateOrder(db, order.id, complete);
     return { status: "delivered" as const, email: "skipped" as const };
   }
 
@@ -253,6 +256,8 @@ async function publishEvaluationDelivery(input: {
     });
     return { status: "approved" as const, email: "failed" as const };
   }
+  const complete = deliveredEvaluationPatch(order, new Date().toISOString());
+  if (Object.keys(complete).length > 0) await updateOrder(db, order.id, complete);
   await notifyOrder(db, order.id, "order.delivered");
   await notifyLifecycle(db, order.id, "order.completed");
   return {

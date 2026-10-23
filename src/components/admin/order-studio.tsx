@@ -24,6 +24,7 @@ import { languageLabel } from "@/lib/orders/languages";
 import type { PreviewOrder, PreviewPageSize } from "@/components/preview/preview-order";
 import { humanStatus } from "@/components/admin/orders-board";
 import { QaPanel } from "@/components/admin/qa-panel";
+import { StaffFiles } from "@/components/admin/staff-files";
 import { approveButtonLabel, runStudioAction, type StudioTaskResult } from "@/components/admin/studio-action";
 import { sourceTextForDisplay } from "@/lib/orders/source-text";
 import { emptyTranslationMessage } from "@/lib/orders/translation-edit";
@@ -275,6 +276,7 @@ export function OrderStudio({
             </select>
           </label>
         ) : null}
+        {status === "approved" || status === "delivered" ? <StaffFiles orderId={detail.id} /> : null}
         {detail.reviewReason ? (
           <p className="mt-3 rounded-[var(--cp-radius)] border border-[#f3d7a1] bg-[#fff8ee] px-3 py-2 text-sm">
             Needs review: {detail.reviewReason}
