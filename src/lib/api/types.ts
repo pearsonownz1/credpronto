@@ -130,6 +130,12 @@ export type StaffDetail = {
     uploaded: boolean;
     fileName?: string;
   }>;
+  /** Structured text for each stored evaluation. Absent until the order payload includes it. */
+  evaluations?: Array<{
+    service: "diploma" | "course_by_course";
+    heading: string;
+    lines: string[];
+  }>;
   equivalencyCredentials: Array<{
     credential: string;
     country: string;

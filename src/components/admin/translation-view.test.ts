@@ -308,17 +308,19 @@ describe("translation view", () => {
     expect(onCommit).toHaveBeenCalledWith("p1", 2, "kept");
   });
 
-  it("warns when source lines have no segment and still edits the real index", async () => {
+  it("warns about missing segments and does not edit a row past the stored list", async () => {
     const onCommit = vi.fn();
     const html = renderToStaticMarkup(
       createElement(TranslationView, {
-        pages: [page({ id: "p1", sourceText: "A\nB", paragraphs: ["a"] })],
+        pages: [page({ id: "p1", sourceText: "A\nB\nC", paragraphs: ["a"] })],
         drafts: { p1: ["a"] },
         canEdit: true,
         onCommit,
       }),
     );
-    expect(html).toContain("Translation is missing 1 segment for the source");
+    expect(html).toContain("Translation is missing 2 segments for the source");
+    expect(html).toContain('data-segment-index="2"');
+    expect(html).not.toContain('aria-label="Translation page 1 segment 3"');
 
     const host = document.createElement("div");
     document.body.appendChild(host);
@@ -327,30 +329,24 @@ describe("translation view", () => {
     await act(async () => {
       root.render(
         createElement(TranslationView, {
-          pages: [page({ id: "p1", sourceText: "A\n\nB", paragraphs: ["a"] })],
+          pages: [page({ id: "p1", sourceText: "A\nB\nC", paragraphs: ["a"] })],
           drafts: { p1: ["a"] },
           canEdit: true,
           onCommit,
         }),
       );
     });
-    const second = host.querySelector('[data-segment-index="1"]');
-    if (!(second instanceof HTMLElement)) throw new Error("missing unmatched row");
-    expect(second.textContent).toContain("B");
+    const pastGap = host.querySelector('[data-segment-index="2"]');
+    const firstGap = host.querySelector('[data-segment-index="1"]');
+    if (!(pastGap instanceof HTMLElement) || !(firstGap instanceof HTMLElement)) throw new Error("missing unmatched rows");
+    expect(pastGap.getAttribute("role")).toBeNull();
+    expect(firstGap.getAttribute("role")).toBeNull();
     await act(async () => {
-      second.click();
+      pastGap.click();
+      firstGap.click();
     });
-    const input = host.querySelector("input");
-    if (!(input instanceof HTMLInputElement)) throw new Error("missing input");
-    await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-      setter?.call(input, "b");
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    await act(async () => {
-      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    });
-    expect(onCommit).toHaveBeenCalledWith("p1", 1, "b");
+    expect(host.querySelector("input")).toBeNull();
+    expect(onCommit).not.toHaveBeenCalled();
   });
 
   it("does not edit a read-only order", async () => {
@@ -404,6 +400,21 @@ describe("order studio translation save", () => {
     expect(html).toContain('data-testid="save-translation"');
     expect(html).toContain('data-testid="approve-order"');
     expect(html).toContain('data-testid="refund-open"');
+
+    const withEvaluation = renderToStaticMarkup(
+      createElement(OrderStudio, {
+        detail: {
+          ...detail,
+          services: ["translation", "diploma"],
+          evaluationReports: [{ service: "diploma", uploaded: false }],
+        },
+        notes: [],
+        notesError: null,
+      }),
+    );
+    expect(withEvaluation).toContain("Generate missing evaluations");
+    expect(withEvaluation).toContain('data-testid="regenerate-evaluations"');
+    expect(withEvaluation).toContain('data-testid="translation-row-CP-24790-p1-0"');
 
     const host = await renderStudio(detail);
     const row = host.querySelector('[data-testid="translation-row-CP-24790-p1-0"]');

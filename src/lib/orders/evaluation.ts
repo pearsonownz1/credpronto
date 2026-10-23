@@ -61,7 +61,7 @@ import { stampFinishedPdf } from "./verification";
 import { uploadObject } from "./storage";
 import { countWords } from "./words";
 import { watermarkedTranslationPreview } from "./translation";
-import type { EvaluationResult, OrderRecord, StoredPageOrder } from "./types";
+import type { EvaluationResult, EvaluationService, OrderRecord, StoredPageOrder } from "./types";
 
 export const UNMAPPED_REASON = "The credential or a grade could not be mapped to a U.S. equivalent.";
 
@@ -740,6 +740,27 @@ function storedEdgeMatch(built: {
   if (built.edgeMatchMethod) patch.edge_match_method = built.edgeMatchMethod;
   else if (!built.edgeCredentialId) patch.edge_match_method = null;
   return patch;
+}
+
+/** One purchased evaluation from page text already stored on the order. Null when the degree count is missing. */
+export async function evaluateServiceFromText(
+  db: Db,
+  order: OrderRecord,
+  service: EvaluationService,
+  pageText: string,
+  filenames: string[],
+): Promise<EvaluationResult | null> {
+  if (order.degreeCount == null) return null;
+  const extracted = service === "diploma" ? await extractDiploma(pageText) : await extractCourses(pageText);
+  const built = await buildEvaluatedResult(
+    db,
+    service,
+    extracted,
+    order.degreeCount,
+    filenames,
+    order.edgeCredentialId,
+  );
+  return built.result;
 }
 
 export async function completeEvaluation(

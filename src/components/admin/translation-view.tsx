@@ -67,9 +67,10 @@ export function TranslationView({
               <p className="px-4 py-6 text-ink-muted">No source text</p>
             ) : (
               lines.map((line, index) => {
-                const editingThis =
-                  editing?.pageId === page.id && line.segmentIndex !== null && editing.index === line.segmentIndex;
-                const interactive = canEdit && line.segmentIndex !== null && !editingThis;
+                const stored = drafts[page.id] ?? [];
+                const hasSegment = line.segmentIndex !== null && line.segmentIndex < stored.length;
+                const editingThis = editing?.pageId === page.id && hasSegment && editing.index === line.segmentIndex;
+                const interactive = canEdit && hasSegment && !editingThis;
                 const label = `Translation page ${page.pageNumber} segment ${(line.segmentIndex ?? index) + 1}`;
                 return (
                   <div
@@ -82,7 +83,7 @@ export function TranslationView({
                     aria-label={interactive ? label : undefined}
                     className={`${ROW} min-h-8${interactive ? " cursor-text" : ""}`}
                     onClick={() => {
-                      if (line.segmentIndex === null) return;
+                      if (!hasSegment || line.segmentIndex === null) return;
                       begin(page.id, line.segmentIndex, line.translation);
                     }}
                     onKeyDown={(event) => {

@@ -117,4 +117,86 @@ describe("parseStaffDetail services", () => {
       { service: "diploma", uploaded: true, fileName: "diploma-evaluation.pdf" },
     ]);
   });
+
+  it("lists a summary for each stored evaluation on a translation bundle", () => {
+    const detail = parseStaffDetail({
+      id: orderId,
+      status: "paid",
+      createdAt: "2026-10-12T00:00:00.000Z",
+      service: null,
+      services: ["translation", "diploma", "course_by_course"],
+      includeTranslation: true,
+      evaluationResult: {
+        kind: "diploma",
+        credentials: [
+          {
+            applicant: "Ada Lovelace",
+            institution: "Universidad Nacional",
+            country: "Mexico",
+            credential: "Licenciatura",
+            field: "Law",
+            dates: "2018",
+            usEquivalency: "Bachelor degree",
+            documentsReviewed: ["diploma.pdf"],
+          },
+        ],
+      },
+      evaluationResults: [
+        {
+          kind: "course_by_course",
+          applicant: "Ada Lovelace",
+          institution: "Universidad Nacional",
+          country: "Mexico",
+          credential: "Licenciatura",
+          gradeScale: "10-point",
+          totalHours: 120,
+          gpa: 3.5,
+          years: [
+            {
+              year: "2018",
+              courses: [
+                {
+                  originalName: "Derecho",
+                  englishName: "Law",
+                  localCredits: 4,
+                  localGrade: "9",
+                  usSemesterHours: 3,
+                  usGrade: "A",
+                  gradePoints: 12,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(detail?.evaluations).toEqual([
+      {
+        service: "diploma",
+        heading: "Diploma evaluation",
+        lines: ["Licenciatura (Universidad Nacional) — Bachelor degree"],
+      },
+      {
+        service: "course_by_course",
+        heading: "Course-by-course evaluation",
+        lines: ["Licenciatura (Universidad Nacional)", "GPA 3.5 · 120 US semester hours", "2018: Law — A"],
+      },
+    ]);
+  });
+
+  it("leaves evaluations empty when neither result is stored", () => {
+    const detail = parseStaffDetail({
+      id: orderId,
+      status: "paid",
+      createdAt: "2026-10-12T00:00:00.000Z",
+      service: null,
+      services: ["translation", "diploma", "course_by_course"],
+      includeTranslation: true,
+      evaluationResult: null,
+      evaluationResults: null,
+    });
+
+    expect(detail?.evaluations).toEqual([]);
+  });
 });
