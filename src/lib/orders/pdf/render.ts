@@ -1,7 +1,7 @@
 import { PDFDocument, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import { degrees } from "pdf-lib";
 import { PREVIEW_WATERMARK, PREVIEW_WATERMARK_OPACITY, previewWatermarkRgb } from "../constants";
-import { documentKind, paintedPlanText, planDocument, type PlanRect, type PlanStyle, type PlanText } from "./document-layout";
+import { documentKind, paintedPlanText, planDocument, planTable, type PlanRect, type PlanRule, type PlanStyle, type PlanText } from "./document-layout";
 import { faceForCodePoint, fontFace, serifFace, stableFontkit, type FontFace, type FontFaceId } from "./font";
 import {
   assertContiguousPages,
@@ -48,6 +48,7 @@ type Paint = {
   size: number;
   color: ReturnType<typeof rgb>;
   italic: boolean;
+  bold?: boolean;
 };
 
 function blocksFor(page: RenderPage): RenderBlock[] {
@@ -172,12 +173,13 @@ function layoutBlocks(
   margin: number,
   maxWidth: number,
   top: number,
-): { paints: Paint[]; bottom: number } {
+): { paints: Paint[]; rules: PlanRule[]; bottom: number } {
   const labelWidth = Math.min(220, maxWidth * 0.44);
   const columnGap = 14;
   const valueWidth = Math.max(40, maxWidth - labelWidth - columnGap);
   const measure = (text: string, fontSize: number, italic: boolean) => widthOf(text, fontSize, italic, upright, italicFace);
   const paints: Paint[] = [];
+  const rules: PlanRule[] = [];
   let y = top;
 
   const paintLines = (text: string, x: number, fontSize: number, color: ReturnType<typeof rgb>, italic: boolean, width: number) => {
@@ -221,10 +223,27 @@ function layoutBlocks(
         y -= 1;
       }
       y -= 3;
+    } else if (block.type === "table") {
+      const table = planTable({
+        rows: block.rows,
+        header: block.header ?? true,
+        x: margin,
+        y: y + size * 0.8,
+        width: maxWidth,
+        size: Math.max(7.5, size - 1),
+        bottom: 12,
+        serif: false,
+        measure: (text, fontSize) => measure(text, fontSize, false),
+      });
+      for (const item of table.texts) {
+        paints.push({ text: item.text, x: item.x, y: item.y, size: item.size, color: INK, italic: false, bold: item.bold });
+      }
+      rules.push(...table.rules);
+      y = table.clipped ? Math.min(table.bottom, 11) : table.bottom - size - 4;
     }
   }
 
-  return { paints, bottom: y };
+  return { paints, rules, bottom: y };
 }
 
 type SerifFaces = {
@@ -370,6 +389,13 @@ function drawPlannedText(
   });
 }
 
+function drawRules(page: PDFPage, rules: PlanRule[] | undefined): void {
+  for (const rule of rules ?? []) {
+    if (Math.min(rule.y1, rule.y2) < 12) continue;
+    page.drawLine({ start: { x: rule.x1, y: rule.y1 }, end: { x: rule.x2, y: rule.y2 }, thickness: rule.width, color: MUTED });
+  }
+}
+
 function drawWatermark(page: PDFPage, font: PDFFont, width: number, height: number): void {
   const size = 18;
   const color = previewWatermarkRgb();
@@ -419,6 +445,7 @@ function drawBody(
     }
     if (plan.frame) drawRounded(page, plan.frame);
     for (const box of plan.boxes) drawRounded(page, box);
+    drawRules(page, plan.rules);
     if (plan.image && options.image) {
       page.drawImage(options.image, {
         x: plan.image.x,
@@ -434,18 +461,22 @@ function drawBody(
     painted = paintedPlanText(plan);
   } else {
     let chosen: Paint[] = [];
+    let chosenRules: PlanRule[] = [];
     let size = 11;
     while (size >= 8) {
       const top = heightPt - margin - size;
       const laid = layoutBlocks(blocks, faces.upright, faces.italic, size, margin, maxWidth, top);
       chosen = laid.paints;
+      chosenRules = laid.rules;
       if (laid.bottom >= footer || size === 8) break;
       size -= 0.5;
     }
     const visible = chosen.filter((paint) => paint.y >= 12);
     for (const paint of visible) {
       drawStyled(page, paint.text, paint.x, paint.y, paint.size, paint.color, paint.italic, faces.upright, faces.italic);
+      if (paint.bold) drawStyled(page, paint.text, paint.x + 0.28, paint.y, paint.size, paint.color, paint.italic, faces.upright, faces.italic);
     }
+    drawRules(page, chosenRules);
     painted = visible.map((paint) => paint.text).join(" ");
   }
 
