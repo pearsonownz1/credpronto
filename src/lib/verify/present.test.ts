@@ -41,6 +41,7 @@ describe("verification presentation", () => {
   it("does not name other credential businesses", () => {
     const files = [
       "src/lib/verify/client.ts",
+      "src/lib/verify/link-refresh.ts",
       "src/lib/verify/load.ts",
       "src/lib/verify/present.ts",
       "src/components/verify/verify-screen.tsx",

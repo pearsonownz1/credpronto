@@ -169,6 +169,7 @@ function ValidDocument({
         <div className="bg-bg-muted p-4 md:p-6">
           {viewerUrl ? (
             <iframe
+              key={viewerUrl}
               title="CredPronto document"
               src={viewerUrl}
               className="h-[min(80vh,960px)] min-h-[480px] w-full rounded-[var(--cp-radius)] border border-line bg-bg"
