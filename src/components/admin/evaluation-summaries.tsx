@@ -20,7 +20,8 @@ export function EvaluationSummaries({
 }) {
   if (reports.length === 0) return null;
   const byService = new Map(summaries.map((summary) => [summary.service, summary]));
-  const byProblem = new Map((problems ?? []).map((problem) => [problem.service, problem.reason]));
+  const reasonsFor = (service: "diploma" | "course_by_course") =>
+    (problems ?? []).filter((problem) => problem.service === service).map((problem) => problem.reason);
   const busy = pending === "regenerate-evaluations";
 
   return (
@@ -47,7 +48,7 @@ export function EvaluationSummaries({
       <div className="grid gap-3 md:grid-cols-2">
         {reports.map((report) => {
           const summary = byService.get(report.service);
-          const problem = byProblem.get(report.service);
+          const reasons = reasonsFor(report.service);
           return (
             <article
               key={report.service}
@@ -64,10 +65,14 @@ export function EvaluationSummaries({
               ) : (
                 <p className="text-sm text-ink-muted">Not generated yet.</p>
               )}
-              {problem ? (
-                <p className="text-sm text-[#b45309]" data-testid={`evaluation-problem-${report.service}`}>
-                  {problem}
-                </p>
+              {reasons.length > 0 ? (
+                <div data-testid={`evaluation-problem-${report.service}`} className="grid gap-1">
+                  {reasons.map((reason, index) => (
+                    <p key={`${reason}-${index}`} className="text-sm text-[#b45309]">
+                      {reason}
+                    </p>
+                  ))}
+                </div>
               ) : null}
               {report.url ? (
                 <a

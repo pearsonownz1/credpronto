@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FINALS_BUCKET } from "./constants";
 import * as db from "./db";
-import { ensurePaidEvaluationReports, regeneratePaidEvaluations } from "./evaluation-dispatch";
+import { ensurePaidEvaluationReports, regeneratePaidEvaluations, type EvaluationProduce } from "./evaluation-dispatch";
 import * as evaluation from "./evaluation";
 import { HttpError } from "./errors";
 import * as pdf from "./pdf/evaluation";
@@ -131,7 +131,7 @@ describe("ensurePaidEvaluationReports", () => {
       service: EvaluationService,
       _pageText: string,
       _filenames: string[],
-    ): Promise<EvaluationResult | null> => (service === "diploma" ? diploma() : course()),
+    ): Promise<EvaluationProduce> => (service === "diploma" ? diploma() : course()),
   );
   const store = vi.fn(
     async (_db: Db, _order: OrderRecord, service: EvaluationService, result: EvaluationResult) => ({
@@ -323,6 +323,32 @@ describe("ensurePaidEvaluationReports", () => {
       ],
     });
   });
+
+  it("saves a dropped relevé row on the order progress when the report is generated", async () => {
+    produce.mockImplementation(async (_db, _order, service) =>
+      service === "diploma"
+        ? diploma()
+        : {
+            result: course(),
+            failures: [
+              { row: "Bio | - | 12", reason: "Coefficient is not a number" },
+              { row: "Chimie | 2 | ABS", reason: "Result is not a number" },
+            ],
+          },
+    );
+
+    const result = await ensurePaidEvaluationReports(dbHandle, orderId, { produce, store });
+
+    expect(result.status).toBe("ready");
+    expect(result.generated).toEqual(["diploma", "course_by_course"]);
+    expect(result.failures).toEqual([
+      { service: "course_by_course", reason: "Bio | - | 12: Coefficient is not a number" },
+      { service: "course_by_course", reason: "Chimie | 2 | ABS: Result is not a number" },
+    ]);
+    expect(vi.mocked(db.updateOrder).mock.calls[0]?.[2]?.progress).toMatchObject({
+      evaluationFailures: result.failures,
+    });
+  });
 });
 
 describe("regeneratePaidEvaluations", () => {
@@ -348,9 +374,10 @@ describe("regeneratePaidEvaluations", () => {
     vi.spyOn(db, "listPages").mockResolvedValue([
       { id: "page-1", documentId: "doc-1", pageNumber: 1, ocrText: "Licenciatura" } as PageRecord,
     ]);
-    vi.spyOn(evaluation, "evaluateServiceFromText").mockImplementation(async (_db, _order, service) =>
-      service === "diploma" ? diploma() : course(),
-    );
+    vi.spyOn(evaluation, "evaluateServiceFromText").mockImplementation(async (_db, _order, service) => ({
+      result: service === "diploma" ? diploma() : course(),
+      failures: [],
+    }));
     vi.spyOn(pdf, "renderEvaluationPdfs").mockResolvedValue({
       clean: new Uint8Array([1, 2, 3]),
       preview: new Uint8Array([4]),

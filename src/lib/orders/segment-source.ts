@@ -118,24 +118,37 @@ function assignForward(segments: readonly string[], content: readonly SourceLine
   return assigned;
 }
 
-function bestSourceLine(
+/** One accent-folded stem shared by the segment and the line. A short stem still counts as a full word. */
+function stemOverlap(segment: string, line: string): number {
+  const foldedSegment = fold(segment);
+  const foldedLine = fold(line);
+  let total = 0;
+  for (const [pattern] of STEMS) {
+    if (pattern.test(foldedSegment) && pattern.test(foldedLine)) total += 2;
+  }
+  return total;
+}
+
+/**
+ * Best source line by stem score. A single strong stem wins when that line is
+ * more specific than any other line with the same score. Equal lines do not move.
+ */
+function bestStemLine(
   segment: string,
   content: readonly SourceLine[],
-): { index: number; score: number; second: number } {
-  let index = content[0]?.index ?? 0;
-  let score = -1;
-  let second = -1;
-  for (const line of content) {
-    const value = overlap(segment, line.line);
-    if (value > score) {
-      second = score;
-      score = value;
-      index = line.index;
-    } else if (value > second) {
-      second = value;
-    }
-  }
-  return { index, score, second };
+): { index: number; score: number; decisive: boolean } {
+  const ranked = content
+    .map((line) => ({
+      index: line.index,
+      score: stemOverlap(segment, line.line),
+      size: tokens(line.line).size,
+    }))
+    .sort((left, right) => right.score - left.score || left.size - right.size || left.index - right.index);
+  const top = ranked[0];
+  const next = ranked[1];
+  if (!top || top.score < 2) return { index: top?.index ?? 0, score: top?.score ?? 0, decisive: false };
+  const decisive = !next || top.score > next.score || top.size < next.size;
+  return { index: top.index, score: top.score, decisive };
 }
 
 /**
@@ -152,9 +165,9 @@ export function assignSourceIndexes(sourceText: string | null, segments: readonl
   const forward = assignForward(segments, content);
   return forward.map((sourceIndex, segmentAt) => {
     const segment = segments[segmentAt] ?? "";
-    const best = bestSourceLine(segment, content);
-    const current = overlap(segment, lines[sourceIndex] ?? "");
-    if (best.score >= 2 && best.score > current && best.score > best.second) return best.index;
+    const best = bestStemLine(segment, content);
+    const current = stemOverlap(segment, lines[sourceIndex] ?? "");
+    if (best.decisive && best.score > current) return best.index;
     return sourceIndex;
   });
 }

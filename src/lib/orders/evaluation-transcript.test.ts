@@ -159,6 +159,25 @@ Mathématiques | 2 | 17`,
     ]);
   });
 
+  it("keeps a mark of 0 and records a non-numeric coefficient or mark", () => {
+    const parsed = courseExtractFromTranscript(
+      headedReleve(`Histoire | 2 | 12
+Mathématiques | 3 | 14
+Français | 2 | 0
+Bio | - | 12
+Chimie | 2 | ABS`),
+    );
+    expect(parsed.extract?.years[0]?.courses.map((course) => [course.originalName, course.localGrade])).toEqual([
+      ["Histoire", "12"],
+      ["Mathématiques", "14"],
+      ["Français", "0"],
+    ]);
+    expect(parsed.failures).toEqual([
+      { row: "Bio | - | 12", reason: "Coefficient is not a number" },
+      { row: "Chimie | 2 | ABS", reason: "Result is not a number" },
+    ]);
+  });
+
   it("records a coefficient of 0, a result over 20, and a missing coefficient", () => {
     const parsed = courseExtractFromTranscript(
       headedReleve(`Histoire | 2 | 12
@@ -222,17 +241,21 @@ Biologie | | 16`),
             { originalName: "Sport", englishName: "Sport", localCredits: 0, localGrade: "15" },
             { originalName: "Chimie", englishName: "Chemistry", localCredits: 2, localGrade: "50" },
             { originalName: "Physique", englishName: "Physics", localCredits: Number.NaN, localGrade: "16" },
+            { originalName: "Latin", englishName: "Latin", localCredits: 2, localGrade: "0" },
+            { originalName: "Chimie", englishName: "Chemistry", localCredits: 2, localGrade: "ABS" },
           ],
         },
       ],
     });
     expect(recovered.extract.years[0]?.courses).toEqual([
       { originalName: "Histoire", englishName: "History", localCredits: 2, localGrade: "12" },
+      { originalName: "Latin", englishName: "Latin", localCredits: 2, localGrade: "0" },
     ]);
     expect(recovered.failures).toEqual([
       { row: "Sport | 0 | 15", reason: "Coefficient is 0" },
       { row: "Chimie | 2 | 50", reason: "Result is over 20" },
       { row: "Physique | NaN | 16", reason: "No coefficient" },
+      { row: "Chimie | 2 | ABS", reason: "Result is not a number" },
     ]);
   });
 

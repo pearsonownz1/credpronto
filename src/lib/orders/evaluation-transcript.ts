@@ -139,8 +139,10 @@ function resolveMark(
 ): { grade: string } | { reason: string } {
   if (!Number.isFinite(coefficient)) return { reason: "No coefficient" };
   if (coefficient === 0) return { reason: "Coefficient is 0" };
-  if (coefficient < 0) return { reason: "No coefficient" };
-  if (!Number.isFinite(raw) || raw <= 0) return { reason: "Result is over 20" };
+  if (coefficient < 0) return { reason: "Coefficient is not a number" };
+  if (!Number.isFinite(raw)) return { reason: "Result is not a number" };
+  if (raw < 0) return { reason: "Result is not a number" };
+  if (raw === 0) return { grade: "0" };
   const divided = quotient(raw, coefficient);
   const dividedFits = divided > 0 && divided <= 20;
   if (raw > 20) return dividedFits ? { grade: String(divided) } : { reason: "Result is over 20" };
@@ -174,10 +176,16 @@ export function courseExtractFromTranscript(text: string): TranscriptCourseRead 
       const coefCell = three[2]?.trim() ?? "";
       const gradeCell = three[3]?.trim() ?? "";
       if (!NUMBER.test(coefCell)) {
-        if (coefCell.length === 0 && NUMBER.test(gradeCell)) failures.push({ row: line, reason: "No coefficient" });
+        failures.push({
+          row: line,
+          reason: coefCell.length === 0 ? "No coefficient" : "Coefficient is not a number",
+        });
         continue;
       }
-      if (!NUMBER.test(gradeCell)) continue;
+      if (!NUMBER.test(gradeCell)) {
+        failures.push({ row: line, reason: "Result is not a number" });
+        continue;
+      }
       const localCredits = amount(coefCell);
       const resolved = resolveMark(amount(gradeCell), localCredits, weightedColumn);
       if ("reason" in resolved) {
@@ -190,7 +198,11 @@ export function courseExtractFromTranscript(text: string): TranscriptCourseRead 
     const two = line.match(TWO_CELLS);
     if (!two?.[1] || !two[2]) continue;
     const originalName = two[1].trim();
-    if (skippedCourseName(originalName) || !NUMBER.test(two[2].trim())) continue;
+    if (skippedCourseName(originalName)) continue;
+    if (!NUMBER.test(two[2].trim())) {
+      failures.push({ row: line, reason: "Result is not a number" });
+      continue;
+    }
     failures.push({ row: line, reason: "No coefficient" });
   }
   const applicant = applicantOf(lines);
@@ -247,7 +259,17 @@ export function recoverCourseExtract<T extends TranscriptCourseExtract>(
       if (Number(resolved.grade) > 10) scale = "20";
       courses.push({ ...course, localGrade: resolved.grade });
     }
-    if (courses.length > 0 && year.year.trim()) years.push({ ...year, courses });
+    if (courses.length === 0) continue;
+    if (!year.year.trim()) {
+      for (const course of courses) {
+        failures.push({
+          row: rowLabel(course.originalName, course.localCredits, course.localGrade),
+          reason: "No year",
+        });
+      }
+      continue;
+    }
+    years.push({ ...year, courses });
   }
   if (years.length === 0 && failures.length === 0) return { extract: extracted, failures };
   return { extract: { ...extracted, scale, years }, failures };
