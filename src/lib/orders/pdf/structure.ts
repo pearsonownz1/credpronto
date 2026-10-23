@@ -217,7 +217,10 @@ export function collapseLetterSpacing(text: string): string {
 export function isElectronicSignatureToken(value: string): boolean {
   const compact = value.replace(/\s+/g, "");
   if (compact.length < 40) return false;
-  return /^[A-Za-z0-9+/=._-]+$/.test(compact);
+  if (!/^[A-Za-z0-9+/=._-]+$/.test(compact)) return false;
+  // A wrapped token breaks into long chunks. Ordinary words ("is awarded to Mr. KOUAMOU ...") are prose, not a signature.
+  const pieces = value.trim().split(/\s+/);
+  return pieces.slice(0, -1).every((piece) => piece.length >= 16);
 }
 
 export function sealCaptionFromText(text: string): string {

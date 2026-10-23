@@ -309,6 +309,52 @@ function dateFound(translation: string, value: string, format: "MM/DD/YYYY" | "D
   return dateForms(parsed).some((form) => includesText(translation, form));
 }
 
+/**
+ * Each uploaded file that prints a confirmed name must keep it in its own translated pages.
+ * A name printed on the transcript does not cover a diploma that dropped it.
+ */
+function missingNamesPerDocument(
+  input: {
+    originalPages: Array<{ number: number; text: string; documentId?: string }>;
+    translatedPages: Array<{ number: number; text: string }>;
+    confirmations: Array<{ fieldKey: string; confirmedValue: string | null; documentId?: string }>;
+  },
+  already: QaIssue[],
+): QaIssue[] {
+  const documentIds = [...new Set(input.originalPages.flatMap((page) => (page.documentId ? [page.documentId] : [])))];
+  if (documentIds.length < 2) return [];
+  const flagged = new Set(already.filter((item) => item.type === "name").map((item) => item.original));
+  const translatedByNumber = new Map(input.translatedPages.map((page) => [page.number, page.text]));
+  const found: QaIssue[] = [];
+  for (const documentId of documentIds) {
+    const pages = input.originalPages.filter((page) => page.documentId === documentId);
+    const source = pages.map((page) => page.text).join("\n");
+    const translated = pages.map((page) => translatedByNumber.get(page.number) ?? "").join("\n");
+    const seen = new Set<string>();
+    for (const field of input.confirmations) {
+      if (!(NAME_FIELDS as readonly string[]).includes(field.fieldKey)) continue;
+      if (field.documentId && field.documentId !== documentId) continue;
+      for (const raw of collapse(field.confirmedValue ?? "").split(";")) {
+        const part = collapse(raw);
+        if (!part || seen.has(part) || flagged.has(part)) continue;
+        seen.add(part);
+        if (!nameFound(source, part) || nameFound(translated, part)) continue;
+        found.push(
+          issue(
+            "name",
+            pages[0]?.number ?? null,
+            part,
+            translated.slice(0, 240),
+            `Confirmed ${field.fieldKey} is missing from the translation of this document.`,
+            isLatinScriptName(part) ? "high" : "medium",
+          ),
+        );
+      }
+    }
+  }
+  return found;
+}
+
 export function scoreIssues(issues: QaIssue[]): number {
   const penalty = issues.reduce((sum, item) => sum + PENALTY[item.severity], 0);
   return Math.max(0, 100 - penalty);
@@ -319,9 +365,10 @@ function pageCountLabel(count: number): string {
 }
 
 export function assessTranslation(input: {
-  originalPages: Array<{ number: number; text: string }>;
+  /** documentId groups pages by uploaded file so a name missing from one file is caught. */
+  originalPages: Array<{ number: number; text: string; documentId?: string }>;
   translatedPages: Array<{ number: number; text: string }>;
-  confirmations: Array<{ fieldKey: string; confirmedValue: string | null }>;
+  confirmations: Array<{ fieldKey: string; confirmedValue: string | null; documentId?: string }>;
 }): QaAssessment {
   const issues: QaIssue[] = [];
   const translation = input.translatedPages
@@ -412,6 +459,8 @@ export function assessTranslation(input: {
       }
     }
   }
+
+  issues.push(...missingNamesPerDocument(input, issues));
 
   const score = scoreIssues(issues);
   return { pass: !issues.some((item) => item.severity === "high") && score >= 80, score, issues };

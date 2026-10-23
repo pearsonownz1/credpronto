@@ -800,7 +800,7 @@ export async function runTranslationAssemble(
         if (!active || active.status === "failed" || active.status === "ready") return;
 
         const assessment = assessTranslation({
-          originalPages: pages.map((page) => ({ number: page.number, text: page.ocrText ?? "" })),
+          originalPages: pages.map((page) => ({ number: page.number, text: page.ocrText ?? "", documentId: page.documentId })),
           translatedPages: renderedPages.map((page) => ({
             number: page.combinedPageNumber,
             text: files.pageTexts.find((painted) => painted.number === page.combinedPageNumber)?.text ?? "",
