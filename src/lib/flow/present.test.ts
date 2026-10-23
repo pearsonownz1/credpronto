@@ -4,6 +4,7 @@ import { CJK_PAGE_RULE, WORD_PAGE_RULE } from "@/lib/orders/billing";
 import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
 import type { CustomerOrder, PreviewResponse } from "@/lib/orders/view";
 import {
+  documentsLabel,
   LANGUAGE_PENDING,
   QUOTE_BILLING_NOTE,
   UPLOAD_ORDER_NOTE,
@@ -997,5 +998,14 @@ describe("parent names", () => {
       mother: "Ana María Delgado Soto",
     });
     expect(joinParents("Ada", "Annabella")).toBe("Ada; Annabella");
+  });
+});
+
+describe("documentsLabel", () => {
+  it("names every uploaded file in the preview header", () => {
+    expect(documentsLabel([{ filename: "doc1.pdf" }])).toBe("doc1.pdf");
+    expect(documentsLabel([{ filename: "doc1.pdf" }, { filename: "doc2.pdf" }])).toBe("doc1.pdf + doc2.pdf");
+    expect(documentsLabel([{ filename: "a.pdf" }, { filename: "b.pdf" }, { filename: "c.pdf" }])).toBe("a.pdf + 2 more");
+    expect(documentsLabel([])).toBe("document.pdf");
   });
 });

@@ -43,6 +43,14 @@ export const QUOTE_BILLING_NOTE =
   "Billed by translatable text, about 250 words (or 1,000 characters) per page. English pages and shipping labels are free.";
 
 /** Quote-screen fine print. The order still carries pageRule for other clients. */
+/** Header label for every uploaded file, not just the first. */
+export function documentsLabel(documents: ReadonlyArray<{ filename: string }>): string {
+  const names = documents.map((document) => document.filename.trim()).filter(Boolean);
+  if (names.length === 0) return "document.pdf";
+  if (names.length <= 2) return names.join(" + ");
+  return `${names[0]} + ${names.length - 1} more`;
+}
+
 export function displayedPageRule(order: { pageRule: string }): string {
   void order.pageRule;
   return QUOTE_BILLING_NOTE;
@@ -805,7 +813,7 @@ export function toPreviewOrder(
     targetLanguage: order.targetLanguage
       ? languageLabel(order.targetLanguage)
       : "English",
-    filename: order.documents[0]?.filename ?? "document.pdf",
+    filename: documentsLabel(order.documents),
     pageCount: preview.original.pageCount,
     original: {
       url: preview.original.url,
