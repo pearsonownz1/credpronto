@@ -28,6 +28,7 @@ describe("correction queue", () => {
             fixedAt: null,
           },
         ],
+        page: { limit: 50, offset: 50, total: 120 },
       }),
     );
     expect(html).toContain(`href="/admin/orders/${orderId}"`);
@@ -39,6 +40,33 @@ describe("correction queue", () => {
     expect(html).toContain('href="/admin/corrections?status=fixed"');
     expect(html).toContain('href="/admin/corrections?status=all"');
     expect(html).toContain("—");
+    expect(html).toContain("51–51 of 120");
+    expect(html).toContain('href="/admin/corrections?offset=100"');
+    expect(html).toContain('data-testid="corrections-previous"');
+    expect(html).toContain('href="/admin/corrections"');
+  });
+
+  it("keeps the status filter on later pages", () => {
+    const html = renderToStaticMarkup(
+      createElement(CorrectionQueue, {
+        filter: "fixed",
+        rows: [
+          {
+            id: "corr-1",
+            orderId,
+            email: "ada@example.com",
+            note: "The date was corrected.",
+            status: "fixed",
+            requestedAt: "2026-10-20T18:00:00.000Z",
+            fixedAt: "2026-10-21T15:00:00.000Z",
+          },
+        ],
+        page: { limit: 50, offset: 50, total: 120 },
+      }),
+    );
+    expect(html).toContain('href="/admin/corrections?status=fixed&amp;offset=100"');
+    expect(html).toContain('href="/admin/corrections?status=fixed"');
+    expect(html).not.toContain('href="/admin/corrections?offset=');
   });
 });
 

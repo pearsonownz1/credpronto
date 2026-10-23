@@ -8,13 +8,34 @@ const FILTERS: Array<{ id: CorrectionFilter; label: string; href: string }> = [
   { id: "all", label: "All", href: "/admin/corrections?status=all" },
 ];
 
+function pageHref(filter: CorrectionFilter, offset: number): string {
+  const params = new URLSearchParams();
+  if (filter !== "open") params.set("status", filter);
+  if (offset > 0) params.set("offset", String(offset));
+  const query = params.toString();
+  return query ? `/admin/corrections?${query}` : "/admin/corrections";
+}
+
 function statusLabel(status: CorrectionQueueRow["status"]): string {
   if (status === "in_progress") return "In progress";
   if (status === "fixed") return "Fixed";
   return "Open";
 }
 
-export function CorrectionQueue({ filter, rows }: { filter: CorrectionFilter; rows: CorrectionQueueRow[] }) {
+export function CorrectionQueue({
+  filter,
+  rows,
+  page,
+}: {
+  filter: CorrectionFilter;
+  rows: CorrectionQueueRow[];
+  page: { limit: number; offset: number; total: number };
+}) {
+  const shownFrom = page.total === 0 ? 0 : page.offset + 1;
+  const shownTo = page.total === 0 ? 0 : Math.min(page.offset + rows.length, page.total);
+  const previous = page.offset > 0 ? pageHref(filter, Math.max(0, page.offset - page.limit)) : null;
+  const next = page.offset + rows.length < page.total ? pageHref(filter, page.offset + page.limit) : null;
+
   return (
     <div data-testid="admin-corrections">
       <div className="mb-5">
@@ -77,6 +98,27 @@ export function CorrectionQueue({ filter, rows }: { filter: CorrectionFilter; ro
           </div>
         )}
       </section>
+      <div className="mt-3 flex items-center justify-between text-[13px] text-ink-muted">
+        <span>
+          {shownFrom}–{shownTo} of {page.total}
+        </span>
+        <span className="flex gap-3">
+          {previous ? (
+            <Link href={previous} data-testid="corrections-previous">
+              Previous
+            </Link>
+          ) : (
+            <span className="opacity-40">Previous</span>
+          )}
+          {next ? (
+            <Link href={next} data-testid="corrections-next">
+              Next
+            </Link>
+          ) : (
+            <span className="opacity-40">Next</span>
+          )}
+        </span>
+      </div>
     </div>
   );
 }

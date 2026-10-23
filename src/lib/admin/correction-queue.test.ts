@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Db } from "@/lib/orders/storage";
 import {
+  CORRECTION_PAGE_SIZE,
   correctionListFilter,
+  correctionOffset,
   listCorrectionRequests,
   listStaffCorrections,
   mapCorrectionQueueRow,
@@ -29,10 +31,12 @@ function memoryDb(seed: Record<string, Row[]>) {
       filters: Array<(row: Row) => boolean>;
       sorts: Array<{ column: string; ascending: boolean }>;
       range: { from: number; to: number } | null;
-    } = { filters: [], sorts: [], range: null };
+      count: boolean;
+    } = { filters: [], sorts: [], range: null, count: false };
     const api = {
-      select(columns = "*") {
+      select(columns = "*", options?: { count?: string }) {
         selects.push(`${table} ${columns}`);
+        state.count = options?.count === "exact";
         return api;
       },
       eq(column: string, value: unknown) {
@@ -52,8 +56,9 @@ function memoryDb(seed: Record<string, Row[]>) {
         state.range = { from: start, to: end };
         return api;
       },
-      then(onFulfilled: (value: { data: Row[]; error: null }) => unknown) {
+      then(onFulfilled: (value: { data: Row[]; error: null; count: number | null }) => unknown) {
         let rows = (tables[table] ?? []).filter((row) => state.filters.every((keep) => keep(row)));
+        const total = rows.length;
         const sorts = [...state.sorts].reverse();
         for (const sort of sorts) {
           rows.sort((a, b) => {
@@ -64,7 +69,7 @@ function memoryDb(seed: Record<string, Row[]>) {
           });
         }
         if (state.range) rows = rows.slice(state.range.from, state.range.to + 1);
-        return Promise.resolve({ data: rows, error: null }).then(onFulfilled);
+        return Promise.resolve({ data: rows, error: null, count: state.count ? total : null }).then(onFulfilled);
       },
     };
     return api;
@@ -138,6 +143,10 @@ describe("correction queue filter", () => {
     expect(correctionListFilter("nope")).toBe("open");
     expect(correctionListFilter("fixed")).toBe("fixed");
     expect(correctionListFilter("all")).toBe("all");
+    expect(correctionOffset(undefined)).toBe(0);
+    expect(correctionOffset("-1")).toBe(0);
+    expect(correctionOffset("50")).toBe(50);
+    expect(CORRECTION_PAGE_SIZE).toBe(50);
   });
 });
 
@@ -148,7 +157,9 @@ describe("correction queue rows", () => {
 
   it("lists open requests newest first with the customer email", async () => {
     const db = seed();
-    const rows = await listCorrectionRequests(db as unknown as Db, "open");
+    const page = await listCorrectionRequests(db as unknown as Db, "open", { limit: 50, offset: 0 });
+    const rows = page.rows;
+    expect(page.total).toBe(2);
     expect(rows.map((row) => row.id)).toEqual(["corr-new", "corr-old"]);
     expect(rows[0]).toMatchObject({
       orderId: orderB,
@@ -165,12 +176,17 @@ describe("correction queue rows", () => {
 
   it("lists fixed requests and keeps every status in all", async () => {
     const db = seed();
-    const fixed = await listCorrectionRequests(db as unknown as Db, "fixed");
-    expect(fixed.map((row) => row.id)).toEqual(["corr-fixed"]);
-    expect(fixed[0]?.fixedAt).toBe("2026-10-21T12:00:00.000Z");
+    const fixed = await listCorrectionRequests(db as unknown as Db, "fixed", { limit: 50, offset: 0 });
+    expect(fixed.total).toBe(1);
+    expect(fixed.rows.map((row) => row.id)).toEqual(["corr-fixed"]);
+    expect(fixed.rows[0]?.fixedAt).toBe("2026-10-21T12:00:00.000Z");
 
-    const all = await listCorrectionRequests(db as unknown as Db, "all");
-    expect(all.map((row) => row.id)).toEqual(["corr-new", "corr-claimed", "corr-fixed", "corr-old"]);
+    const first = await listCorrectionRequests(db as unknown as Db, "all", { limit: 1, offset: 0 });
+    expect(first.total).toBe(4);
+    expect(first.rows.map((row) => row.id)).toEqual(["corr-new"]);
+    const second = await listCorrectionRequests(db as unknown as Db, "all", { limit: 1, offset: 1 });
+    expect(second.rows.map((row) => row.id)).toEqual(["corr-claimed"]);
+    expect(second.rows.map((row) => row.id)).not.toContain("corr-bad");
   });
 });
 
@@ -182,9 +198,10 @@ describe("staff correction query", () => {
   it("reads through the staff service-role client", async () => {
     const db = seed();
     vi.mocked(requireStaff).mockResolvedValue({ db: db as unknown as Db, userId: "staff-1", role: "admin" });
-    const rows = await listStaffCorrections("open");
+    const page = await listStaffCorrections("open", { limit: 50, offset: 0 });
     expect(requireStaff).toHaveBeenCalledOnce();
-    expect(rows).toHaveLength(2);
+    expect(page.rows).toHaveLength(2);
+    expect(page.total).toBe(2);
   });
 
   it("uses mock rows for an admin and does not open the service client", async () => {
@@ -195,16 +212,21 @@ describe("staff correction query", () => {
       name: "Admin",
       isAdmin: true,
     });
-    const rows = await listStaffCorrections("open");
+    const page = await listStaffCorrections("open", { limit: 50, offset: 0 });
     expect(requireStaff).not.toHaveBeenCalled();
-    expect(rows.map((row) => row.status)).toEqual(["open"]);
+    expect(page.total).toBe(1);
+    expect(page.rows.map((row) => row.status)).toEqual(["open"]);
+    const second = await listStaffCorrections("all", { limit: 1, offset: 1 });
+    expect(second.total).toBe(3);
+    expect(second.rows).toHaveLength(1);
+    expect(second.rows[0]?.status).toBe("in_progress");
     vi.mocked(getAccount).mockResolvedValue({
       id: "user",
       email: "ada@example.com",
       name: "Ada",
       isAdmin: false,
     });
-    await expect(listStaffCorrections("all")).rejects.toThrow("Staff access required");
+    await expect(listStaffCorrections("all", { limit: 50, offset: 0 })).rejects.toThrow("Staff access required");
     vi.unstubAllEnvs();
   });
 });

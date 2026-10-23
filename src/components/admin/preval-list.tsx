@@ -24,8 +24,8 @@ export function PrevalList({
       <div className="mb-5">
         <h1 className="text-[26px] tracking-[-0.6px]">Pre-evaluations</h1>
         <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-          Instant equivalency suggestions, newest first. A paid order is one created with this submission&apos;s
-          preEvaluation id and a payment status of paid.
+          Instant equivalency suggestions, newest first. A paid order is the order stored on the submission when that
+          order has a payment status of paid.
         </p>
       </div>
       <section className="overflow-hidden rounded-[var(--cp-radius)] border border-line bg-white">

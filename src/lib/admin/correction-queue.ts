@@ -4,6 +4,7 @@ import { requireStaff } from "@/lib/orders/staff";
 import type { Db } from "@/lib/orders/storage";
 
 export const CORRECTION_FILTERS = ["open", "fixed", "all"] as const;
+export const CORRECTION_PAGE_SIZE = 50;
 
 export type CorrectionFilter = (typeof CORRECTION_FILTERS)[number];
 
@@ -17,9 +18,7 @@ export type CorrectionQueueRow = {
   fixedAt: string | null;
 };
 
-const STATUSES = new Set<CorrectionQueueRow["status"]>(["open", "in_progress", "fixed"]);
-const PAGE = 1000;
-const CAP = 5000;
+const STATUSES = ["open", "in_progress", "fixed"] as const;
 const CHUNK = 100;
 
 type Row = Record<string, unknown>;
@@ -27,6 +26,13 @@ type Row = Record<string, unknown>;
 export function correctionListFilter(value: string | undefined | null): CorrectionFilter {
   if (value === "fixed" || value === "all" || value === "open") return value;
   return "open";
+}
+
+export function correctionOffset(value: string | undefined | null): number {
+  if (value == null || value === "" || !/^\d+$/.test(value)) return 0;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) return 0;
+  return parsed;
 }
 
 function text(value: unknown): string | null {
@@ -39,7 +45,7 @@ export function mapCorrectionQueueRow(row: Row, email: string | null): Correctio
   const status = text(row.status);
   const requestedAt = text(row.created_at);
   if (!id || !orderId || typeof row.request_text !== "string" || !status || !requestedAt) return null;
-  if (!STATUSES.has(status as CorrectionQueueRow["status"])) return null;
+  if (!STATUSES.includes(status as CorrectionQueueRow["status"])) return null;
   return {
     id,
     orderId,
@@ -88,35 +94,33 @@ async function emailsByOrder(db: Db, orderIds: string[]): Promise<Map<string, st
   return byOrder;
 }
 
-/** Newest request first. `open` and `fixed` are exact statuses. `all` includes in-progress claims. */
-export async function listCorrectionRequests(db: Db, filter: CorrectionFilter): Promise<CorrectionQueueRow[]> {
+/** Newest request first. One page of `CORRECTION_PAGE_SIZE`. `open` and `fixed` are exact statuses. */
+export async function listCorrectionRequests(
+  db: Db,
+  filter: CorrectionFilter,
+  page: { limit: number; offset: number },
+): Promise<{ rows: CorrectionQueueRow[]; total: number }> {
   const failure = "Could not load correction requests.";
-  const stored: Row[] = [];
-  let offset = 0;
-  for (;;) {
-    let query = db
-      .from("order_final_corrections")
-      .select("id, order_id, request_text, status, created_at, fixed_at");
-    if (filter !== "all") query = query.eq("status", filter);
-    const { data, error } = await query
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: false })
-      .range(offset, offset + PAGE - 1);
-    if (error) throw new Error(failure);
-    const page = (data ?? []) as Row[];
-    stored.push(...page);
-    if (page.length < PAGE || stored.length >= CAP) break;
-    offset += PAGE;
-  }
+  let query = db
+    .from("order_final_corrections")
+    .select("id, order_id, request_text, status, created_at, fixed_at", { count: "exact" });
+  query = filter === "all" ? query.in("status", [...STATUSES]) : query.eq("status", filter);
+  const { data, error, count } = await query
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .range(page.offset, page.offset + page.limit - 1);
+  if (error) throw new Error(failure);
+  const stored = (data ?? []) as Row[];
   const emails = await emailsByOrder(
     db,
     stored.flatMap((row) => (typeof row.order_id === "string" ? [row.order_id] : [])),
   );
-  return stored.flatMap((row) => {
+  const rows = stored.flatMap((row) => {
     const orderId = typeof row.order_id === "string" ? row.order_id : "";
     const mapped = mapCorrectionQueueRow(row, emails.get(orderId) ?? null);
     return mapped ? [mapped] : [];
   });
+  return { total: typeof count === "number" ? count : page.offset + rows.length, rows };
 }
 
 const MOCK_CORRECTIONS: CorrectionQueueRow[] = [
@@ -149,17 +153,23 @@ const MOCK_CORRECTIONS: CorrectionQueueRow[] = [
   },
 ];
 
-async function mockStaffCorrections(filter: CorrectionFilter): Promise<CorrectionQueueRow[]> {
+async function mockStaffCorrections(
+  filter: CorrectionFilter,
+  page: { limit: number; offset: number },
+): Promise<{ rows: CorrectionQueueRow[]; total: number }> {
   const account = await getAccount();
   if (!account) throw new HttpError("Sign in required", 401);
   if (!account.isAdmin) throw new HttpError("Staff access required", 403);
-  if (filter === "all") return MOCK_CORRECTIONS;
-  return MOCK_CORRECTIONS.filter((row) => row.status === filter);
+  const matched = filter === "all" ? MOCK_CORRECTIONS : MOCK_CORRECTIONS.filter((row) => row.status === filter);
+  return { total: matched.length, rows: matched.slice(page.offset, page.offset + page.limit) };
 }
 
 /** Staff session, then the service-role client from requireStaff. Mock mode never opens that client. */
-export async function listStaffCorrections(filter: CorrectionFilter): Promise<CorrectionQueueRow[]> {
-  if (isMockMode()) return mockStaffCorrections(filter);
+export async function listStaffCorrections(
+  filter: CorrectionFilter,
+  page: { limit: number; offset: number },
+): Promise<{ rows: CorrectionQueueRow[]; total: number }> {
+  if (isMockMode()) return mockStaffCorrections(filter, page);
   const { db } = await requireStaff();
-  return listCorrectionRequests(db, filter);
+  return listCorrectionRequests(db, filter, page);
 }

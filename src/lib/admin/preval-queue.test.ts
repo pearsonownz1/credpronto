@@ -1,15 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Db } from "@/lib/orders/storage";
-import {
-  listPreEvaluations,
-  listStaffPreEvaluations,
-  paidOrderForSubmission,
-  preEvaluationParam,
-  preEvaluationResultSummary,
-  prevalOffset,
-  PREVAL_PAGE_SIZE,
-  type PaidOrderCandidate,
-} from "./preval-queue";
+import { listPreEvaluations, listStaffPreEvaluations, preEvaluationResultSummary, prevalOffset, PREVAL_PAGE_SIZE } from "./preval-queue";
 
 vi.mock("@/lib/orders/staff", () => ({
   requireStaff: vi.fn(),
@@ -31,11 +22,10 @@ function memoryDb(seed: Record<string, Row[]>) {
   function from(table: string) {
     const state: {
       filters: Array<(row: Row) => boolean>;
-      orFilters: Array<(row: Row) => boolean>;
       sorts: Array<{ column: string; ascending: boolean }>;
       range: { from: number; to: number } | null;
       count: boolean;
-    } = { filters: [], orFilters: [], sorts: [], range: null, count: false };
+    } = { filters: [], sorts: [], range: null, count: false };
     const api = {
       select(columns = "*", options?: { count?: string }) {
         selects.push(`${table} ${columns}`);
@@ -51,15 +41,6 @@ function memoryDb(seed: Record<string, Row[]>) {
         state.filters.push((row) => allowed.has(row[column]));
         return api;
       },
-      or(filter: string) {
-        const clauses = filter.split(",").map((clause) => {
-          const match = /^landing_path\.ilike\.\*preEvaluation=([A-Za-z0-9_-]+)\*$/.exec(clause);
-          const id = match?.[1] ?? "";
-          return (row: Row) => typeof row.landing_path === "string" && row.landing_path.includes(`preEvaluation=${id}`);
-        });
-        state.orFilters.push((row) => clauses.some((keep) => keep(row)));
-        return api;
-      },
       order(column: string, options?: { ascending?: boolean }) {
         state.sorts.push({ column, ascending: options?.ascending !== false });
         return api;
@@ -70,7 +51,6 @@ function memoryDb(seed: Record<string, Row[]>) {
       },
       then(onFulfilled: (value: { data: Row[]; error: null; count: number | null }) => unknown) {
         let rows = (tables[table] ?? []).filter((row) => state.filters.every((keep) => keep(row)));
-        if (state.orFilters.length > 0) rows = rows.filter((row) => state.orFilters.every((keep) => keep(row)));
         const total = rows.length;
         for (const sort of [...state.sorts].reverse()) {
           rows.sort((a, b) => {
@@ -90,23 +70,12 @@ function memoryDb(seed: Record<string, Row[]>) {
 }
 
 const token = "a".repeat(43);
-const otherToken = "b".repeat(43);
 const preA = "44444444-4444-4444-8444-444444444444";
 const preB = "55555555-5555-4555-8555-555555555555";
 const preC = "66666666-6666-4666-8666-666666666666";
 const paidOrder = "11111111-1111-4111-8111-111111111111";
 const testOrder = "22222222-2222-4222-8222-222222222222";
-const landingOrder = "33333333-3333-4333-8333-333333333333";
-const newerLanding = "77777777-7777-4777-8777-777777777777";
-
-function candidate(patch: Partial<PaidOrderCandidate> & Pick<PaidOrderCandidate, "id">): PaidOrderCandidate {
-  return {
-    preEvaluationId: null,
-    paymentStatus: "paid",
-    createdAt: "2026-10-23T12:00:00.000Z",
-    ...patch,
-  };
-}
+const refundedOrder = "33333333-3333-4333-8333-333333333333";
 
 describe("pre-evaluation result summary", () => {
   it("joins the equivalency with confidence, and falls back to status", () => {
@@ -122,67 +91,9 @@ describe("pre-evaluation result summary", () => {
     );
     expect(preEvaluationResultSummary({ status: "processing", equivalency: null, confidence: null })).toBe("Processing");
     expect(preEvaluationResultSummary({ status: "failed", equivalency: null, confidence: null })).toBe("Failed");
-  });
-
-  it("reads an exact preEvaluation query value", () => {
-    expect(preEvaluationParam("/translate?service=diploma&preEvaluation=abc_DEF-1")).toBe("abc_DEF-1");
-    expect(preEvaluationParam("preEvaluation=abc")).toBe("abc");
-    expect(preEvaluationParam("/translate?preEvaluation=abcXYZ")).toBe("abcXYZ");
-    expect(preEvaluationParam("/translate?service=diploma")).toBeNull();
-    expect(preEvaluationParam(null)).toBeNull();
     expect(prevalOffset(undefined)).toBe(0);
     expect(prevalOffset("-1")).toBe(0);
     expect(prevalOffset("40")).toBe(40);
-  });
-});
-
-describe("paid conversion", () => {
-  const submission = { id: preA, publicId: token, linkedOrderId: paidOrder };
-
-  it("requires payment status paid", () => {
-    expect(
-      paidOrderForSubmission(submission, [
-        candidate({ id: paidOrder, paymentStatus: "paid_test" }),
-        candidate({ id: landingOrder, preEvaluationId: token, paymentStatus: "refunded" }),
-        candidate({ id: testOrder, preEvaluationId: token, paymentStatus: null }),
-      ]),
-    ).toBeNull();
-  });
-
-  it("uses the order created with preEvaluation=<id>, including the stored order link", () => {
-    expect(paidOrderForSubmission(submission, [candidate({ id: paidOrder, createdAt: "2026-10-01T00:00:00.000Z" })])).toBe(
-      paidOrder,
-    );
-    expect(
-      paidOrderForSubmission(
-        { id: preA, publicId: token, linkedOrderId: null },
-        [candidate({ id: landingOrder, preEvaluationId: token })],
-      ),
-    ).toBe(landingOrder);
-    expect(
-      paidOrderForSubmission(
-        { id: preA, publicId: token, linkedOrderId: null },
-        [candidate({ id: landingOrder, preEvaluationId: preA })],
-      ),
-    ).toBe(landingOrder);
-  });
-
-  it("does not treat a longer id as the same submission and keeps the newest paid order", () => {
-    expect(
-      paidOrderForSubmission(
-        { id: preA, publicId: token, linkedOrderId: null },
-        [candidate({ id: landingOrder, preEvaluationId: `${token}x` })],
-      ),
-    ).toBeNull();
-    expect(
-      paidOrderForSubmission(
-        { id: preA, publicId: token, linkedOrderId: paidOrder },
-        [
-          candidate({ id: paidOrder, createdAt: "2026-10-01T00:00:00.000Z" }),
-          candidate({ id: newerLanding, preEvaluationId: token, createdAt: "2026-10-23T00:00:00.000Z" }),
-        ],
-      ),
-    ).toBe(newerLanding);
   });
 });
 
@@ -202,7 +113,7 @@ describe("pre-evaluation list", () => {
         },
         {
           id: preB,
-          access_token: otherToken,
+          access_token: "b".repeat(43),
           email: null,
           status: "processing",
           us_equivalency: null,
@@ -217,34 +128,19 @@ describe("pre-evaluation list", () => {
           status: "failed",
           us_equivalency: null,
           confidence: null,
-          order_id: null,
+          order_id: refundedOrder,
           created_at: "2026-10-21T00:00:00.000Z",
-        },
-      ],
-      orders: [
-        { id: paidOrder, landing_path: null, created_at: "2026-10-22T01:00:00.000Z" },
-        { id: testOrder, landing_path: `/translate?preEvaluation=${otherToken}`, created_at: "2026-10-23T01:00:00.000Z" },
-        {
-          id: landingOrder,
-          landing_path: `/translate?service=diploma&preEvaluation=${"c".repeat(43)}`,
-          created_at: "2026-10-21T01:00:00.000Z",
-        },
-        {
-          id: newerLanding,
-          landing_path: `/translate?preEvaluation=${token}extra`,
-          created_at: "2026-10-24T01:00:00.000Z",
         },
       ],
       payments: [
         { order_id: paidOrder, status: "paid" },
         { order_id: testOrder, status: "paid_test" },
-        { order_id: landingOrder, status: "paid" },
-        { order_id: newerLanding, status: "paid" },
+        { order_id: refundedOrder, status: "refunded" },
       ],
     });
   }
 
-  it("pages newest first and links only a paid order", async () => {
+  it("pages newest first and links only the stored order when its payment is paid", async () => {
     const store = db();
     const first = await listPreEvaluations(store as unknown as Db, { limit: 2, offset: 0 });
     expect(first.total).toBe(3);
@@ -256,10 +152,9 @@ describe("pre-evaluation list", () => {
       orderId: paidOrder,
     });
     expect(JSON.stringify(first.rows)).not.toContain(token);
-    expect(JSON.stringify(first.rows)).not.toContain("access_token");
-    expect(store.selects.some((select) => select.startsWith("pre_evaluations") && select.includes("access_token"))).toBe(
-      true,
-    );
+    expect(store.selects.some((select) => select.includes("access_token") || select.includes("landing_path"))).toBe(false);
+    expect(store.selects.some((select) => select.startsWith("orders"))).toBe(false);
+    expect(store.selects.some((select) => select.startsWith("payments"))).toBe(true);
 
     const second = await listPreEvaluations(store as unknown as Db, { limit: PREVAL_PAGE_SIZE, offset: 2 });
     expect(second.rows).toEqual([
@@ -267,17 +162,34 @@ describe("pre-evaluation list", () => {
         id: preC,
         email: "bea@example.com",
         summary: "Failed",
-        orderId: landingOrder,
+        orderId: null,
       }),
     ]);
   });
 
-  it("does not look up orders when the page is empty", async () => {
-    const store = memoryDb({ pre_evaluations: [], orders: [], payments: [] });
-    const list = await listPreEvaluations(store as unknown as Db, { limit: 50, offset: 0 });
+  it("does not look up payments when the page is empty or no order is linked", async () => {
+    const empty = memoryDb({ pre_evaluations: [], payments: [] });
+    const list = await listPreEvaluations(empty as unknown as Db, { limit: 50, offset: 0 });
     expect(list).toEqual({ rows: [], total: 0 });
-    expect(store.selects.some((select) => select.startsWith("orders"))).toBe(false);
-    expect(store.selects.some((select) => select.startsWith("payments"))).toBe(false);
+    expect(empty.selects.some((select) => select.startsWith("payments"))).toBe(false);
+
+    const unlinked = memoryDb({
+      pre_evaluations: [
+        {
+          id: preC,
+          email: "bea@example.com",
+          status: "ready",
+          us_equivalency: null,
+          confidence: null,
+          order_id: null,
+          created_at: "2026-10-21T00:00:00.000Z",
+        },
+      ],
+      payments: [{ order_id: paidOrder, status: "paid" }],
+    });
+    const rows = await listPreEvaluations(unlinked as unknown as Db, { limit: 50, offset: 0 });
+    expect(rows.rows[0]?.orderId).toBeNull();
+    expect(unlinked.selects.some((select) => select.startsWith("payments") || select.startsWith("orders"))).toBe(false);
   });
 });
 
@@ -287,7 +199,7 @@ describe("staff pre-evaluation query", () => {
   });
 
   it("reads through the staff service-role client", async () => {
-    const store = memoryDb({ pre_evaluations: [], orders: [], payments: [] });
+    const store = memoryDb({ pre_evaluations: [], payments: [] });
     vi.mocked(requireStaff).mockResolvedValue({ db: store as unknown as Db, userId: "staff-1", role: "admin" });
     await listStaffPreEvaluations({ limit: 50, offset: 0 });
     expect(requireStaff).toHaveBeenCalledOnce();

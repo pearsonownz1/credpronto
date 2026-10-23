@@ -13,7 +13,7 @@ vi.mock("@/lib/admin/correction-queue", async () => {
   return { ...actual, listStaffCorrections: vi.fn() };
 });
 
-import { listStaffCorrections } from "@/lib/admin/correction-queue";
+import { CORRECTION_PAGE_SIZE, listStaffCorrections } from "@/lib/admin/correction-queue";
 import Page, { CorrectionsBody, instant } from "./page";
 
 describe("corrections page", () => {
@@ -23,18 +23,23 @@ describe("corrections page", () => {
 
   it("is a dynamic admin page and defaults to open requests", async () => {
     expect(instant).toBe(false);
-    vi.mocked(listStaffCorrections).mockResolvedValue([]);
+    vi.mocked(listStaffCorrections).mockResolvedValue({ rows: [], total: 0 });
     const element = await CorrectionsBody({ searchParams: Promise.resolve({}) });
     const html = renderToStaticMarkup(element);
-    expect(listStaffCorrections).toHaveBeenCalledWith("open");
+    expect(listStaffCorrections).toHaveBeenCalledWith("open", { limit: CORRECTION_PAGE_SIZE, offset: 0 });
     expect(html).toContain("No correction requests in this view.");
+    expect(html).toContain("0–0 of 0");
     expect(renderToStaticMarkup(Page({ searchParams: Promise.resolve({}) }))).toContain("Loading corrections");
   });
 
   it("uses the fixed filter and hides a database error", async () => {
-    vi.mocked(listStaffCorrections).mockResolvedValueOnce([]);
-    await CorrectionsBody({ searchParams: Promise.resolve({ status: "fixed" }) });
-    expect(listStaffCorrections).toHaveBeenCalledWith("fixed");
+    vi.mocked(listStaffCorrections).mockResolvedValueOnce({ rows: [], total: 0 });
+    await CorrectionsBody({ searchParams: Promise.resolve({ status: "fixed", offset: "50" }) });
+    expect(listStaffCorrections).toHaveBeenCalledWith("fixed", { limit: CORRECTION_PAGE_SIZE, offset: 50 });
+
+    vi.mocked(listStaffCorrections).mockResolvedValueOnce({ rows: [], total: 0 });
+    await CorrectionsBody({ searchParams: Promise.resolve({ offset: "-1" }) });
+    expect(listStaffCorrections).toHaveBeenCalledWith("open", { limit: CORRECTION_PAGE_SIZE, offset: 0 });
 
     vi.mocked(listStaffCorrections).mockRejectedValueOnce(new Error("relation pre_evaluations secret"));
     const hidden = renderToStaticMarkup(await CorrectionsBody({ searchParams: Promise.resolve({ status: "all" }) }));
