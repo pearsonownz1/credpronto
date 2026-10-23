@@ -91,6 +91,34 @@ describe("pre-evaluation flow", () => {
     expect(failed).toMatchObject({ step: "error", retryable: false, message: FAILED_PREVIEW_MESSAGE });
   });
 
+  it("shows the retryable error when a shown preview can no longer be refreshed", () => {
+    const message = "We couldn't finish that request. Please try again.";
+    const errored = reducePreEvaluation(
+      {
+        step: "result",
+        id: "prev-1",
+        email: "ada@example.com",
+        equivalent: "Bachelor's degree",
+        confidence: "high",
+        previewUrl: "https://cdn.example/preview.pdf",
+      },
+      { type: "request-failed", status: 503, message },
+    );
+    expect(errored).toMatchObject({
+      step: "error",
+      id: "prev-1",
+      email: "ada@example.com",
+      message,
+      rateLimited: false,
+      retryable: true,
+    });
+    expect(reducePreEvaluation(errored, { type: "retry" })).toMatchObject({
+      step: "checking",
+      id: "prev-1",
+      email: "ada@example.com",
+    });
+  });
+
   it("lets a rate-limited poll be tried again without dropping the email", () => {
     const errored = reducePreEvaluation(
       { step: "processing", id: "prev-1", email: "ada@example.com" },
