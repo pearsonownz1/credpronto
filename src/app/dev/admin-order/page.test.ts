@@ -42,6 +42,12 @@ describe("admin order fixture page", () => {
     expect(html).toContain('data-testid="evaluation-report-diploma"');
     expect(html).toContain('data-testid="evaluation-report-course_by_course"');
     expect(html).toContain("diploma-evaluation.pdf");
+    expect(html).toContain('data-testid="evaluation-summaries"');
+    expect(html).toContain('data-testid="evaluation-summary-diploma"');
+    expect(html).toContain('data-testid="evaluation-summary-course_by_course"');
+    expect(html).toContain("Not generated yet.");
+    expect(html).toContain("Generate missing evaluations");
+    expect(html).toContain('data-testid="evaluation-status"');
     const missing = html.indexOf("Still missing: Course-by-course evaluation");
     const approve = html.indexOf("Approve and release");
     expect(missing).toBeGreaterThan(-1);

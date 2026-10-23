@@ -1,12 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as analysis from "./analysis";
 import * as db from "./db";
-import { loadCustomerOrder } from "./pipeline";
+import * as dispatch from "./evaluation-dispatch";
+import { loadCustomerOrder, processOrder } from "./pipeline";
+import * as storage from "./storage";
 import type { Db } from "./storage";
+import * as translation from "./translation";
 import type { FinalCorrectionRecord, OrderRecord } from "./types";
 
 const handle = {} as Db;
 
-function order(): OrderRecord {
+function order(patch: Partial<OrderRecord> = {}): OrderRecord {
   return {
     id: "order-1",
     customerId: "customer-1",
@@ -50,6 +54,7 @@ function order(): OrderRecord {
     staffAlertSentAt: null,
     staffUrgentAlertSentAt: null,
     progress: { step: "done", pagesRead: 1, pagesTotal: 1 },
+    ...patch,
   };
 }
 
@@ -110,5 +115,109 @@ describe("loadCustomerOrder final correction", () => {
       fixedAt: "2026-10-23T17:00:00.000Z",
     });
     expect(JSON.stringify(body.finalCorrection)).not.toMatch(/Fix the name|corrected-final|claimedAt/);
+  });
+});
+
+describe("processOrder paid evaluations", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(storage, "serviceDb").mockReturnValue(handle);
+    vi.spyOn(dispatch, "ensurePaidEvaluationReports").mockResolvedValue({
+      status: "unchanged",
+      generated: [],
+      pending: [],
+    });
+    vi.spyOn(translation, "translateOrder").mockResolvedValue(undefined);
+    vi.spyOn(analysis, "analyzeOrder").mockResolvedValue(undefined);
+  });
+
+  it("generates evaluations for a paid translation bundle and does not translate again", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue(
+      order({
+        status: "paid",
+        orderType: "evaluation",
+        serviceType: "evaluation",
+        service: null,
+        services: ["translation", "diploma", "course_by_course"],
+        includeTranslation: true,
+        degreeCount: 1,
+        finalTranslationPath: "order-1/certified-translation-v1.pdf",
+        certificationPath: "order-1/certified-translation-v1.pdf",
+        evaluationResult: null,
+        evaluationResults: null,
+      }),
+    );
+
+    await processOrder("order-1");
+
+    expect(dispatch.ensurePaidEvaluationReports).toHaveBeenCalledWith(handle, "order-1");
+    expect(translation.translateOrder).not.toHaveBeenCalled();
+    expect(analysis.analyzeOrder).not.toHaveBeenCalled();
+  });
+
+  it("generates a paid single diploma evaluation and does not translate it", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue(
+      order({
+        status: "paid",
+        orderType: "evaluation",
+        serviceType: "evaluation",
+        service: "diploma",
+        includeTranslation: false,
+        degreeCount: 1,
+        finalTranslationPath: null,
+        certificationPath: null,
+      }),
+    );
+
+    await processOrder("order-1");
+
+    expect(dispatch.ensurePaidEvaluationReports).toHaveBeenCalledWith(handle, "order-1");
+    expect(translation.translateOrder).not.toHaveBeenCalled();
+  });
+
+  it("leaves an unpaid diploma-only draft alone", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue(
+      order({
+        status: "draft",
+        paidAt: null,
+        orderType: "evaluation",
+        serviceType: "evaluation",
+        service: "diploma",
+        includeTranslation: false,
+        degreeCount: 1,
+        finalTranslationPath: null,
+        certificationPath: null,
+      }),
+    );
+
+    await processOrder("order-1");
+
+    expect(dispatch.ensurePaidEvaluationReports).not.toHaveBeenCalled();
+    expect(analysis.analyzeOrder).not.toHaveBeenCalled();
+    expect(translation.translateOrder).not.toHaveBeenCalled();
+  });
+
+  it("analyzes an unpaid translation bundle and does not generate evaluations", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue(
+      order({
+        status: "draft",
+        paidAt: null,
+        orderType: "evaluation",
+        serviceType: "evaluation",
+        service: null,
+        services: ["translation", "diploma", "course_by_course"],
+        includeTranslation: true,
+        degreeCount: 1,
+        finalTranslationPath: null,
+        certificationPath: null,
+      }),
+    );
+
+    await processOrder("order-1", "token-1");
+
+    expect(dispatch.ensurePaidEvaluationReports).not.toHaveBeenCalled();
+    expect(analysis.analyzeOrder).toHaveBeenCalledWith(handle, "order-1", "token-1");
+    expect(translation.translateOrder).not.toHaveBeenCalled();
   });
 });

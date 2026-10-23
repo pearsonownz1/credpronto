@@ -1,4 +1,7 @@
 import { analyzeOrder } from "./analysis";
+import { ensurePaidEvaluationReports } from "./evaluation-dispatch";
+import { orderIsPaid } from "./evaluation-summary";
+import { orderHasEvaluation } from "./service-selection";
 import {
   customerEmail,
   earliestReadyPreviewAt,
@@ -66,6 +69,15 @@ export async function processOrder(orderId: string, token: string | null = null)
   const db = serviceDb();
   const order = await getOrderById(db, orderId);
   if (!order) return;
+
+  // Paid evaluations live on `services`. `service` is empty when diploma and course-by-course are both selected.
+  if (orderIsPaid(order) && orderHasEvaluation(order)) {
+    try {
+      await ensurePaidEvaluationReports(db, order.id);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : "evaluation reports failed");
+    }
+  }
 
   // Evaluation-only stays with staff after payment. A translation bundle still builds a preview.
   if (order.service && !order.includeTranslation) return;

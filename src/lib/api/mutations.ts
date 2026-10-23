@@ -11,6 +11,11 @@ export async function patchOrderTranslation(id: string, pages: PageEdit[]): Prom
   });
 }
 
+export async function regenerateEvaluations(id: string): Promise<ApiResult<unknown>> {
+  if (publicMockMode()) return { ok: true, status: 200, data: { status: "unchanged", generated: [], pending: [] } };
+  return browserJson(`/api/admin/orders/${encodeURIComponent(id)}/evaluations`, { method: "POST" });
+}
+
 export async function regenerateOrder(id: string): Promise<ApiResult<unknown>> {
   if (publicMockMode()) return { ok: true, status: 200, data: { status: "preview_ready" } };
   return browserJson(`/api/admin/orders/${encodeURIComponent(id)}/resolve-corrections`, {

@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as certification from "./certification";
 import * as db from "./db";
+import * as dispatch from "./evaluation-dispatch";
 import * as email from "./email";
 import * as finalEmail from "./final-email";
 import { EVAL_ALERT_SIGNATURE_HEADER } from "./eval-alert-webhook";
@@ -64,6 +65,11 @@ function order(patch: Partial<OrderRecord> = {}): OrderRecord {
 describe("settlePaidOrder", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(dispatch, "ensurePaidEvaluationReports").mockResolvedValue({
+      status: "unchanged",
+      generated: [],
+      pending: [],
+    });
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(db, "markOrderPaidAt").mockResolvedValue(undefined);
     vi.spyOn(db, "settledPayment").mockResolvedValue({ id: "pay-1", status: "paid", paidAt: "2026-10-12T00:05:00.000Z" } as PaymentRecord);
@@ -133,6 +139,7 @@ describe("settlePaidOrder", () => {
     });
     expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
     expect(schedule).not.toHaveBeenCalled();
+    expect(dispatch.ensurePaidEvaluationReports).not.toHaveBeenCalled();
   });
 
   it("alerts staff once for a low-confidence pass and arms the urgent reminder", async () => {
@@ -244,6 +251,7 @@ describe("settlePaidOrder", () => {
     );
     expect(schedule).not.toHaveBeenCalled();
     expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
+    expect(dispatch.ensurePaidEvaluationReports).toHaveBeenCalledWith(dbHandle, orderId);
   });
 
   it("emails staff once for a paid evaluation with translation and does not arm the urgent reminder", async () => {
