@@ -18,8 +18,11 @@ import {
   CONFIRMING_PAYMENT_COPY,
   CONFIRMING_PAYMENT_DETAIL,
   FINALIZING_POLL_MS,
+  CLOSE_PAGE_NOTE,
+  ORDERS_DASHBOARD_HREF,
   QUICK_CHECK_COPY,
   QUICK_CHECK_DETAIL,
+  RELEASE_PROGRESS_STEPS,
   downloadEmailedLine,
   downloadReadyCopy,
   documentIdForPage,
@@ -29,6 +32,7 @@ import {
   orderHubStep,
   readyPreviewPath,
   orderStatusPollDelay,
+  paidReceiptLine,
   paidReviewEmailLine,
   fileCountLabel,
   quoteCounts,
@@ -554,11 +558,32 @@ describe("download phase", () => {
     expect(orderStatusPollDelay("ready")).toBeNull();
     expect(CONFIRMING_PAYMENT_COPY).toBe("Confirming payment");
     expect(CONFIRMING_PAYMENT_DETAIL).not.toMatch(/second|minute|countdown|usually/i);
-    expect(QUICK_CHECK_COPY).toBe("Quick final check");
-    expect(QUICK_CHECK_DETAIL).not.toMatch(/second|minute|countdown|usually/i);
-    expect(paidReviewEmailLine("ada@example.com")).toBe(
-      "We'll email ada@example.com when it is released.",
+    expect(QUICK_CHECK_COPY).toBe("Paid. We're finishing your certified PDF.");
+    expect(QUICK_CHECK_DETAIL).toBe(
+      "There's nothing you need to do. We'll email you when your certified PDF is ready.",
     );
+    expect(QUICK_CHECK_DETAIL).not.toMatch(/second|minute|countdown|usually|\d+/i);
+    expect(CLOSE_PAGE_NOTE).toBe("You can close this page.");
+    expect(ORDERS_DASHBOARD_HREF).toBe("/account");
+    expect(paidReviewEmailLine("ada@example.com")).toBe(
+      "There's nothing you need to do. We'll email ada@example.com when your certified PDF is ready.",
+    );
+    expect(paidReviewEmailLine("  ")).toBe(QUICK_CHECK_DETAIL);
+    expect(paidReceiptLine({ totalCents: 1990, paidAt: "2026-04-01T00:00:00.000Z" })).toBe(
+      "Paid $19.90 on April 1, 2026",
+    );
+    expect(paidReceiptLine({ totalCents: 995, paidAt: null })).toBe("Paid $9.95");
+    expect(paidReceiptLine({ totalCents: null, paidAt: "2026-04-01T15:04:00.000Z" })).toBe(
+      "Paid on April 1, 2026",
+    );
+    expect(paidReceiptLine({ totalCents: null, paidAt: null })).toBe("Paid");
+    expect(paidReceiptLine({ totalCents: null, paidAt: "not-a-date" })).toBe("Paid");
+    expect(RELEASE_PROGRESS_STEPS.map((step) => [step.label, step.state])).toEqual([
+      ["Paid", "done"],
+      ["Translated", "done"],
+      ["Final review", "current"],
+      ["Ready", "upcoming"],
+    ]);
     expect(downloadEmailedLine("ada@example.com")).toBe("We also emailed it to ada@example.com.");
     expect(downloadEmailedLine("  ")).toBe("We also emailed it to you.");
   });
