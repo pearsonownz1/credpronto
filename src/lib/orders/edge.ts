@@ -533,7 +533,7 @@ export function chooseEquivalency(input: {
   ai: { usEquivalency: string; confident: boolean } | null;
   printed: string;
 }): string {
-  if (!input.matched) return usEquivalency(input.printed) ?? PENDING_EQUIVALENCY;
+  if (!input.matched) return PENDING_EQUIVALENCY;
   if (input.ai?.confident) {
     const proposed = canonicalUsEquivalency(input.ai.usEquivalency);
     if (proposed) return proposed;
@@ -585,22 +585,29 @@ export function equivalencyCredentialId(input: {
   return null;
 }
 
-export function draftEquivalency(input: {
-  printed: string;
-  suggestion: EdgeEquivalencyRecord | null;
-  fallback: string;
-}): EquivalencyDraft {
+/** Staff-only reasons stored as the basis when no level is suggested. */
+export const NO_EDGE_MATCH_REASON = "No EDGE credential matched this title. No level is suggested; staff must research the credential.";
+export const WEAK_EDGE_MATCH_REASON = "The EDGE suggestion for this credential is low confidence or has no usable level. No level is suggested; staff must confirm it.";
+
+/**
+ * Only a medium or high EDGE suggestion fills a level. Anything weaker leaves the level
+ * pending and routes the order to research with a reason; nothing is guessed from the title.
+ */
+export function draftEquivalency(input: { printed: string; suggestion: EdgeEquivalencyRecord | null }): EquivalencyDraft {
   if (!input.suggestion) {
-    return { usEquivalency: input.fallback, basis: null, route: "qa_research" };
+    return { usEquivalency: PENDING_EQUIVALENCY, basis: NO_EDGE_MATCH_REASON, route: "qa_research" };
   }
-  const label = canonicalUsEquivalency(input.suggestion.usEquivalency) ?? input.fallback;
-  const usable = label !== PENDING_EQUIVALENCY;
+  const label = canonicalUsEquivalency(input.suggestion.usEquivalency);
   const confident = input.suggestion.confidence === "high" || input.suggestion.confidence === "medium";
-  return {
-    usEquivalency: label,
-    basis: input.suggestion.basis.trim() || null,
-    route: usable && confident ? "qa_review" : "qa_research",
-  };
+  if (!label || !confident) {
+    const edgeBasis = input.suggestion.basis.trim();
+    return {
+      usEquivalency: PENDING_EQUIVALENCY,
+      basis: edgeBasis ? `${WEAK_EDGE_MATCH_REASON} EDGE note: ${edgeBasis}` : WEAK_EDGE_MATCH_REASON,
+      route: "qa_research",
+    };
+  }
+  return { usEquivalency: label, basis: input.suggestion.basis.trim() || null, route: "qa_review" };
 }
 
 export function combineEquivalencyRoutes(routes: readonly EquivalencyRoute[]): EquivalencyRoute {

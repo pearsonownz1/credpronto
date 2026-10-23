@@ -7,6 +7,7 @@ import {
   countrySlug,
   countrySlugFallbackFilter,
   draftEquivalency,
+  NO_EDGE_MATCH_REASON,
   edgeContentExcerpt,
   edgeEquivalencyPrompt,
   edgeRowsFromSource,
@@ -374,7 +375,7 @@ describe("EDGE reference matching", () => {
   it("keeps an unmapped equivalency when EDGE does not support a confident label", () => {
     expect(
       chooseEquivalency({ matched: false, edgeUsEquivalency: null, ai: null, printed: "Licence" }),
-    ).toBe("Bachelor's degree");
+    ).toBe(PENDING_EQUIVALENCY);
     expect(
       chooseEquivalency({ matched: false, edgeUsEquivalency: null, ai: null, printed: "Certificado" }),
     ).toBe(PENDING_EQUIVALENCY);
@@ -481,7 +482,6 @@ describe("EDGE equivalency suggestions", () => {
     const high = draftEquivalency({
       printed: "Example Diploma",
       suggestion: equivalency({ id: "high", confidence: "high" }),
-      fallback: PENDING_EQUIVALENCY,
     });
     expect(high).toEqual({
       usEquivalency: "Bachelor's degree",
@@ -492,23 +492,20 @@ describe("EDGE equivalency suggestions", () => {
       draftEquivalency({
         printed: "Example Diploma",
         suggestion: equivalency({ id: "medium", confidence: "medium", usEquivalency: "Master's degree" }),
-        fallback: PENDING_EQUIVALENCY,
-      }).route,
+        }).route,
     ).toBe("qa_review");
     expect(
       draftEquivalency({
         printed: "Licence",
         suggestion: equivalency({ id: "low", confidence: "low" }),
-        fallback: PENDING_EQUIVALENCY,
-      }),
-    ).toMatchObject({ usEquivalency: "Bachelor's degree", route: "qa_research" });
+        }),
+    ).toMatchObject({ usEquivalency: PENDING_EQUIVALENCY, route: "qa_research" });
     expect(
       draftEquivalency({
         printed: "Certificado",
         suggestion: null,
-        fallback: PENDING_EQUIVALENCY,
-      }),
-    ).toEqual({ usEquivalency: PENDING_EQUIVALENCY, basis: null, route: "qa_research" });
+        }),
+    ).toEqual({ usEquivalency: PENDING_EQUIVALENCY, basis: NO_EDGE_MATCH_REASON, route: "qa_research" });
     expect(combineEquivalencyRoutes(["qa_review", "qa_review"])).toBe("qa_review");
     expect(combineEquivalencyRoutes(["qa_review", "qa_research"])).toBe("qa_research");
     expect(combineEquivalencyRoutes([])).toBe("qa_research");

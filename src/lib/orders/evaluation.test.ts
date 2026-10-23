@@ -13,7 +13,7 @@ import {
 import { GRADE_SCALE_20 } from "./grades";
 
 describe("assemble evaluation", () => {
-  it("maps a licence to a bachelor's degree and keeps the reviewed files", () => {
+  it("leaves a licence pending without an EDGE suggestion and keeps the reviewed files", () => {
     const result = assembleDiploma({
       degreeCount: 1,
       documentsReviewed: ["fr_diplome-licence.pdf"],
@@ -40,7 +40,7 @@ describe("assemble evaluation", () => {
           credential: "Licence",
           field: "Mathematics",
           dates: "2016–2019",
-          usEquivalency: "Bachelor's degree",
+          usEquivalency: PENDING_EQUIVALENCY,
           documentsReviewed: ["fr_diplome-licence.pdf"],
         },
       ],
@@ -115,7 +115,7 @@ describe("assemble evaluation", () => {
     expect(licenciatura.credentials[0]).toMatchObject({
       credential: "Licenciatura",
       country: PENDING_EQUIVALENCY,
-      usEquivalency: "Bachelor's degree",
+      usEquivalency: PENDING_EQUIVALENCY,
     });
     expect(diplomaEquivalencyPending(licenciatura.credentials)).toBe(true);
 

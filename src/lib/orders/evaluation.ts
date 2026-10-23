@@ -29,12 +29,9 @@ import {
   awaitingEquivalencyPublish,
 } from "./equivalency";
 import {
-  chooseEquivalency,
   combineEquivalencyRoutes,
   countrySlug,
   draftEquivalency,
-  edgeContentExcerpt,
-  edgeEquivalencyPrompt,
   equivalencyCredentialId,
   matchEdgeCredential,
   matchEdgeGradingScale,
@@ -52,7 +49,6 @@ import {
   credentialWasPassed,
   gradeScaleText,
   scoreCourses,
-  usEquivalency,
   type RawCourse,
 } from "./grades";
 import { IMAGE_QUALITY_REASON } from "./image-quality";
@@ -112,18 +108,6 @@ const diplomaSchema = z.object({
       dates: z.string(),
     }),
   ),
-});
-
-const equivalencySchema = z.object({
-  usEquivalency: z.enum([
-    "High school diploma",
-    "Associate degree",
-    "Bachelor's degree",
-    "Master's degree",
-    "Doctoral degree",
-    "",
-  ]),
-  confident: z.boolean(),
 });
 
 const courseSchema = z.object({
@@ -190,7 +174,7 @@ export function assembleDiploma(input: {
       credential,
       field: orPending(item.field, subjectFromTitle(credential) ?? ""),
       dates: orPending(item.dates),
-      usEquivalency: input.equivalencies?.[index] ?? usEquivalency(credential) ?? PENDING_EQUIVALENCY,
+      usEquivalency: input.equivalencies?.[index] ?? PENDING_EQUIVALENCY,
       ...(input.bases?.[index]?.trim() ? { equivalencyBasis: input.bases[index]?.trim() } : {}),
       documentsReviewed: input.documentsReviewed,
     });
@@ -572,42 +556,6 @@ async function edgeCatalog(
   }
 }
 
-async function proposeEquivalency(printed: string, hit: EdgeHit): Promise<string> {
-  if (!hit.credential) {
-    return chooseEquivalency({ matched: false, edgeUsEquivalency: null, ai: null, printed });
-  }
-  let ai: { usEquivalency: string; confident: boolean } | null = null;
-  try {
-    ai = await generateObject(equivalencySchema, [
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: edgeEquivalencyPrompt({
-              country: hit.credential.country,
-              printedTitle: printed,
-              edgeTitle: hit.credential.title,
-              levelNumber: hit.credential.levelNumber,
-              levelTitle: hit.credential.levelTitle,
-              contentExcerpt: edgeContentExcerpt(hit.credential.content, 1200),
-              usEquivalencyHint: hit.credential.usEquivalency,
-              gradingRows: hit.scale?.rows ?? [],
-            }),
-          },
-        ],
-      },
-    ]);
-  } catch (error) {
-    console.error("edge equivalency proposal failed", error);
-  }
-  return chooseEquivalency({
-    matched: true,
-    edgeUsEquivalency: hit.credential.usEquivalency,
-    ai,
-    printed,
-  });
-}
 
 async function suggestionForCredential(db: Db, edgeCredentialId: string | null): Promise<EdgeEquivalencyRecord | null> {
   if (!edgeCredentialId) return null;
@@ -632,17 +580,7 @@ async function draftForCredential(
     singleCredential,
   });
   const suggestion = await suggestionForCredential(db, edgeCredentialId);
-  if (suggestion) {
-    return {
-      draft: draftEquivalency({ printed, suggestion, fallback: PENDING_EQUIVALENCY }),
-      edgeCredentialId,
-    };
-  }
-  const fallback = await proposeEquivalency(printed, hit);
-  return {
-    draft: draftEquivalency({ printed, suggestion: null, fallback }),
-    edgeCredentialId,
-  };
+  return { draft: draftEquivalency({ printed, suggestion }), edgeCredentialId };
 }
 
 export async function buildEvaluatedResult(
