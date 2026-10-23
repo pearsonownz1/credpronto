@@ -5,10 +5,12 @@
  *   multipart field `file` → { id }
  * GET /api/pre-evaluation/{id}
  *   { status: 'email_required' | 'processing' | 'ready' | 'failed',
- *     equivalent, confidence, previewUrl }
+ *     equivalent, confidence, previewUrl, kind }
  *   Until the email is submitted, status is `email_required` and the three
- *   result fields are null. `previewUrl` is a signed link that expires in
- *   about five minutes. Do not store it.
+ *   result fields are null. `kind` is `diploma`, `transcript`, or null until
+ *   the document is classified, including while the email is still required.
+ *   This payload never includes the file name, size, or page count.
+ *   `previewUrl` is a signed link that expires in about five minutes. Do not store it.
  * POST /api/pre-evaluation/{id}/email
  *   JSON { email } → { ok: true }
  * GET /api/pre-evaluation/{id}/prefill
@@ -29,11 +31,14 @@ export type PreEvaluationStatus = "processing" | "email_required" | "ready" | "f
 
 export type PreEvaluationConfidence = "low" | "medium" | "high";
 
+export type PreEvaluationFileKind = "diploma" | "transcript";
+
 export type PreEvaluationRecord = {
   status: PreEvaluationStatus;
   equivalent: string | null;
   confidence: PreEvaluationConfidence | null;
   previewUrl: string | null;
+  kind: PreEvaluationFileKind | null;
 };
 
 export type PreEvaluationCreated = {
@@ -45,8 +50,6 @@ export type PreEvaluationEmailResult = {
 };
 
 export type PreEvaluationService = "diploma" | "course_by_course";
-
-export type PreEvaluationFileKind = "diploma" | "transcript";
 
 export type PreEvaluationFile = {
   name: string;
@@ -139,19 +142,24 @@ function nullableText(value: unknown): string | null {
   return trimmed || null;
 }
 
+function publicKind(value: unknown): PreEvaluationFileKind | null {
+  return value === "diploma" || value === "transcript" ? value : null;
+}
+
 export function parsePreEvaluation(payload: unknown): PreEvaluationRecord {
   if (!payload || typeof payload !== "object") {
     throw new PreEvaluationClientError("The preview response was not valid.", 502);
   }
-  const status = (payload as { status?: unknown }).status;
+  const row = payload as { status?: unknown; equivalent?: unknown; confidence?: unknown; previewUrl?: unknown; kind?: unknown };
+  const status = row.status;
   if (typeof status !== "string" || !STATUSES.has(status as PreEvaluationStatus)) {
     throw new PreEvaluationClientError("The preview response was not valid.", 502);
   }
+  const kind = publicKind(row.kind);
   const parsed = status as PreEvaluationStatus;
   if (parsed !== "ready") {
-    return { status: parsed, equivalent: null, confidence: null, previewUrl: null };
+    return { status: parsed, equivalent: null, confidence: null, previewUrl: null, kind };
   }
-  const row = payload as { equivalent?: unknown; confidence?: unknown; previewUrl?: unknown };
   const confidence =
     typeof row.confidence === "string" && CONFIDENCE.has(row.confidence as PreEvaluationConfidence)
       ? (row.confidence as PreEvaluationConfidence)
@@ -161,6 +169,7 @@ export function parsePreEvaluation(payload: unknown): PreEvaluationRecord {
     equivalent: nullableText(row.equivalent),
     confidence,
     previewUrl: nullableText(row.previewUrl),
+    kind,
   };
 }
 

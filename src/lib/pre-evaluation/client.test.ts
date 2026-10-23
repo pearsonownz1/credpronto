@@ -25,6 +25,7 @@ const ready = {
   equivalent: "Bachelor's degree",
   confidence: "high" as const,
   previewUrl: "https://cdn.example/preview.png?token=one",
+  kind: "diploma" as const,
 };
 
 describe("pre-evaluation client", () => {
@@ -70,6 +71,7 @@ describe("pre-evaluation client", () => {
       equivalent: null,
       confidence: null,
       previewUrl: null,
+      kind: null,
     });
 
     expect(
@@ -78,14 +80,19 @@ describe("pre-evaluation client", () => {
         equivalent: "Bachelor's degree",
         confidence: "high",
         previewUrl: "https://cdn.example/secret.png",
+        kind: "transcript",
+        name: "credential.pdf",
+        size: 12,
+        pageCount: 2,
       }),
-    ).toEqual({ status: "processing", equivalent: null, confidence: null, previewUrl: null });
+    ).toEqual({ status: "processing", equivalent: null, confidence: null, previewUrl: null, kind: "transcript" });
 
-    expect(parsePreEvaluation({ ...ready, status: "failed", previewUrl: "https://cdn.example/secret.png" })).toEqual({
+    expect(parsePreEvaluation({ ...ready, status: "failed", previewUrl: "https://cdn.example/secret.png", kind: "nope" })).toEqual({
       status: "failed",
       equivalent: null,
       confidence: null,
       previewUrl: null,
+      kind: null,
     });
   });
 

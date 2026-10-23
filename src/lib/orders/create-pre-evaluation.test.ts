@@ -18,8 +18,13 @@ const memory = vi.hoisted(() => ({
   uploads: [] as Array<{ bucket: string; path: string; mime: string; size: number }>,
   documents: [] as Array<Record<string, unknown>>,
   links: [] as Array<{ id: string; orderId: string }>,
+  releases: [] as Array<{ id: string; orderId: string }>,
+  discards: [] as string[],
   orders: [] as Array<{ id?: string }>,
   originals: new Map<string, number>(),
+  steps: [] as string[],
+  claimWins: true,
+  uploadFails: false,
 }));
 
 vi.mock("@/lib/auth/session", () => ({
@@ -47,11 +52,14 @@ vi.mock("@/lib/orders/storage", async () => {
       },
     }),
     downloadObject: async (_db: unknown, bucket: string, path: string) => {
+      memory.steps.push("download");
       memory.downloads.push({ bucket, path });
       if (bucket === PRE_EVALUATIONS_BUCKET && path === memory.record?.storagePath) return memory.bytes;
       throw new Error(`unexpected download ${bucket} ${path}`);
     },
     uploadObject: async (_db: unknown, bucket: string, path: string, bytes: Uint8Array, mime: string) => {
+      memory.steps.push("upload");
+      if (memory.uploadFails) throw new Error("disk");
       memory.uploads.push({ bucket, path, mime, size: bytes.byteLength });
     },
   };
@@ -60,7 +68,13 @@ vi.mock("@/lib/orders/storage", async () => {
 vi.mock("@/lib/pre-evaluation/db", () => ({
   preEvaluationByTokenHash: async () => memory.record,
   linkPreEvaluationOrder: async (_db: unknown, id: string, orderId: string) => {
+    memory.steps.push("claim");
     memory.links.push({ id, orderId });
+    return memory.claimWins;
+  },
+  releasePreEvaluationOrder: async (_db: unknown, id: string, orderId: string) => {
+    memory.steps.push("release");
+    memory.releases.push({ id, orderId });
   },
   consumePreEvalWindow: async () => ({ allowed: true, retryAfterSeconds: 0 }),
 }));
@@ -69,6 +83,7 @@ vi.mock("@/lib/orders/db", () => ({
   upsertCustomer: async () => ({ id: "cust-1" }),
   insertCustomerWithoutEmail: async () => ({ id: "guest-1" }),
   insertOrder: async (_db: unknown, input: { id?: string }) => {
+    memory.steps.push("order");
     memory.orders.push(input);
     return {
       id: input.id,
@@ -82,6 +97,11 @@ vi.mock("@/lib/orders/db", () => ({
     memory.documents.push(input);
   },
   insertEvent: async () => undefined,
+  deleteOrder: async (_db: unknown, id: string) => {
+    memory.steps.push("discard");
+    memory.discards.push(id);
+    memory.orders = memory.orders.filter((order) => order.id !== id);
+  },
 }));
 
 import { createOrder } from "./create";
@@ -136,7 +156,12 @@ beforeEach(async () => {
   memory.uploads.length = 0;
   memory.documents.length = 0;
   memory.links.length = 0;
+  memory.releases.length = 0;
+  memory.discards.length = 0;
   memory.orders.length = 0;
+  memory.steps.length = 0;
+  memory.claimWins = true;
+  memory.uploadFails = false;
   memory.originals.clear();
 });
 
@@ -177,6 +202,11 @@ describe("order create from a pre-evaluation", () => {
       }),
     ]);
     expect(memory.links).toEqual([{ id: INTERNAL, orderId: created.orderId }]);
+    expect(memory.steps.indexOf("claim")).toBeGreaterThanOrEqual(0);
+    expect(memory.steps.indexOf("claim")).toBeLessThan(memory.steps.indexOf("download"));
+    expect(memory.steps.indexOf("download")).toBeLessThan(memory.steps.indexOf("upload"));
+    expect(memory.releases).toEqual([]);
+    expect(memory.discards).toEqual([]);
   });
 
   it("keeps an extra upload and still counts the pre-evaluation pages", async () => {
@@ -222,12 +252,64 @@ describe("order create from a pre-evaluation", () => {
     expect(memory.downloads).toEqual([]);
   });
 
-  it("still copies an owned file that has not been classified", async () => {
-    memory.record = record({ documentKind: null });
-    const created = await createOrder(
-      orderRequest({ preEvaluationId: TOKEN, services: ["diploma"], degreeCount: 1 }),
-    );
-    expect(created.documentCount).toBe(1);
-    expect(memory.links).toEqual([{ id: INTERNAL, orderId: created.orderId }]);
+  it("rejects a pending or unclassified pre-evaluation before any copy", async () => {
+    for (const patch of [
+      { documentKind: null },
+      { status: "processing" as const, documentKind: "diploma" as const },
+      { status: "processing" as const, documentKind: null },
+      { status: "failed" as const },
+    ]) {
+      memory.record = record(patch);
+      memory.downloads.length = 0;
+      memory.uploads.length = 0;
+      memory.links.length = 0;
+      memory.orders.length = 0;
+      memory.steps.length = 0;
+      await expect(
+        createOrder(orderRequest({ preEvaluationId: TOKEN, services: ["diploma"], degreeCount: 1 })),
+      ).rejects.toMatchObject({ status: 404, message: "Pre-evaluation not found" });
+      expect(memory.downloads).toEqual([]);
+      expect(memory.uploads).toEqual([]);
+      expect(memory.links).toEqual([]);
+      expect(memory.orders).toEqual([]);
+      expect(memory.steps).not.toContain("claim");
+      expect(memory.steps).not.toContain("download");
+    }
+  });
+
+  it("rejects a pre-evaluation that is already linked and does not copy the file", async () => {
+    memory.claimWins = false;
+    await expect(
+      createOrder(orderRequest({ preEvaluationId: TOKEN, services: ["diploma"], degreeCount: 1 })),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: "This pre-evaluation was already ordered",
+      code: "already_ordered",
+    });
+    expect(memory.links).toEqual([{ id: INTERNAL, orderId: expect.any(String) }]);
+    expect(memory.downloads).toEqual([]);
+    expect(memory.uploads).toEqual([]);
+    expect(memory.documents).toEqual([]);
+    expect(memory.orders).toEqual([]);
+    expect(memory.discards).toEqual([memory.links[0]?.orderId]);
+    expect(memory.releases).toEqual([]);
+    expect(memory.steps.indexOf("claim")).toBeGreaterThanOrEqual(0);
+    expect(memory.steps).not.toContain("download");
+    expect(memory.steps).not.toContain("upload");
+  });
+
+  it("releases the claim when the copy fails so a later order can retry", async () => {
+    memory.uploadFails = true;
+    await expect(
+      createOrder(orderRequest({ preEvaluationId: TOKEN, services: ["diploma"], degreeCount: 1 })),
+    ).rejects.toMatchObject({ status: 503, message: "Could not store the upload" });
+    expect(memory.downloads).toHaveLength(1);
+    expect(memory.uploads).toEqual([]);
+    expect(memory.documents).toEqual([]);
+    expect(memory.orders).toEqual([]);
+    expect(memory.releases).toEqual([{ id: INTERNAL, orderId: memory.links[0]?.orderId }]);
+    expect(memory.discards).toEqual([memory.links[0]?.orderId]);
+    expect(memory.steps.indexOf("claim")).toBeLessThan(memory.steps.indexOf("download"));
+    expect(memory.steps.indexOf("download")).toBeLessThan(memory.steps.indexOf("release"));
   });
 });

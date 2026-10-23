@@ -422,6 +422,12 @@ export async function insertOrder(
   return mapOrder(data as Row);
 }
 
+/** Remove an order that never received its files. Child rows cascade. */
+export async function deleteOrder(db: Db, id: string): Promise<void> {
+  const { error } = await db.from("orders").delete().eq("id", id);
+  fail(error);
+}
+
 export async function getPreviewOrderById(db: Db, orderId: string): Promise<PreviewOrderRow | null> {
   const { data, error } = await db.from("orders").select(PREVIEW_ORDER_COLUMNS).eq("id", orderId).maybeSingle();
   fail(error);

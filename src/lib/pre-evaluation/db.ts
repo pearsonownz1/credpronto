@@ -317,15 +317,28 @@ export async function claimResultEmail(db: Db, id: string, nowIso: string): Prom
 }
 
 /**
- * First paid order wins. A later order for the same suggestion does not replace it.
- * `pre_evaluations.order_id` is the admin converted join.
+ * Claim the one paid order. False means another order already holds `order_id`.
+ * The update matches `where order_id is null`, so two creates cannot both win.
+ * `order_id` references `orders`, so the order row has to exist before this runs.
  */
-export async function linkPreEvaluationOrder(db: Db, id: string, orderId: string, nowIso: string): Promise<void> {
-  const { error } = await db
+export async function linkPreEvaluationOrder(db: Db, id: string, orderId: string, nowIso: string): Promise<boolean> {
+  const { data, error } = await db
     .from("pre_evaluations")
     .update({ order_id: orderId, updated_at: nowIso })
     .eq("id", id)
-    .is("order_id", null);
+    .is("order_id", null)
+    .select("id");
+  fail(error);
+  return (data ?? []).length > 0;
+}
+
+/** Drop a claim that never stored a file, so a later order can take the suggestion. */
+export async function releasePreEvaluationOrder(db: Db, id: string, orderId: string, nowIso: string): Promise<void> {
+  const { error } = await db
+    .from("pre_evaluations")
+    .update({ order_id: null, updated_at: nowIso })
+    .eq("id", id)
+    .eq("order_id", orderId);
   fail(error);
 }
 

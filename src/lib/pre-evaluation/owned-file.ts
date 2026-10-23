@@ -74,7 +74,9 @@ export async function requireOwnedPreEvaluation(
   return record;
 }
 
-function fileKind(record: PreEvaluationRecord): PreEvaluationFileKind {
+/** Ready and classified. Pending and unclassified match the file route: 404, no download. */
+export function assertClassifiedPreEvaluation(record: PreEvaluationRecord): PreEvaluationFileKind {
+  if (record.status !== "ready") throw new HttpError(NOT_FOUND, 404);
   if (record.documentKind === "diploma" || record.documentKind === "transcript") return record.documentKind;
   throw new HttpError(NOT_FOUND, 404);
 }
@@ -97,8 +99,9 @@ function countedPages(pages: number | null): number | null {
 
 /**
  * File already on the suggestion, for the signed-in account that owns the lead email.
- * `404` when the id is unknown, the caller is signed out, the emails differ, or the
- * document has not been classified. The body is exactly `{ preEvaluationFile }`.
+ * `404` when the id is unknown, the caller is signed out, the emails differ, the
+ * pre-evaluation is still pending, or the document has not been classified.
+ * The body is exactly `{ preEvaluationFile }`.
  */
 export async function readOwnedPreEvaluationFile(
   db: Db,
@@ -109,7 +112,7 @@ export async function readOwnedPreEvaluationFile(
 ): Promise<{ preEvaluationFile: PreEvaluationFile }> {
   await assertPreEvalBurst(db, requestIpHash(request), "read", now.getTime());
   const record = await requireOwnedPreEvaluation(db, publicId, accountEmail);
-  const kind = fileKind(record);
+  const kind = assertClassifiedPreEvaluation(record);
   const bytes = await originalBytes(db, record);
   if (bytes.byteLength <= 0 || bytes.byteLength > MAX_DIRECT_FILE_BYTES) {
     throw new HttpError(NOT_FOUND, 404);
@@ -137,6 +140,7 @@ export async function copyPreEvaluationOriginal(
   orderId: string,
   record: PreEvaluationRecord,
 ): Promise<StoredOriginal> {
+  assertClassifiedPreEvaluation(record);
   const bytes = await originalBytes(db, record);
   if (bytes.byteLength <= 0) throw new HttpError("Empty files are not accepted", 400);
   if (bytes.byteLength > MAX_DIRECT_FILE_BYTES) throw new HttpError(DIRECT_FILE_LIMIT_MESSAGE, 400);

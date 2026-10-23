@@ -8,6 +8,7 @@ const empty: PreEvaluationRecord = {
   equivalent: null,
   confidence: null,
   previewUrl: null,
+  kind: null,
 };
 
 const token = "a".repeat(43);
@@ -36,6 +37,7 @@ describe("pre-evaluation flow", () => {
         equivalent: "Bachelor's degree",
         confidence: "high",
         previewUrl: "https://cdn.example/preview.png?token=one",
+        kind: "diploma",
       },
     });
     expect(phase).toMatchObject({
@@ -63,6 +65,7 @@ describe("pre-evaluation flow", () => {
         equivalent: "Master's degree",
         confidence: "medium",
         previewUrl: "https://cdn.example/preview.pdf?token=one",
+        kind: "transcript",
       },
     });
     expect(phase).toMatchObject({

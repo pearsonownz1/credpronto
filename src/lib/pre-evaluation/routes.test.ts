@@ -253,12 +253,17 @@ describe("pre-evaluation HTTP contract", () => {
       params: Promise.resolve({ id }),
     });
     expect(hidden.headers.get("cache-control")).toBe("private, no-store");
-    expect(await hidden.json()).toEqual({
+    const hiddenBody = await hidden.json();
+    expect(hiddenBody).toEqual({
       status: "email_required",
       equivalent: null,
       confidence: null,
       previewUrl: null,
+      kind: "diploma",
     });
+    expect(Object.keys(hiddenBody).sort()).toEqual(["confidence", "equivalent", "kind", "previewUrl", "status"]);
+    expect(JSON.stringify(hiddenBody)).not.toContain("credential.pdf");
+    expect(JSON.stringify(hiddenBody)).not.toContain("pageCount");
     expect(memory.signs).toHaveLength(0);
 
     const lockedPreview = await readPreview(
@@ -319,7 +324,11 @@ describe("pre-evaluation HTTP contract", () => {
       status: "ready",
       equivalent: "Bachelor's degree",
       confidence: "high",
+      kind: "diploma",
     });
+    expect(shownBody).not.toHaveProperty("name");
+    expect(shownBody).not.toHaveProperty("size");
+    expect(shownBody).not.toHaveProperty("pageCount");
     expect(shownBody.previewUrl).toContain("token=signed");
     expect(shownBody.previewUrl).toContain("expires=300");
     expect(shownBody.previewUrl).toContain(encodeURIComponent(String(row?.previewPath)));
@@ -429,12 +438,16 @@ describe("pre-evaluation HTTP contract", () => {
       new Request("https://credpronto.test/api/pre-evaluation/" + id, { headers: { "x-forwarded-for": "203.0.113.61" } }),
       { params: Promise.resolve({ id }) },
     );
-    expect(await shown.json()).toEqual({
+    const failedBody = await shown.json();
+    expect(failedBody).toEqual({
       status: "failed",
       equivalent: null,
       confidence: null,
       previewUrl: null,
+      kind: null,
     });
+    expect(JSON.stringify(failedBody)).not.toContain("credential.pdf");
+    expect(failedBody).not.toHaveProperty("pageCount");
     expect(send).not.toHaveBeenCalled();
     expect(errors.mock.calls.flat().join(" ")).not.toContain("Ada Lovelace");
     expect(errors.mock.calls.flat().join(" ")).not.toContain("ada@example.com");

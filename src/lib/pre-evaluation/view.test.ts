@@ -24,8 +24,15 @@ describe("pre-evaluation public result", () => {
       equivalent: null,
       confidence: null,
       previewUrl: null,
+      kind: "diploma",
     });
-    expect(Object.keys(hidden).sort()).toEqual(["confidence", "equivalent", "previewUrl", "status"]);
+    expect(Object.keys(hidden).sort()).toEqual(["confidence", "equivalent", "kind", "previewUrl", "status"]);
+    expect(hidden).not.toHaveProperty("name");
+    expect(hidden).not.toHaveProperty("size");
+    expect(hidden).not.toHaveProperty("pageCount");
+    expect(
+      publicPreEvaluation({ ...ready, email: null, documentKind: null }, "https://credpronto.test/preview").kind,
+    ).toBeNull();
   });
 
   it("returns the suggestion and preview only after the email and a finished read", () => {
@@ -36,19 +43,25 @@ describe("pre-evaluation public result", () => {
       equivalent: "Bachelor's degree",
       confidence: "high",
       previewUrl: "https://credpronto.test/api/pre-evaluation/secret/preview",
+      kind: "diploma",
     });
     expect(publicPreEvaluation({ ...ready, status: "processing" }, "https://credpronto.test/preview")).toEqual({
       status: "processing",
       equivalent: null,
       confidence: null,
       previewUrl: null,
+      kind: "diploma",
     });
-    expect(publicPreEvaluation({ ...ready, status: "failed" }, "https://credpronto.test/preview")).toEqual({
+    expect(publicPreEvaluation({ ...ready, status: "failed", documentKind: null }, "https://credpronto.test/preview")).toEqual({
       status: "failed",
       equivalent: null,
       confidence: null,
       previewUrl: null,
+      kind: null,
     });
+    expect(
+      publicPreEvaluation({ ...ready, email: null, documentKind: "transcript" }, "https://credpronto.test/preview").kind,
+    ).toBe("transcript");
   });
 });
 

@@ -149,6 +149,11 @@ describe("owned pre-evaluation file", () => {
     const unclassified = await readFile(request(), { params: Promise.resolve({ id: TOKEN }) });
     expect(unclassified.status).toBe(404);
 
+    memory.record = record({ status: "processing", documentKind: "diploma" });
+    const pending = await readFile(request(), { params: Promise.resolve({ id: TOKEN }) });
+    expect(pending.status).toBe(404);
+    expect(await pending.json()).toEqual({ error: "Pre-evaluation not found" });
+
     const traversal = await readFile(request(), { params: Promise.resolve({ id: "../secret" }) });
     expect(traversal.status).toBe(404);
     expect(memory.downloads).toEqual([]);

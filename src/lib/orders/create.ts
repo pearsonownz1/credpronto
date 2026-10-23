@@ -1,9 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { optionalUser } from "@/lib/auth/session";
-import { linkPreEvaluationOrder } from "@/lib/pre-evaluation/db";
-import { copyPreEvaluationOriginal, requireOwnedPreEvaluation } from "@/lib/pre-evaluation/owned-file";
+import { linkPreEvaluationOrder, releasePreEvaluationOrder } from "@/lib/pre-evaluation/db";
+import {
+  assertClassifiedPreEvaluation,
+  copyPreEvaluationOriginal,
+  requireOwnedPreEvaluation,
+} from "@/lib/pre-evaluation/owned-file";
 import { ORIGINALS_BUCKET } from "./constants";
 import {
+  deleteOrder,
   insertCustomerWithoutEmail,
   insertDocument,
   insertEvent,
@@ -69,10 +74,9 @@ export async function createOrder(request: Request): Promise<{
   const adopted = body.preEvaluationId
     ? await requireOwnedPreEvaluation(db, body.preEvaluationId, session?.email ?? null)
     : null;
+  if (adopted) assertClassifiedPreEvaluation(adopted);
   const uploaded = body.files.length > 0 ? await referencedOriginals(db, sessionId, body.files) : [];
-  const copied = adopted ? await copyPreEvaluationOriginal(db, sessionId, adopted) : null;
-  const files = copied ? [copied, ...uploaded] : uploaded;
-  if (files.length < 1) throw new HttpError("Upload at least one file", 400);
+  if (!adopted && uploaded.length < 1) throw new HttpError("Upload at least one file", 400);
   const customer = email ? await upsertCustomer(db, email) : await insertCustomerWithoutEmail(db);
   const orderToken = generateOrderToken();
   const priced =
@@ -107,22 +111,46 @@ export async function createOrder(request: Request): Promise<{
     userId,
   });
 
-  await insertEvent(db, order.id, "upload_started", { fileCount: files.length });
-  await storeReferencedFiles(db, order.id, files);
-  if (adopted) await linkPreEvaluationOrder(db, adopted.id, order.id, new Date().toISOString());
-  await insertEvent(db, order.id, "upload_done", { fileCount: files.length });
-  await insertEvent(db, order.id, "staff_notified", { channel: "event" });
-
-  return {
-    orderToken,
-    orderId: order.id,
-    email,
-    documentCount: files.length,
-    estimatedCents: order.evaluationCents,
-    sourceLanguage: order.sourceLanguage,
-    targetLanguage: order.targetLanguage,
-    orderType: order.orderType,
-  };
+  let claimed = false;
+  try {
+    if (adopted) {
+      claimed = await linkPreEvaluationOrder(db, adopted.id, order.id, new Date().toISOString());
+      if (!claimed) throw new HttpError("This pre-evaluation was already ordered", 409, "already_ordered");
+    }
+    const copied = adopted ? await copyPreEvaluationOriginal(db, order.id, adopted) : null;
+    const files = copied ? [copied, ...uploaded] : uploaded;
+    if (files.length < 1) throw new HttpError("Upload at least one file", 400);
+    await insertEvent(db, order.id, "upload_started", { fileCount: files.length });
+    await storeReferencedFiles(db, order.id, files);
+    await insertEvent(db, order.id, "upload_done", { fileCount: files.length });
+    await insertEvent(db, order.id, "staff_notified", { channel: "event" });
+    return {
+      orderToken,
+      orderId: order.id,
+      email,
+      documentCount: files.length,
+      estimatedCents: order.evaluationCents,
+      sourceLanguage: order.sourceLanguage,
+      targetLanguage: order.targetLanguage,
+      orderType: order.orderType,
+    };
+  } catch (error) {
+    if (adopted) {
+      if (claimed) {
+        try {
+          await releasePreEvaluationOrder(db, adopted.id, order.id, new Date().toISOString());
+        } catch {
+          console.error("pre-evaluation order claim release failed");
+        }
+      }
+      try {
+        await deleteOrder(db, order.id);
+      } catch {
+        console.error("order discard failed");
+      }
+    }
+    throw error;
+  }
 }
 
 export async function storeFiles(
