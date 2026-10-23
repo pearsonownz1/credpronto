@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { humanReviewReason } from "./review-reason";
+import { humanReviewReason, staffNeedsReviewBanner } from "./review-reason";
 
 describe("humanReviewReason", () => {
   it("turns database errors into staff-facing sentences", () => {
@@ -27,5 +27,23 @@ describe("humanReviewReason", () => {
     expect(humanReviewReason("image_quality")).toBe("image_quality");
     expect(humanReviewReason("  ")).toBeNull();
     expect(humanReviewReason(null)).toBeNull();
+  });
+});
+
+describe("staffNeedsReviewBanner", () => {
+  const reason = "Credential evaluation is reviewed by staff.";
+
+  it("shows the reason until the order is delivered", () => {
+    expect(staffNeedsReviewBanner({ status: "paid", reviewReason: reason, deliveryStatus: "pending" })).toBe(reason);
+    expect(staffNeedsReviewBanner({ status: "approved", reviewReason: reason, deliveryStatus: "approved" })).toBe(
+      reason,
+    );
+    expect(staffNeedsReviewBanner({ status: "paid", reviewReason: null })).toBeNull();
+  });
+
+  it("hides a leftover review reason once the order or its delivery is delivered", () => {
+    expect(staffNeedsReviewBanner({ status: "delivered", reviewReason: reason, deliveryStatus: "delivered" })).toBeNull();
+    expect(staffNeedsReviewBanner({ status: "delivered", reviewReason: reason, deliveryStatus: null })).toBeNull();
+    expect(staffNeedsReviewBanner({ status: "approved", reviewReason: reason, deliveryStatus: "delivered" })).toBeNull();
   });
 });

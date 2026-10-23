@@ -7,6 +7,7 @@ import { uploadObject } from "./storage";
 import { notifyLifecycle, notifyOrder } from "./webhook-delivery";
 import { waitingMinutes } from "./certification-queue";
 import { isCertifiedTranslationPath } from "./final-file";
+import { DELIVERED_REVIEW_CLEAR } from "./review-reason";
 import { orderEvaluationKinds } from "./service-selection";
 import { concatPdfs } from "./pdf/merge";
 import { downloadObject } from "./storage";
@@ -136,7 +137,10 @@ function deliveredEvaluationService(form: FormData, kinds: readonly EvaluationSe
   return service;
 }
 
-function storedReportPaths(order: OrderRecord, reportPath: string): {
+function storedReportPaths(
+  order: Pick<OrderRecord, "includeTranslation" | "finalTranslationPath" | "certificationPath">,
+  reportPath: string,
+): {
   final_translation_path: string;
   certification_path: string;
 } {
@@ -151,6 +155,28 @@ function storedReportPaths(order: OrderRecord, reportPath: string): {
   return { final_translation_path: reportPath, certification_path: reportPath };
 }
 
+/** Order columns written when an evaluation report is stored. Delivery clears the review flag. */
+export function deliveredEvaluationPatch(
+  order: Pick<OrderRecord, "includeTranslation" | "finalTranslationPath" | "certificationPath">,
+  path: string,
+  serviceFiles?: Partial<Record<EvaluationService, string>>,
+): {
+  status: "delivered";
+  review_reason: null;
+  final_translation_path: string;
+  certification_path: string;
+  service_files?: Partial<Record<EvaluationService, string>>;
+} {
+  const columns = storedReportPaths(order, path);
+  return {
+    status: "delivered",
+    ...DELIVERED_REVIEW_CLEAR,
+    final_translation_path: columns.final_translation_path,
+    certification_path: columns.certification_path,
+    ...(serviceFiles ? { service_files: serviceFiles } : {}),
+  };
+}
+
 async function publishEvaluationDelivery(input: {
   db: Db;
   userId: string;
@@ -159,7 +185,6 @@ async function publishEvaluationDelivery(input: {
   serviceFiles?: Partial<Record<EvaluationService, string>>;
 }) {
   const { db, userId, order, path, serviceFiles } = input;
-  const columns = storedReportPaths(order, path);
   await ensureStaffRow(db, userId);
   await ensurePendingDelivery(db, order.id);
   const delivery = await getDelivery(db, order.id);
@@ -167,12 +192,7 @@ async function publishEvaluationDelivery(input: {
 
   const alreadyDelivered = delivery.status === "delivered" || order.status === "delivered";
   const now = new Date().toISOString();
-  await updateOrder(db, order.id, {
-    status: "delivered",
-    final_translation_path: columns.final_translation_path,
-    certification_path: columns.certification_path,
-    ...(serviceFiles ? { service_files: serviceFiles } : {}),
-  });
+  await updateOrder(db, order.id, deliveredEvaluationPatch(order, path, serviceFiles));
   await updateDelivery(db, order.id, {
     status: "delivered",
     delivered_at: delivery.deliveredAt ?? now,

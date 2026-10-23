@@ -93,7 +93,25 @@ describe("retryFinalCustomerEmail", () => {
       orderId,
       expect.objectContaining({ status: "delivered" }),
     );
-    expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, { status: "delivered" });
+    expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, {
+      status: "delivered",
+      review_reason: null,
+    });
     expect(webhooks.notifyLifecycle).toHaveBeenCalledWith(expect.anything(), orderId, "order.completed");
+  });
+
+  it("clears a leftover review reason when the delivery row is already delivered", async () => {
+    vi.spyOn(db, "getDelivery").mockResolvedValue(delivery("delivered"));
+
+    await retryFinalCustomerEmail(
+      {} as db.Db,
+      { ...order(), status: "approved", reviewReason: "Credential evaluation is reviewed by staff." } as OrderRecord,
+    );
+
+    expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, {
+      status: "delivered",
+      review_reason: null,
+    });
+    expect(webhooks.notifyOrder).not.toHaveBeenCalled();
   });
 });

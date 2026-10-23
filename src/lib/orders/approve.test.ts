@@ -143,7 +143,54 @@ describe("approveOrder cover stamp", () => {
     expect(steps.indexOf("stamp")).toBeLessThan(steps.indexOf("status"));
     expect(steps.indexOf("stamp")).toBeLessThan(steps.indexOf("email"));
     expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, { status: "approved" });
-    expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, { status: "delivered" });
+    expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, {
+      status: "delivered",
+      review_reason: null,
+    });
     expect(webhooks.notifyLifecycle).toHaveBeenCalledWith(expect.anything(), orderId, "order.completed");
+  });
+
+  it("clears a leftover review reason when approve repairs an already delivered order", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue({
+      ...paidOrder,
+      status: "delivered",
+      service: "diploma",
+      reviewReason: "Credential evaluation is reviewed by staff.",
+    });
+    vi.spyOn(db, "getDelivery").mockResolvedValue({
+      ...pendingDelivery,
+      status: "delivered",
+      finalPath: `${orderId}/evaluation.pdf`,
+      certificationPath: `${orderId}/evaluation.pdf`,
+    });
+
+    const response = await run(async () => json(await approveOrder(orderId)));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ status: "delivered" });
+    expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, { review_reason: null });
+    expect(certification.stampApprovedCover).not.toHaveBeenCalled();
+    expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
+  });
+
+  it("clears a leftover review reason when the delivery row is already delivered", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue({
+      ...paidOrder,
+      status: "approved",
+      reviewReason: "Credential evaluation is reviewed by staff.",
+    });
+    vi.spyOn(db, "getDelivery").mockResolvedValue({
+      ...pendingDelivery,
+      status: "delivered",
+      finalPath: paidOrder.finalTranslationPath,
+      certificationPath: paidOrder.certificationPath,
+    });
+
+    const response = await run(async () => json(await approveOrder(orderId)));
+
+    expect(response.status).toBe(200);
+    expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, { review_reason: null });
+    expect(db.updateOrder).toHaveBeenCalledTimes(1);
+    expect(certification.stampApprovedCover).not.toHaveBeenCalled();
   });
 });

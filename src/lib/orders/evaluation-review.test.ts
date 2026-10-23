@@ -6,6 +6,7 @@ import { evaluationPrice } from "./evaluation-price";
 import {
   assertEvaluationPdf,
   deliverEvaluationReport,
+  deliveredEvaluationPatch,
   evaluationQueueOrder,
 } from "./evaluation-review";
 import * as staff from "./staff";
@@ -71,6 +72,39 @@ describe("evaluation review queue", () => {
   });
 });
 
+describe("deliveredEvaluationPatch", () => {
+  it("clears the review flag and keeps a certified translation next to the report", () => {
+    expect(
+      deliveredEvaluationPatch(
+        {
+          includeTranslation: true,
+          finalTranslationPath: `${orderId}/certified-translation-v1.pdf`,
+          certificationPath: `${orderId}/certified-translation-v1.pdf`,
+        },
+        `${orderId}/evaluation.pdf`,
+      ),
+    ).toEqual({
+      status: "delivered",
+      review_reason: null,
+      final_translation_path: `${orderId}/certified-translation-v1.pdf`,
+      certification_path: `${orderId}/certified-translation-v1.pdf`,
+    });
+    expect(
+      deliveredEvaluationPatch(
+        { includeTranslation: false, finalTranslationPath: null, certificationPath: null },
+        `${orderId}/evaluation.pdf`,
+        { diploma: `${orderId}/diploma-evaluation.pdf` },
+      ),
+    ).toEqual({
+      status: "delivered",
+      review_reason: null,
+      final_translation_path: `${orderId}/evaluation.pdf`,
+      certification_path: `${orderId}/evaluation.pdf`,
+      service_files: { diploma: `${orderId}/diploma-evaluation.pdf` },
+    });
+  });
+});
+
 describe("evaluation pdf", () => {
   it("accepts a PDF header and rejects other bytes", () => {
     expect(() => assertEvaluationPdf(pdf)).not.toThrow();
@@ -129,6 +163,7 @@ describe("deliverEvaluationReport", () => {
     );
     expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, {
       status: "delivered",
+      review_reason: null,
       final_translation_path: `${orderId}/evaluation.pdf`,
       certification_path: `${orderId}/evaluation.pdf`,
     });
@@ -162,6 +197,43 @@ describe("deliverEvaluationReport", () => {
       expect.objectContaining({ status: "approved", final_path: `${orderId}/evaluation.pdf` }),
     );
     expect(webhooks.notifyOrder).not.toHaveBeenCalled();
+    expect(db.updateOrder).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      orderId,
+      expect.objectContaining({ status: "delivered", review_reason: null }),
+    );
+  });
+
+  it("clears a leftover review flag when a delivered evaluation is replaced", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue(
+      order({ status: "delivered", reviewReason: "Credential evaluation is reviewed by staff." }),
+    );
+    vi.spyOn(db, "getDelivery").mockResolvedValue({
+      id: "delivery-1",
+      orderId,
+      status: "delivered",
+      finalPath: `${orderId}/evaluation.pdf`,
+      certificationPath: `${orderId}/evaluation.pdf`,
+      approvedBy: userId,
+      approvedAt: "2026-10-21T00:00:00.000Z",
+      deliveredAt: "2026-10-21T00:00:00.000Z",
+    } as DeliveryRecord);
+    const body = new FormData();
+    body.set("file", new File([pdf], "evaluation.pdf", { type: "application/pdf" }));
+
+    const result = await deliverEvaluationReport(
+      orderId,
+      new Request("https://credpronto.com/api/admin/orders/1/evaluation", { method: "POST", body }),
+    );
+
+    expect(result).toEqual({ status: "delivered", email: "skipped" });
+    expect(db.updateOrder).toHaveBeenCalledWith(
+      expect.anything(),
+      orderId,
+      expect.objectContaining({ status: "delivered", review_reason: null }),
+    );
+    expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
   });
 
   it("rejects a translation order and a file that is not a PDF", async () => {

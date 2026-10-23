@@ -22,6 +22,7 @@ import {
   updateDelivery,
   updateOrder,
   withCombinedNumbers,
+  type Db,
 } from "./db";
 import { sendFinalCustomerEmail } from "./final-email";
 import { fulfillmentFor, parseTrackingNumber } from "./fulfillment";
@@ -33,11 +34,12 @@ import { publishCourseEquivalency, publishDiplomaEquivalency, retryEvaluation } 
 import { staffEdgeView } from "./edge";
 import { awaitingEquivalencyPublish, approvalBlockReason } from "./equivalency";
 import { etaFromNow } from "./quote";
+import { DELIVERED_REVIEW_CLEAR } from "./review-reason";
 import { sourceTextForDisplay } from "./source-text";
 import { signedObjectUrl, signedObjectUrls } from "./storage";
 import { ensureStaffRow, requireStaff } from "./staff";
 import { EMPTY_TRANSLATION_MESSAGE, emptyTranslationMessage, paragraphsForPage } from "./translation-edit";
-import { ORDER_STATUSES, type OrderStatus } from "./types";
+import { ORDER_STATUSES, type DeliveryRecord, type OrderRecord, type OrderStatus } from "./types";
 import { translateOrder } from "./translation";
 
 export { requireStaff } from "./staff";
@@ -184,10 +186,30 @@ async function signedFinals(
   };
 }
 
+/** A delivered order is finished. Re-approve clears a leftover review flag and returns the files. */
+async function releaseAlreadyDelivered(
+  db: Db,
+  order: OrderRecord,
+  delivery?: DeliveryRecord | null,
+) {
+  const row = delivery === undefined ? await getDelivery(db, order.id) : delivery;
+  if (order.reviewReason) await updateOrder(db, order.id, DELIVERED_REVIEW_CLEAR);
+  const files = await signedFinals(
+    db,
+    order,
+    row?.finalPath ?? order.finalTranslationPath,
+    row?.certificationPath ?? order.certificationPath,
+  );
+  return { status: "delivered" as const, ...files };
+}
+
 export async function approveOrder(orderId: string) {
   const { db, userId } = await requireStaff();
   const order = await getOrderById(db, orderId);
   if (!order) throw new HttpError("Order not found", 404);
+  if (order.status === "delivered") {
+    return releaseAlreadyDelivered(db, order);
+  }
   if (order.status !== "paid" && order.status !== "approved") {
     throw new HttpError("Only a paid order can be certified", 409);
   }
@@ -198,8 +220,7 @@ export async function approveOrder(orderId: string) {
   const delivery = await getDelivery(db, order.id);
   if (!delivery) throw new HttpError("Payment has not created a delivery", 409);
   if (delivery.status === "delivered") {
-    const files = await signedFinals(db, order, delivery.finalPath, delivery.certificationPath);
-    return { status: "delivered" as const, ...files };
+    return releaseAlreadyDelivered(db, order, delivery);
   }
   if (!order.finalTranslationPath || !order.certificationPath) {
     throw new HttpError("Translated files are not ready", 409);
@@ -253,7 +274,7 @@ export async function approveOrder(orderId: string) {
     final_path: order.finalTranslationPath,
     certification_path: order.certificationPath,
   });
-  await updateOrder(db, order.id, { status: "delivered" });
+  await updateOrder(db, order.id, { status: "delivered", ...DELIVERED_REVIEW_CLEAR });
   await notifyOrder(db, order.id, "order.delivered");
   await notifyLifecycle(db, order.id, "order.completed");
   return {

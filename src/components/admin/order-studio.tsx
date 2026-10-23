@@ -25,6 +25,7 @@ import type { PreviewOrder, PreviewPageSize } from "@/components/preview/preview
 import { humanStatus } from "@/components/admin/orders-board";
 import { QaPanel } from "@/components/admin/qa-panel";
 import { approveButtonLabel, runStudioAction, type StudioTaskResult } from "@/components/admin/studio-action";
+import { NeedsReviewBanner } from "@/components/admin/needs-review-banner";
 import { sourceTextForDisplay } from "@/lib/orders/source-text";
 import { emptyTranslationMessage } from "@/lib/orders/translation-edit";
 import type { ViewerFocus } from "@/components/preview/side-by-side-viewer";
@@ -275,11 +276,11 @@ export function OrderStudio({
             </select>
           </label>
         ) : null}
-        {detail.reviewReason ? (
-          <p className="mt-3 rounded-[var(--cp-radius)] border border-[#f3d7a1] bg-[#fff8ee] px-3 py-2 text-sm">
-            Needs review: {detail.reviewReason}
-          </p>
-        ) : null}
+        <NeedsReviewBanner
+          status={status}
+          reviewReason={detail.reviewReason}
+          deliveryStatus={detail.delivery?.status ?? null}
+        />
         {detail.edge ? <EdgeReference edge={detail.edge} /> : null}
         {message ? (
           <p role="status" data-testid="studio-status" className="mt-3 text-sm text-[var(--cp-ok)]">
