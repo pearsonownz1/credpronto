@@ -15,9 +15,12 @@ test("integrations shows keys, webhook, card, orders, and quick start", async ({
   await expect(page.getByRole("heading", { name: "Integrations" })).toBeVisible();
   await expect(page.getByTestId("integration-clio")).toContainText("Clio");
   await expect(page.getByTestId("integration-clio")).toContainText(
-    "Send evaluation and translation orders from a Clio matter and save finished reports back to it.",
+    "Order certified translations from a Clio matter and save them back to it.",
   );
-  await expect(page.getByTestId("integration-clio-status")).toHaveText("Coming soon");
+  await expect(page.getByTestId("integration-clio")).not.toContainText("Coming soon");
+  await expect(page.getByTestId("clio-connect")).toHaveAttribute("href", "/api/integrations/clio/connect");
+  await expect(page.getByTestId("clio-connect")).toHaveText("Connect");
+  await expect(page.getByTestId("integration-clio-status")).toHaveCount(0);
   await expect(page.getByTestId("integration-clio").getByRole("button")).toHaveCount(0);
   await expect(page.getByTestId("nav-integrations")).toHaveAttribute("href", "/dashboard/integrations");
   await expect(page.getByText("Expert letter")).toHaveCount(0);

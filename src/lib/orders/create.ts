@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { optionalUser } from "@/lib/auth/session";
 import { ORIGINALS_BUCKET } from "./constants";
 import {
+  insertCustomerWithoutEmail,
   insertDocument,
   insertEvent,
   insertOrder,
@@ -19,24 +20,27 @@ import type { OrderType } from "./types";
 /**
  * A validated session owns the customer email. The body email is used only
  * when there is no session, and is never a fallback for a session user.
+ * A guest may leave the address blank. Signup or sign-in writes it later.
  */
 export function resolveOrderCustomer(input: {
   session: { id: string; email: string | null } | null;
   bodyEmail: string | null;
-}): { email: string; userId: string | null } {
+}): { email: string | null; userId: string | null } {
   if (input.session) {
     return {
       email: assertEmail(input.session.email ?? ""),
       userId: input.session.id || null,
     };
   }
-  return { email: assertEmail(input.bodyEmail ?? ""), userId: null };
+  const bodyEmail = input.bodyEmail?.trim() ?? "";
+  if (!bodyEmail) return { email: null, userId: null };
+  return { email: assertEmail(bodyEmail), userId: null };
 }
 
 export async function createOrder(request: Request): Promise<{
   orderToken: string;
   orderId: string;
-  email: string;
+  email: string | null;
   documentCount: number;
   estimatedCents: number | null;
   sourceLanguage: string | null;
@@ -59,7 +63,7 @@ export async function createOrder(request: Request): Promise<{
 
   const db = serviceDb();
   const files = await referencedOriginals(db, body.sessionId, body.files);
-  const customer = await upsertCustomer(db, email);
+  const customer = email ? await upsertCustomer(db, email) : await insertCustomerWithoutEmail(db);
   const orderToken = generateOrderToken();
   const priced =
     choice.orderType === "evaluation"

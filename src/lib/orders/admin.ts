@@ -1,3 +1,5 @@
+import { after } from "next/server";
+import { uploadApprovedClioTranslationById } from "@/lib/clio/upload-back";
 import { deliveredEvaluationPatch } from "./evaluation-delivered";
 import { adminOrderFields } from "./admin-order-fields";
 import { evaluationReleaseBlock, missingEvaluationReports, releaseEvaluationPackage } from "./evaluation-review";
@@ -189,6 +191,15 @@ async function signedFinals(
   };
 }
 
+/** Runs after the response. A missing request scope (unit tests) skips it. */
+function scheduleClioUpload(orderId: string): void {
+  try {
+    after(() => uploadApprovedClioTranslationById(orderId));
+  } catch {
+    // approveOrder is also called outside a request in tests.
+  }
+}
+
 export async function approveOrder(orderId: string) {
   const { db, userId } = await requireStaff();
   const order = await getOrderById(db, orderId);
@@ -262,6 +273,7 @@ export async function approveOrder(orderId: string) {
 
   const sent = await sendFinalCustomerEmail(db, order);
   const files = await signedFinals(db, order, order.finalTranslationPath, order.certificationPath);
+  scheduleClioUpload(order.id);
   if (!sent.sent && !sent.skipped) {
     return { status: "approved" as const, email: "failed" as const, ...files };
   }

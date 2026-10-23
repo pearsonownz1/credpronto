@@ -20,6 +20,7 @@ import type { Db } from "./storage";
 export type { Db };
 import { eventData } from "./events";
 import { HttpError } from "./errors";
+import { assertEmail } from "./files";
 import type {
   ConfirmationRecord,
   CorrectionRecord,
@@ -295,6 +296,64 @@ export async function customerEmail(db: Db, customerId: string): Promise<string 
   const { data, error } = await db.from("customers").select("email").eq("id", customerId).maybeSingle();
   fail(error);
   return data?.email ? String(data.email) : null;
+}
+
+/** Address on the order's customer now. Signup may have moved `customer_id` since the row was loaded. */
+export async function orderCustomerEmail(db: Db, orderId: string): Promise<string | null> {
+  const order = await getOrderById(db, orderId);
+  if (!order) return null;
+  return customerEmail(db, order.customerId);
+}
+
+/** One customer row per guest quote that has no address yet. */
+export async function insertCustomerWithoutEmail(db: Db): Promise<{ id: string }> {
+  const inserted = await db.from("customers").insert({ email: null }).select("id").single();
+  fail(inserted.error);
+  if (!inserted.data?.id) throw new Error("Customer was not created");
+  return { id: String(inserted.data.id) };
+}
+
+/**
+ * Write `email` onto a quote that does not have one.
+ * An address already stored on that customer stays.
+ * When another customer already owns the address, the order points at that row.
+ */
+export async function assignOrderEmail(
+  db: Db,
+  orderId: string,
+  customerId: string,
+  email: string,
+): Promise<{ attached: boolean; customerId: string }> {
+  const address = assertEmail(email);
+  const current = await customerEmail(db, customerId);
+  if (current) return { attached: false, customerId };
+
+  const existing = await db.from("customers").select("id").eq("email", address).maybeSingle();
+  fail(existing.error);
+  const existingId = existing.data?.id ? String(existing.data.id) : null;
+  if (existingId && existingId !== customerId) {
+    await updateOrder(db, orderId, { customer_id: existingId });
+    return { attached: true, customerId: existingId };
+  }
+
+  const updated = await db
+    .from("customers")
+    .update({ email: address })
+    .eq("id", customerId)
+    .is("email", null)
+    .select("id");
+  if (updated.error?.code === "23505") {
+    const winner = await db.from("customers").select("id").eq("email", address).maybeSingle();
+    fail(winner.error);
+    const winnerId = winner.data?.id ? String(winner.data.id) : null;
+    if (!winnerId) return { attached: false, customerId };
+    await updateOrder(db, orderId, { customer_id: winnerId });
+    return { attached: true, customerId: winnerId };
+  }
+  fail(updated.error);
+  const wrote = ((updated.data ?? []) as Row[]).some((row) => row.id);
+  if (wrote) return { attached: true, customerId };
+  return { attached: false, customerId };
 }
 
 export async function insertOrder(
