@@ -196,4 +196,16 @@ describe("auth migrations", () => {
     expect(lower).not.toMatch(/insert into/);
     expect(lower).not.toMatch(/create policy/);
   });
+
+  it("keeps Clio tokens behind row level security for the service role", () => {
+    const sql = readFileSync(path.join(migrationsDir, "20261023160000_clio_connections.sql"), "utf8");
+    expect(sql).toMatch(/create table public\.clio_connections/);
+    expect(sql).toMatch(/create table public\.clio_matter_orders/);
+    expect(sql).toMatch(/region in \('us', 'eu', 'ca', 'au'\)/);
+    expect(sql).toMatch(/enable row level security/);
+    expect(sql.toLowerCase()).not.toMatch(/create policy/);
+    expect(sql.toLowerCase()).not.toMatch(/grant [^;]*to (anon|authenticated)/);
+    expect(sql).toMatch(/to service_role/);
+    expect(sql.toLowerCase()).not.toMatch(/insert into/);
+  });
 });
