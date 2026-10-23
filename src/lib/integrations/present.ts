@@ -307,7 +307,7 @@ function csvCell(value: string): string {
 }
 
 /** Practice tools on the integrations page. Coming soon has no connect action. */
-export type PartnerAppStatus = "coming_soon";
+export type PartnerAppStatus = "coming_soon" | "available";
 
 export type PartnerApp = {
   id: string;
@@ -324,12 +324,12 @@ export const PARTNER_APPS: readonly PartnerApp[] = [
     name: "Clio",
     description: "Send evaluation and translation orders from a Clio matter and save finished reports back to it.",
     mark: "C",
-    status: "coming_soon",
+    status: "available",
   },
 ];
 
 /** Same words the page uses when a section is not available yet. */
-export function partnerStatusLabel(status: PartnerAppStatus): "Coming soon" {
+export function partnerStatusLabel(status: "coming_soon"): "Coming soon" {
   switch (status) {
     case "coming_soon":
       return "Coming soon";
