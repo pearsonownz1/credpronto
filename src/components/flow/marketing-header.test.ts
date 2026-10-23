@@ -8,7 +8,7 @@ vi.mock("next/image", () => ({
 
 import { MarketingHeaderFrame } from "./marketing-header";
 
-function renderNav(section?: "translations" | "evaluations" | "preval" | "pricing") {
+function renderNav(section?: "translations" | "evaluations" | "preval" | "integrations" | "pricing") {
   return renderToStaticMarkup(
     createElement(MarketingHeaderFrame, {
       section,
@@ -44,12 +44,16 @@ describe("marketing header", () => {
     }
 
     expect(tags(html, "nav-preval")).toHaveLength(2);
-    expect(html).toContain('href="/"');
-    expect(html).toContain(">Translations<");
-    expect(html).toContain('href="/evaluations"');
-    expect(html).toContain(">Evaluations<");
-    expect(html).toContain('href="/#pricing"');
-    expect(html).toContain(">Pricing<");
+    for (const region of [desktop, mobile]) {
+      const labels = [...region.matchAll(/<a\b[^>]*>([^<]+)<\/a>/g)].map((match) => match[1]);
+      const translations = labels.indexOf("Translations");
+      const preval = labels.indexOf("PreVal");
+      const integrations = labels.indexOf("Integrations");
+      expect(translations).toBeGreaterThanOrEqual(0);
+      expect(preval).toBe(translations + 1);
+      expect(integrations).toBe(preval + 1);
+    }
+    expect(html).toContain('href="/dashboard/integrations"');
     expect(html).toContain('href="/translate"');
     expect(html).toContain(">Get started<");
   });
