@@ -33,9 +33,11 @@ test("staff can review, edit, note, and refund an order", async ({ page }) => {
   await expect(page.getByTestId("page-status")).toContainText("Page 1");
   await page.getByTestId("qa-issue-0").click();
   await expect(page.getByTestId("page-status")).toContainText("Page 2");
-  await expect(page.getByLabel("Translation page 1 segment 1")).toHaveValue("Birth certificate of María Ruiz.");
+  const translationLine = page.getByRole("button", { name: "Translation page 1 segment 1" });
+  await expect(translationLine).toContainText("Birth certificate of María Ruiz.");
   await expect(page.getByTestId("notes-thread")).toContainText("Checked the name against the original scan.");
   await expect(page.getByTestId("activity-log")).toContainText("Payment received");
+  await translationLine.click();
   await page.getByLabel("Translation page 1 segment 1").fill("Birth certificate of Maria Ruiz.");
   await page.getByTestId("save-translation").click();
   await expect(page.getByTestId("studio-status")).toContainText("Translation saved");
