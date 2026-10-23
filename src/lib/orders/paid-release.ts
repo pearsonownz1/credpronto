@@ -26,6 +26,7 @@ import {
   type Db,
 } from "./db";
 import { postEvaluationPaidAlert } from "./eval-alert-webhook";
+import { notifyQaReview } from "./qa-webhook";
 import { adminStudioLink, sendStaffOrderAlert } from "./email";
 import { retryFinalCustomerEmail, sendFinalCustomerEmail } from "./final-email";
 import { EMPTY_TRANSLATION_MESSAGE, emptyTranslationMessage, paragraphsForPage } from "./translation-edit";
@@ -94,6 +95,8 @@ export async function settlePaidOrder(
   const sent = await sendFirstStaffAlert(db, stamped);
   await notifyEvaluationPaidAlert(db, stamped);
   if (isEvaluation) await stampEvaluationUnderReview(db, stamped, paidAt);
+  // Wake QA the moment a paid order lands in review. Fire-and-forget.
+  notifyQaReview(stamped);
   // Evaluations stay with staff until the report is uploaded. Do not arm the two-minute reminder.
   if (sent && options.scheduleUrgent !== false && !isEvaluation) {
     const schedule = options.scheduleUrgent ?? scheduleDefault;
