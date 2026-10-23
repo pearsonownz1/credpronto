@@ -2,6 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { fetchVerification, isAbortError, type Verification } from "@/lib/verify/client";
+import {
+  downloadNeedsFreshLink,
+  fetchedAtAfterRead,
+  linkForDownload,
+  viewAfterRefresh,
+  watchSignedLink,
+} from "@/lib/verify/link-refresh";
 import { loadPdfWithOneRetry, type PdfSource } from "@/lib/verify/load";
 import { downloadFilename, FILE_UNAVAILABLE, verificationFacts } from "@/lib/verify/present";
 import { openDocumentUrl, savePdfBlob, VerifyScreen, type VerifyScreenModel } from "./verify-screen";
@@ -20,6 +27,7 @@ type Phase =
       opening: boolean;
       downloading: boolean;
       fileMessage: string | null;
+      linkFetchedAt: number;
     };
 
 export function VerifyExperience({ token }: { token: string }) {
@@ -44,6 +52,8 @@ function VerifySession({ token, onRetry }: { token: string; onRetry: () => void 
     };
   }, [held]);
 
+  const linkFetchedAt = phase.step === "valid" ? phase.linkFetchedAt : null;
+
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
@@ -67,6 +77,7 @@ function VerifySession({ token, onRetry }: { token: string; onRetry: () => void 
         return;
       }
 
+      const fetchedAt = Date.now();
       const documentUrl = verification.documentUrl;
       setPhase({
         step: "valid",
@@ -77,6 +88,7 @@ function VerifySession({ token, onRetry }: { token: string; onRetry: () => void 
         opening: Boolean(documentUrl),
         downloading: false,
         fileMessage: documentUrl ? null : FILE_UNAVAILABLE,
+        linkFetchedAt: fetchedAt,
       });
       if (!documentUrl) return;
 
@@ -90,11 +102,12 @@ function VerifySession({ token, onRetry }: { token: string; onRetry: () => void 
         });
       } catch (error) {
         if (!active || isAbortError(error)) return;
-        setPhase(validFile(verification, { fileMessage: FILE_UNAVAILABLE }));
+        setPhase(validFile(verification, fetchedAt, { fileMessage: FILE_UNAVAILABLE }));
         return;
       }
       if (!active) return;
-      setPhase(phaseFromSource(source, verification, rememberBlob));
+      const loadedAt = fetchedAtAfterRead(source.retried, fetchedAt);
+      setPhase(phaseFromSource(source, verification, rememberBlob, loadedAt));
     }
 
     void run();
@@ -104,39 +117,132 @@ function VerifySession({ token, onRetry }: { token: string; onRetry: () => void 
     };
   }, [token, held, rememberBlob]);
 
+  useEffect(() => {
+    if (linkFetchedAt == null) return;
+    const controller = new AbortController();
+    let active = true;
+    let issuedAt = linkFetchedAt;
+    const watch = watchSignedLink({
+      getFetchedAt: () => issuedAt,
+      isVisible: () => document.visibilityState === "visible",
+      onExhausted: () => {
+        if (!active) return;
+        setPhase({ step: "error" });
+      },
+      refresh: async () => {
+        const next = await fetchVerification(token, { signal: controller.signal });
+        if (!active) return "stop";
+        const now = Date.now();
+        let keep = false;
+        setPhase((current) => {
+          if (current.step !== "valid") return current;
+          const applied = applyFreshLink(current, next, now);
+          keep = applied.step === "valid";
+          return applied;
+        });
+        if (!keep) return "stop";
+        issuedAt = now;
+      },
+    });
+    document.addEventListener("visibilitychange", watch.onVisibility);
+    return () => {
+      active = false;
+      watch.stop();
+      controller.abort();
+      document.removeEventListener("visibilitychange", watch.onVisibility);
+    };
+  }, [linkFetchedAt, token]);
+
   async function onDownload() {
     if (phase.step !== "valid" || phase.downloading || phase.opening) return;
-    const filename = downloadFilename(phase.verification.reference);
-    if (phase.blob && !phase.remote) {
-      savePdfBlob(phase.blob, filename);
+    const current = phase;
+    const filename = downloadFilename(current.verification.reference);
+    const currentUrl = current.remote ? current.viewerUrl : current.verification.documentUrl;
+    if (current.blob && !current.remote && !downloadNeedsFreshLink(current.linkFetchedAt)) {
+      savePdfBlob(current.blob, filename);
       return;
     }
-    const documentUrl = phase.remote ? phase.viewerUrl : phase.verification.documentUrl;
-    if (!documentUrl) return;
 
-    const current = phase;
     setPhase({ ...current, downloading: true });
     try {
-      const source = await loadPdfWithOneRetry({
-        token,
-        documentUrl,
-        verification: current.verification,
+      const choice = await linkForDownload({
+        fetchedAt: current.linkFetchedAt,
+        documentUrl: currentUrl,
+        refresh: async () => {
+          const next = await fetchVerification(token);
+          return { fetchedAt: Date.now(), verification: next };
+        },
       });
+      if (choice.refreshed) {
+        const next = choice.verification;
+        if (next.status === "revoked") {
+          setPhase({ step: "revoked", verification: next });
+          return;
+        }
+        if (next.status !== "valid" || !next.documentUrl) {
+          setPhase(
+            next.status === "valid"
+              ? validFile(next, choice.fetchedAt, { fileMessage: FILE_UNAVAILABLE })
+              : { step: "not_found" },
+          );
+          return;
+        }
+        setPhase((existing) => {
+          if (existing.step !== "valid") return existing;
+          return { ...applyFreshLink(existing, next, choice.fetchedAt), downloading: true };
+        });
+      }
+
+      const verification = choice.refreshed && choice.verification.status === "valid" ? choice.verification : current.verification;
+      const documentUrl = choice.refreshed ? choice.verification.documentUrl : choice.documentUrl;
+      if (!documentUrl || verification.status !== "valid") return;
+      const source = await loadPdfWithOneRetry({ token, documentUrl, verification });
       if (source.kind === "blob") savePdfBlob(source.blob, downloadFilename(source.verification.reference));
       if (source.kind === "url") openDocumentUrl(source.url, downloadFilename(source.verification.reference));
-      setPhase(phaseFromSource(source, current.verification, rememberBlob));
+      const loadedAt = fetchedAtAfterRead(source.retried, choice.fetchedAt);
+      setPhase(phaseFromSource(source, verification, rememberBlob, loadedAt));
     } catch {
-      setPhase(validFile(current.verification, { fileMessage: FILE_UNAVAILABLE }));
+      setPhase(validFile(current.verification, current.linkFetchedAt, { fileMessage: FILE_UNAVAILABLE }));
     }
   }
 
   return <VerifyScreen {...screenModel(phase, onRetry, () => void onDownload())} />;
 }
 
+function applyFreshLink(
+  current: Extract<Phase, { step: "valid" }>,
+  verification: Verification,
+  now: number,
+): Phase {
+  const result = viewAfterRefresh(
+    {
+      documentUrl: current.verification.documentUrl,
+      viewerUrl: current.viewerUrl,
+      remote: current.remote,
+      fetchedAt: current.linkFetchedAt,
+    },
+    verification,
+    now,
+  );
+  if (result.outcome === "revoked") return { step: "revoked", verification };
+  if (result.outcome === "not_found") return { step: "not_found" };
+  const lostFile = !result.view.viewerUrl && !current.blob;
+  return {
+    ...current,
+    verification,
+    viewerUrl: result.view.viewerUrl,
+    remote: result.view.remote,
+    linkFetchedAt: result.view.fetchedAt,
+    opening: false,
+    fileMessage: lostFile ? FILE_UNAVAILABLE : null,
+  };
+}
+
 function phaseFromSource(
   source: PdfSource,
   previous: Verification,
   remember: (blob: Blob) => string,
+  linkFetchedAt: number,
 ): Phase {
   if (source.kind === "status") {
     return source.verification.status === "revoked"
@@ -144,18 +250,19 @@ function phaseFromSource(
       : { step: "not_found" };
   }
   if (source.kind === "blob") {
-    return validFile(source.verification, { viewerUrl: remember(source.blob), blob: source.blob });
+    return validFile(source.verification, linkFetchedAt, { viewerUrl: remember(source.blob), blob: source.blob });
   }
   if (source.kind === "url") {
-    return validFile(source.verification, { viewerUrl: source.url, remote: true });
+    return validFile(source.verification, linkFetchedAt, { viewerUrl: source.url, remote: true });
   }
-  return validFile(source.verification.status === "valid" ? source.verification : previous, {
+  return validFile(source.verification.status === "valid" ? source.verification : previous, linkFetchedAt, {
     fileMessage: FILE_UNAVAILABLE,
   });
 }
 
 function validFile(
   verification: Verification,
+  linkFetchedAt: number,
   patch: Partial<Extract<Phase, { step: "valid" }>> = {},
 ): Extract<Phase, { step: "valid" }> {
   return {
@@ -167,6 +274,7 @@ function validFile(
     opening: false,
     downloading: false,
     fileMessage: null,
+    linkFetchedAt,
     ...patch,
   };
 }
