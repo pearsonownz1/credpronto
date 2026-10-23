@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { extractText, extractTextItems, getDocumentProxy } from "unpdf";
+import { extractText, getDocumentProxy } from "unpdf";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { POST as revokeVerification } from "@/app/api/admin/orders/[id]/verification/route";
 import { GET as readVerifyRoute } from "@/app/api/verify/[token]/route";
@@ -250,7 +250,7 @@ describe("qr stamp", () => {
     expect((await PDFDocument.load(first)).getPageCount()).toBe(1);
   });
 
-  it("keeps CredPronto as the producer and parks the QR above the signature and footer", async () => {
+  it("keeps page 1 at US Letter, with the QR and URL in the top band", async () => {
     const cover = await renderCertificationPdf({
       orderId: "order-1",
       sourceLanguage: "es",
@@ -264,45 +264,43 @@ describe("qr stamp", () => {
     const original = await PDFDocument.load(cover, { updateMetadata: false });
     expect(original.getCreator()).toBe(BRAND_NAME);
     expect(original.getProducer()).toBe(BRAND_NAME);
-    const media = original.getPage(0).getMediaBox();
+    const source = original.getPage(0).getSize();
+    expect(source).toEqual({ width: 612, height: 792 });
     const font = await original.embedFont(StandardFonts.Helvetica);
     const token = "a".repeat(43);
     const url = verificationUrl(token);
     const placement = verificationStampPlacement(
-      media,
+      source,
       url,
       (text, size) => font.widthOfTextAtSize(text, size),
       qrMatrix(url).size,
     );
 
-    const items = (await extractTextItems(cover.slice())).items[0] ?? [];
-    const role = items.find((item) => item.str.includes(SIGN_ROLE_TRANSLATOR));
-    const footer = items
-      .filter((item) => item.str.includes(BRAND_STREET))
-      .reduce<(typeof items)[number] | undefined>((lowest, item) => {
-        if (!lowest || item.y < lowest.y) return item;
-        return lowest;
-      }, undefined);
-    expect(role).toBeTruthy();
-    expect(footer).toBeTruthy();
-    if (!role || !footer) return;
-    expect(footer.y).toBeLessThan(60);
-    // Role label, the signature line 12pt above it, and the signature image through ~roleY+108.
-    const signature: StampRect = { x: 48, y: role.y - 4, width: 516, height: 116 };
-    // Footer address baseline, plus the rule drawn 14pt above it.
-    const footerRegion: StampRect = { x: 48, y: footer.y - 3, width: 516, height: 19 };
-    expect(signature.y + signature.height).toBeLessThan(media.y + media.height);
-    expect(footerRegion.y + footerRegion.height).toBeLessThan(signature.y);
-
-    for (const mark of [placement.card, placement.qr, placement.label]) {
-      expect(mark.y).toBeGreaterThanOrEqual(media.y + media.height);
-      expect(intersects(mark, signature)).toBe(false);
-      expect(intersects(mark, footerRegion)).toBe(false);
-      expect(inside(mark, placement.band)).toBe(true);
+    const band: StampRect = { x: 0, y: 720, width: 612, height: 72 };
+    const contentRegion: StampRect = { x: 0, y: 0, width: 612, height: 720 };
+    expect(placement.page).toEqual({ width: 612, height: 792 });
+    expect(placement.band).toEqual(band);
+    expect(placement.qr).toEqual({ x: 548, y: 728, width: 56, height: 56 });
+    expect(inside(placement.qr, band)).toBe(true);
+    expect(inside(placement.label, band)).toBe(true);
+    expect(intersects(placement.label, placement.qr)).toBe(false);
+    expect(placement.label.x).toBeLessThan(placement.qr.x);
+    for (const line of placement.urlLines) {
+      const width = font.widthOfTextAtSize(line.text, line.size);
+      expect(line.size).toBe(8);
+      expect(inside({ x: line.x, y: line.y - 2, width, height: line.size + 2 }, band)).toBe(true);
+      expect(line.x + width).toBeLessThanOrEqual(placement.qr.x);
     }
-    const urlText = placement.urlLines.map((line) => line.text).join("");
-    expect(urlText).toBe(url);
-    expect(placement.label.y).toBeGreaterThanOrEqual(placement.band.y);
+    expect(placement.urlLines.map((line) => line.text).join("")).toBe(url);
+
+    expect(inside(placement.content, contentRegion)).toBe(true);
+    expect(intersects(placement.content, band)).toBe(false);
+    expect(placement.scale).toBeCloseTo(720 / 792, 5);
+    expect(placement.content.height).toBeCloseTo(720, 3);
+    expect(placement.content.y).toBeCloseTo(0, 3);
+    expect(placement.content.width).toBeCloseTo((612 * 720) / 792, 3);
+    expect(placement.content.x).toBeCloseTo((612 - placement.content.width) / 2, 3);
+    expect(placement.content.width / source.width).toBeCloseTo(placement.content.height / source.height, 5);
 
     const stamped = await stampVerificationQr(cover, token);
     const saved = await PDFDocument.load(stamped, { updateMetadata: false });
@@ -310,13 +308,41 @@ describe("qr stamp", () => {
     expect(saved.getProducer()).toBe(BRAND_NAME);
     expect(saved.getProducer()).not.toContain("pdf-lib");
     expect(saved.getCreator()).not.toContain("pdf-lib");
-    const stampedMedia = saved.getPage(0).getMediaBox();
-    expect(stampedMedia.height).toBeCloseTo(media.height + placement.band.height, 3);
-    expect(stampedMedia.y).toBeCloseTo(media.y, 3);
+    const page = saved.getPage(0);
+    expect(page.getWidth()).toBe(612);
+    expect(page.getHeight()).toBe(792);
+    expect(page.getMediaBox()).toEqual({ x: 0, y: 0, width: 612, height: 792 });
+    expect(page.getRotation().angle).toBe(0);
     const text = await pdfText(stamped);
     expect(text).toContain(url);
     expect(text).toContain(SIGN_ROLE_TRANSLATOR.replace(/\s+/g, ""));
     expect(text).toContain(BRAND_STREET.replace(/\s+/g, ""));
+  });
+
+  it("scales a non-letter page into the 612x720 area and leaves later pages unchanged", async () => {
+    const doc = await PDFDocument.create();
+    doc.addPage([500, 500]);
+    doc.addPage([200, 400]);
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const url = verificationUrl("a".repeat(43));
+    const placement = verificationStampPlacement(
+      { width: 500, height: 500 },
+      url,
+      (text, size) => font.widthOfTextAtSize(text, size),
+      qrMatrix(url).size,
+    );
+    const contentRegion: StampRect = { x: 0, y: 0, width: 612, height: 720 };
+    expect(inside(placement.content, contentRegion)).toBe(true);
+    expect(placement.content.width / 500).toBeCloseTo(placement.content.height / 500, 5);
+    expect(placement.content.x).toBeCloseTo((612 - placement.content.width) / 2, 3);
+    expect(inside(placement.qr, placement.band)).toBe(true);
+    expect(inside(placement.label, placement.band)).toBe(true);
+
+    const stamped = await stampVerificationQr(await doc.save(), "a".repeat(43));
+    const saved = await PDFDocument.load(stamped);
+    expect(saved.getPageCount()).toBe(2);
+    expect(saved.getPage(0).getSize()).toEqual({ width: 612, height: 792 });
+    expect(saved.getPage(1).getSize()).toEqual({ width: 200, height: 400 });
   });
 });
 
