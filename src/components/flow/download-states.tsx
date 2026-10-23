@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { flowUsesMock, getFlowClient } from "@/lib/flow/client";
 import {
   CONFIRMING_PAYMENT_COPY,
@@ -185,9 +185,34 @@ function Certifying({
   email: string;
 }) {
   return (
+    <PaidReviewBody
+      orderId={order.orderId}
+      email={email}
+      totalCents={order.totalCents}
+      paidAt={order.paidAt}
+      preview={<PaidPreview token={token} order={order} />}
+    />
+  );
+}
+
+/** Paid translation held for final review. `preview` is the read-only viewer for that order. */
+export function PaidReviewBody({
+  orderId,
+  email,
+  totalCents,
+  paidAt,
+  preview,
+}: {
+  orderId: string;
+  email: string | null;
+  totalCents: number | null;
+  paidAt: string | null;
+  preview: ReactNode;
+}) {
+  return (
     <>
       <div data-testid="download-phase" data-phase="review" className="mx-auto w-full max-w-[720px] text-center">
-        <p className="preview-kicker blue">Order {order.orderId}</p>
+        <p className="preview-kicker blue">Order {orderId}</p>
         <h1 className="mt-3 text-[28px] font-bold leading-tight tracking-[-0.5px] md:text-[32px]">
           {QUICK_CHECK_COPY}
         </h1>
@@ -195,7 +220,7 @@ function Certifying({
           {paidReviewEmailLine(email)}
         </p>
         <p data-testid="paid-receipt" className="mt-3 text-base text-ink">
-          {paidReceiptLine(order)}
+          {paidReceiptLine({ totalCents, paidAt })}
         </p>
         <ReleaseProgress />
         <p data-testid="close-page-note" className="mt-6 text-base font-semibold text-ink">
@@ -213,7 +238,7 @@ function Certifying({
         data-testid="paid-preview"
         className="mt-8 h-[min(70vh,720px)] min-h-[420px] overflow-hidden rounded-[var(--cp-radius)] border border-line"
       >
-        <PaidPreview token={token} order={order} />
+        {preview}
       </div>
     </>
   );

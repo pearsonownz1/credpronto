@@ -36,8 +36,18 @@ function withPrivateRobots(response: NextResponse, pathname: string): NextRespon
   return response;
 }
 
+function productionFixtureHidden(pathname: string): boolean {
+  return process.env.VERCEL_ENV === "production" && (pathname === "/dev/paid-review" || pathname.startsWith("/dev/paid-review/"));
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  if (productionFixtureHidden(pathname)) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/missing";
+    url.search = "";
+    return withPrivateRobots(NextResponse.rewrite(url), pathname);
+  }
   const token = publicOrderSegment(pathname);
   if (token != null && isOrderId(token)) {
     const session = await updateSession(request);
