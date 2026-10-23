@@ -37,7 +37,7 @@ import {
   type ReportOverride,
 } from "@/components/admin/evaluation-report-model";
 import { EvaluationReportBoxes, MissingEvaluationReports } from "@/components/admin/evaluation-reports";
-import { sourceTextForDisplay } from "@/lib/orders/source-text";
+import { TranslationView } from "@/components/admin/translation-view";
 import { emptyTranslationMessage } from "@/lib/orders/translation-edit";
 import type { ViewerFocus } from "@/components/preview/side-by-side-viewer";
 
@@ -98,6 +98,9 @@ export function OrderStudio({
   const [drafts, setDrafts] = useState<Record<string, string[]>>(() =>
     Object.fromEntries(detail.pages.map((page) => [page.id, page.paragraphs.length > 0 ? page.paragraphs : [""]])),
   );
+  const draftsRef = useRef(drafts);
+  draftsRef.current = drafts;
+  const savingRef = useRef(false);
   const [thread, setThread] = useState(notes);
   const [note, setNote] = useState("");
   const [language, setLanguage] = useState(detail.sourceLanguage ?? "");
@@ -129,14 +132,6 @@ export function OrderStudio({
   }, []);
   const reports = applyReportOverrides(evaluationReportsFor(detail), reportOverrides);
 
-  function updateParagraph(pageId: string, index: number, value: string) {
-    setDrafts((current) => {
-      const next = [...(current[pageId] ?? [""])];
-      next[index] = value;
-      return { ...current, [pageId]: next };
-    });
-  }
-
   async function run(action: string, task: () => Promise<StudioTaskResult>) {
     setPending(action);
     setError(null);
@@ -149,9 +144,11 @@ export function OrderStudio({
     if (settled.refresh) router.refresh();
   }
 
-  async function save() {
+  async function save(source?: Record<string, string[]>) {
+    if (savingRef.current) return;
+    const current = source ?? draftsRef.current;
     const pages = detail.pages.flatMap((page) => {
-      const next = (drafts[page.id] ?? []).map((paragraph) => paragraph.trim()).filter(Boolean);
+      const next = (current[page.id] ?? []).map((paragraph) => paragraph.trim()).filter(Boolean);
       const previous = page.paragraphs.map((paragraph) => paragraph.trim()).filter(Boolean);
       if (JSON.stringify(next) === JSON.stringify(previous)) return [];
       return [{ documentId: page.documentId, pageNumber: page.pageNumber, paragraphs: next }];
@@ -164,12 +161,29 @@ export function OrderStudio({
       setError("Keep at least one paragraph on each edited page.");
       return;
     }
-    await run("save", async () => {
-      const result = await patchOrderTranslation(detail.id, pages);
-      return result.ok
-        ? { ok: true, message: "Translation saved. The preview, clean PDF, and certification were regenerated." }
-        : { ok: false, error: result.error };
-    });
+    savingRef.current = true;
+    try {
+      await run("save", async () => {
+        const result = await patchOrderTranslation(detail.id, pages);
+        return result.ok
+          ? { ok: true, message: "Translation saved. The preview, clean PDF, and certification were regenerated." }
+          : { ok: false, error: result.error };
+      });
+    } finally {
+      savingRef.current = false;
+    }
+  }
+
+  function commitLine(pageId: string, index: number, value: string) {
+    const pageDraft = draftsRef.current[pageId] ?? [];
+    if ((pageDraft[index] ?? "").trim() === value.trim()) return;
+    const nextPage = pageDraft.slice();
+    while (nextPage.length <= index) nextPage.push("");
+    nextPage[index] = value;
+    const next = { ...draftsRef.current, [pageId]: nextPage };
+    draftsRef.current = next;
+    setDrafts(next);
+    void save(next);
   }
 
   function uploadReport(service: "diploma" | "course_by_course", file: File) {
@@ -481,44 +495,12 @@ export function OrderStudio({
         />
       ) : null}
 
-      <section data-testid="page-editor" className="grid gap-3">
+      <section data-testid="page-editor" className="grid gap-4">
         <h2 className="text-lg font-semibold">Translation text</h2>
         {detail.pages.length === 0 ? (
           <p className="text-sm text-ink-muted">This order has no page text yet.</p>
         ) : (
-          detail.pages.map((page) => (
-            <article key={page.id} className="grid gap-3 rounded-[var(--cp-radius)] border border-line bg-white p-4 md:grid-cols-2">
-              <div>
-                <p className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink-muted">Page {page.pageNumber} source</p>
-                <p className="mt-2 whitespace-pre-wrap text-sm">{sourceTextForDisplay(page.sourceText) || "No source text"}</p>
-              </div>
-              <div className="grid gap-2">
-                <p className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink-muted">Translation</p>
-                {(drafts[page.id] ?? [""]).map((paragraph, index) => (
-                  <textarea
-                    key={`${page.id}-${index}`}
-                    aria-label={`Translation page ${page.pageNumber} segment ${index + 1}`}
-                    value={paragraph}
-                    disabled={!canEdit}
-                    onChange={(event) => updateParagraph(page.id, index, event.target.value)}
-                    rows={3}
-                    className="w-full rounded-[var(--cp-radius)] border border-line px-3 py-2 text-sm outline-none focus:border-primary disabled:bg-[#f6f7f9]"
-                  />
-                ))}
-                {canEdit ? (
-                  <button
-                    type="button"
-                    className="justify-self-start text-sm font-semibold text-primary"
-                    onClick={() =>
-                      setDrafts((current) => ({ ...current, [page.id]: [...(current[page.id] ?? []), ""] }))
-                    }
-                  >
-                    Add segment
-                  </button>
-                ) : null}
-              </div>
-            </article>
-          ))
+          <TranslationView pages={detail.pages} drafts={drafts} canEdit={canEdit} onCommit={commitLine} />
         )}
       </section>
 
