@@ -143,6 +143,62 @@ describe("order upload", () => {
     expect(progress.at(-1)).toBe(1);
   });
 
+  it("sends preEvaluationId with uploaded files and alone when the stored file is the only document", async () => {
+    const { requests } = stubUpload();
+    await getFlowClient().upload({
+      files: [new File(["hello"], "notes.pdf", { type: "application/pdf" })],
+      preEvaluationId: " prev-1 ",
+      choice: { orderType: "evaluation", service: "diploma", degreeCount: 1, includeTranslation: false },
+    });
+    const withFile = requests.find((request) => request.url === "/api/orders");
+    expect(withFile?.body).toMatchObject({ preEvaluationId: "prev-1", sessionId });
+
+    requests.length = 0;
+    await getFlowClient().upload({
+      files: [],
+      preEvaluationId: "prev-1",
+      choice: { orderType: "evaluation", service: "course_by_course", degreeCount: 2, includeTranslation: false },
+    });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.url).toBe("/api/orders");
+    expect(requests[0]?.body).toMatchObject({
+      preEvaluationId: "prev-1",
+      orderType: "evaluation",
+      service: "course_by_course",
+      degreeCount: "2",
+    });
+    expect(requests[0]?.body).not.toHaveProperty("files");
+    expect(requests[0]?.body).not.toHaveProperty("sessionId");
+  });
+
+  it("reports 409 already_ordered from order create", async () => {
+    stubUpload({
+      orderStatus: 409,
+      orderBody: { error: "This pre-evaluation was already ordered", code: "already_ordered" },
+    });
+    await expect(
+      getFlowClient().upload({
+        files: [],
+        preEvaluationId: "prev-1",
+        choice: { orderType: "evaluation", service: "diploma", degreeCount: 1, includeTranslation: false },
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "already_ordered",
+      message: "This pre-evaluation was already ordered",
+    });
+  });
+
+  it("does not send preEvaluationId when the customer is uploading normally", async () => {
+    const { requests } = stubUpload();
+    await getFlowClient().upload({
+      files: [new File(["hello"], "notes.pdf", { type: "application/pdf" })],
+    });
+    const order = requests.find((request) => request.url === "/api/orders");
+    expect(order?.body).not.toHaveProperty("preEvaluationId");
+    await expect(getFlowClient().upload({ files: [] })).rejects.toThrow("Upload at least one file");
+  });
+
   it("leaves email off the order request when the quote form does not send one", async () => {
     const { requests } = stubUpload();
     await getFlowClient().upload({

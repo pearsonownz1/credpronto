@@ -8,9 +8,11 @@ import {
   preEvaluationErrorStatus,
   replacementPreviewUrl,
   type PreEvaluationConfidence,
+  type PreEvaluationFileKind,
 } from "@/lib/pre-evaluation/client";
 import { PRE_EVALUATION_ACCEPT, preEvaluationFileError } from "@/lib/pre-evaluation/file";
 import { signupHrefFromPrefill } from "@/lib/pre-evaluation/handoff";
+import { officialEvaluationButtonLabel } from "@/lib/pre-evaluation/official-label";
 import { watchPreviewLink } from "@/lib/pre-evaluation/preview-link";
 import type { PreEvaluationProgress } from "@/lib/pre-evaluation/progress";
 import { previewWatermarkDataUrl } from "@/lib/pre-evaluation/watermark";
@@ -386,7 +388,7 @@ function SignedPreview({
   );
 }
 
-function OfficialEvaluationButton({ id }: { id: string }) {
+function OfficialEvaluationButton({ id, kind }: { id: string; kind: PreEvaluationFileKind | null }) {
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -412,7 +414,7 @@ function OfficialEvaluationButton({ id }: { id: string }) {
         onClick={() => void openAccount()}
         className={buttonClasses("primary", "h-12 w-full text-[15px] disabled:opacity-60")}
       >
-        Get my official evaluation
+        {officialEvaluationButtonLabel(kind)}
       </button>
       <p className="mt-2 text-center text-[13px] text-ink-muted">ready in about 5 minutes</p>
       {message ? (
@@ -429,12 +431,14 @@ export function PreEvaluationResult({
   equivalent,
   confidence,
   previewUrl,
+  kind = null,
   onPreviewRefreshFailed,
 }: {
   id: string;
   equivalent: string;
   confidence: PreEvaluationConfidence;
   previewUrl: string | null;
+  kind?: PreEvaluationFileKind | null;
   onPreviewRefreshFailed?: (error: { status: number; message: string }) => void;
 }) {
   const percent = CONFIDENCE_PERCENT[confidence];
@@ -486,7 +490,7 @@ export function PreEvaluationResult({
               </div>
               <p className="mt-2 text-[12.5px] text-ink-muted">Based on EDGE equivalency data</p>
             </div>
-            <OfficialEvaluationButton id={id} />
+            <OfficialEvaluationButton id={id} kind={kind} />
           </aside>
         </div>
       </section>

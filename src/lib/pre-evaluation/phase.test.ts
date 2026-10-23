@@ -47,7 +47,26 @@ describe("pre-evaluation flow", () => {
       equivalent: "Bachelor's degree",
       confidence: "high",
       previewUrl: "https://cdn.example/preview.png?token=one",
+      kind: "diploma",
     });
+  });
+
+  it("keeps a document kind from the result so the button can show its price", () => {
+    const phase = reducePreEvaluation(
+      { step: "checking", id: "prev-1", email: "ada@example.com" },
+      {
+        type: "status",
+        record: {
+          ...empty,
+          status: "ready",
+          equivalent: "Bachelor's degree",
+          confidence: "high",
+          previewUrl: "https://cdn.example/preview.png",
+          kind: "transcript",
+        },
+      },
+    );
+    expect(phase).toMatchObject({ step: "result", kind: "transcript" });
   });
 
   it("opens a result link on the server status, including a ready preview with no local email", () => {
@@ -73,6 +92,7 @@ describe("pre-evaluation flow", () => {
       email: null,
       equivalent: "Master's degree",
       previewUrl: "https://cdn.example/preview.pdf?token=one",
+      kind: "transcript",
     });
   });
 
@@ -104,6 +124,7 @@ describe("pre-evaluation flow", () => {
         equivalent: "Bachelor's degree",
         confidence: "high",
         previewUrl: "https://cdn.example/preview.pdf",
+        kind: null,
       },
       { type: "request-failed", status: 503, message },
     );

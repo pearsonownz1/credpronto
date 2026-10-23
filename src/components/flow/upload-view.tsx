@@ -6,7 +6,7 @@ import {
   DIPLOMA_PRICE_LABEL,
 } from "@/lib/evaluations/catalog";
 import type { FlowTrack } from "@/lib/flow/types";
-import { getPreEvaluationPrefill } from "@/lib/pre-evaluation/client";
+import { getPreEvaluationFile, getPreEvaluationPrefill, type PreEvaluationFile } from "@/lib/pre-evaluation/client";
 import { FlowHeader } from "./flow-header";
 import { UploadCard } from "./upload-card";
 import { uploadServiceFromQuery } from "./upload-draft";
@@ -24,7 +24,13 @@ export function UploadPageFallback() {
   );
 }
 
-type UploadSeedValue = { service: string | null; email: string | null; degreeCount: number | null };
+type UploadSeedValue = {
+  service: string | null;
+  email: string | null;
+  degreeCount: number | null;
+  preEvaluationId: string | null;
+  carriedFile: PreEvaluationFile | null;
+};
 
 const UploadSeedContext = createContext<(seed: UploadSeedValue) => void>(() => {});
 
@@ -41,19 +47,31 @@ export function UploadSeed({
   const report = useContext(UploadSeedContext);
   useEffect(() => {
     let cancelled = false;
-    report({ service: initialService ?? null, email: sessionEmail ?? null, degreeCount: null });
+    report({
+      service: initialService ?? null,
+      email: sessionEmail ?? null,
+      degreeCount: null,
+      preEvaluationId: null,
+      carriedFile: null,
+    });
     const id = preEvaluationId?.trim();
     if (!id) return;
-    void getPreEvaluationPrefill(id)
-      .then((prefill) => {
-        if (cancelled) return;
-        report({
-          service: prefill.service,
-          email: sessionEmail ?? prefill.email,
-          degreeCount: prefill.degreeCount,
-        });
-      })
-      .catch(() => undefined);
+    void Promise.all([
+      getPreEvaluationPrefill(id).catch(() => null),
+      // A 404 means the stored file cannot be carried. Any other failure leaves the normal upload.
+      getPreEvaluationFile(id)
+        .then((body) => body.preEvaluationFile)
+        .catch(() => null),
+    ]).then(([prefill, carriedFile]) => {
+      if (cancelled || !prefill) return;
+      report({
+        service: prefill.service,
+        email: sessionEmail ?? prefill.email,
+        degreeCount: prefill.degreeCount,
+        preEvaluationId: carriedFile ? id : null,
+        carriedFile,
+      });
+    });
     return () => {
       cancelled = true;
     };
@@ -73,7 +91,9 @@ export function UploadExperience({ seed }: { seed: ReactNode }) {
         current &&
         current.service === next.service &&
         current.email === next.email &&
-        current.degreeCount === next.degreeCount
+        current.degreeCount === next.degreeCount &&
+        current.preEvaluationId === next.preEvaluationId &&
+        current.carriedFile === next.carriedFile
       ) {
         return current;
       }
@@ -89,6 +109,8 @@ export function UploadExperience({ seed }: { seed: ReactNode }) {
           initialService={reported.service}
           sessionEmail={reported.email}
           initialDegreeCount={reported.degreeCount}
+          preEvaluationId={reported.preEvaluationId}
+          carriedFile={reported.carriedFile}
         />
       ) : (
         <UploadPageFallback />
@@ -101,10 +123,14 @@ export function UploadView({
   initialService,
   sessionEmail,
   initialDegreeCount = null,
+  preEvaluationId = null,
+  carriedFile = null,
 }: {
   initialService?: string | null;
   sessionEmail?: string | null;
   initialDegreeCount?: number | null;
+  preEvaluationId?: string | null;
+  carriedFile?: PreEvaluationFile | null;
 }) {
   const [track, setTrack] = useState<FlowTrack>(() => {
     const service = uploadServiceFromQuery(initialService);
@@ -130,6 +156,8 @@ export function UploadView({
           initialService={initialService}
           sessionEmail={sessionEmail}
           initialDegreeCount={initialDegreeCount}
+          preEvaluationId={preEvaluationId}
+          carriedFile={carriedFile}
           onTrackChange={setTrack}
         />
       </main>

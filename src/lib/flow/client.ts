@@ -59,6 +59,7 @@ export type FlowClient = {
     email?: string | null;
     files: File[];
     choice?: UploadChoice;
+    preEvaluationId?: string | null;
     onProgress?: (ratio: number) => void;
     onFileProgress?: (files: Array<{ name: string; ratio: number }>) => void;
   }): Promise<{

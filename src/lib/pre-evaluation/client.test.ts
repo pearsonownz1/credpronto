@@ -98,6 +98,10 @@ describe("pre-evaluation client", () => {
 
   it("keeps the equivalent once the preview is ready", () => {
     expect(parsePreEvaluation(ready)).toEqual(ready);
+    expect(parsePreEvaluation({ ...ready, kind: "diploma" }).kind).toBe("diploma");
+    expect(parsePreEvaluation({ ...ready, kind: "transcript" }).kind).toBe("transcript");
+    expect(parsePreEvaluation({ ...ready, kind: null }).kind).toBeNull();
+    expect(parsePreEvaluation({ ...ready, kind: "course_by_course" }).kind).toBeNull();
   });
 
   it("replaces an expired signed preview once", () => {
@@ -149,6 +153,7 @@ describe("pre-evaluation client", () => {
       degreeCount: 2,
       equivalent: "Bachelor's degree",
     });
+    expect(prefill).not.toHaveProperty("preEvaluationFile");
     expect(
       parsePreEvaluationPrefill({
         ...prefill,

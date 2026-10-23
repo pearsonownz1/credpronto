@@ -15,13 +15,28 @@ vi.mock("@/lib/supabase/client", () => ({
   }),
 }));
 
+import { FlowApiError } from "@/lib/flow/client";
+import { ALREADY_ORDERED_HREF, ALREADY_ORDERED_MESSAGE, quoteUploadFailure } from "./use-quote-upload";
 import { clearUploadDraft, writeUploadDraft } from "./upload-draft";
-import { UploadCard } from "./upload-card";
+import { UploadCard, UploadErrorNotice } from "./upload-card";
 import { UploadExperience, UploadPageFallback, UploadView } from "./upload-view";
 
 function html(sessionEmail?: string | null, initialService?: string | null) {
   return renderToStaticMarkup(createElement(UploadCard, { sessionEmail, initialService }));
 }
+
+describe("already ordered PreVal", () => {
+  it("links the customer to their orders", () => {
+    const failure = quoteUploadFailure(
+      new FlowApiError("This pre-evaluation was already ordered", 409, "already_ordered"),
+    );
+    expect(failure).toEqual({ message: ALREADY_ORDERED_MESSAGE, href: ALREADY_ORDERED_HREF });
+    const markup = renderToStaticMarkup(createElement(UploadErrorNotice, { message: failure.message, href: failure.href }));
+    expect(markup).toContain("You&#x27;ve already started an order from this PreVal.");
+    expect(markup).toContain('href="/dashboard/orders"');
+    expect(quoteUploadFailure(new FlowApiError("Upload at least one file", 400)).href).toBeNull();
+  });
+});
 
 describe("quote email field", () => {
   it("does not ask an anonymous visitor for an email", () => {
@@ -176,6 +191,28 @@ describe("service checkboxes", () => {
     expect(markup).toContain("Diploma evaluation is $19.95 per degree");
     expect(markup).toMatch(/data-testid="choice-diploma"[^>]*checked=""/);
     expect(markup).not.toMatch(/data-testid="choice-translation"[^>]*checked=""/);
+  });
+
+  it("lists the stored pre-evaluation file with its pages, size, and remove control", () => {
+    const markup = renderToStaticMarkup(
+      createElement(UploadCard, {
+        sessionEmail: null,
+        initialService: "diploma",
+        preEvaluationId: "prev-1",
+        carriedFile: {
+          name: "licenciatura.pdf",
+          mimeType: "application/pdf",
+          size: 2048,
+          pageCount: 3,
+          kind: "diploma",
+        },
+      }),
+    );
+    expect(markup).toContain('data-testid="carried-file"');
+    expect(markup).toContain("licenciatura.pdf");
+    expect(markup).toContain("3 pages · 2 KB");
+    expect(markup).toContain('aria-label="Remove licenciatura.pdf"');
+    expect(markup).toContain("Continue to payment");
   });
 
   it("shows the flat fee and the pay step when the page is a diploma upload", () => {
