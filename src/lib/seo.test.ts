@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import robots from "@/app/robots";
 import sitemap from "@/app/sitemap";
 import { EVALUATIONS_CANONICAL_URL } from "@/lib/evaluations/catalog";
+import { PRE_EVALUATION_CANONICAL } from "@/lib/pre-evaluation/handoff";
 import { FAQ_CANONICAL, GUIDES_CANONICAL } from "@/lib/content/faq";
 import {
   API_DOCS_CANONICAL,
@@ -20,7 +21,7 @@ describe("crawl policy", () => {
       rules: {
         userAgent: "*",
         allow: "/",
-        disallow: ["/preview/", "/order/", "/verify/", "/dashboard", "/admin", "/api"],
+        disallow: ["/preview/", "/order/", "/pre-evaluation/", "/verify/", "/dashboard", "/admin", "/api"],
       },
       sitemap: `${SITE_ORIGIN}/sitemap.xml`,
     });
@@ -31,6 +32,7 @@ describe("crawl policy", () => {
       HOME_CANONICAL,
       TRANSLATE_CANONICAL,
       EVALUATIONS_CANONICAL_URL,
+      PRE_EVALUATION_CANONICAL,
       GUIDES_CANONICAL,
       FAQ_CANONICAL,
       "https://www.credpronto.com/privacy",
@@ -72,6 +74,10 @@ describe("crawl policy", () => {
       },
       {
         source: "/order/:path*",
+        headers: [{ key: "X-Robots-Tag", value: ROBOTS_NOINDEX }],
+      },
+      {
+        source: "/pre-evaluation/:id",
         headers: [{ key: "X-Robots-Tag", value: ROBOTS_NOINDEX }],
       },
       {

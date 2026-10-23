@@ -2,7 +2,12 @@ import { inflateSync } from "node:zlib";
 import { extractText, getDocumentProxy } from "unpdf";
 import { describe, expect, it } from "vitest";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { PRE_EVAL_PREVIEW_LABEL, preEvaluationPreviewObjectPath, renderWatermarkedPreview } from "./watermark";
+import {
+  PRE_EVAL_PREVIEW_LABEL,
+  preEvaluationPreviewObjectPath,
+  previewWatermarkSvg,
+  renderWatermarkedPreview,
+} from "./watermark";
 
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
@@ -67,5 +72,15 @@ describe("pre-evaluation watermark", () => {
     expect(rendered[0]).toBe(0x25);
     expect(original[0]).toBe(0x89);
     expect(await pdfText(rendered)).toContain(PRE_EVAL_PREVIEW_LABEL);
+  });
+});
+
+describe("preview watermark", () => {
+  it("tiles PREVIEW in brand blue at 9% opacity, rotated -30 degrees", () => {
+    const svg = previewWatermarkSvg();
+    expect(svg).toContain(">PREVIEW</text>");
+    expect(svg).toContain('fill="#1f5eff"');
+    expect(svg).toContain('fill-opacity="0.09"');
+    expect(svg).toContain("rotate(-30 ");
   });
 });

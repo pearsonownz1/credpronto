@@ -35,6 +35,7 @@ export function privateCrawlHeaders(): {
   return [
     { source: "/preview/:path*", headers: [robots] },
     { source: "/order/:path*", headers: [robots] },
+    { source: "/pre-evaluation/:id", headers: [robots] },
     { source: "/verify", headers: [robots, noStore] },
     { source: "/verify/:path*", headers: [robots, noStore] },
   ];
