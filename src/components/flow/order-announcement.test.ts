@@ -4,6 +4,7 @@ import {
   CONFIRMING_PAYMENT_DETAIL,
   QUICK_CHECK_COPY,
   QUICK_CHECK_DETAIL,
+  paidReviewHeading,
 } from "@/lib/flow/present";
 import { TRANSLATION_REVIEW_COPY } from "@/lib/flow/preview-progress";
 import { orderLiveMessage } from "./order-announcement";
@@ -38,7 +39,7 @@ describe("order live message", () => {
           fulfillment: "awaiting_review",
         },
       }),
-    ).toBe(`${QUICK_CHECK_COPY}. ${QUICK_CHECK_DETAIL}`);
+    ).toBe(`${QUICK_CHECK_COPY} ${QUICK_CHECK_DETAIL}`);
     expect(
       orderLiveMessage({
         loading: false,
@@ -49,7 +50,7 @@ describe("order live message", () => {
           fulfillment: "awaiting_review",
         },
       }),
-    ).toBe(`${QUICK_CHECK_COPY}. ${QUICK_CHECK_DETAIL}`);
+    ).toBe(`${QUICK_CHECK_COPY} ${QUICK_CHECK_DETAIL}`);
     expect(
       orderLiveMessage({
         loading: false,
@@ -189,7 +190,24 @@ describe("order live message", () => {
           service: "diploma",
         },
       }),
-    ).toBe(`${QUICK_CHECK_COPY}. ${QUICK_CHECK_DETAIL}`);
+    ).toBe(
+      `${paidReviewHeading({ orderType: "evaluation", service: "diploma" })} ${QUICK_CHECK_DETAIL}`,
+    );
+    expect(
+      orderLiveMessage({
+        loading: false,
+        phase: "certifying",
+        order: {
+          status: "paid",
+          billablePages: 1,
+          totalCents: 2985,
+          fulfillment: "awaiting_review",
+          services: ["translation", "course_by_course"],
+        },
+      }),
+    ).toBe(
+      "Paid. We're finishing your certified translation and credential evaluation. Nothing to do. We'll email you when it's ready.",
+    );
     expect(
       orderLiveMessage({
         loading: false,
@@ -204,7 +222,9 @@ describe("order live message", () => {
           evaluationStatus: "performing_layout",
         },
       }),
-    ).toBe(`${QUICK_CHECK_COPY}. ${QUICK_CHECK_DETAIL}`);
+    ).toBe(
+      "Paid. We're finishing your credential evaluation report. Nothing to do. We'll email you when it's ready.",
+    );
     expect(
       orderLiveMessage({
         loading: false,

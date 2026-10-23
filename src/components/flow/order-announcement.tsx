@@ -7,9 +7,9 @@ import { type EvalStatus } from "@/lib/evalStatus";
 import {
   CONFIRMING_PAYMENT_COPY,
   CONFIRMING_PAYMENT_DETAIL,
-  QUICK_CHECK_COPY,
   QUICK_CHECK_DETAIL,
   downloadReadyCopy,
+  paidReviewHeading,
   isCustomerEvaluation,
   isTranslationBundle,
   orderPackagePending,
@@ -67,7 +67,7 @@ export function orderLiveMessage(input: {
     order.status === "approved" ||
     order.status === "delivered";
   if (paidLike && (input.phase === "certifying" || order.fulfillment === "awaiting_review" || orderPackagePending(order))) {
-    return `${QUICK_CHECK_COPY}. ${QUICK_CHECK_DETAIL}`;
+    return `${paidReviewHeading(order)} ${QUICK_CHECK_DETAIL}`;
   }
   if (paidLike) {
     return downloadReadyCopy(order).title;
