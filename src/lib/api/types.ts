@@ -107,14 +107,6 @@ export type QaReport = {
   issues: QaIssue[];
 };
 
-export type StaffEvaluationReport = {
-  service: "diploma" | "course_by_course";
-  uploaded: boolean;
-  fileName?: string;
-  /** Present when the payload includes a link staff can open. */
-  url?: string;
-};
-
 export type StaffDetail = {
   id: string;
   status: string;
@@ -128,18 +120,16 @@ export type StaffDetail = {
   reviewReason: string | null;
   /** Set for credential evaluations. Translation orders leave this null. */
   service: "diploma" | "course_by_course" | null;
-  /**
-   * Purchased services, such as translation, diploma, and course_by_course.
-   * Absent until the admin order payload includes `services`.
-   */
-  services?: string[];
-  /** True when the order includes a certified translation. Absent until the payload sends it. */
-  includesTranslation?: boolean;
-  /**
-   * One entry per purchased evaluation report.
-   * Absent until the admin order payload includes `evaluationReports`.
-   */
-  evaluationReports?: StaffEvaluationReport[];
+  /** Selected services from resolveServices, in catalog order. */
+  services: Array<"translation" | "diploma" | "course_by_course">;
+  /** True when the resolved services include certified translation. */
+  includesTranslation: boolean;
+  /** One entry for each purchased evaluation report. */
+  evaluationReports: Array<{
+    service: "diploma" | "course_by_course";
+    uploaded: boolean;
+    fileName?: string;
+  }>;
   equivalencyCredentials: Array<{
     credential: string;
     country: string;

@@ -162,6 +162,14 @@ describe("dashboard server auth", () => {
     expect(response.headers.get("x-middleware-rewrite")).toBeNull();
   });
 
+  it("rewrites the other paid fixtures to the 404 page in production", async () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+
+    const response = await proxy(new NextRequest("http://127.0.0.1:3000/dev/paid-combo"));
+
+    expect(response.headers.get("x-middleware-rewrite")).toContain("/missing");
+  });
+
   it("leaves public pages open", async () => {
     vi.stubEnv("CREDPRONTO_MOCK", "");
     vi.stubEnv("NEXT_PUBLIC_CREDPRONTO_MOCK", "");

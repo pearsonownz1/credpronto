@@ -20,6 +20,21 @@ body {
   font-family: var(--font-sans);
 }
 
+/* Short paid orders end at their content instead of stretching to the viewport. */
+html:has([data-paid-compact]) {
+  height: auto;
+}
+
+body:has([data-paid-compact]) {
+  min-height: auto;
+}
+
+body:has([data-paid-compact]) > .preview-theme,
+body:has([data-paid-compact]) > .preview-theme > div {
+  flex: none;
+  min-height: 0;
+}
+
 .preview-theme {
   --cp-bg: #ffffff;
   --cp-bg-muted: #f6f7f9;

@@ -60,7 +60,7 @@ describe("order live message", () => {
           fulfillment: "released",
         },
       }),
-    ).toBe("Your translation is ready.");
+    ).toBe("Your certified translation is ready.");
   });
 
   it("says the order is loading until a status arrives", () => {
@@ -189,7 +189,7 @@ describe("order live message", () => {
           service: "diploma",
         },
       }),
-    ).toBe("We're checking your documents.");
+    ).toBe(`${QUICK_CHECK_COPY}. ${QUICK_CHECK_DETAIL}`);
     expect(
       orderLiveMessage({
         loading: false,
@@ -204,7 +204,7 @@ describe("order live message", () => {
           evaluationStatus: "performing_layout",
         },
       }),
-    ).toBe("We're formatting your report.");
+    ).toBe(`${QUICK_CHECK_COPY}. ${QUICK_CHECK_DETAIL}`);
     expect(
       orderLiveMessage({
         loading: false,

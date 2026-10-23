@@ -18,6 +18,7 @@ import { checkoutQuotePending, customerServiceQuote, lineItemsForOrder } from "@
 import type { AddonId, ShippingAddress } from "@/lib/orders/types";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
+import { QuoteTurnaround } from "./quote-view";
 import { OrderAccountCard } from "./order-account-card";
 import { WrongEmailLink } from "./wrong-email-link";
 import { FlowStatus } from "./status";
@@ -349,12 +350,15 @@ function CheckoutForm({
             }}
           />
         )}
+        <div className="mt-[22px]">
+          <QuoteTurnaround order={order} embedded={false} />
+        </div>
         <button
           type="button"
           data-testid="pay-button"
           disabled={pending || notReady || counting || due == null}
           onClick={() => void pay()}
-          className={buttonClasses("primary", "mt-[22px] h-[52px] w-full text-base disabled:opacity-60")}
+          className={buttonClasses("primary", "mt-4 h-[52px] w-full text-base disabled:opacity-60")}
         >
           {pending ? "Opening checkout…" : counting ? "Counting pages…" : `Pay ${due != null ? formatMoney(due) : totalLabel(shown.totalCents)}`}
         </button>

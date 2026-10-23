@@ -1,7 +1,7 @@
 "use client";
 
 import type { FormEvent } from "react";
-import type { StaffEvaluationReport } from "@/lib/api/types";
+import type { EvaluationReport } from "@/components/admin/evaluation-report-model";
 import {
   evaluationPdfFileError,
   evaluationReportLabel,
@@ -9,7 +9,7 @@ import {
   reportUploadButtonLabel,
 } from "@/components/admin/evaluation-report-model";
 
-export function MissingEvaluationReports({ reports }: { reports: readonly StaffEvaluationReport[] }) {
+export function MissingEvaluationReports({ reports }: { reports: readonly EvaluationReport[] }) {
   const missing = missingEvaluationReportLabels(reports);
   if (missing.length === 0) return null;
   return (
@@ -25,10 +25,10 @@ export function EvaluationReportBoxes({
   onReject,
   onUpload,
 }: {
-  reports: readonly StaffEvaluationReport[];
+  reports: readonly EvaluationReport[];
   pending: string | null;
   onReject: (message: string) => void;
-  onUpload: (service: StaffEvaluationReport["service"], file: File) => void;
+  onUpload: (service: EvaluationReport["service"], file: File) => void;
 }) {
   if (reports.length === 0) return null;
   return (
@@ -62,10 +62,10 @@ function ReportBox({
   onReject,
   onUpload,
 }: {
-  report: StaffEvaluationReport;
+  report: EvaluationReport;
   pending: string | null;
   onReject: (message: string) => void;
-  onUpload: (service: StaffEvaluationReport["service"], file: File) => void;
+  onUpload: (service: EvaluationReport["service"], file: File) => void;
 }) {
   const label = evaluationReportLabel(report.service);
   const busy = pending === `report-${report.service}`;
@@ -127,7 +127,7 @@ function ReportBox({
   );
 }
 
-function ReportFile({ report }: { report: StaffEvaluationReport }) {
+function ReportFile({ report }: { report: EvaluationReport }) {
   const name = report.fileName;
   if (report.url && name) {
     return (

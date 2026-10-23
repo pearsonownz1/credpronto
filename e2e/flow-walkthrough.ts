@@ -75,7 +75,7 @@ export async function walkCustomerFlow(
   await expect(shown(page, "file-list")).toContainText("IMG_4021.HEIC");
   await expect(shown(page, "file-list")).toContainText("1 billable page");
   await expect(page.getByTestId("file-turnaround")).toHaveCount(0);
-  await expect(shown(page, "quote-turnaround")).toContainText("3 minutes");
+  await expect(shown(page, "quote-turnaround")).toContainText("Translation ready in about 1 minute.");
   await expect(shown(page, "quote-turnaround")).toContainText("Fast");
   await expect(page.getByTestId("quote-counts")).toHaveCount(0);
   await expect(shown(page, "quote-total")).toContainText("$19.90");
@@ -159,9 +159,7 @@ export async function walkCustomerFlow(
   await expect(shown(page, "email-note")).toContainText("maria.ruiz@email.com");
   await expect(shown(page, "email-note")).toContainText("CP-24817");
   await expect(shown(page, "email-note")).toContainText("$19.90");
-  await expect(shown(page, "flow-stepper").locator("[data-state=done]")).toHaveCount(4);
-  await expect(shown(page, "flow-stepper").locator("[data-state=current]")).toContainText(
-    "Download",
-  );
+  await expect(shown(page, "flow-stepper")).toHaveCount(0);
+  await expect(shown(page, "package-step-ready")).toHaveAttribute("data-state", "current");
   await check();
 }

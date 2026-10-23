@@ -67,6 +67,24 @@ export async function approveOrder(id: string): Promise<ApiResult<unknown>> {
   return browserJson(`/api/admin/orders/${encodeURIComponent(id)}/approve`, { method: "POST" });
 }
 
+export type StaffOrderFile = { kind: string; path: string; filename: string };
+
+export async function listOrderFiles(id: string): Promise<ApiResult<{ files: StaffOrderFile[] }>> {
+  if (publicMockMode()) return { ok: true, status: 200, data: { files: [] } };
+  return browserJson(`/api/admin/orders/${encodeURIComponent(id)}/files`, { method: "GET" });
+}
+
+export async function downloadOrderFile(
+  id: string,
+  path: string,
+): Promise<ApiResult<{ url: string; filename: string; expiresInSeconds: number }>> {
+  if (publicMockMode()) return { ok: false, status: 503, error: "Downloads are off in mock mode" };
+  return browserJson(`/api/admin/orders/${encodeURIComponent(id)}/files`, {
+    method: "POST",
+    body: JSON.stringify({ path }),
+  });
+}
+
 export async function refundOrder(
   id: string,
 ): Promise<ApiResult<{ paymentStatus?: string; duplicate?: boolean; mode?: string; refundId?: string }>> {

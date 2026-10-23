@@ -1,3 +1,4 @@
+import { deliveredEvaluationPatch } from "./evaluation-delivered";
 import { FINALS_BUCKET } from "./constants";
 import {
   claimOrderColumn,
@@ -86,7 +87,12 @@ export async function retryFinalCustomerEmail(db: Db, order: OrderRecord): Promi
   const delivery = await getDelivery(db, order.id);
   if (!delivery) return;
   if (delivery.status === "delivered") {
-    if (order.status !== "delivered") await updateOrder(db, order.id, { status: "delivered" });
+    {
+      const complete = deliveredEvaluationPatch(order, delivery.deliveredAt ?? new Date().toISOString());
+      if (order.status !== "delivered" || Object.keys(complete).length > 0) {
+        await updateOrder(db, order.id, { status: "delivered", ...complete });
+      }
+    }
     return;
   }
   const sent = await sendFinalCustomerEmail(db, order);
@@ -100,7 +106,7 @@ export async function retryFinalCustomerEmail(db: Db, order: OrderRecord): Promi
     final_path: delivery.finalPath,
     certification_path: delivery.certificationPath,
   });
-  await updateOrder(db, order.id, { status: "delivered" });
+  await updateOrder(db, order.id, { status: "delivered", ...deliveredEvaluationPatch(order, new Date().toISOString()) });
   await notifyOrder(db, order.id, "order.delivered");
   await notifyLifecycle(db, order.id, "order.completed");
 }

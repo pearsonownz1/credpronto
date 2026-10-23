@@ -103,23 +103,30 @@ export function EvaluationStatusColumn({
   phase = "review",
   downloadHref = null,
   onDownload,
+  showOrderId = true,
+  allowDownload = true,
 }: {
   orderId: string;
   view: EvaluationTracker;
   phase?: "review" | "ready";
   downloadHref?: string | null;
   onDownload?: () => Promise<unknown> | void;
+  /** The package page shows the order number once, above this list. */
+  showOrderId?: boolean;
+  /** The package page uses one Download button, and only when the whole order is ready. */
+  allowDownload?: boolean;
 }) {
+  const offerDownload = allowDownload && view.showDownload;
   return (
     <div data-testid="evaluation-review">
-      <div data-testid="download-phase" data-phase={phase}>
-        <p className="preview-kicker blue text-center">Order {orderId}</p>
-        <h1 className="sr-only">Evaluation status</h1>
+      <div data-testid={showOrderId ? "download-phase" : undefined} data-phase={showOrderId ? phase : undefined}>
+        {showOrderId ? <p className="preview-kicker blue text-center">Order {orderId}</p> : null}
+        {showOrderId ? <h1 className="sr-only">Evaluation status</h1> : null}
         <ol
         data-testid="evaluation-tracker"
         data-status={view.status}
         aria-label="Evaluation status"
-        className="mx-auto mt-6 w-full max-w-[440px] text-left"
+        className={`mx-auto w-full max-w-[440px] text-left ${showOrderId ? "mt-6" : ""}`}
       >
         {view.steps.map((step, index) => {
           const last = index === view.steps.length - 1;
@@ -161,7 +168,7 @@ export function EvaluationStatusColumn({
                   </p>
                 ) : null}
               </div>
-              {last && view.showDownload ? (
+              {last && offerDownload ? (
                 <div className="col-span-2 mt-4">
                   <DownloadEvaluation href={downloadHref} onDownload={onDownload} />
                 </div>

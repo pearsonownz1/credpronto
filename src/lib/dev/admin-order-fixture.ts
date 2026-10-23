@@ -26,7 +26,6 @@ export function adminOrderFixtureDetail(): StaffDetail {
         service: "diploma",
         uploaded: true,
         fileName: "diploma-evaluation.pdf",
-        url: "/samples/birth-certificate-en.pdf",
       },
       { service: "course_by_course", uploaded: false },
     ],

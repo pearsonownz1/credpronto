@@ -1,3 +1,4 @@
+import { deliveredEvaluationPatch } from "./evaluation-delivered";
 import { MAX_FILE_BYTES, FINALS_BUCKET } from "./constants";
 import { ensurePendingDelivery, getDelivery, getOrderById, hasEvent, insertEvent, listEvaluationQueueOrders, settledPayment, updateDelivery, updateOrder, type Db } from "./db";
 import { sendFinalCustomerEmail } from "./final-email";
@@ -126,6 +127,56 @@ export async function deliverEvaluationReport(orderId: string, request: Request)
   return publishEvaluationDelivery({ db, userId, order, path, serviceFiles: files });
 }
 
+/**
+ * Purchased evaluation reports that have not been uploaded yet. A single-report order is
+ * delivered the moment its report is uploaded, so an undelivered one is still missing it.
+ */
+export function missingEvaluationReports(
+  order: Parameters<typeof orderEvaluationKinds>[0] & {
+    id?: string;
+    serviceFiles?: Partial<Record<EvaluationService, string>> | null;
+  },
+  deliveredPath?: string | null,
+): EvaluationService[] {
+  const kinds = orderEvaluationKinds(order);
+  // Merged package already stored (e.g. delivery email failed after upload).
+  if (order.id && deliveredPath && deliveredPath === evaluationDeliverablePath(order.id)) return [];
+  const files = order.serviceFiles ?? {};
+  return kinds.filter((kind) => !files[kind]);
+}
+
+export function evaluationReleaseBlock(missing: readonly EvaluationService[]): string | null {
+  if (missing.length === 0) return null;
+  const names = missing.map((kind) => (kind === "diploma" ? "diploma" : "course-by-course"));
+  return `Upload the ${names.join(" and ")} evaluation report before releasing this order`;
+}
+
+/**
+ * Admin "Approve and release" for an order that includes an evaluation. Refuses while any
+ * purchased report is missing, otherwise publishes the whole package (translation stays in
+ * final_translation_path, the evaluation PDF goes to the delivery) through the same path
+ * the upload endpoint uses.
+ */
+export async function releaseEvaluationPackage(
+  db: Db,
+  userId: string,
+  order: OrderRecord,
+  deliveredPath?: string | null,
+) {
+  const kinds = orderEvaluationKinds(order);
+  const block = evaluationReleaseBlock(missingEvaluationReports(order, deliveredPath));
+  if (block) throw new HttpError(block, 409);
+  const files = order.serviceFiles ?? {};
+  const path = evaluationDeliverablePath(order.id);
+  if (deliveredPath === path) {
+    return publishEvaluationDelivery({ db, userId, order, path, ...(order.serviceFiles ? { serviceFiles: files } : {}) });
+  }
+  const parts = await Promise.all(kinds.map((kind) => downloadObject(db, FINALS_BUCKET, files[kind] as string)));
+  const bytes = parts.length === 1 ? parts[0]! : await concatPdfs(parts);
+  await uploadObject(db, FINALS_BUCKET, path, bytes, "application/pdf");
+  return publishEvaluationDelivery({ db, userId, order, path, serviceFiles: files });
+}
+
 function deliveredEvaluationService(form: FormData, kinds: readonly EvaluationService[]): EvaluationService {
   const raw = form.get("service");
   const service = typeof raw === "string" ? raw.trim() : "";
@@ -186,6 +237,8 @@ async function publishEvaluationDelivery(input: {
   }
 
   if (alreadyDelivered) {
+    const complete = deliveredEvaluationPatch(order, now);
+    if (Object.keys(complete).length > 0) await updateOrder(db, order.id, complete);
     return { status: "delivered" as const, email: "skipped" as const };
   }
 
@@ -203,6 +256,8 @@ async function publishEvaluationDelivery(input: {
     });
     return { status: "approved" as const, email: "failed" as const };
   }
+  const complete = deliveredEvaluationPatch(order, new Date().toISOString());
+  if (Object.keys(complete).length > 0) await updateOrder(db, order.id, complete);
   await notifyOrder(db, order.id, "order.delivered");
   await notifyLifecycle(db, order.id, "order.completed");
   return {

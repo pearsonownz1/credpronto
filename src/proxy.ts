@@ -37,12 +37,9 @@ function withPrivateRobots(response: NextResponse, pathname: string): NextRespon
 }
 
 function productionFixtureHidden(pathname: string): boolean {
-  if (process.env.VERCEL_ENV !== "production") return false;
   return (
-    pathname === "/dev/paid-review" ||
-    pathname.startsWith("/dev/paid-review/") ||
-    pathname === "/dev/admin-order" ||
-    pathname.startsWith("/dev/admin-order/")
+    process.env.VERCEL_ENV === "production" &&
+    (pathname.startsWith("/dev/paid-") || pathname === "/dev/admin-order" || pathname.startsWith("/dev/admin-order/"))
   );
 }
 

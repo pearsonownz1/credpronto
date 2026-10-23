@@ -1,3 +1,4 @@
+import { adminOrderFields } from "@/lib/orders/admin-order-fields";
 import { fulfillmentState } from "@/lib/orders/release-decision";
 import { sourceTextForDisplay } from "@/lib/orders/source-text";
 import type {
@@ -11,7 +12,6 @@ import type {
   QaStatus,
   StaffCorrection,
   StaffDetail,
-  StaffEvaluationReport,
   StaffNote,
   StaffPage,
 } from "./types";
@@ -287,9 +287,6 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
 
   const payment = row.payment && typeof row.payment === "object" ? (row.payment as Record<string, unknown>) : null;
   const delivery = row.delivery && typeof row.delivery === "object" ? (row.delivery as Record<string, unknown>) : null;
-  const services = parseServices(row.services);
-  const includesTranslation = parseIncludesTranslation(row.includesTranslation);
-  const evaluationReports = parseEvaluationReports(row.evaluationReports);
 
   return {
     id,
@@ -303,9 +300,16 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
     createdAt,
     reviewReason: text(row.reviewReason),
     service: row.service === "diploma" || row.service === "course_by_course" ? row.service : null,
-    ...(services !== undefined ? { services } : {}),
-    ...(includesTranslation !== undefined ? { includesTranslation } : {}),
-    ...(evaluationReports !== undefined ? { evaluationReports } : {}),
+    ...adminOrderFields(
+      {
+        id,
+        services: stringList(row.services),
+        service: row.service === "diploma" || row.service === "course_by_course" ? row.service : null,
+        includeTranslation: row.includeTranslation === true,
+        serviceFiles: serviceFileMap(row.serviceFiles),
+      },
+      text(delivery?.finalPath),
+    ),
     equivalencyCredentials: equivalencyCredentials(row.evaluationResult),
     edge: parseEdge(row.edge),
     filename,
@@ -331,53 +335,21 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
   };
 }
 
-function parseServices(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  return value.flatMap((item) => {
-    if (typeof item !== "string") return [];
-    const name = item.trim();
-    return name ? [name] : [];
-  });
+function stringList(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const names = value.filter((item): item is string => typeof item === "string");
+  return names.length > 0 ? names : null;
 }
 
-function parseIncludesTranslation(value: unknown): boolean | undefined {
-  return value === true || value === false ? value : undefined;
-}
-
-function parseReportUrl(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const url = value.trim();
-  if (url.startsWith("/") && !url.startsWith("//")) return url;
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol === "https:" || parsed.protocol === "http:") return url;
-  } catch {
-    return undefined;
+function serviceFileMap(value: unknown): Partial<Record<"diploma" | "course_by_course", string>> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const files: Partial<Record<"diploma" | "course_by_course", string>> = {};
+  if (typeof row.diploma === "string" && row.diploma.trim()) files.diploma = row.diploma;
+  if (typeof row.course_by_course === "string" && row.course_by_course.trim()) {
+    files.course_by_course = row.course_by_course;
   }
-  return undefined;
-}
-
-function parseEvaluationReports(value: unknown): StaffEvaluationReport[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const seen = new Set<string>();
-  const reports: StaffEvaluationReport[] = [];
-  for (const entry of value) {
-    if (!entry || typeof entry !== "object") continue;
-    const row = entry as Record<string, unknown>;
-    const service = row.service === "diploma" || row.service === "course_by_course" ? row.service : null;
-    if (!service || seen.has(service)) continue;
-    seen.add(service);
-    const uploaded = row.uploaded === true;
-    const fileName = typeof row.fileName === "string" ? row.fileName.trim() : "";
-    const url = parseReportUrl(row.url);
-    reports.push({
-      service,
-      uploaded,
-      ...(uploaded && fileName ? { fileName } : {}),
-      ...(url ? { url } : {}),
-    });
-  }
-  return reports;
+  return files.diploma || files.course_by_course ? files : null;
 }
 
 function parseEvaluationStatus(value: unknown): StaffDetail["evaluationStatus"] {

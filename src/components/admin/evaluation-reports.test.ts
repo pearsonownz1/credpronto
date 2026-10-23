@@ -74,44 +74,27 @@ describe("evaluation report selection", () => {
     expect(reports).toEqual([{ service: "diploma", uploaded: true, fileName: "new.pdf", url: "blob:report" }]);
   });
 
-  it("reads the optional admin fields and ignores a missing payload", () => {
+  it("reads services, includesTranslation, and evaluationReports from the order", () => {
     const detail = parseStaffDetail({
       id: "ord-1",
       status: "paid",
       createdAt: "2026-10-12T00:00:00.000Z",
-      services: ["translation", " diploma ", "nope", "course_by_course"],
-      includesTranslation: false,
-      evaluationReports: [
-        { service: "diploma", uploaded: true, fileName: " diploma-evaluation.pdf ", url: "javascript:alert(1)" },
-        { service: "course_by_course", uploaded: false, fileName: "course.pdf" },
-        { service: "translation", uploaded: true },
-      ],
+      service: null,
+      services: ["translation", "diploma", "course_by_course"],
+      includeTranslation: true,
+      serviceFiles: { diploma: "ord-1/diploma-evaluation.pdf" },
     });
-    expect(detail?.services).toEqual(["translation", "diploma", "nope", "course_by_course"]);
-    expect(detail?.includesTranslation).toBe(false);
+    expect(detail?.services).toEqual(["translation", "diploma", "course_by_course"]);
+    expect(detail?.includesTranslation).toBe(true);
     expect(detail?.evaluationReports).toEqual([
       { service: "diploma", uploaded: true, fileName: "diploma-evaluation.pdf" },
       { service: "course_by_course", uploaded: false },
     ]);
     const bare = parseStaffDetail({ id: "ord-2", status: "paid", createdAt: "2026-10-12T00:00:00.000Z" });
-    expect(bare?.services).toBeUndefined();
-    expect(bare?.includesTranslation).toBeUndefined();
-    expect(bare?.evaluationReports).toBeUndefined();
+    expect(bare?.services).toEqual(["translation"]);
+    expect(bare?.includesTranslation).toBe(true);
+    expect(bare?.evaluationReports).toEqual([]);
     expect(bare?.service).toBeNull();
-  });
-
-  it("keeps a root-relative or https view link", () => {
-    const detail = parseStaffDetail({
-      id: "ord-3",
-      status: "paid",
-      createdAt: "2026-10-12T00:00:00.000Z",
-      evaluationReports: [
-        { service: "diploma", uploaded: true, fileName: "diploma.pdf", url: "/samples/birth-certificate-en.pdf" },
-        { service: "course_by_course", uploaded: true, fileName: "course.pdf", url: "https://files.example/course.pdf" },
-      ],
-    });
-    expect(detail?.evaluationReports?.[0]?.url).toBe("/samples/birth-certificate-en.pdf");
-    expect(detail?.evaluationReports?.[1]?.url).toBe("https://files.example/course.pdf");
   });
 });
 
@@ -158,8 +141,8 @@ describe("evaluation report upload", () => {
 });
 
 describe("evaluation report boxes", () => {
-  it("shows the file name, a view link, and the missing report beside approval", () => {
-    const reports = adminOrderFixtureDetail().evaluationReports ?? [];
+  it("shows the file name and the missing report beside approval", () => {
+    const reports = adminOrderFixtureDetail().evaluationReports;
     const html = renderToStaticMarkup(
       createElement(
         "div",
@@ -176,11 +159,26 @@ describe("evaluation report boxes", () => {
     expect(html).toContain("Still missing: Course-by-course evaluation");
     expect(html).toContain("Diploma evaluation");
     expect(html).toContain("diploma-evaluation.pdf");
-    expect(html).toContain('href="/samples/birth-certificate-en.pdf"');
     expect(html).toContain("Not uploaded");
     expect(html).toContain("Replace PDF");
     expect(html).toContain("Upload PDF");
     expect(html).not.toMatch(BANNED);
+  });
+
+  it("links the file name after a successful upload in this session", () => {
+    const reports = applyReportOverrides(adminOrderFixtureDetail().evaluationReports, {
+      diploma: { fileName: "diploma-evaluation.pdf", url: "blob:report" },
+    });
+    const html = renderToStaticMarkup(
+      createElement(EvaluationReportBoxes, {
+        reports,
+        pending: null,
+        onReject: () => undefined,
+        onUpload: () => undefined,
+      }),
+    );
+    expect(html).toContain('href="blob:report"');
+    expect(html).toContain("diploma-evaluation.pdf");
   });
 
   it("hides the boxes on a translation order", () => {

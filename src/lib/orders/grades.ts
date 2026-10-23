@@ -2,7 +2,10 @@ export const GRADE_SCALE_10 =
   "Grades are on a 10-point scale. 9.0–10 is A (4.0), 8.0–8.9 is B (3.0), 7.0–7.9 is C (2.0), 6.0–6.9 is D (1.0), and below 6 is F (0).";
 
 export const GRADE_SCALE_20 =
-  "Grades are on a 20-point scale. 16–20 is A (4.0), 14–15.99 is A- (3.7), 12–13.99 is B (3.0), 10–11.99 is C (2.0), and below 10 is F (0).";
+  "Grades are on a 20-point scale with 10 as the pass mark. 16–20 is A (4.0), 14–15.99 is B (3.0), 10–13.99 is C (2.0). Below 10 is D (1.0) when the credential was passed, and F (0) when the credential was failed.";
+
+/** Default pass mark for a 20-point system (France, Cameroon and other French-model systems). */
+export const DEFAULT_PASS_MARK_20 = 10;
 
 export const GRADE_SCALE_LETTER =
   "Letter grades keep their printed mark. Points are A 4.0, A- 3.7, B+ 3.3, B 3.0, B- 2.7, C+ 2.3, C 2.0, C- 1.7, D+ 1.3, D 1.0, D- 0.7, and F 0.";
@@ -56,7 +59,54 @@ function band(grade: number, rows: Array<[number, string, number]>): MappedGrade
   return null;
 }
 
-export function mapLocalGrade(localGrade: string, scale: GradeScale): MappedGrade | null {
+export type GradeMapOptions = {
+  /** Pass mark on a 20-point scale. Defaults to 10. */
+  passMark?: number;
+  /**
+   * True when the credential overall was awarded (Admis, Passed).
+   * False when the credential itself was failed. Omit when the document does not say.
+   */
+  credentialPassed?: boolean;
+};
+
+/**
+ * Reads the printed overall decision. Negatives are tested first, so a phrase such as
+ * "non diplômé" or "not graduated" is failed even though it contains a passing word.
+ * Matching ignores accents and case.
+ */
+const FAILED_DECISION =
+  /\b(non[\s-]?diplomee?|non[\s-]?validee?|non[\s-]?admis|no[\s-]?aprobad[oa]|nao[\s-]?aprovad[oa]|not[\s-]?graduated|not[\s-]?graduate|not admitted|reprovad[oa]|reprobad[oa]|suspens[oa]|ajourn\w*|refus\w*|recal\w*|fail\w*|unsuccessful)\b/;
+
+const PASSED_DECISION =
+  /\b(graduated|graduate|diplomee|diplome|validee|valide|aprobada|aprobado|aprovada|aprovado|admis|admitted|passed|pass|reussi|passable|successful)\b/;
+
+export function credentialWasPassed(result: string | null | undefined): boolean | undefined {
+  const value = foldDecision(result);
+  if (!value) return undefined;
+  if (FAILED_DECISION.test(value)) return false;
+  if (PASSED_DECISION.test(value)) return true;
+  return undefined;
+}
+
+function foldDecision(result: string | null | undefined): string {
+  return (result ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+/**
+ * Maps a printed mark to a U.S. letter. For 20-point systems the pass line comes from the
+ * system's scale (passMark, default 10): any mark at or above it is a passing letter.
+ * A mark under that line is D (1.0) when the credential overall was passed, and F (0)
+ * when the credential was failed or the document does not state a result.
+ */
+export function mapLocalGrade(
+  localGrade: string,
+  scale: GradeScale,
+  options?: GradeMapOptions,
+): MappedGrade | null {
   if (scale === "letter") {
     const token = localGrade.trim().toUpperCase().replace(/\s+/g, "");
     const points = LETTER_POINTS[token];
@@ -78,13 +128,19 @@ export function mapLocalGrade(localGrade: string, scale: GradeScale): MappedGrad
     ]);
   }
   if (grade > 20) return null;
+  const pass = validPassMark(options?.passMark);
+  const below = options?.credentialPassed === true ? (["D", 1] as const) : (["F", 0] as const);
   return band(grade, [
-    [16, "A", 4],
-    [14, "A-", 3.7],
-    [12, "B", 3],
-    [10, "C", 2],
-    [0, "F", 0],
+    [Math.max(16, pass), "A", 4],
+    [Math.max(14, pass), "B", 3],
+    [pass, "C", 2],
+    [0, below[0], below[1]],
   ]);
+}
+
+function validPassMark(value: number | undefined): number {
+  if (value == null || !Number.isFinite(value) || value <= 0 || value > 20) return DEFAULT_PASS_MARK_20;
+  return Math.min(value, 14);
 }
 
 export type RawCourse = {
@@ -120,6 +176,7 @@ export function scoreCourses(
   courses: RawCourse[],
   scale: GradeScale,
   edgeRows?: readonly EdgeGradePoints[],
+  options?: GradeMapOptions,
 ): { courses: ScoredCourse[]; totalHours: number; gpa: number; usedEdge: boolean } | null {
   const scored: ScoredCourse[] = [];
   let usedEdge = false;
@@ -127,7 +184,7 @@ export function scoreCourses(
     if (!Number.isFinite(course.localCredits) || course.localCredits < 0) return null;
     const fromEdge = edgeRows && edgeRows.length > 0 ? mapEdgeGrade(course.localGrade, edgeRows) : null;
     if (fromEdge) usedEdge = true;
-    const mapped = fromEdge ?? mapLocalGrade(course.localGrade, scale);
+    const mapped = fromEdge ?? mapLocalGrade(course.localGrade, scale, options);
     if (!mapped) return null;
     const usSemesterHours = course.localCredits;
     scored.push({

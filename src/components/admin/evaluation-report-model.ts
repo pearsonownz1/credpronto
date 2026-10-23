@@ -1,5 +1,10 @@
-import type { StaffEvaluationReport } from "@/lib/api/types";
+import type { StaffDetail } from "@/lib/api/types";
 import { orderEvaluationKinds } from "@/lib/orders/service-selection";
+
+/** Admin order report, plus a link opened after a successful upload in this session. */
+export type EvaluationReport = StaffDetail["evaluationReports"][number] & {
+  url?: string;
+};
 
 export type ReportOverride = {
   fileName?: string;
@@ -13,15 +18,14 @@ export function evaluationReportLabel(service: string): string {
 }
 
 /**
- * One box per `evaluationReports` entry when that field is present.
- * Otherwise the purchased reports come from `services`, then the legacy `service` field.
- * Those fallbacks are not uploaded yet, because the payload has not said they are.
+ * One box per `evaluationReports` entry.
+ * When that list is missing, the purchased reports come from `services`, then the legacy `service` field.
  */
 export function evaluationReportsFor(input: {
   services?: readonly string[] | null;
   service?: string | null;
-  evaluationReports?: readonly StaffEvaluationReport[] | null;
-}): StaffEvaluationReport[] {
+  evaluationReports?: readonly EvaluationReport[] | null;
+}): EvaluationReport[] {
   if (Array.isArray(input.evaluationReports)) return normalizeReports(input.evaluationReports);
   return orderEvaluationKinds({ services: input.services, service: input.service }).map((service) => ({
     service,
@@ -29,9 +33,9 @@ export function evaluationReportsFor(input: {
   }));
 }
 
-function normalizeReports(entries: readonly StaffEvaluationReport[]): StaffEvaluationReport[] {
+function normalizeReports(entries: readonly EvaluationReport[]): EvaluationReport[] {
   const seen = new Set<string>();
-  const reports: StaffEvaluationReport[] = [];
+  const reports: EvaluationReport[] = [];
   for (const entry of entries) {
     if (entry.service !== "diploma" && entry.service !== "course_by_course") continue;
     if (seen.has(entry.service)) continue;
@@ -43,9 +47,9 @@ function normalizeReports(entries: readonly StaffEvaluationReport[]): StaffEvalu
 
 /** A successful upload in this session wins until the order payload catches up. */
 export function applyReportOverrides(
-  reports: readonly StaffEvaluationReport[],
+  reports: readonly EvaluationReport[],
   overrides: Readonly<Record<string, ReportOverride>>,
-): StaffEvaluationReport[] {
+): EvaluationReport[] {
   return reports.map((report) => {
     const override = overrides[report.service];
     if (!override) return report;
@@ -60,7 +64,7 @@ export function applyReportOverrides(
   });
 }
 
-export function missingEvaluationReportLabels(reports: readonly StaffEvaluationReport[]): string[] {
+export function missingEvaluationReportLabels(reports: readonly EvaluationReport[]): string[] {
   return reports.filter((report) => !report.uploaded).map((report) => evaluationReportLabel(report.service));
 }
 

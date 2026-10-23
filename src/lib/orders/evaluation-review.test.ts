@@ -7,6 +7,8 @@ import {
   assertEvaluationPdf,
   deliverEvaluationReport,
   evaluationQueueOrder,
+  evaluationReleaseBlock,
+  missingEvaluationReports,
 } from "./evaluation-review";
 import * as staff from "./staff";
 import * as storage from "./storage";
@@ -142,6 +144,34 @@ describe("deliverEvaluationReport", () => {
       expect.objectContaining({ id: orderId }),
     );
     expect(webhooks.notifyOrder).toHaveBeenCalledWith(expect.anything(), orderId, "order.delivered");
+    expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, {
+      evaluation_status: "evaluation_complete",
+      evaluation_complete_at: expect.any(String),
+    });
+  });
+
+  it("marks an under-review evaluation complete so the customer page shows Ready", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue(order({ evaluationStatus: "under_review" }));
+    const body = new FormData();
+    body.set("file", new File([pdf], "evaluation.pdf", { type: "application/pdf" }));
+    await deliverEvaluationReport(orderId, new Request("https://credpronto.com", { method: "POST", body }));
+    expect(db.updateOrder).toHaveBeenCalledWith(
+      expect.anything(),
+      orderId,
+      expect.objectContaining({ evaluation_status: "evaluation_complete" }),
+    );
+  });
+
+  it("does not mark the evaluation complete while the email failed", async () => {
+    vi.spyOn(finalEmail, "sendFinalCustomerEmail").mockResolvedValue({ sent: false, skipped: false });
+    const body = new FormData();
+    body.set("file", new File([pdf], "evaluation.pdf", { type: "application/pdf" }));
+    await deliverEvaluationReport(orderId, new Request("https://credpronto.com", { method: "POST", body }));
+    expect(db.updateOrder).not.toHaveBeenCalledWith(
+      expect.anything(),
+      orderId,
+      expect.objectContaining({ evaluation_status: "evaluation_complete" }),
+    );
   });
 
   it("leaves the report downloadable and retries later when the email fails", async () => {
@@ -232,5 +262,40 @@ describe("deliverEvaluationReport", () => {
       expect.any(Uint8Array),
       "application/pdf",
     );
+  });
+});
+
+describe("approve and release: evaluation package gate", () => {
+  const base = { id: "9b80cd30-0000-0000-0000-000000000000", service: null, includeTranslation: true };
+
+  it("lists every purchased report that is still missing", () => {
+    const order = { ...base, services: ["translation", "diploma", "course_by_course"], serviceFiles: { diploma: "x/diploma-evaluation.pdf" } };
+    expect(missingEvaluationReports(order)).toEqual(["course_by_course"]);
+    expect(evaluationReleaseBlock(missingEvaluationReports(order))).toMatch(/course-by-course evaluation report/);
+  });
+
+  it("refuses a translation+evaluation order with no reports", () => {
+    const order = { ...base, services: ["translation", "diploma"], serviceFiles: null };
+    expect(missingEvaluationReports(order)).toEqual(["diploma"]);
+    expect(evaluationReleaseBlock(["diploma"])).toMatch(/diploma evaluation report/);
+  });
+
+  it("allows release once every report is uploaded", () => {
+    const order = {
+      ...base,
+      services: ["translation", "diploma", "course_by_course"],
+      serviceFiles: { diploma: "a.pdf", course_by_course: "b.pdf" },
+    };
+    expect(missingEvaluationReports(order)).toEqual([]);
+    expect(evaluationReleaseBlock([])).toBeNull();
+  });
+
+  it("treats an already-merged package as present", () => {
+    const order = { ...base, services: ["diploma"], serviceFiles: null };
+    expect(missingEvaluationReports(order, `${base.id}/evaluation.pdf`)).toEqual([]);
+  });
+
+  it("translation-only orders have nothing to gate", () => {
+    expect(missingEvaluationReports({ ...base, services: ["translation"] })).toEqual([]);
   });
 });
