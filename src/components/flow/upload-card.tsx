@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -34,6 +35,20 @@ import type { PreEvaluationFile } from "@/lib/pre-evaluation/client";
 import { carriedFileDetail, orderPreEvaluationId } from "@/lib/pre-evaluation/stored-file";
 import { buttonClasses } from "./ui";
 import { useQuoteUpload } from "./use-quote-upload";
+
+export function UploadErrorNotice({ message, href }: { message: string; href?: string | null }) {
+  return (
+    <p role="alert" className="mt-3 text-sm text-[var(--cp-warn)]">
+      {href ? (
+        <Link href={href} className="font-semibold underline">
+          {message}
+        </Link>
+      ) : (
+        message
+      )}
+    </p>
+  );
+}
 
 type ListedFile = {
   id: string;
@@ -160,7 +175,7 @@ export function UploadCard({
   carriedFile?: PreEvaluationFile | null;
   onTrackChange?: (track: FlowTrack) => void;
 }) {
-  const { mock, pending, error, setError, submit } = useQuoteUpload();
+  const { mock, pending, error, errorHref, setError, submit } = useQuoteUpload();
   const signedInEmail = useQuoteEmail(sessionEmail);
   const inputRef = useRef<HTMLInputElement>(null);
   const [start] = useState(() => uploadStateFromDraft(initialService));
@@ -484,11 +499,7 @@ export function UploadCard({
             {signedInEmail}
           </p>
         ) : null}
-        {error ? (
-          <p role="alert" className="mt-3 text-sm text-[var(--cp-warn)]">
-            {error}
-          </p>
-        ) : null}
+        {error ? <UploadErrorNotice message={error} href={errorHref} /> : null}
         <button
           type="submit"
           data-testid="get-quote"

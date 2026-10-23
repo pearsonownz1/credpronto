@@ -15,13 +15,28 @@ vi.mock("@/lib/supabase/client", () => ({
   }),
 }));
 
+import { FlowApiError } from "@/lib/flow/client";
+import { ALREADY_ORDERED_HREF, ALREADY_ORDERED_MESSAGE, quoteUploadFailure } from "./use-quote-upload";
 import { clearUploadDraft, writeUploadDraft } from "./upload-draft";
-import { UploadCard } from "./upload-card";
+import { UploadCard, UploadErrorNotice } from "./upload-card";
 import { UploadExperience, UploadPageFallback, UploadView } from "./upload-view";
 
 function html(sessionEmail?: string | null, initialService?: string | null) {
   return renderToStaticMarkup(createElement(UploadCard, { sessionEmail, initialService }));
 }
+
+describe("already ordered PreVal", () => {
+  it("links the customer to their orders", () => {
+    const failure = quoteUploadFailure(
+      new FlowApiError("This pre-evaluation was already ordered", 409, "already_ordered"),
+    );
+    expect(failure).toEqual({ message: ALREADY_ORDERED_MESSAGE, href: ALREADY_ORDERED_HREF });
+    const markup = renderToStaticMarkup(createElement(UploadErrorNotice, { message: failure.message, href: failure.href }));
+    expect(markup).toContain("You&#x27;ve already started an order from this PreVal.");
+    expect(markup).toContain('href="/dashboard/orders"');
+    expect(quoteUploadFailure(new FlowApiError("Upload at least one file", 400)).href).toBeNull();
+  });
+});
 
 describe("quote email field", () => {
   it("does not ask an anonymous visitor for an email", () => {

@@ -171,6 +171,24 @@ describe("order upload", () => {
     expect(requests[0]?.body).not.toHaveProperty("sessionId");
   });
 
+  it("reports 409 already_ordered from order create", async () => {
+    stubUpload({
+      orderStatus: 409,
+      orderBody: { error: "This pre-evaluation was already ordered", code: "already_ordered" },
+    });
+    await expect(
+      getFlowClient().upload({
+        files: [],
+        preEvaluationId: "prev-1",
+        choice: { orderType: "evaluation", service: "diploma", degreeCount: 1, includeTranslation: false },
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "already_ordered",
+      message: "This pre-evaluation was already ordered",
+    });
+  });
+
   it("does not send preEvaluationId when the customer is uploading normally", async () => {
     const { requests } = stubUpload();
     await getFlowClient().upload({
