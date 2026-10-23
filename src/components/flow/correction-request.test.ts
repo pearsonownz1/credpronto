@@ -123,7 +123,14 @@ describe("delivered order correction request", () => {
   it("shows an open correction instead of the form", () => {
     const html = renderToStaticMarkup(
       createElement(PaidOrderScreen, {
-        order: deliveredOrder({ finalCorrection: { status: "in_progress" } }),
+        order: deliveredOrder({
+          finalCorrection: {
+            id: "corr-1",
+            status: "in_progress",
+            createdAt: "2026-10-23T15:00:00.000Z",
+            fixedAt: null,
+          },
+        }),
         token: "token-1",
         downloadHref: "/files/final.pdf",
       }),
