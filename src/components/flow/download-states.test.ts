@@ -101,126 +101,92 @@ describe("download page", () => {
     expect(html).toContain("text-ink-muted");
   });
 
-  it("shows the evaluation tracker under the order id, including a translation bundle", () => {
+  it("uses the same three steps for a paid evaluation and does not offer a download", () => {
     state.order = readyOrder({
       status: "paid",
       payment: { status: "paid" },
       delivery: { status: "pending" },
       fulfillment: "awaiting_review",
-      orderType: "evaluation",
-      service: "diploma",
-      degreeCount: 1,
-      evaluationCents: 1995,
-      translationCents: 995,
-      includeTranslation: true,
-      totalCents: 2990,
+      orderType: "translation",
+      service: null,
+      services: ["diploma"],
+      includeTranslation: false,
+      evaluationStatus: "under_review",
+      totalCents: 1995,
     });
     const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
     expect(html).toContain("Order CP-24817");
-    expect(html).toContain('data-testid="evaluation-tracker"');
-    expect(html).toContain('data-status="under_review"');
-    expect(html).toContain("Under review");
-    expect(html).toContain("Performing evaluation");
-    expect(html).toContain("Performing layout");
-    expect(html).toContain("Evaluation complete");
-    expect(html).toContain("We&#x27;re checking your documents.");
-    expect(html).toContain('data-step="under_review" data-state="current"');
-    expect(html).toContain('data-step="performing_evaluation" data-state="upcoming"');
-    expect(html).toContain("animate-ping");
-    expect(html).toContain("motion-reduce:animate-none");
-    expect(html).toContain("bg-[#1F5EFF]");
-    expect(html).not.toContain("In review");
-    expect(html).not.toContain("%");
+    expect(html.match(/Order CP-24817/g)).toHaveLength(1);
+    expect(html).toContain("finishing your certified PDF");
+    expect(html).toContain("Nothing to do. We&#x27;ll email you when it&#x27;s ready.");
+    expect(html).toContain('data-testid="package-step-quick_review" data-state="current"');
+    expect(html).toContain('data-testid="package-step-almost_ready" data-state="upcoming"');
+    expect(html).toContain('data-testid="package-step-ready" data-state="upcoming"');
+    expect(html).toContain("Quick Review");
+    expect(html).toContain("Almost Ready");
+    expect(html).not.toContain("Performing evaluation");
+    expect(html).not.toContain("Performing layout");
+    expect(html).not.toContain("Under review");
+    expect(html).not.toContain("Final review");
+    expect(html).not.toContain('data-testid="evaluation-tracker"');
     expect(html).not.toContain('data-testid="download-evaluation"');
-    expect(html).toContain('data-testid="evaluation-review"');
-    expect(html).toContain('data-state="current" data-step="download"');
-    expect(html).toContain('data-step="pay"');
-    expect(html).not.toContain('data-step="review"');
-    expect(html).not.toContain("finishing your certified PDF");
-    expect(html).not.toContain('data-testid="paid-preview"');
     expect(html).not.toContain('data-testid="download-certified"');
+    expect(html).toContain('href="/dashboard"');
+    expect(html).not.toContain("%");
   });
 
-  it("shows Paid and the certified translation download while the evaluation tracker stays up", () => {
+  it("keeps a combo in review with no download when the translation is already done", () => {
     state.order = readyOrder({
+      orderId: "9b80cd30-57e1-4630-8354-9607210dbeac",
       status: "paid",
       payment: { status: "paid" },
       delivery: { status: "pending" },
       fulfillment: "awaiting_review",
-      orderType: "evaluation",
-      service: "diploma",
-      degreeCount: 1,
-      evaluationCents: 1995,
-      translationCents: 995,
-      includeTranslation: true,
+      orderType: "translation",
+      service: null,
+      services: ["translation", "diploma"],
+      includeTranslation: false,
       translationReady: true,
-      totalCents: 2990,
       evaluationStatus: "under_review",
+      totalCents: 8975,
     });
     const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
-    const paidAt = html.indexOf("Paid $29.90");
-    const downloadAt = html.indexOf('data-testid="download-certified"');
-    const trackerAt = html.indexOf('data-testid="evaluation-tracker"');
-    expect(paidAt).toBeGreaterThan(-1);
-    expect(downloadAt).toBeGreaterThan(paidAt);
-    expect(trackerAt).toBeGreaterThan(downloadAt);
-    expect(html).toContain('data-testid="bundle-translation"');
-    expect(html).toContain("Certified translation · PDF");
-    expect(html).toContain('data-status="under_review"');
-    expect(html).not.toContain("Buy &amp; download");
-    expect(html).not.toContain("Opening checkout");
+    expect(html).toContain("Order 9b80cd30");
+    expect(html).not.toContain("9b80cd30-57e1-4630-8354-9607210dbeac");
+    expect(html.match(/Order 9b80cd30/g)).toHaveLength(1);
+    expect(html).toContain("finishing your certified PDF");
+    expect(html).toContain("Nothing to do. We&#x27;ll email you when it&#x27;s ready.");
+    expect(html).toContain('data-testid="package-step-quick_review" data-state="done"');
+    expect(html).toContain('data-testid="package-step-almost_ready" data-state="current"');
+    expect(html).toContain('data-testid="package-step-ready" data-state="upcoming"');
+    expect(html).toContain("Paid $89.75");
+    expect(html).not.toContain('data-testid="download-certified"');
+    expect(html).not.toContain('data-testid="download-evaluation"');
+    expect(html).not.toContain("Certified translation · PDF");
+    expect(html).not.toContain("Performing layout");
+    expect(html).toContain('href="/dashboard"');
+    expect(html).not.toContain('data-testid="start-another-order"');
   });
 
-  it("follows a stored evaluation status and keeps the download disabled until the file is ready", () => {
+  it("hides the download until an evaluation package is approved", () => {
     state.order = readyOrder({
       status: "paid",
       payment: { status: "paid" },
       delivery: { status: "pending" },
       fulfillment: "awaiting_review",
-      orderType: "evaluation",
-      service: "diploma",
-      degreeCount: 1,
-      evaluationCents: 1995,
-      translationCents: 0,
-      totalCents: 1995,
-      evaluationStatus: "performing_evaluation",
-      evaluationStatusAt: { under_review: "2026-10-21T17:02:00.000Z" },
-    });
-    const working = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
-    expect(working).toContain('data-status="performing_evaluation"');
-    expect(working).toContain("An evaluator is working on your evaluation.");
-    expect(working).toContain('dateTime="2026-10-21T17:02:00.000Z"');
-    expect(working).toContain('stroke="#1F5EFF"');
-    expect(working).not.toContain('data-testid="download-evaluation"');
-
-    state.order = readyOrder({
-      status: "paid",
-      payment: { status: "paid" },
-      delivery: { status: "pending" },
-      fulfillment: "awaiting_review",
-      orderType: "evaluation",
-      service: "course_by_course",
-      degreeCount: 1,
-      evaluationCents: 3995,
-      translationCents: 0,
-      totalCents: 3995,
+      services: ["course_by_course"],
+      service: null,
+      orderType: "translation",
       evaluationStatus: "evaluation_complete",
-      evaluationStatusAt: {
-        under_review: "2026-10-21T17:02:00.000Z",
-        performing_evaluation: "2026-10-21T17:11:00.000Z",
-        performing_layout: "2026-10-21T17:24:00.000Z",
-      },
     });
     const waiting = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
-    expect(waiting).toContain("Evaluation complete");
-    expect(waiting).toContain('data-testid="download-evaluation"');
-    expect(downloadButton(waiting)).toMatch(/\sdisabled(?:=|>|\s)/);
-    expect(waiting).toContain("h-[52px]");
-    expect(waiting).toContain("bg-primary");
-    expect(waiting).not.toContain("We&#x27;re formatting your report.");
+    expect(waiting).toContain('data-testid="package-step-almost_ready" data-state="current"');
+    expect(waiting).not.toContain('data-testid="download-evaluation"');
+    expect(waiting).not.toContain("Performing layout");
+    expect(waiting).not.toContain("Evaluation complete");
   });
 
-  it("links a finished evaluation to the existing download", () => {
+  it("links a finished evaluation to one download", () => {
     state.order = readyOrder({
       status: "delivered",
       payment: { status: "paid" },
@@ -238,10 +204,14 @@ describe("download page", () => {
     });
     const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
     expect(html).toContain('data-phase="ready"');
-    expect(html).toContain('data-status="evaluation_complete"');
+    expect(html).toContain("Your credential evaluation is ready.");
+    expect(html).toContain("We also emailed you a copy.");
+    expect(html).toContain('data-testid="package-step-ready" data-state="current"');
     expect(downloadButton(html)).not.toMatch(/\sdisabled(?:=|>|\s)/);
-    expect(html).not.toContain("Your credential evaluation is ready.");
-    expect(html).toContain('data-state="current" data-step="download"');
+    expect(html).toContain('data-testid="start-another-order"');
+    expect(html).toContain("Start another order");
+    expect(html).not.toContain("Nothing to do.");
+    expect(html).not.toContain("Performing evaluation");
   });
 
   it("keeps the certified translation and certification page for a translation", () => {
@@ -272,20 +242,20 @@ describe("download page", () => {
     });
     const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1" }));
     expect(html).toContain("finishing your certified PDF");
-    expect(html).toContain("nothing you need to do");
-    expect(html).toContain("buyer@example.com");
-    expect(html).toContain("when your certified PDF is ready.");
+    expect(html).toContain("Nothing to do. We&#x27;ll email you when it&#x27;s ready.");
+    expect(html).not.toContain("buyer@example.com");
     expect(html).toContain("You can close this page.");
     expect(html).toContain('data-testid="paid-receipt"');
     expect(html).toContain("Paid $19.90 on April 1, 2026");
-    expect(html).toContain('data-testid="release-progress"');
-    expect(html).toContain('aria-valuetext="Final review"');
+    expect(html).toContain('data-testid="package-progress"');
+    expect(html).toContain('aria-valuetext="Quick Review"');
     expect(html).not.toContain("aria-valuenow");
     expect(html).not.toMatch(/\d+%/);
-    expect(html).toContain('data-testid="release-step-paid" data-state="done"');
-    expect(html).toContain('data-testid="release-step-translated" data-state="done"');
-    expect(html).toContain('data-testid="release-step-review" data-state="current"');
-    expect(html).toContain('data-testid="release-step-ready" data-state="upcoming"');
+    expect(html).toContain('data-testid="package-step-quick_review" data-state="current"');
+    expect(html).toContain('data-testid="package-step-almost_ready" data-state="upcoming"');
+    expect(html).toContain('data-testid="package-step-ready" data-state="upcoming"');
+    expect(html).not.toContain("Final review");
+    expect(html).not.toContain("Performing evaluation");
     expect(html).toContain("release-indeterminate");
     expect(html).toContain("motion-reduce:animate-none");
     expect(html).toContain("Back to dashboard");
@@ -330,8 +300,10 @@ describe("download page", () => {
     });
     const html = renderToStaticMarkup(createElement(DownloadStates, { token: "token-1", pendingPayment: true }));
     expect(html).toContain("Your certified translation is ready.");
-    expect(html).toContain("We also emailed it to maria.ruiz@email.com.");
+    expect(html).not.toContain("We also emailed you a copy.");
     expect(html).toContain('data-testid="download-certified"');
+    expect(html).toContain('data-testid="package-step-ready" data-state="current"');
+    expect(html).toContain('data-testid="start-another-order"');
     expect(html).toContain('data-phase="ready"');
     expect(html).toContain(">Download<");
     expect(html).not.toContain("Evaluated in");

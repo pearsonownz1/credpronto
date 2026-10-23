@@ -510,12 +510,97 @@ export type DownloadReadyCopy = {
   again: string;
 };
 
-/** Labels and file kinds for a paid download. Evaluations name the report, not a translation certificate. */
+export type OrderContents = {
+  translation: boolean;
+  evaluation: boolean;
+};
+
+/**
+ * What the customer bought.
+ * A `services` list wins (`translation`, `diploma`, `course_by_course`).
+ * Older orders fall back to `service`, then the order type.
+ */
+export function orderContents(order: {
+  services?: readonly string[] | null;
+  service?: string | null;
+  orderType?: string | null;
+  serviceType?: string | null;
+  includeTranslation?: boolean | null;
+}): OrderContents {
+  const listed = (order.services ?? []).filter(
+    (item): item is string => typeof item === "string" && item.trim().length > 0,
+  );
+  if (listed.length > 0) {
+    return {
+      translation: listed.includes("translation"),
+      evaluation: listed.some((item) => item === "diploma" || item === "course_by_course"),
+    };
+  }
+  const evaluation =
+    order.orderType === "evaluation" ||
+    order.serviceType === "evaluation" ||
+    order.service === "diploma" ||
+    order.service === "course_by_course" ||
+    (order.service != null && order.service !== "translation");
+  if (evaluation) return { translation: order.includeTranslation === true, evaluation: true };
+  return { translation: true, evaluation: false };
+}
+
+/** The whole order is approved, or the certified file has been released. */
+export function orderApprovedOrDelivered(order: {
+  status?: string | null;
+  delivery?: { status: string } | null;
+  fulfillment?: "released" | "awaiting_review" | null;
+}): boolean {
+  if (order.fulfillment === "awaiting_review") return false;
+  if (order.fulfillment === "released") return true;
+  const delivery = order.delivery?.status;
+  if (delivery === "approved" || delivery === "delivered") return true;
+  return order.status === "approved" || order.status === "delivered";
+}
+
+/**
+ * True until the whole order is approved or delivered.
+ * A finished translation does not count: Download waits for this signal.
+ */
+export function orderPackagePending(order: {
+  status?: string | null;
+  delivery?: { status: string } | null;
+  fulfillment?: "released" | "awaiting_review" | null;
+}): boolean {
+  return !orderApprovedOrDelivered(order);
+}
+
+/** The delivery email has gone out. Approved is not the same as delivered. */
+export function orderWasDelivered(order: {
+  status?: string | null;
+  delivery?: { status: string } | null;
+  deliveredAt?: string | null;
+}): boolean {
+  if (typeof order.deliveredAt === "string" && order.deliveredAt.trim() !== "") return true;
+  if (order.status === "delivered") return true;
+  return order.delivery?.status === "delivered";
+}
+
+/** Labels and file kinds for one package download. A combo is a single file, not one button per item. */
 export function downloadReadyCopy(order: {
-  orderType: string;
-  service: string | null;
+  orderType?: string | null;
+  service?: string | null;
+  serviceType?: string | null;
+  services?: readonly string[] | null;
+  includeTranslation?: boolean | null;
 }): DownloadReadyCopy {
-  if (order.orderType === "evaluation" || order.service != null) {
+  const contents = orderContents(order);
+  if (contents.evaluation && contents.translation) {
+    return {
+      title: "Your order is ready.",
+      primaryTitle: "Your files",
+      primaryFile: "evaluation",
+      secondary: null,
+      again: "Start another order",
+    };
+  }
+  if (contents.evaluation) {
     return {
       title: "Your credential evaluation is ready.",
       primaryTitle: "Evaluation report",
@@ -548,33 +633,84 @@ export const QUICK_CHECK_COPY = "Paid. We're finishing your certified PDF.";
  * Nothing for the customer to do on this hold.
  * No customer-facing turnaround is stated for the post-payment review, so this line does not name one.
  */
-export const QUICK_CHECK_DETAIL =
-  "There's nothing you need to do. We'll email you when your certified PDF is ready.";
+export const QUICK_CHECK_DETAIL = "Nothing to do. We'll email you when it's ready.";
 
 export const CLOSE_PAGE_NOTE = "You can close this page.";
 
 /** Customer's orders dashboard. */
 export const ORDERS_DASHBOARD_HREF = "/dashboard";
 
-export function paidReviewEmailLine(email: string | null | undefined): string {
-  const address = email?.trim();
-  if (!address) return QUICK_CHECK_DETAIL;
-  return `There's nothing you need to do. We'll email ${address} when your certified PDF is ready.`;
+/** One next step while the package is in review. */
+export function paidReviewEmailLine(): string {
+  return QUICK_CHECK_DETAIL;
 }
 
-export type ReleaseProgressState = "done" | "current" | "upcoming";
+export type PackageProgressState = "done" | "current" | "upcoming";
 
-/** Paid translation still in final review. No percentage: the current step is indeterminate. */
-export const RELEASE_PROGRESS_STEPS: Array<{
-  id: "paid" | "translated" | "review" | "ready";
+export type PackageProgressId = "quick_review" | "almost_ready" | "ready";
+
+export type PackageProgressStep = {
+  id: PackageProgressId;
   label: string;
-  state: ReleaseProgressState;
-}> = [
-  { id: "paid", label: "Paid", state: "done" },
-  { id: "translated", label: "Translated", state: "done" },
-  { id: "review", label: "Final review", state: "current" },
-  { id: "ready", label: "Ready", state: "upcoming" },
-];
+  state: PackageProgressState;
+};
+
+/** Same three steps for every paid package. No per-product step names. */
+export const PACKAGE_PROGRESS_LABEL: Record<PackageProgressId, string> = {
+  quick_review: "Quick Review",
+  almost_ready: "Almost Ready",
+  ready: "Ready",
+};
+
+const PACKAGE_PROGRESS_ORDER: PackageProgressId[] = ["quick_review", "almost_ready", "ready"];
+
+/**
+ * Work is far enough that only final approval is left.
+ * A finished translation, an attached report, or a completed evaluation still waits on the whole order.
+ */
+export function packageNearlyDone(order: {
+  services?: readonly string[] | null;
+  service?: string | null;
+  orderType?: string | null;
+  serviceType?: string | null;
+  includeTranslation?: boolean | null;
+  translationReady?: boolean | null;
+  evaluationStatus?: string | null;
+  evaluation?: unknown;
+}): boolean {
+  if (order.translationReady === true) return true;
+  if (order.evaluation != null) return true;
+  return order.evaluationStatus === "evaluation_complete";
+}
+
+/** Quick Review while paid work is underway, Almost Ready when only approval is left, Ready when the package is approved. */
+export function packageProgress(order: {
+  status: string;
+  payment?: { status: string } | null;
+  delivery?: { status: string } | null;
+  fulfillment?: "released" | "awaiting_review" | null;
+  services?: readonly string[] | null;
+  service?: string | null;
+  orderType?: string | null;
+  serviceType?: string | null;
+  includeTranslation?: boolean | null;
+  translationReady?: boolean | null;
+  evaluationStatus?: string | null;
+  evaluation?: unknown;
+}): PackageProgressId {
+  if (downloadPhase(order) === "ready") return "ready";
+  if (packageNearlyDone(order)) return "almost_ready";
+  return "quick_review";
+}
+
+export function packageProgressSteps(current: PackageProgressId): PackageProgressStep[] {
+  const currentIndex = PACKAGE_PROGRESS_ORDER.indexOf(current);
+  return PACKAGE_PROGRESS_ORDER.map((id, index) => ({
+    id,
+    label: PACKAGE_PROGRESS_LABEL[id],
+    state: index < currentIndex ? "done" : index === currentIndex ? "current" : "upcoming",
+  }));
+}
 
 /** Receipt from fields already on the order. Omits an amount or date the order does not have. */
 export function paidReceiptLine(order: { totalCents: number | null; paidAt: string | null }): string {
@@ -602,10 +738,18 @@ function paidDateLabel(iso: string | null | undefined): string | null {
   }).format(date);
 }
 
-/** Ready-state line. The certified file is already in the customer's inbox. */
-export function downloadEmailedLine(email: string | null | undefined): string {
-  const address = email?.trim();
-  return address ? `We also emailed it to ${address}.` : "We also emailed it to you.";
+/** Shown with the download only after the package email has been sent. */
+export const ORDER_DELIVERED_NOTE = "We also emailed you a copy.";
+
+export function downloadEmailedLine(
+  order?: {
+    status?: string | null;
+    delivery?: { status: string } | null;
+    deliveredAt?: string | null;
+  } | null,
+): string | null {
+  if (!order || !orderWasDelivered(order)) return null;
+  return ORDER_DELIVERED_NOTE;
 }
 
 /** How often the paid page asks for order status until the PDF is released. */
@@ -622,20 +766,29 @@ export function orderStatusPollDelay(phase: DownloadPhase): number | null {
 
 export function downloadPhase(order: {
   status: string;
-  payment: { status: string } | null;
-  delivery: { status: string } | null;
+  payment?: { status: string } | null;
+  delivery?: { status: string } | null;
   fulfillment?: "released" | "awaiting_review" | null;
+  services?: readonly string[] | null;
+  service?: string | null;
+  orderType?: string | null;
+  serviceType?: string | null;
+  includeTranslation?: boolean | null;
+  translationReady?: boolean | null;
+  evaluationStatus?: string | null;
 }): DownloadPhase {
-  // `fulfillment` from the order payload is the switch. Delivery and status
-  // only apply when that field has not been set yet.
-  if (order.fulfillment === "released") return "ready";
-  if (order.fulfillment === "awaiting_review") return "certifying";
   const paid =
     order.status === "paid" ||
     order.status === "approved" ||
     order.status === "delivered" ||
     order.payment?.status === "paid" ||
     order.payment?.status === "paid_test";
+  if (order.fulfillment !== "released" && order.fulfillment !== "awaiting_review" && !paid) {
+    return "finalizing";
+  }
+  // One package. A released translation does not open Download while an evaluation is still pending.
+  if (order.fulfillment === "awaiting_review" || orderPackagePending(order)) return "certifying";
+  if (order.fulfillment === "released") return "ready";
   if (!paid) return "finalizing";
   const delivery = order.delivery?.status;
   if (
