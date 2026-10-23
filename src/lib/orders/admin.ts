@@ -1,3 +1,5 @@
+import { evaluationReleaseBlock, missingEvaluationReports, releaseEvaluationPackage } from "./evaluation-review";
+import { orderEvaluationKinds } from "./service-selection";
 import { DOWNLOAD_URL_SECONDS, FINALS_BUCKET, ORIGINALS_BUCKET } from "./constants";
 import { approverDisplayName, stampApprovedCover } from "./certification";
 import { notifyLifecycle, notifyOrder } from "./webhook-delivery";
@@ -200,6 +202,19 @@ export async function approveOrder(orderId: string) {
   if (delivery.status === "delivered") {
     const files = await signedFinals(db, order, delivery.finalPath, delivery.certificationPath);
     return { status: "delivered" as const, ...files };
+  }
+  if (orderEvaluationKinds(order).length > 0) {
+    // Multi-service order: release translation + every purchased evaluation report together.
+    const block = evaluationReleaseBlock(missingEvaluationReports(order, delivery.finalPath));
+    if (block) throw new HttpError(block, 409);
+    if (order.includeTranslation === true && (!order.finalTranslationPath || !order.certificationPath)) {
+      throw new HttpError("Translated files are not ready", 409);
+    }
+    await ensureStaffRow(db, userId);
+    if (order.includeTranslation === true) {
+      await stampApprovedCover(db, order, await approverDisplayName(db, userId));
+    }
+    return releaseEvaluationPackage(db, userId, order, delivery.finalPath);
   }
   if (!order.finalTranslationPath || !order.certificationPath) {
     throw new HttpError("Translated files are not ready", 409);

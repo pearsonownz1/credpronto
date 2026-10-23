@@ -206,12 +206,12 @@ describe("assemble evaluation", () => {
     expect(result).toMatchObject({
       kind: "course_by_course",
       totalHours: 6,
-      gpa: 3.7,
+      gpa: 3,
       gradeScale: GRADE_SCALE_20,
       years: [
         {
           year: "2018–2019",
-          courses: [expect.objectContaining({ usGrade: "A-", gradePoints: 22.2, usSemesterHours: 6 })],
+          courses: [expect.objectContaining({ usGrade: "B", gradePoints: 18, usSemesterHours: 6 })],
         },
       ],
     });

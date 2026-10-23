@@ -2,7 +2,10 @@ export const GRADE_SCALE_10 =
   "Grades are on a 10-point scale. 9.0–10 is A (4.0), 8.0–8.9 is B (3.0), 7.0–7.9 is C (2.0), 6.0–6.9 is D (1.0), and below 6 is F (0).";
 
 export const GRADE_SCALE_20 =
-  "Grades are on a 20-point scale. 16–20 is A (4.0), 14–15.99 is A- (3.7), 12–13.99 is B (3.0), 10–11.99 is C (2.0), and below 10 is F (0).";
+  "Grades are on a 20-point scale with 10 as the pass mark. 16–20 is A (4.0), 14–15.99 is B (3.0), 10–13.99 is C (2.0), and below 10 is F (0).";
+
+/** Default pass mark for a 20-point system (France, Cameroon and other French-model systems). */
+export const DEFAULT_PASS_MARK_20 = 10;
 
 export const GRADE_SCALE_LETTER =
   "Letter grades keep their printed mark. Points are A 4.0, A- 3.7, B+ 3.3, B 3.0, B- 2.7, C+ 2.3, C 2.0, C- 1.7, D+ 1.3, D 1.0, D- 0.7, and F 0.";
@@ -56,7 +59,15 @@ function band(grade: number, rows: Array<[number, string, number]>): MappedGrade
   return null;
 }
 
-export function mapLocalGrade(localGrade: string, scale: GradeScale): MappedGrade | null {
+/**
+ * Maps a printed mark to a U.S. letter. For 20-point systems the pass line comes from the
+ * system's scale (passMark, default 10): any mark at or above it is a passing letter, never F.
+ */
+export function mapLocalGrade(
+  localGrade: string,
+  scale: GradeScale,
+  options?: { passMark?: number },
+): MappedGrade | null {
   if (scale === "letter") {
     const token = localGrade.trim().toUpperCase().replace(/\s+/g, "");
     const points = LETTER_POINTS[token];
@@ -78,13 +89,18 @@ export function mapLocalGrade(localGrade: string, scale: GradeScale): MappedGrad
     ]);
   }
   if (grade > 20) return null;
+  const pass = validPassMark(options?.passMark);
   return band(grade, [
-    [16, "A", 4],
-    [14, "A-", 3.7],
-    [12, "B", 3],
-    [10, "C", 2],
+    [Math.max(16, pass), "A", 4],
+    [Math.max(14, pass), "B", 3],
+    [pass, "C", 2],
     [0, "F", 0],
   ]);
+}
+
+function validPassMark(value: number | undefined): number {
+  if (value == null || !Number.isFinite(value) || value <= 0 || value > 20) return DEFAULT_PASS_MARK_20;
+  return Math.min(value, 14);
 }
 
 export type RawCourse = {
@@ -120,6 +136,7 @@ export function scoreCourses(
   courses: RawCourse[],
   scale: GradeScale,
   edgeRows?: readonly EdgeGradePoints[],
+  options?: { passMark?: number },
 ): { courses: ScoredCourse[]; totalHours: number; gpa: number; usedEdge: boolean } | null {
   const scored: ScoredCourse[] = [];
   let usedEdge = false;
@@ -127,7 +144,7 @@ export function scoreCourses(
     if (!Number.isFinite(course.localCredits) || course.localCredits < 0) return null;
     const fromEdge = edgeRows && edgeRows.length > 0 ? mapEdgeGrade(course.localGrade, edgeRows) : null;
     if (fromEdge) usedEdge = true;
-    const mapped = fromEdge ?? mapLocalGrade(course.localGrade, scale);
+    const mapped = fromEdge ?? mapLocalGrade(course.localGrade, scale, options);
     if (!mapped) return null;
     const usSemesterHours = course.localCredits;
     scored.push({

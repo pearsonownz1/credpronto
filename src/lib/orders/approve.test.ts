@@ -91,14 +91,73 @@ describe("approveOrder cover stamp", () => {
     expect(certification.stampApprovedCover).not.toHaveBeenCalled();
   });
 
-  it("releases an evaluation when there is no translation text", async () => {
+  it("refuses to release an evaluation order while a purchased report is missing", async () => {
     vi.spyOn(db, "getOrderById").mockResolvedValue({ ...paidOrder, service: "diploma" });
     vi.spyOn(db, "listTranslations").mockResolvedValue([]);
 
     const response = await run(async () => json(await approveOrder(orderId)));
 
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "Upload the diploma evaluation report before releasing this order",
+    });
+    expect(db.updateOrder).not.toHaveBeenCalled();
+    expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
+  });
+
+  it("refuses translation + diploma + course-by-course with only one report uploaded", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue({
+      ...paidOrder,
+      service: null,
+      services: ["translation", "diploma", "course_by_course"],
+      includeTranslation: true,
+      serviceFiles: { diploma: `${orderId}/diploma-evaluation.pdf` },
+    } as OrderRecord);
+
+    const response = await run(async () => json(await approveOrder(orderId)));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "Upload the course-by-course evaluation report before releasing this order",
+    });
+    expect(db.updateOrder).not.toHaveBeenCalled();
+    expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
+  });
+
+  it("releases the whole package (translation + both reports) once every report is uploaded", async () => {
+    const { PDFDocument } = await import("pdf-lib");
+    const onePage = async () => {
+      const doc = await PDFDocument.create();
+      doc.addPage();
+      return doc.save();
+    };
+    vi.spyOn(db, "getOrderById").mockResolvedValue({
+      ...paidOrder,
+      service: null,
+      services: ["translation", "diploma", "course_by_course"],
+      includeTranslation: true,
+      finalTranslationPath: `${orderId}/certified-translation.pdf`,
+      certificationPath: `${orderId}/certified-translation.pdf`,
+      serviceFiles: {
+        diploma: `${orderId}/diploma-evaluation.pdf`,
+        course_by_course: `${orderId}/course_by_course-evaluation.pdf`,
+      },
+    } as OrderRecord);
+    vi.spyOn(db, "ensurePendingDelivery").mockResolvedValue(undefined as never);
+    const download = vi.spyOn(storage, "downloadObject").mockImplementation(async () => onePage());
+    const upload = vi.spyOn(storage, "uploadObject").mockResolvedValue(undefined as never);
+
+    const response = await run(async () => json(await approveOrder(orderId)));
+
     expect(response.status).toBe(200);
-    expect(certification.stampApprovedCover).toHaveBeenCalled();
+    expect(download).toHaveBeenCalledTimes(2);
+    expect(upload).toHaveBeenCalledWith(expect.anything(), expect.anything(), `${orderId}/evaluation.pdf`, expect.any(Uint8Array), "application/pdf");
+    expect(db.updateDelivery).toHaveBeenCalledWith(
+      expect.anything(),
+      orderId,
+      expect.objectContaining({ status: "delivered", final_path: `${orderId}/evaluation.pdf` }),
+    );
+    expect(finalEmail.sendFinalCustomerEmail).toHaveBeenCalledTimes(1);
   });
 
   it("fails the approval and returns the stamp error when the cover restamp throws", async () => {
