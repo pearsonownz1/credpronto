@@ -47,7 +47,14 @@ import {
   type EquivalencyDraft,
   type EquivalencyRoute,
 } from "./edge";
-import { EDGE_GRADE_SCALE_TEXT, gradeScaleText, scoreCourses, usEquivalency, type RawCourse } from "./grades";
+import {
+  EDGE_GRADE_SCALE_TEXT,
+  credentialWasPassed,
+  gradeScaleText,
+  scoreCourses,
+  usEquivalency,
+  type RawCourse,
+} from "./grades";
 import { IMAGE_QUALITY_REASON } from "./image-quality";
 import { evaluationIssuedLabel, evaluationReportId, renderEvaluationPdfs } from "./pdf/evaluation";
 import { uploadObject } from "./storage";
@@ -123,6 +130,8 @@ const courseSchema = z.object({
   country: z.string(),
   credential: z.string(),
   scale: z.enum(["10", "20", "letter"]),
+  /** Overall decision as printed, such as Admis or Ajourné. Empty when the document does not state one. */
+  result: z.string().optional(),
   years: z.array(
     z.object({
       year: z.string(),
@@ -309,7 +318,9 @@ export function assembleCourse(
     }
   }
 
-  const scored = scoreCourses(flat, extracted.scale, options?.edgeRows);
+  const scored = scoreCourses(flat, extracted.scale, options?.edgeRows, {
+    credentialPassed: credentialWasPassed(extracted.result),
+  });
   if (!scored) return null;
 
   let index = 0;
@@ -370,6 +381,7 @@ Group courses by the academic year printed on the page. Keep each year label as 
 originalName is the course title as printed. englishName is the English name.
 localCredits and localGrade are the values as printed. localGrade is a string.
 scale is "10" when grades are out of 10, "20" when grades are out of 20, and "letter" when grades are already A–F.
+result is the overall decision printed on the credential, such as Admis, Passed, Réussi, Ajourné, Refusé, or Failed. Use an empty string when no overall result is printed.
 Do not convert grades. Do not invent courses.
 
 Document text:

@@ -2,7 +2,7 @@ export const GRADE_SCALE_10 =
   "Grades are on a 10-point scale. 9.0–10 is A (4.0), 8.0–8.9 is B (3.0), 7.0–7.9 is C (2.0), 6.0–6.9 is D (1.0), and below 6 is F (0).";
 
 export const GRADE_SCALE_20 =
-  "Grades are on a 20-point scale with 10 as the pass mark. 16–20 is A (4.0), 14–15.99 is B (3.0), 10–13.99 is C (2.0), and below 10 is F (0).";
+  "Grades are on a 20-point scale with 10 as the pass mark. 16–20 is A (4.0), 14–15.99 is B (3.0), 10–13.99 is C (2.0). Below 10 is D (1.0) when the credential was passed, and F (0) when the credential was failed.";
 
 /** Default pass mark for a 20-point system (France, Cameroon and other French-model systems). */
 export const DEFAULT_PASS_MARK_20 = 10;
@@ -59,14 +59,46 @@ function band(grade: number, rows: Array<[number, string, number]>): MappedGrade
   return null;
 }
 
+export type GradeMapOptions = {
+  /** Pass mark on a 20-point scale. Defaults to 10. */
+  passMark?: number;
+  /**
+   * True when the credential overall was awarded (Admis, Passed).
+   * False when the credential itself was failed. Omit when the document does not say.
+   */
+  credentialPassed?: boolean;
+};
+
+/**
+ * Reads the printed overall decision. Admis, Passed, and Réussi count as passed.
+ * Ajourné, Refusé, Non admis, and Failed count as failed.
+ */
+export function credentialWasPassed(result: string | null | undefined): boolean | undefined {
+  const value = foldDecision(result);
+  if (!value) return undefined;
+  if (/\b(non[\s-]?admis|ajourn\w*|refus\w*|recal\w*|fail\w*|not admitted|unsuccessful)\b/.test(value)) return false;
+  if (/\b(admis|admitted|passed|pass|reussi|passable|successful)\b/.test(value)) return true;
+  return undefined;
+}
+
+function foldDecision(result: string | null | undefined): string {
+  return (result ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
 /**
  * Maps a printed mark to a U.S. letter. For 20-point systems the pass line comes from the
- * system's scale (passMark, default 10): any mark at or above it is a passing letter, never F.
+ * system's scale (passMark, default 10): any mark at or above it is a passing letter.
+ * A mark under that line is D (1.0) when the credential overall was passed, and F (0)
+ * when the credential was failed or the document does not state a result.
  */
 export function mapLocalGrade(
   localGrade: string,
   scale: GradeScale,
-  options?: { passMark?: number },
+  options?: GradeMapOptions,
 ): MappedGrade | null {
   if (scale === "letter") {
     const token = localGrade.trim().toUpperCase().replace(/\s+/g, "");
@@ -90,11 +122,12 @@ export function mapLocalGrade(
   }
   if (grade > 20) return null;
   const pass = validPassMark(options?.passMark);
+  const below = options?.credentialPassed === true ? (["D", 1] as const) : (["F", 0] as const);
   return band(grade, [
     [Math.max(16, pass), "A", 4],
     [Math.max(14, pass), "B", 3],
     [pass, "C", 2],
-    [0, "F", 0],
+    [0, below[0], below[1]],
   ]);
 }
 
@@ -136,7 +169,7 @@ export function scoreCourses(
   courses: RawCourse[],
   scale: GradeScale,
   edgeRows?: readonly EdgeGradePoints[],
-  options?: { passMark?: number },
+  options?: GradeMapOptions,
 ): { courses: ScoredCourse[]; totalHours: number; gpa: number; usedEdge: boolean } | null {
   const scored: ScoredCourse[] = [];
   let usedEdge = false;
