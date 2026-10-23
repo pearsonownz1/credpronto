@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
 import Link from "next/link";
 import { getAccount } from "@/lib/account/session";
 import { Logo } from "./mark";
@@ -7,8 +7,20 @@ import { buttonClasses } from "./ui";
 const SECTIONS = [
   { id: "translations", label: "Translations", href: "/" },
   { id: "evaluations", label: "Evaluations", href: "/evaluations" },
+  { id: "preval", label: "PreVal", href: "/preval" },
   { id: "pricing", label: "Pricing", href: "/#pricing" },
 ] as const;
+
+type SectionId = (typeof SECTIONS)[number]["id"];
+
+/** Blue active treatment from the PreVal comp. Other sections keep the existing active style. */
+const PREVAL_ACTIVE = "font-bold text-[#2160ff]";
+
+function sectionLinkClass(id: SectionId, current?: SectionId) {
+  if (id !== current) return "text-ink-muted";
+  if (id === "preval") return PREVAL_ACTIVE;
+  return "font-semibold text-ink";
+}
 
 const RESOURCES = [
   { href: "/guides", label: "Guides" },
@@ -62,18 +74,21 @@ function ResourcesMenu() {
 function SectionNav({
   section,
   className,
+  testId,
 }: {
-  section?: (typeof SECTIONS)[number]["id"];
+  section?: SectionId;
   className: string;
+  testId: string;
 }) {
   return (
-    <nav aria-label="Sections" className={className}>
+    <nav aria-label="Sections" data-testid={testId} className={className}>
       {SECTIONS.map((item) => (
         <Link
           key={item.id}
           href={item.href}
           aria-current={item.id === section ? "page" : undefined}
-          className={item.id === section ? "font-semibold text-ink" : "text-ink-muted"}
+          data-testid={item.id === "preval" ? "nav-preval" : undefined}
+          className={sectionLinkClass(item.id, section)}
         >
           {item.label}
         </Link>
@@ -83,28 +98,49 @@ function SectionNav({
   );
 }
 
-export function MarketingHeader({
+export function MarketingHeaderFrame({
   section,
+  account,
 }: {
-  section?: (typeof SECTIONS)[number]["id"];
+  section?: SectionId;
+  account: ReactNode;
 }) {
   return (
     <div className="border-b border-line">
       <header className="flex min-h-16 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 md:gap-x-7 md:px-10">
         <Logo />
-        <SectionNav section={section} className="hidden items-center gap-7 text-sm md:flex" />
+        <SectionNav section={section} testId="nav-desktop" className="hidden items-center gap-7 text-sm md:flex" />
         <div className="ml-auto flex items-center gap-3 md:gap-7">
-          <Suspense fallback={<SignInLink />}>
-            <MarketingAccountLinks />
-          </Suspense>
+          {account}
           <Link href="/translate" data-testid="nav-get-started" className={getStartedClass}>
             Get started
           </Link>
         </div>
       </header>
-      <div className="px-4 pb-3 md:hidden">
-        <SectionNav section={section} className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm" />
+      <div className="px-4 pb-3 md:hidden" data-testid="nav-mobile">
+        <SectionNav
+          section={section}
+          testId="nav-mobile-links"
+          className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm"
+        />
       </div>
     </div>
+  );
+}
+
+export function MarketingHeader({
+  section,
+}: {
+  section?: SectionId;
+}) {
+  return (
+    <MarketingHeaderFrame
+      section={section}
+      account={
+        <Suspense fallback={<SignInLink />}>
+          <MarketingAccountLinks />
+        </Suspense>
+      }
+    />
   );
 }
