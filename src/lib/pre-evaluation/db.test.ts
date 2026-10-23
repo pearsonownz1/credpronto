@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapPreEvaluation, suggestionClaimable } from "./db";
+import { linkPreEvaluationOrder, mapPreEvaluation, suggestionClaimable } from "./db";
 import { PRE_EVAL_STALE_MS } from "./constants";
 
 describe("pre-evaluation rows", () => {
@@ -47,5 +47,31 @@ describe("pre-evaluation rows", () => {
     expect(suggestionClaimable("2026-10-23T17:59:30.000Z", now)).toBe(false);
     const stale = new Date(Date.parse(now) - PRE_EVAL_STALE_MS).toISOString();
     expect(suggestionClaimable(stale, now)).toBe(true);
+  });
+
+  it("links the first order and does not replace a conversion", async () => {
+    const steps: string[] = [];
+    let patch: Record<string, unknown> | null = null;
+    const query = {
+      update(next: Record<string, unknown>) {
+        patch = next;
+        steps.push("update");
+        return query;
+      },
+      eq(column: string, value: string) {
+        steps.push(`eq:${column}=${value}`);
+        return query;
+      },
+      is(column: string, value: null) {
+        steps.push(`is:${column}=${String(value)}`);
+        return query;
+      },
+      then(onFulfilled: (value: { error: null }) => unknown) {
+        return Promise.resolve({ error: null }).then(onFulfilled);
+      },
+    };
+    await linkPreEvaluationOrder({ from: () => query } as never, "pre-1", "order-1", "2026-10-23T00:00:00.000Z");
+    expect(patch).toEqual({ order_id: "order-1", updated_at: "2026-10-23T00:00:00.000Z" });
+    expect(steps).toEqual(["update", "eq:id=pre-1", "is:order_id=null"]);
   });
 });

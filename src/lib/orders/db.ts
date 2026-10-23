@@ -692,8 +692,10 @@ export async function insertDocument(
     mime: string;
     size: number;
     position: number;
+    pageCount?: number | null;
   },
 ): Promise<void> {
+  const pageCount = input.pageCount != null && input.pageCount > 0 ? input.pageCount : null;
   const { error } = await db.from("documents").insert({
     id: input.id,
     order_id: input.orderId,
@@ -703,6 +705,7 @@ export async function insertDocument(
     size: input.size,
     position: input.position,
     status: "uploaded",
+    ...(pageCount != null ? { page_count: pageCount } : {}),
   });
   fail(error);
 }

@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { optionalUser } from "@/lib/auth/session";
+import { linkPreEvaluationOrder } from "@/lib/pre-evaluation/db";
+import { copyPreEvaluationOriginal, requireOwnedPreEvaluation } from "@/lib/pre-evaluation/owned-file";
 import { ORIGINALS_BUCKET } from "./constants";
 import {
   insertCustomerWithoutEmail,
@@ -10,6 +12,7 @@ import {
   type Db,
 } from "./db";
 import { readDirectOrder, referencedOriginals, storeReferencedFiles } from "./direct-upload";
+import { HttpError } from "./errors";
 import { assertEmail, safeFilename } from "./files";
 import { serviceDb, uploadObject } from "./storage";
 import { generateOrderToken, hashOrderToken } from "./token";
@@ -62,7 +65,14 @@ export async function createOrder(request: Request): Promise<{
   });
 
   const db = serviceDb();
-  const files = await referencedOriginals(db, body.sessionId, body.files);
+  const sessionId = body.sessionId || randomUUID();
+  const adopted = body.preEvaluationId
+    ? await requireOwnedPreEvaluation(db, body.preEvaluationId, session?.email ?? null)
+    : null;
+  const uploaded = body.files.length > 0 ? await referencedOriginals(db, sessionId, body.files) : [];
+  const copied = adopted ? await copyPreEvaluationOriginal(db, sessionId, adopted) : null;
+  const files = copied ? [copied, ...uploaded] : uploaded;
+  if (files.length < 1) throw new HttpError("Upload at least one file", 400);
   const customer = email ? await upsertCustomer(db, email) : await insertCustomerWithoutEmail(db);
   const orderToken = generateOrderToken();
   const priced =
@@ -76,7 +86,7 @@ export async function createOrder(request: Request): Promise<{
       : null;
   const evaluationCents = priced?.evaluationCents ?? null;
   const order = await insertOrder(db, {
-    id: body.sessionId,
+    id: sessionId,
     tokenHash: hashOrderToken(orderToken),
     customerId: customer.id,
     orderType: choice.orderType,
@@ -99,6 +109,7 @@ export async function createOrder(request: Request): Promise<{
 
   await insertEvent(db, order.id, "upload_started", { fileCount: files.length });
   await storeReferencedFiles(db, order.id, files);
+  if (adopted) await linkPreEvaluationOrder(db, adopted.id, order.id, new Date().toISOString());
   await insertEvent(db, order.id, "upload_done", { fileCount: files.length });
   await insertEvent(db, order.id, "staff_notified", { channel: "event" });
 

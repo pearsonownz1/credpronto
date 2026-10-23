@@ -100,8 +100,9 @@ Signed URLs expire in 10 minutes. `translation.url` is a watermarked preview onl
 | Field | Required | Notes |
 | --- | --- | --- |
 | `email` | when signed out | Upserts `customers` by email. A valid Supabase session uses that user's email, sets `orders.user_id`, and ignores this field. |
-| `sessionId` | yes | Upload session from `POST /api/uploads`. Stored as `orders.id`. |
-| `files` | yes | `{ path, filename, mime, size }`. No file-count cap. 50MB each, taken from the stored object. |
+| `sessionId` | when `files` is not empty | Upload session from `POST /api/uploads`. Stored as `orders.id`. Omitted when the only file is `preEvaluationId`; the server then generates the order id. |
+| `files` | when `preEvaluationId` is omitted | `{ path, filename, mime, size }`. No file-count cap. 50MB each, taken from the stored object. An empty list is valid together with `preEvaluationId`. |
+| `preEvaluationId` | no | Public pre-evaluation id from `/translate?preEvaluation=`. The signed-in account email must match the lead email, otherwise `404`. The server copies that stored original into `originals` and sets `pre_evaluations.order_id`. Client paths, bucket names, and page counts are ignored. |
 | `utm_source`, `utm_medium`, `utm_campaign`, `gclid`, `landing_path` | no | Stored on the order |
 
 Allowed types: PDF, JPEG, PNG, WEBP, HEIC/HEIF. HEIC is converted when the runtime can decode it.
@@ -112,7 +113,33 @@ Allowed types: PDF, JPEG, PNG, WEBP, HEIC/HEIF. HEIC is converted when the runti
 { "orderToken": "…", "orderId": "…" }
 ```
 
-`400` validation, `415` unsupported type, `503` when the service role is not configured.
+`400` validation, `415` unsupported type, `503` when the service role is not configured. `404` `{ "error": "Pre-evaluation not found" }` when `preEvaluationId` is present and the caller is signed out, the id is unknown, or the account email does not match the lead email. A matching `preEvaluationId` with no other files satisfies the one-file check. The copied document's `page_count` is the physical page count: one for a photo, the PDF page count otherwise.
+
+## `GET /api/pre-evaluation/{id}/file`
+
+Signed-in paid-funnel prefill. `id` is the public pre-evaluation id (the same value as `preEvaluation` on `/translate`). The response is exactly this object and nothing else. `kind` is the pre-evaluation's document classification. The upload form prices from `kind`.
+
+```json
+{
+  "preEvaluationFile": {
+    "name": "diploma.pdf",
+    "mimeType": "application/pdf",
+    "size": 48211,
+    "pageCount": 2,
+    "kind": "diploma"
+  }
+}
+```
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `name` | string | Stored filename. |
+| `mimeType` | `application/pdf` \| `image/jpeg` \| `image/png` | Stored type. |
+| `size` | integer | Byte length of the stored original. |
+| `pageCount` | integer | Physical pages. A photo is 1. A PDF is its page count. |
+| `kind` | `diploma` \| `transcript` | `document_kind` on the pre-evaluation. |
+
+`404` `{ "error": "Pre-evaluation not found" }` when the caller is signed out, the id is unknown, the account email does not match the lead email, or the document has not been classified. `503` `{ "error": "Could not read the upload" }` when the original cannot be counted. No storage path is returned.
 
 ## `POST /api/orders/[token]/process`
 

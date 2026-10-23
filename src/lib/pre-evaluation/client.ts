@@ -13,6 +13,10 @@
  *   JSON { email } → { ok: true }
  * GET /api/pre-evaluation/{id}/prefill
  *   Email and order fields for signup. 409 until the lead email exists.
+ * GET /api/pre-evaluation/{id}/file
+ *   Signed-in owner only. 404 otherwise.
+ *   { preEvaluationFile: { name, mimeType, size, pageCount, kind } }
+ *   kind is diploma or transcript. The upload form prices from kind.
  */
 
 export const PRE_EVALUATION_POLL_MS = 2_000;
@@ -41,6 +45,16 @@ export type PreEvaluationEmailResult = {
 };
 
 export type PreEvaluationService = "diploma" | "course_by_course";
+
+export type PreEvaluationFileKind = "diploma" | "transcript";
+
+export type PreEvaluationFile = {
+  name: string;
+  mimeType: "application/pdf" | "image/jpeg" | "image/png";
+  size: number;
+  pageCount: number;
+  kind: PreEvaluationFileKind;
+};
 
 export type PreEvaluationPrefill = {
   email: string;
@@ -262,6 +276,50 @@ export async function submitPreEvaluationEmail(
   return parseEmailResult(payload);
 }
 
+const FILE_MIMES = new Set<PreEvaluationFile["mimeType"]>(["application/pdf", "image/jpeg", "image/png"]);
+const FILE_KINDS = new Set<PreEvaluationFileKind>(["diploma", "transcript"]);
+
+/** Paid-funnel file. The object has exactly these keys. */
+export function parsePreEvaluationFile(payload: unknown): { preEvaluationFile: PreEvaluationFile } {
+  if (!payload || typeof payload !== "object") {
+    throw new PreEvaluationClientError("The preview response was not valid.", 502);
+  }
+  const file = (payload as { preEvaluationFile?: unknown }).preEvaluationFile;
+  if (!file || typeof file !== "object") {
+    throw new PreEvaluationClientError("The preview response was not valid.", 502);
+  }
+  const row = file as Record<string, unknown>;
+  const name = nullableText(row.name);
+  const mimeType = row.mimeType;
+  const kind = row.kind;
+  const size = row.size;
+  const pageCount = row.pageCount;
+  if (
+    !name ||
+    typeof mimeType !== "string" ||
+    !FILE_MIMES.has(mimeType as PreEvaluationFile["mimeType"]) ||
+    typeof kind !== "string" ||
+    !FILE_KINDS.has(kind as PreEvaluationFileKind) ||
+    typeof size !== "number" ||
+    !Number.isInteger(size) ||
+    size < 1 ||
+    typeof pageCount !== "number" ||
+    !Number.isInteger(pageCount) ||
+    pageCount < 1
+  ) {
+    throw new PreEvaluationClientError("The preview response was not valid.", 502);
+  }
+  return {
+    preEvaluationFile: {
+      name,
+      mimeType: mimeType as PreEvaluationFile["mimeType"],
+      size,
+      pageCount,
+      kind: kind as PreEvaluationFileKind,
+    },
+  };
+}
+
 /** GET /api/pre-evaluation/{id}/prefill. Signup and the order form use these fields. */
 export async function getPreEvaluationPrefill(id: string, fetchImpl: FetchLike = fetch): Promise<PreEvaluationPrefill> {
   const safeId = previewId(id);
@@ -271,4 +329,18 @@ export async function getPreEvaluationPrefill(id: string, fetchImpl: FetchLike =
     headers: { accept: "application/json" },
   });
   return parsePreEvaluationPrefill(payload);
+}
+
+/** GET /api/pre-evaluation/{id}/file. Signed-in owner. The file is already on the order form. */
+export async function getPreEvaluationFile(
+  id: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<{ preEvaluationFile: PreEvaluationFile }> {
+  const safeId = previewId(id);
+  const { payload } = await send(fetchImpl, `/api/pre-evaluation/${encodeURIComponent(safeId)}/file`, {
+    method: "GET",
+    cache: "no-store",
+    headers: { accept: "application/json" },
+  });
+  return parsePreEvaluationFile(payload);
 }
