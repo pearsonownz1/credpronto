@@ -1,16 +1,25 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { PDFDocument } from "pdf-lib";
-import { extractText, getDocumentProxy } from "unpdf";
+import { PDFDocument, StandardFonts } from "pdf-lib";
+import { extractText, extractTextItems, getDocumentProxy } from "unpdf";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { POST as revokeVerification } from "@/app/api/admin/orders/[id]/verification/route";
 import { GET as readVerifyRoute } from "@/app/api/verify/[token]/route";
+import { BRAND_NAME, BRAND_STREET } from "./brand";
 import { DOWNLOAD_URL_SECONDS } from "./constants";
 import * as ordersDb from "./db";
 import { HttpError } from "./errors";
 import { stampApprovedCover } from "./certification";
 import { storeCertifiedTranslation } from "./final-file";
-import { qrMatrix, verificationUrl } from "./pdf/verify-stamp";
+import { renderCertificationPdf } from "./pdf/render";
+import { SIGN_ROLE_TRANSLATOR } from "./pdf/signature";
+import {
+  qrMatrix,
+  stampVerificationQr,
+  verificationStampPlacement,
+  verificationUrl,
+  type StampRect,
+} from "./pdf/verify-stamp";
 import * as staff from "./staff";
 import * as storage from "./storage";
 import type { Db } from "./storage";
@@ -240,7 +249,89 @@ describe("qr stamp", () => {
     expect(await pdfText(second)).toContain(url);
     expect((await PDFDocument.load(first)).getPageCount()).toBe(1);
   });
+
+  it("keeps CredPronto as the producer and parks the QR above the signature and footer", async () => {
+    const cover = await renderCertificationPdf({
+      orderId: "order-1",
+      sourceLanguage: "es",
+      targetLanguage: "en",
+      date: "2026-10-11",
+      clientName: "Alex Example",
+      translatorName: "Ada Lovelace",
+      documents: [{ name: "example.pdf", sourcePages: 1, translatedPages: 1 }],
+      pages: [{ combinedPageNumber: 1, widthPt: 612, heightPt: 792, paragraphs: ["Example page"] }],
+    });
+    const original = await PDFDocument.load(cover, { updateMetadata: false });
+    expect(original.getCreator()).toBe(BRAND_NAME);
+    expect(original.getProducer()).toBe(BRAND_NAME);
+    const media = original.getPage(0).getMediaBox();
+    const font = await original.embedFont(StandardFonts.Helvetica);
+    const token = "a".repeat(43);
+    const url = verificationUrl(token);
+    const placement = verificationStampPlacement(
+      media,
+      url,
+      (text, size) => font.widthOfTextAtSize(text, size),
+      qrMatrix(url).size,
+    );
+
+    const items = (await extractTextItems(cover.slice())).items[0] ?? [];
+    const role = items.find((item) => item.str.includes(SIGN_ROLE_TRANSLATOR));
+    const footer = items
+      .filter((item) => item.str.includes(BRAND_STREET))
+      .reduce<(typeof items)[number] | undefined>((lowest, item) => {
+        if (!lowest || item.y < lowest.y) return item;
+        return lowest;
+      }, undefined);
+    expect(role).toBeTruthy();
+    expect(footer).toBeTruthy();
+    if (!role || !footer) return;
+    expect(footer.y).toBeLessThan(60);
+    // Role label, the signature line 12pt above it, and the signature image through ~roleY+108.
+    const signature: StampRect = { x: 48, y: role.y - 4, width: 516, height: 116 };
+    // Footer address baseline, plus the rule drawn 14pt above it.
+    const footerRegion: StampRect = { x: 48, y: footer.y - 3, width: 516, height: 19 };
+    expect(signature.y + signature.height).toBeLessThan(media.y + media.height);
+    expect(footerRegion.y + footerRegion.height).toBeLessThan(signature.y);
+
+    for (const mark of [placement.card, placement.qr, placement.label]) {
+      expect(mark.y).toBeGreaterThanOrEqual(media.y + media.height);
+      expect(intersects(mark, signature)).toBe(false);
+      expect(intersects(mark, footerRegion)).toBe(false);
+      expect(inside(mark, placement.band)).toBe(true);
+    }
+    const urlText = placement.urlLines.map((line) => line.text).join("");
+    expect(urlText).toBe(url);
+    expect(placement.label.y).toBeGreaterThanOrEqual(placement.band.y);
+
+    const stamped = await stampVerificationQr(cover, token);
+    const saved = await PDFDocument.load(stamped, { updateMetadata: false });
+    expect(saved.getCreator()).toBe(BRAND_NAME);
+    expect(saved.getProducer()).toBe(BRAND_NAME);
+    expect(saved.getProducer()).not.toContain("pdf-lib");
+    expect(saved.getCreator()).not.toContain("pdf-lib");
+    const stampedMedia = saved.getPage(0).getMediaBox();
+    expect(stampedMedia.height).toBeCloseTo(media.height + placement.band.height, 3);
+    expect(stampedMedia.y).toBeCloseTo(media.y, 3);
+    const text = await pdfText(stamped);
+    expect(text).toContain(url);
+    expect(text).toContain(SIGN_ROLE_TRANSLATOR.replace(/\s+/g, ""));
+    expect(text).toContain(BRAND_STREET.replace(/\s+/g, ""));
+  });
 });
+
+function intersects(a: StampRect, b: StampRect): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+function inside(inner: StampRect, outer: StampRect): boolean {
+  return (
+    inner.x >= outer.x - 0.01 &&
+    inner.y >= outer.y - 0.01 &&
+    inner.x + inner.width <= outer.x + outer.width + 0.01 &&
+    inner.y + inner.height <= outer.y + outer.height + 0.01
+  );
+}
 
 describe("final pdf hooks", () => {
   it("stamps a translation when the certified packet is stored", async () => {
