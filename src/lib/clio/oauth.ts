@@ -9,6 +9,37 @@ import type { ClioConnectionRecord, ClioStore } from "./types";
 const STATE_TTL_MS = 10 * 60 * 1000;
 const REFRESH_SKEW_MS = 60 * 1000;
 const STATE_RE = /^[A-Za-z0-9_-]{43,128}$/;
+const WHO_AM_I_SNIPPET = 120;
+
+function clioErrorText(json: unknown): string {
+  if (typeof json === "string") return json;
+  if (!json || typeof json !== "object" || Array.isArray(json)) return "";
+  const record = json as Record<string, unknown>;
+  const error = record.error;
+  if (typeof error === "string") {
+    const description = typeof record.error_description === "string" ? record.error_description : "";
+    return description ? `${error}: ${description}` : error;
+  }
+  if (error && typeof error === "object" && !Array.isArray(error)) {
+    const detail = error as Record<string, unknown>;
+    const type = typeof detail.type === "string" ? detail.type : "";
+    const message = typeof detail.message === "string" ? detail.message : "";
+    return [type, message].filter(Boolean).join(": ");
+  }
+  if (typeof record.message === "string") return record.message;
+  return "";
+}
+
+function whoAmIFailure(status: number, json: unknown, token: string): HttpError {
+  const hidden = token ? clioErrorText(json).split(token).join("[redacted]") : clioErrorText(json);
+  const snippet = safeClioMessage(new Error(hidden)).slice(0, WHO_AM_I_SNIPPET);
+  const message = snippet
+    ? `Clio profile could not be read (${status}: ${snippet})`
+    : `Clio profile could not be read (${status})`;
+  const error = new HttpError(message, 502);
+  console.error(safeClioMessage(error));
+  return error;
+}
 
 export async function startClioConnect(input: {
   userId: string;
@@ -126,7 +157,7 @@ export async function clioWhoAmI(input: {
     token: input.token,
     search: { fields: "id,account{id}" },
   });
-  if (response.status < 200 || response.status >= 300) throw new HttpError("Clio profile could not be read", 502);
+  if (response.status < 200 || response.status >= 300) throw whoAmIFailure(response.status, response.json, input.token);
   const data =
     response.json && typeof response.json === "object" && "data" in response.json
       ? (response.json as { data?: unknown }).data
