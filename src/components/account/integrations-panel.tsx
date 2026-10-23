@@ -2,8 +2,9 @@
 
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
 import type { ApiResult } from "@/lib/api/types";
+import { ClioCard, ComingSoonPartnerCard } from "@/components/account/clio-card";
 import {
   WEBHOOK_EVENTS,
   getIntegrationsClient,
@@ -21,6 +22,18 @@ import {
   type WebhookEndpoint,
 } from "@/lib/integrations/client";
 import {
+  clioAfterDisconnect,
+  clioConnectionFromLanding,
+  clioConnectionFromStatus,
+  disconnectClio,
+  loadClioStatus,
+  rememberClioLanding,
+  stripClioConnectedParam,
+  type ClioConnectionState,
+  type ClioNotice,
+  type ClioStatus,
+} from "@/lib/integrations/clio-connect";
+import {
   apiOrdersCsv,
   formatCardExpiry,
   formatCardLabel,
@@ -34,7 +47,6 @@ import {
   QUICK_START_CODE_CLASS,
   integrationSamples,
   PARTNER_APPS,
-  partnerStatusLabel,
   quickStartCurl,
   safeOrderLink,
 } from "@/lib/integrations/present";
@@ -432,7 +444,62 @@ export function IntegrationsPanel() {
   );
 }
 
+function subscribeClioSearch(onStoreChange: () => void) {
+  window.addEventListener("popstate", onStoreChange);
+  return () => window.removeEventListener("popstate", onStoreChange);
+}
+
+function clioSearchSnapshot() {
+  return window.location.search;
+}
+
+function clioSearchServerSnapshot() {
+  return "";
+}
+
 function PartnerApps() {
+  const search = useSyncExternalStore(subscribeClioSearch, clioSearchSnapshot, clioSearchServerSnapshot);
+  const landing = rememberClioLanding(search);
+  const [status, setStatus] = useState<ApiResult<ClioStatus> | null>(null);
+  const [disconnectState, setDisconnectState] = useState<{
+    connection: "connected" | "disconnected";
+    notice: ClioNotice | null;
+  } | null>(null);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  useEffect(() => {
+    rememberClioLanding(window.location.search);
+    stripClioConnectedParam(window.location, window.history);
+
+    let cancel = false;
+    void loadClioStatus().then((result) => {
+      if (!cancel) setStatus(result);
+    });
+    return () => {
+      cancel = true;
+    };
+  }, []);
+
+  async function onDisconnect() {
+    setDisconnecting(true);
+    const disconnected = await disconnectClio();
+    let refreshed: ApiResult<ClioStatus>;
+    if (disconnected.ok) refreshed = await loadClioStatus();
+    else refreshed = disconnected;
+    setDisconnectState(clioAfterDisconnect(disconnected, refreshed));
+    setDisconnecting(false);
+  }
+
+  const fromStatus = status
+    ? clioConnectionFromStatus(status, landing)
+    : {
+        connection: clioConnectionFromLanding(),
+        notice: landing.notice?.tone === "error" ? landing.notice : null,
+      };
+  const view = disconnectState ?? fromStatus;
+  const connection: ClioConnectionState = view.connection;
+  const notice = view.notice;
+
   return (
     <section data-testid="partner-apps" className="mb-[18px] min-w-0 rounded-[var(--cp-radius)] border border-line bg-white">
       <header className="border-b border-line px-[18px] py-3.5">
@@ -440,26 +507,20 @@ function PartnerApps() {
         <p className="mt-0.5 text-[12.5px] text-ink-muted">Practice management tools.</p>
       </header>
       <ul>
-        {PARTNER_APPS.map((app) => (
-          <li key={app.id} data-testid={`integration-${app.id}`} className="flex flex-wrap items-center gap-3 px-[18px] py-4">
-            <span
-              aria-hidden="true"
-              className="inline-flex size-9 shrink-0 items-center justify-center rounded-[var(--cp-radius)] bg-[#eaf0ff] text-sm font-bold text-primary"
-            >
-              {app.mark}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[15px] font-semibold">{app.name}</span>
-              <span className="mt-0.5 block text-[12.5px] text-ink-muted">{app.description}</span>
-            </span>
-            <span
-              data-testid={`integration-${app.id}-status`}
-              className="inline-block shrink-0 rounded-[var(--cp-radius)] border border-[#c9d6ff] bg-[#eaf0ff] px-[9px] py-[3px] text-[12px] font-semibold text-primary"
-            >
-              {partnerStatusLabel(app.status)}
-            </span>
-          </li>
-        ))}
+        {PARTNER_APPS.map((app) =>
+          app.id === "clio" ? (
+            <ClioCard
+              key={app.id}
+              app={app}
+              connection={connection}
+              notice={notice}
+              disconnecting={disconnecting}
+              onDisconnect={() => void onDisconnect()}
+            />
+          ) : app.status === "coming_soon" ? (
+            <ComingSoonPartnerCard key={app.id} app={app} />
+          ) : null,
+        )}
       </ul>
     </section>
   );
