@@ -73,7 +73,7 @@ import { loadCustomerOrder } from "./pipeline";
 import { originalDownloadResponse, originalTargets } from "./originals";
 import { sourceFileBody, sourceFileTarget, type SourceFileResponse } from "./source-file";
 import { serviceDb, signedObjectUrl, uploadObject, type Db } from "./storage";
-import { checkoutReturnUrl } from "./checkout-return";
+import { checkoutOrigin, checkoutReturnUrl } from "./checkout-return";
 import { parseCorrectionBody } from "./corrections";
 import { decideChargeRefunded, decideCheckoutCompleted, decideCheckoutExpired } from "./webhook";
 import { checkedProgress } from "./translation-watch";
@@ -521,7 +521,7 @@ function serviceStripeLines(input: {
   }));
 }
 
-export async function startCheckout(token: string, body: unknown = {}) {
+export async function startCheckout(token: string, body: unknown = {}, requestUrl?: string) {
   const { db, order: stored } = await orderForToken(token);
   if (body && typeof body === "object" && !Array.isArray(body)) {
     rejectCustomerTotal(body as Record<string, unknown>);
@@ -665,8 +665,8 @@ export async function startCheckout(token: string, body: unknown = {}) {
           },
         })),
       ],
-      success_url: checkoutReturnUrl(appOrigin(), token, "success"),
-      cancel_url: checkoutReturnUrl(appOrigin(), token, "cancel"),
+      success_url: checkoutReturnUrl(checkoutOrigin(requestUrl, appOrigin()), token, "success"),
+      cancel_url: checkoutReturnUrl(checkoutOrigin(requestUrl, appOrigin()), token, "cancel"),
     },
     { idempotencyKey: `checkout-${order.id}-${total}-${addonKey}` },
   );

@@ -331,7 +331,7 @@ function CheckoutForm({
         ) : null}
         {counting ? (
           <p data-testid="checkout-counting" role="status" className="mt-4 text-sm text-ink-muted">
-            We're still counting pages.
+            We&apos;re still counting pages.
           </p>
         ) : null}
         {notice ? (

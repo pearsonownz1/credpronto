@@ -10,6 +10,6 @@ export async function POST(request: Request, context: Context) {
   return run(async () => {
     const { token } = await context.params;
     const body = await request.json().catch(() => ({}));
-    return json(await startCheckout(token, body));
+    return json(await startCheckout(token, body, request.url));
   });
 }
