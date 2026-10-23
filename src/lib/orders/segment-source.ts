@@ -32,6 +32,9 @@ const STEMS: Array<[RegExp, string]> = [
   [/sciences economiques|economic and legal/, "economics"],
   [/techniques quantitatives|quantitative management/, "quantitative"],
   [/pratique professionnelle|professional practice/, "practice"],
+  [/ministre|ministry|\bminister\b/, "minister"],
+  [/national/, "national"],
+  [/education/, "education"],
 ];
 
 function fold(value: string): string {
@@ -182,13 +185,122 @@ export function assignSourceIndexes(sourceText: string | null, segments: readonl
   if (content.length === 0) return segments.map(() => 0);
 
   const forward = assignForward(segments, content);
-  return forward.map((sourceIndex, segmentAt) => {
+  const placed = forward.map((sourceIndex, segmentAt) => {
     const segment = segments[segmentAt] ?? "";
     const best = bestStemLine(segment, content);
     const current = stemOverlap(segment, lines[sourceIndex] ?? "");
-    if (best.decisive && best.score > current) return best.index;
+    // A line that already shares words stays put. The stem pass only rescues a segment
+    // that the forward walk left on a line it does not match.
+    if (best.decisive && best.score > current && overlap(segment, lines[sourceIndex] ?? "") === 0) return best.index;
     return sourceIndex;
   });
+  return pullAnchorsToRunStart(segments, content, placed);
+}
+
+/**
+ * Source lines that follow a segment's anchor and belong to the same run
+ * (a title, then the name). They are covered, not missing.
+ */
+export function coveredSourceIndexes(
+  sourceText: string | null,
+  segments: readonly string[],
+  sourceIndexes: readonly number[],
+): number[] {
+  const content = sourceLines(sourceText).flatMap((line, index) => (line.trim() ? [{ line, index }] : []));
+  if (content.length === 0 || segments.length === 0) return [];
+  const groups = new Map<number, number[]>();
+  sourceIndexes.forEach((lineIndex, segmentAt) => {
+    if (!Number.isInteger(lineIndex) || lineIndex < 0) return;
+    const group = groups.get(lineIndex) ?? [];
+    group.push(segmentAt);
+    groups.set(lineIndex, group);
+  });
+  const anchors = [...groups.keys()].sort((left, right) => left - right);
+  const positionOf = new Map(content.map((line, position) => [line.index, position]));
+  const covered: number[] = [];
+
+  anchors.forEach((lineIndex, anchorAt) => {
+    const here = positionOf.get(lineIndex);
+    if (here == null) return;
+    const segmentAts = groups.get(lineIndex) ?? [];
+    const nextLine = anchors[anchorAt + 1];
+    const nextPos = nextLine == null ? content.length : (positionOf.get(nextLine) ?? content.length);
+    const nextAts = nextLine == null ? [] : (groups.get(nextLine) ?? []);
+    const pending: number[] = [];
+    for (let position = here + 1; position < nextPos; position += 1) {
+      const line = content[position];
+      if (!line) break;
+      const mine = bestOverlap(segments, segmentAts, line.line);
+      const other = bestOverlap(segments, nextAts, line.line);
+      if (mine > 0 && mine > other) {
+        covered.push(...pending, line.index);
+        pending.length = 0;
+        continue;
+      }
+      if (mine === 0 && other === 0 && pending.length < 1) {
+        pending.push(line.index);
+        continue;
+      }
+      break;
+    }
+  });
+  return covered;
+}
+
+/** Move a segment from the name line to the first title line of the same run. */
+function pullAnchorsToRunStart(
+  segments: readonly string[],
+  content: readonly SourceLine[],
+  assigned: readonly number[],
+): number[] {
+  const indexes = [...assigned];
+  const groups = new Map<number, number[]>();
+  assigned.forEach((lineIndex, segmentAt) => {
+    const group = groups.get(lineIndex) ?? [];
+    group.push(segmentAt);
+    groups.set(lineIndex, group);
+  });
+  const anchors = [...groups.keys()].sort((left, right) => left - right);
+  const positionOf = new Map(content.map((line, position) => [line.index, position]));
+
+  anchors.forEach((lineIndex, anchorAt) => {
+    const here = positionOf.get(lineIndex);
+    if (here == null) return;
+    const segmentAts = groups.get(lineIndex) ?? [];
+    const prevLine = anchorAt > 0 ? anchors[anchorAt - 1]! : null;
+    const prevPos = prevLine == null ? -1 : (positionOf.get(prevLine) ?? -1);
+    const prevAts = prevLine == null ? [] : (groups.get(prevLine) ?? []);
+    let earliest = lineIndex;
+    let pending = 0;
+    for (let position = here - 1; position > prevPos; position -= 1) {
+      const line = content[position];
+      if (!line) break;
+      const mine = bestOverlap(segments, segmentAts, line.line);
+      const other = bestOverlap(segments, prevAts, line.line);
+      if (mine > 0 && mine >= other) {
+        earliest = line.index;
+        pending = 0;
+        continue;
+      }
+      if (mine === 0 && other === 0 && pending < 1) {
+        pending += 1;
+        continue;
+      }
+      break;
+    }
+    if (earliest === lineIndex) return;
+    for (const segmentAt of segmentAts) indexes[segmentAt] = earliest;
+  });
+  return indexes;
+}
+
+function bestOverlap(segments: readonly string[], segmentAts: readonly number[], line: string): number {
+  let best = 0;
+  for (const segmentAt of segmentAts) {
+    const score = overlap(segments[segmentAt] ?? "", line);
+    if (score > best) best = score;
+  }
+  return best;
 }
 
 export function segmentsInSourceOrder(sourceText: string | null, paragraphs: readonly string[]): StoredSegment[] {

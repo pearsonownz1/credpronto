@@ -265,17 +265,44 @@ describe("diploma page legacy alignment", () => {
     expect(birthRows.map((row) => row.translation)).toEqual(["Born on: 09/09/1979", "At: MBO BANDJOUN", "Grade: PASS"]);
 
     expect(alignment.rows.find((row) => row.source.includes("Signature du titulaire"))?.translation).toBe("Holder's signature");
-    expect(alignment.rows.find((row) => row.source === "Joseph OWONA")?.translation).toBe(
-      "Minister of National Education Joseph OWONA",
-    );
-    expect(alignment.rows.find((row) => row.source === "Maurice TCHUENTE")?.translation).toBe(
-      "Minister of Higher Education Chancellor of Academic Orders Maurice TCHUENTE",
-    );
+    expect(alignment.missing).toBe(0);
 
     const positional = translationLines(DIPLOMA_SOURCE, DIPLOMA_SEGMENTS);
     expect(positional.rows.find((row) => row.source === "Le Ministre de l'Education Nationale")?.translation).toBe(
       "Holder's signature",
     );
     expect(positional.rows.find((row) => row.source.includes("09/09/1979"))?.translation).toBe("Registration number: 002213");
+  });
+
+  it("anchors a title-and-name run on the first line and covers the name", () => {
+    const aligned = alignTranslation(DIPLOMA_SOURCE, DIPLOMA_SEGMENTS);
+    const lines = DIPLOMA_SOURCE.split("\n");
+    const minister = lines.findIndex((line) => line === "Le Ministre de l'Education Nationale");
+    const name = lines.findIndex((line) => line === "Joseph OWONA");
+    const higher = lines.findIndex((line) => line === "Le Ministre de l'Enseignement Supérieur");
+    const chancellor = lines.findIndex((line) => line === "Chancelier des ordres académiques");
+    const maurice = lines.findIndex((line) => line === "Maurice TCHUENTE");
+    expect([minister, name, higher, chancellor, maurice]).toEqual([22, 23, 24, 25, 26]);
+
+    const indexes = aligned.map((segment) => segment.source_index);
+    expect(aligned.find((segment) => segment.text === "Minister of National Education Joseph OWONA")?.source_index).toBe(minister);
+    expect(aligned.find((segment) => segment.text.includes("Maurice TCHUENTE"))?.source_index).toBe(higher);
+
+    const alignment = translationLines(
+      DIPLOMA_SOURCE,
+      aligned.map((segment) => segment.text),
+      indexes,
+    );
+    expect(alignment.rows.find((row) => row.source === "Le Ministre de l'Education Nationale")?.translation).toBe(
+      "Minister of National Education Joseph OWONA",
+    );
+    expect(alignment.rows.find((row) => row.source === "Joseph OWONA")?.translation).toBe("");
+    expect(alignment.rows.find((row) => row.source === "Le Ministre de l'Enseignement Supérieur")?.translation).toBe(
+      "Minister of Higher Education Chancellor of Academic Orders Maurice TCHUENTE",
+    );
+    expect(alignment.rows.find((row) => row.source === "Chancelier des ordres académiques")?.translation).toBe("");
+    expect(alignment.rows.find((row) => row.source === "Maurice TCHUENTE")?.translation).toBe("");
+    expect(alignment.extra).toBe(0);
+    expect(alignment.missing).toBe(0);
   });
 });
