@@ -5,10 +5,10 @@ import {
   COURSE_BY_COURSE_PRICE_LABEL,
   DIPLOMA_PRICE_LABEL,
 } from "@/lib/evaluations/catalog";
-import { parseEvaluationService } from "@/lib/flow/order-choice";
 import type { FlowTrack } from "@/lib/flow/types";
 import { FlowHeader } from "./flow-header";
 import { UploadCard } from "./upload-card";
+import { uploadServiceFromQuery } from "./upload-draft";
 
 /** Shown while the upload route resolves. It has no email field, so the form is not duplicated. */
 export function UploadPageFallback() {
@@ -74,9 +74,10 @@ export function UploadView({
   initialService?: string | null;
   sessionEmail?: string | null;
 }) {
-  const [track, setTrack] = useState<FlowTrack>(() =>
-    parseEvaluationService(initialService) != null ? "evaluation" : "translation",
-  );
+  const [track, setTrack] = useState<FlowTrack>(() => {
+    const service = uploadServiceFromQuery(initialService);
+    return service === "diploma" || service === "course_by_course" ? "evaluation" : "translation";
+  });
   const evaluation = track === "evaluation";
   const bundle = track === "bundle";
   return (

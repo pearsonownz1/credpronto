@@ -33,6 +33,8 @@ import {
   maskWebhookSecret,
   QUICK_START_CODE_CLASS,
   integrationSamples,
+  PARTNER_APPS,
+  partnerStatusLabel,
   quickStartCurl,
   safeOrderLink,
 } from "@/lib/integrations/present";
@@ -154,6 +156,7 @@ export function IntegrationsPanel() {
           {notice}
         </p>
       ) : null}
+      <PartnerApps />
       <div className="grid min-w-0 items-start gap-[18px] lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
         <div className="min-w-0">
           <Panel
@@ -425,6 +428,39 @@ export function IntegrationsPanel() {
         </div>
       </div>
       <ApiOrdersSection orders={orders} loaded={snapshot !== null} />
+    </section>
+  );
+}
+
+function PartnerApps() {
+  return (
+    <section data-testid="partner-apps" className="mb-[18px] min-w-0 rounded-[var(--cp-radius)] border border-line bg-white">
+      <header className="border-b border-line px-[18px] py-3.5">
+        <h2 className="text-[15px] font-semibold">Apps</h2>
+        <p className="mt-0.5 text-[12.5px] text-ink-muted">Practice management tools.</p>
+      </header>
+      <ul>
+        {PARTNER_APPS.map((app) => (
+          <li key={app.id} data-testid={`integration-${app.id}`} className="flex flex-wrap items-center gap-3 px-[18px] py-4">
+            <span
+              aria-hidden="true"
+              className="inline-flex size-9 shrink-0 items-center justify-center rounded-[var(--cp-radius)] bg-[#eaf0ff] text-sm font-bold text-primary"
+            >
+              {app.mark}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[15px] font-semibold">{app.name}</span>
+              <span className="mt-0.5 block text-[12.5px] text-ink-muted">{app.description}</span>
+            </span>
+            <span
+              data-testid={`integration-${app.id}-status`}
+              className="inline-block shrink-0 rounded-[var(--cp-radius)] border border-[#c9d6ff] bg-[#eaf0ff] px-[9px] py-[3px] text-[12px] font-semibold text-primary"
+            >
+              {partnerStatusLabel(app.status)}
+            </span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

@@ -124,6 +124,21 @@ describe("service checkboxes", () => {
     expect(diploma).not.toContain("Get my quote");
     expect(diploma).toContain('data-testid="get-quote"');
 
+    const evaluation = html(null, "evaluation");
+    expect(evaluation).toMatch(/data-testid="choice-diploma"[^>]*checked=""/);
+    expect(evaluation).not.toMatch(/data-testid="choice-translation"[^>]*checked=""/);
+    expect(evaluation).not.toMatch(/data-testid="choice-course_by_course"[^>]*checked=""/);
+    expect(evaluation).toContain("Continue to payment");
+
+    const translation = html(null, "translation");
+    expect(translation).toMatch(/data-testid="choice-translation"[^>]*checked=""/);
+    expect(translation).not.toMatch(/data-testid="choice-diploma"[^>]*checked=""/);
+    expect(translation).not.toMatch(/data-testid="choice-course_by_course"[^>]*checked=""/);
+
+    const unknown = html(null, "not-a-service");
+    expect(unknown).toMatch(/data-testid="choice-translation"[^>]*checked=""/);
+    expect(unknown).not.toMatch(/data-testid="choice-diploma"[^>]*checked=""/);
+
     const course = html(null, "course_by_course");
     expect(course).toMatch(/data-testid="choice-course_by_course"[^>]*checked=""/);
     expect(course).not.toMatch(/data-testid="choice-translation"[^>]*checked=""/);
@@ -150,6 +165,16 @@ describe("service checkboxes", () => {
     } finally {
       clearUploadDraft();
     }
+  });
+
+  it("opens an evaluation upload when the link asks for an evaluation", () => {
+    const markup = renderToStaticMarkup(
+      createElement(UploadView, { initialService: "evaluation", sessionEmail: null }),
+    );
+    expect(markup).toContain("Upload the degree");
+    expect(markup).toContain("Diploma evaluation is $19.95 per degree");
+    expect(markup).toMatch(/data-testid="choice-diploma"[^>]*checked=""/);
+    expect(markup).not.toMatch(/data-testid="choice-translation"[^>]*checked=""/);
   });
 
   it("shows the flat fee and the pay step when the page is a diploma upload", () => {

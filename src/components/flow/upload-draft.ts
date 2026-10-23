@@ -5,7 +5,7 @@ export type UploadDraft = {
   files: File[];
   checks: ServiceChecks;
   degrees: string;
-  /** Evaluation in the URL when this draft was saved. Empty means translation only. */
+  /** Service named in the URL when this draft was saved. Empty means the URL did not name one. */
   serviceKey: string;
 };
 
@@ -55,12 +55,24 @@ export function clearUploadDraft() {
   void writeStoredFiles([]);
 }
 
+/**
+ * Upload `?service=` values.
+ * `evaluation` selects a diploma evaluation. Anything else unrecognized is ignored.
+ */
+export function uploadServiceFromQuery(
+  value: string | null | undefined,
+): "translation" | "diploma" | "course_by_course" | null {
+  if (value === "translation") return "translation";
+  if (value === "evaluation") return "diploma";
+  return parseEvaluationService(value);
+}
+
 export function serviceKeyFrom(initialService: string | null | undefined): string {
-  return parseEvaluationService(initialService) ?? "";
+  return uploadServiceFromQuery(initialService) ?? "";
 }
 
 export function initialChecks(initialService: string | null | undefined): ServiceChecks {
-  const service = parseEvaluationService(initialService);
+  const service = uploadServiceFromQuery(initialService);
   if (service === "diploma") return { translation: false, diploma: true, courseByCourse: false };
   if (service === "course_by_course") return { translation: false, diploma: false, courseByCourse: true };
   return { translation: true, diploma: false, courseByCourse: false };
@@ -89,8 +101,9 @@ export function uploadStateFromDraft(initialService: string | null | undefined):
 }
 
 /**
- * A new evaluation in the URL selects that service and clears the other one.
- * Files, email, degree count, and the translation checkbox stay as they were.
+ * A named service in the URL selects that service.
+ * `translation` clears both evaluations. An evaluation clears the other evaluation
+ * and leaves the translation checkbox as it was. An empty key leaves the checks alone.
  */
 export function checksAfterServiceChange(
   current: ServiceChecks,
@@ -98,6 +111,7 @@ export function checksAfterServiceChange(
   nextKey: string,
 ): ServiceChecks {
   if (previousKey === nextKey) return current;
+  if (nextKey === "translation") return { translation: true, diploma: false, courseByCourse: false };
   if (nextKey === "diploma") return { ...current, diploma: true, courseByCourse: false };
   if (nextKey === "course_by_course") return { ...current, diploma: false, courseByCourse: true };
   return current;
