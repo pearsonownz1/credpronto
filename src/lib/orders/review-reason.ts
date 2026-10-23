@@ -1,3 +1,23 @@
+/**
+ * `orders.review_reason` is the yellow "Needs review" banner on the admin order page.
+ * Delivery finishes that review, so every delivery write clears the column.
+ */
+export const DELIVERED_REVIEW_CLEAR = { review_reason: null } as const;
+
+/**
+ * Banner text for the admin order page.
+ * A delivered order is finished even when `review_reason` was left set.
+ */
+export function staffNeedsReviewBanner(order: {
+  status: string;
+  reviewReason: string | null;
+  deliveryStatus?: string | null;
+}): string | null {
+  if (!order.reviewReason) return null;
+  if (order.status === "delivered" || order.deliveryStatus === "delivered") return null;
+  return order.reviewReason;
+}
+
 /** Staff-facing Review column. Known reasons pass through. Database errors do not. */
 export function humanReviewReason(reason: string | null | undefined): string | null {
   if (reason == null) return null;

@@ -8,6 +8,7 @@ import { uploadObject } from "./storage";
 import { notifyLifecycle, notifyOrder } from "./webhook-delivery";
 import { waitingMinutes } from "./certification-queue";
 import { isCertifiedTranslationPath } from "./final-file";
+import { DELIVERED_REVIEW_CLEAR } from "./review-reason";
 import { orderEvaluationKinds } from "./service-selection";
 import { concatPdfs } from "./pdf/merge";
 import { downloadObject } from "./storage";
@@ -187,7 +188,10 @@ function deliveredEvaluationService(form: FormData, kinds: readonly EvaluationSe
   return service;
 }
 
-function storedReportPaths(order: OrderRecord, reportPath: string): {
+function storedReportPaths(
+  order: Pick<OrderRecord, "includeTranslation" | "finalTranslationPath" | "certificationPath">,
+  reportPath: string,
+): {
   final_translation_path: string;
   certification_path: string;
 } {
@@ -220,6 +224,7 @@ async function publishEvaluationDelivery(input: {
   const now = new Date().toISOString();
   await updateOrder(db, order.id, {
     status: "delivered",
+    ...DELIVERED_REVIEW_CLEAR,
     final_translation_path: columns.final_translation_path,
     certification_path: columns.certification_path,
     ...(serviceFiles ? { service_files: serviceFiles } : {}),

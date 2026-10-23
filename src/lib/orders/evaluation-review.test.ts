@@ -131,6 +131,7 @@ describe("deliverEvaluationReport", () => {
     );
     expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, {
       status: "delivered",
+      review_reason: null,
       final_translation_path: `${orderId}/evaluation.pdf`,
       certification_path: `${orderId}/evaluation.pdf`,
     });
@@ -147,6 +148,7 @@ describe("deliverEvaluationReport", () => {
     expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, {
       evaluation_status: "evaluation_complete",
       evaluation_complete_at: expect.any(String),
+      review_reason: null,
     });
   });
 
@@ -192,6 +194,43 @@ describe("deliverEvaluationReport", () => {
       expect.objectContaining({ status: "approved", final_path: `${orderId}/evaluation.pdf` }),
     );
     expect(webhooks.notifyOrder).not.toHaveBeenCalled();
+    expect(db.updateOrder).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      orderId,
+      expect.objectContaining({ status: "delivered", review_reason: null }),
+    );
+  });
+
+  it("clears a leftover review flag when a delivered evaluation is replaced", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue(
+      order({ status: "delivered", reviewReason: "Credential evaluation is reviewed by staff." }),
+    );
+    vi.spyOn(db, "getDelivery").mockResolvedValue({
+      id: "delivery-1",
+      orderId,
+      status: "delivered",
+      finalPath: `${orderId}/evaluation.pdf`,
+      certificationPath: `${orderId}/evaluation.pdf`,
+      approvedBy: userId,
+      approvedAt: "2026-10-21T00:00:00.000Z",
+      deliveredAt: "2026-10-21T00:00:00.000Z",
+    } as DeliveryRecord);
+    const body = new FormData();
+    body.set("file", new File([pdf], "evaluation.pdf", { type: "application/pdf" }));
+
+    const result = await deliverEvaluationReport(
+      orderId,
+      new Request("https://credpronto.com/api/admin/orders/1/evaluation", { method: "POST", body }),
+    );
+
+    expect(result).toEqual({ status: "delivered", email: "skipped" });
+    expect(db.updateOrder).toHaveBeenCalledWith(
+      expect.anything(),
+      orderId,
+      expect.objectContaining({ status: "delivered", review_reason: null }),
+    );
+    expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
   });
 
   it("rejects a translation order and a file that is not a PDF", async () => {

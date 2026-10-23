@@ -27,6 +27,7 @@ import { humanStatus } from "@/components/admin/orders-board";
 import { QaPanel } from "@/components/admin/qa-panel";
 import { StaffFiles } from "@/components/admin/staff-files";
 import { approveButtonLabel, runStudioAction, type StudioTaskResult } from "@/components/admin/studio-action";
+import { NeedsReviewBanner } from "@/components/admin/needs-review-banner";
 import {
   applyReportOverrides,
   evaluationReportsFor,
@@ -319,11 +320,11 @@ export function OrderStudio({
           </label>
         ) : null}
         {status === "approved" || status === "delivered" ? <StaffFiles orderId={detail.id} /> : null}
-        {detail.reviewReason ? (
-          <p className="mt-3 rounded-[var(--cp-radius)] border border-[#f3d7a1] bg-[#fff8ee] px-3 py-2 text-sm">
-            Needs review: {detail.reviewReason}
-          </p>
-        ) : null}
+        <NeedsReviewBanner
+          status={status}
+          reviewReason={detail.reviewReason}
+          deliveryStatus={detail.delivery?.status ?? null}
+        />
         {detail.edge ? <EdgeReference edge={detail.edge} /> : null}
         {message ? (
           <p role="status" data-testid="studio-status" className="mt-3 text-sm text-[var(--cp-ok)]">

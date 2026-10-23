@@ -87,11 +87,9 @@ export async function retryFinalCustomerEmail(db: Db, order: OrderRecord): Promi
   const delivery = await getDelivery(db, order.id);
   if (!delivery) return;
   if (delivery.status === "delivered") {
-    {
-      const complete = deliveredEvaluationPatch(order, delivery.deliveredAt ?? new Date().toISOString());
-      if (order.status !== "delivered" || Object.keys(complete).length > 0) {
-        await updateOrder(db, order.id, { status: "delivered", ...complete });
-      }
+    const complete = deliveredEvaluationPatch(order, delivery.deliveredAt ?? new Date().toISOString());
+    if (order.status !== "delivered" || Object.keys(complete).length > 0) {
+      await updateOrder(db, order.id, { status: "delivered", ...complete });
     }
     return;
   }
