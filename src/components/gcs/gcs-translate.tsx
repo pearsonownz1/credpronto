@@ -8,6 +8,7 @@ import { FlowApiError } from "@/lib/flow/api-error";
 import { uploadOrderFiles } from "@/lib/flow/direct-upload";
 import { publishGcsUnlock, useGcsUnlocked } from "@/lib/gcs/pin-client";
 import { sourceLanguageChoices, targetLanguageChoices } from "@/lib/orders/languages";
+import { gcsTranslationProgress, gcsUploadProgress, type GcsLiveProgress, type GcsOrderSnapshot } from "./gcs-progress";
 import { GcsPinGate } from "./gcs-pin-gate";
 
 const SideBySideViewer = dynamic(
@@ -32,8 +33,7 @@ type PreviewPayload = {
   billablePages: number | null;
 };
 
-type OrderPayload = {
-  status?: string;
+type OrderPayload = GcsOrderSnapshot & {
   reviewReason?: string | null;
   sourceLanguage?: string | null;
   targetLanguage?: string | null;
@@ -77,6 +77,19 @@ async function readError(response: Response, fallback: string): Promise<string> 
   return typeof body?.error === "string" && body.error.trim() ? body.error : fallback;
 }
 
+function useElapsed(active: boolean) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const started = Date.now();
+    const tick = () => setElapsed(Date.now() - started);
+    tick();
+    const id = window.setInterval(tick, 200);
+    return () => window.clearInterval(id);
+  }, [active]);
+  return active ? elapsed : 0;
+}
+
 export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: boolean; token?: string | null }) {
   const router = useRouter();
   const unlocked = useGcsUnlocked(initialUnlocked);
@@ -85,10 +98,13 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
   const [clientName, setClientName] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [pending, setPending] = useState(false);
+  const [uploadRatio, setUploadRatio] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [order, setOrder] = useState<OrderPayload | null>(null);
   const [preview, setPreview] = useState<PreviewPayload | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const waiting = Boolean(token) && unlocked && !error && !preview;
+  const elapsed = useElapsed(pending || waiting);
 
   useEffect(() => {
     if (!token || !unlocked) return;
@@ -141,6 +157,7 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
 
   async function start(file: File) {
     setError(null);
+    setUploadRatio(null);
     setPending(true);
     try {
       const created = await uploadOrderFiles({
@@ -150,6 +167,7 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
         clientName,
         sourceLanguage,
         targetLanguage,
+        onProgress: (ratio) => setUploadRatio(ratio),
       });
       router.push(`/gcs-translate/${encodeURIComponent(created.orderToken)}`);
     } catch (cause) {
@@ -160,6 +178,7 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
       setError(cause instanceof Error && cause.message.trim() ? cause.message : "We couldn't upload that file.");
     } finally {
       setPending(false);
+      setUploadRatio(null);
     }
   }
 
@@ -189,6 +208,17 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
     return <GcsPinGate onUnlock={() => undefined} />;
   }
 
+  if (pending) {
+    const creating = uploadRatio != null && uploadRatio >= 1;
+    const upload = gcsUploadProgress({ ratio: uploadRatio, elapsedMs: elapsed, creating });
+    return (
+      <GcsProgress
+        title={creating ? "Starting the translation" : "Uploading your document"}
+        progress={upload}
+      />
+    );
+  }
+
   if (token) {
     if (error) {
       return (
@@ -199,16 +229,18 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
       );
     }
     if (!viewer) {
+      const live = gcsTranslationProgress(order, elapsed);
+      const preparing = order?.status === "confirmed" || order?.status === "processing";
       return (
-        <div className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-6 py-16">
-          <p className="text-[11px] font-semibold tracking-[0.16em] text-[#1f5eff]">CERTIFIED TRANSLATION</p>
-          <h1 className="mt-3 text-2xl font-semibold">Translating your document</h1>
-          <p className="mt-3 text-sm text-[#5b6474]">
-            {order?.status === "confirmed" || order?.status === "processing"
+        <GcsProgress
+          title="Translating your document"
+          detail={
+            preparing
               ? "The certified translation is being prepared."
-              : "Reading the document and starting the translation."}
-          </p>
-        </div>
+              : "Reading the document and starting the translation."
+          }
+          progress={live}
+        />
       );
     }
     return (
@@ -304,7 +336,7 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
             event.target.value = "";
           }}
         />
-        <span className="text-lg font-semibold">{pending ? "Starting the translation…" : "Drop a document here"}</span>
+        <span className="text-lg font-semibold">Drop a document here</span>
         <span className="mt-2 text-sm text-[#5b6474]">or click to choose a PDF or image</span>
       </label>
       {error ? (
@@ -314,4 +346,90 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
       ) : null}
     </div>
   );
+}
+
+function GcsProgress({
+  title,
+  detail,
+  progress,
+}: {
+  title: string;
+  detail?: string;
+  progress: GcsLiveProgress;
+}) {
+  return (
+    <div className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-6 py-16" data-testid="gcs-progress">
+      <p className="text-[11px] font-semibold tracking-[0.16em] text-[#1f5eff]">CERTIFIED TRANSLATION</p>
+      <h1 className="mt-3 text-2xl font-semibold">{title}</h1>
+      {detail ? <p className="mt-3 text-sm text-[#5b6474]">{detail}</p> : null}
+      <div className="mt-8 w-full text-left">
+        <div className="mb-2 flex items-baseline justify-between gap-4 text-[13px]">
+          <span className="font-medium text-ink" data-testid="gcs-progress-stage">
+            {progress.progressStage}
+          </span>
+          <span className="shrink-0 font-medium text-ink tabular-nums" data-testid="gcs-progress-percent">
+            {progress.progressPct}%
+          </span>
+        </div>
+        <div
+          role="progressbar"
+          aria-valuenow={progress.progressPct}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuetext={`${progress.progressPct}%`}
+          aria-label={progress.progressStage}
+          data-testid="gcs-progress-bar"
+          className="h-2 overflow-hidden rounded-[2px] bg-line"
+        >
+          <div
+            className="reading-fill relative h-full overflow-hidden bg-primary"
+            style={{ width: `${progress.barPercent}%` }}
+          >
+            <span className="reading-shine pointer-events-none absolute inset-0 motion-reduce:hidden" aria-hidden />
+          </div>
+        </div>
+        {progress.steps.length > 0 ? (
+          <ol data-testid="gcs-progress-steps" className="mt-6 list-none space-y-2.5 p-0">
+            {progress.steps.map((step) => (
+              <li
+                key={step.id}
+                data-testid={`gcs-progress-step-${step.id}`}
+                data-state={step.state}
+                aria-current={step.state === "current" ? "step" : undefined}
+                className={`flex items-center gap-3 text-[14px] leading-5 ${
+                  step.state === "pending" ? "text-ink-muted" : "text-ink"
+                } ${step.state === "current" ? "font-medium" : ""}`}
+              >
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                  <StepMark state={step.state} />
+                </span>
+                {step.label}
+              </li>
+            ))}
+          </ol>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function StepMark({ state }: { state: "done" | "current" | "pending" }) {
+  if (state === "done") {
+    return (
+      <svg viewBox="0 0 16 16" className="h-4 w-4 text-primary" aria-hidden>
+        <path
+          d="M3.2 8.4 6.4 11.4 12.8 4.6"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+  if (state === "current") {
+    return <span className="reading-spinner block h-3.5 w-3.5 rounded-full" aria-hidden />;
+  }
+  return <span className="block h-2 w-2 rounded-full bg-[#c5cbd6]" aria-hidden />;
 }

@@ -264,14 +264,10 @@ function coverModel(input: RenderInput) {
     ? input.documents
     : [{ name: "Document", sourcePages: input.pages.length, translatedPages: input.pages.length }];
   const sourceTotal = documents.reduce((sum, document) => sum + document.sourcePages, 0);
-  const translatedTotal = documents.reduce((sum, document) => sum + document.translatedPages, 0);
   const pages = input.pricedPages ?? sourceTotal;
   const sourceLabel = languageLabel(input.sourceLanguage);
   const targetLabel = languageLabel(input.targetLanguage ?? "en");
   return {
-    documents,
-    sourceTotal,
-    translatedTotal,
     pages,
     sourceLabel,
     targetLabel,
@@ -290,14 +286,9 @@ function coverModel(input: RenderInput) {
 /** Certificate of Translation Accuracy. Page 1 of a GCS certified translation. */
 export async function drawGcsCertificationPage(doc: PDFDocument, input: RenderInput): Promise<void> {
   const cover = coverModel(input);
-  const sample = [
-    cover.clientName,
-    cover.summary,
-    ...GCS_CERTIFICATION_STATEMENTS,
-    ...cover.documents.map((document) => document.name),
-    GCS_FOOTER,
-    GCS_SIGNER,
-  ].join("\n");
+  const sample = [cover.clientName, cover.summary, ...GCS_CERTIFICATION_STATEMENTS, GCS_FOOTER, GCS_SIGNER].join(
+    "\n",
+  );
   const faces = await embedFaces(doc, sample);
   const images = await embedGcsLetterhead(doc);
   const signature = await embedImage(doc, loadGcsSignature());
@@ -375,7 +366,6 @@ export async function drawGcsCertificationPage(doc: PDFDocument, input: RenderIn
     ["Pages", String(cover.pages)],
   ];
   y = drawLabeledBox(page, faces, "ORDER", orderRows, y);
-  y = drawDocumentTable(page, faces, cover, y);
   const certifiedBottom = drawCertification(page, faces, y);
   drawSignature(page, faces, signature, cover.issued, certifiedBottom);
   drawGcsPageFooter(page, faces.regular, {
@@ -419,59 +409,6 @@ function drawLabeledBox(
     drawText(page, value, MARGIN_X + 120, rowY, 9, INK, faces);
     rowY -= rowHeight;
   }
-  return bottom - 12;
-}
-
-function drawDocumentTable(
-  page: PDFPage,
-  faces: Faces,
-  cover: ReturnType<typeof coverModel>,
-  y: number,
-): number {
-  const header = 16;
-  const rowHeight = 14;
-  const count = cover.documents.length + 1;
-  const height = header + rowHeight * count;
-  const bottom = y - height;
-  page.drawRectangle({
-    x: MARGIN_X,
-    y: bottom,
-    width: CONTENT_W,
-    height,
-    borderColor: LINE,
-    borderWidth: 1,
-    color: WHITE,
-  });
-  page.drawRectangle({ x: MARGIN_X, y: y - header, width: CONTENT_W, height: header, color: SOFT });
-  const sourceRight = MARGIN_X + CONTENT_W - 100;
-  const translatedRight = PAGE_W - MARGIN_X - 8;
-  drawText(page, "#", MARGIN_X + 8, y - 11, 7, MUTED, faces);
-  drawText(page, "DOCUMENT", MARGIN_X + 28, y - 11, 7, MUTED, faces);
-  drawRight(page, "SOURCE PAGES", sourceRight, y - 11, 7, MUTED, faces);
-  drawRight(page, "TRANSLATED PAGES", translatedRight, y - 11, 7, MUTED, faces);
-  let rowY = y - header - rowHeight + 4;
-  cover.documents.forEach((document, index) => {
-    drawText(page, String(index + 1), MARGIN_X + 8, rowY, 8, INK, faces);
-    drawText(page, document.name, MARGIN_X + 28, rowY, 8, INK, faces);
-    drawRight(page, String(document.sourcePages), sourceRight, rowY, 8, INK, faces);
-    drawRight(page, String(document.translatedPages), translatedRight, rowY, 8, INK, faces);
-    page.drawLine({
-      start: { x: MARGIN_X, y: rowY - 4 },
-      end: { x: MARGIN_X + CONTENT_W, y: rowY - 4 },
-      thickness: 0.4,
-      color: LINE,
-    });
-    rowY -= rowHeight;
-  });
-  page.drawLine({
-    start: { x: MARGIN_X, y: rowY + rowHeight - 4 },
-    end: { x: MARGIN_X + CONTENT_W, y: rowY + rowHeight - 4 },
-    thickness: 1.2,
-    color: INK,
-  });
-  drawText(page, "Total", MARGIN_X + 28, rowY, 8, INK, faces);
-  drawRight(page, String(cover.sourceTotal), sourceRight, rowY, 8, INK, faces);
-  drawRight(page, String(cover.translatedTotal), translatedRight, rowY, 8, INK, faces);
   return bottom - 12;
 }
 
