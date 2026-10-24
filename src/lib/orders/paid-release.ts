@@ -1,8 +1,7 @@
 import { deliveredEvaluationPatch } from "./evaluation-delivered";
 import { ensurePaidEvaluationReports } from "./evaluation-dispatch";
 import { approvalBlockReason } from "./equivalency";
-import { orderEvaluationKinds, orderHasEvaluation } from "./service-selection";
-import { EVALUATION_REVIEW_REASON } from "./evaluation-price";
+import { orderEvaluationKinds, orderHasEvaluation, resolveServices } from "./service-selection";
 import { stampEvaluationUnderReview } from "./evaluation-status";
 import { stampApprovedCover } from "./certification";
 import {
@@ -76,34 +75,35 @@ export async function settlePaidOrder(
   }
   const paidAt = order.paidAt ?? payment?.paidAt ?? new Date().toISOString();
   if (!order.paidAt) await markOrderPaidAt(db, order.id, paidAt);
-  const stamped = { ...order, paidAt };
+  let current = { ...order, paidAt };
   // Multi-service orders keep evaluations in `services`; `service` is null there.
-  const isEvaluation = orderHasEvaluation(stamped);
+  const isEvaluation = orderHasEvaluation(current);
 
-  if (isEvaluation && !stamped.reviewReason) {
-    await updateOrder(db, stamped.id, { review_reason: EVALUATION_REVIEW_REASON });
-    stamped.reviewReason = EVALUATION_REVIEW_REASON;
-  }
-
-  const signals = await releaseSignals(db, stamped);
-  const action = releaseAction(signals);
-  if (action === "release") {
-    const released = await autoReleasePaidOrder(db, stamped);
-    if (released !== "blocked") return { fulfillment: "released" };
-  }
-  if (action === "wait") return { fulfillment: fulfillmentState(stamped) };
-
-  const sent = await sendFirstStaffAlert(db, stamped);
-  await notifyEvaluationPaidAlert(db, stamped);
-  if (isEvaluation) await stampEvaluationUnderReview(db, stamped, paidAt);
   if (isEvaluation) {
     try {
-      await ensurePaidEvaluationReports(db, stamped.id);
+      await ensurePaidEvaluationReports(db, current.id);
+      const fresh = await getOrderById(db, current.id);
+      if (fresh) current = { ...fresh, paidAt: fresh.paidAt ?? paidAt };
     } catch (error) {
       console.error(error instanceof Error ? error.message : "evaluation reports failed");
     }
   }
-  // Evaluations stay with staff until the report is approved. Do not arm the two-minute reminder.
+
+  const signals = await releaseSignals(db, current);
+  const action = releaseAction(signals);
+  if (action === "release") {
+    const released = await autoReleasePaidOrder(db, current);
+    if (released !== "blocked") return { fulfillment: "released" };
+  }
+  if (action === "wait") {
+    if (isEvaluation) await notifyEvaluationPaidAlert(db, current);
+    return { fulfillment: fulfillmentState(current) };
+  }
+
+  const sent = await sendFirstStaffAlert(db, current);
+  await notifyEvaluationPaidAlert(db, current);
+  if (isEvaluation) await stampEvaluationUnderReview(db, current, paidAt);
+  // A flagged evaluation stays with staff. Do not arm the two-minute translation reminder.
   if (sent && options.scheduleUrgent !== false && !isEvaluation) {
     const schedule = options.scheduleUrgent ?? scheduleDefault;
     await schedule(order.id);
@@ -169,10 +169,38 @@ async function releaseSignals(db: Db, order: OrderRecord): Promise<ReleaseInput>
     languageConfidence: confidences.length > 0 ? Math.min(...confidences) : null,
     pageNeedsReview: pages.some((page) => page.needsReview),
     openCorrections: corrections.some((correction) => correction.status === "open"),
-    finalsReady: Boolean(order.finalTranslationPath && order.certificationPath),
+    finalsReady: paidReleaseFilesReady(order),
     enabled: autoReleaseEnabled(),
-    manualEvaluation: orderHasEvaluation(order),
+    evaluationOrder: orderHasEvaluation(order),
+    evaluationFailed: (order.progress.evaluationFailures?.length ?? 0) > 0,
   };
+}
+
+/** Evaluation PDFs plus a bundled translation, when the order has one. */
+export function paidReleaseFilesReady(order: OrderRecord): boolean {
+  const needsTranslation = resolveServices(order).includes("translation");
+  if (needsTranslation && (!order.finalTranslationPath || !order.certificationPath)) return false;
+  const kinds = orderEvaluationKinds(order);
+  if (kinds.length === 0) return Boolean(order.finalTranslationPath && order.certificationPath);
+  const files = order.serviceFiles ?? {};
+  if (kinds.every((kind) => Boolean(files[kind]?.trim()))) return true;
+  if (kinds.length === 1 && !needsTranslation) {
+    const path = order.finalTranslationPath ?? "";
+    return /(?:^|\/)(?:evaluation-v\d+|[a-z_]+-evaluation|evaluation)\.pdf$/.test(path) && Boolean(order.certificationPath);
+  }
+  return false;
+}
+
+function releasePaths(order: OrderRecord): { finalPath: string; certificationPath: string } | null {
+  if (!paidReleaseFilesReady(order)) return null;
+  if (order.finalTranslationPath && order.certificationPath) {
+    return { finalPath: order.finalTranslationPath, certificationPath: order.certificationPath };
+  }
+  const path = orderEvaluationKinds(order)
+    .map((kind) => order.serviceFiles?.[kind])
+    .find((item) => item && item.trim());
+  if (!path) return null;
+  return { finalPath: path, certificationPath: path };
 }
 
 type ReleaseResult = "released" | "blocked" | "duplicate";
@@ -180,13 +208,14 @@ type ReleaseResult = "released" | "blocked" | "duplicate";
 async function autoReleasePaidOrder(db: Db, order: OrderRecord): Promise<ReleaseResult> {
   if (order.status !== "paid") return "blocked";
   if (approvalBlockReason(order)) return "blocked";
-  if (!order.finalTranslationPath || !order.certificationPath) return "blocked";
+  const paths = releasePaths(order);
+  if (!paths) return "blocked";
   const payment = await settledPayment(db, order.id);
   if (!payment) return "blocked";
   const delivery = await getDelivery(db, order.id);
   if (!delivery) return "blocked";
   if (delivery.status === "delivered") return "released";
-  if (!orderHasEvaluation(order) && (await translationEmpty(db, order))) return "blocked";
+  if (resolveServices(order).includes("translation") && (await translationEmpty(db, order))) return "blocked";
 
   try {
     await stampApprovedCover(db, order, null);
@@ -202,8 +231,8 @@ async function autoReleasePaidOrder(db: Db, order: OrderRecord): Promise<Release
     status: "approved",
     approved_by: null,
     approved_at: now,
-    final_path: order.finalTranslationPath,
-    certification_path: order.certificationPath,
+    final_path: paths.finalPath,
+    certification_path: paths.certificationPath,
   });
   if (!(await hasEvent(db, order.id, "approved"))) {
     await insertEvent(db, order.id, "approved", { auto: true });
@@ -217,10 +246,16 @@ async function autoReleasePaidOrder(db: Db, order: OrderRecord): Promise<Release
     delivered_at: new Date().toISOString(),
     approved_by: null,
     approved_at: now,
-    final_path: order.finalTranslationPath,
-    certification_path: order.certificationPath,
+    final_path: paths.finalPath,
+    certification_path: paths.certificationPath,
   });
-  await updateOrder(db, order.id, { status: "delivered", ...deliveredEvaluationPatch(order, new Date().toISOString()) });
+  await updateOrder(db, order.id, {
+    status: "delivered",
+    ...deliveredEvaluationPatch(order, new Date().toISOString()),
+    ...(!order.finalTranslationPath || !order.certificationPath
+      ? { final_translation_path: paths.finalPath, certification_path: paths.certificationPath }
+      : {}),
+  });
   await notifyOrder(db, order.id, "order.delivered");
   await notifyLifecycle(db, order.id, "order.completed");
   return "released";

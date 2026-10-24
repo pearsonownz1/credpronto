@@ -49,7 +49,14 @@ describe("auto release", () => {
     expect(releaseAction(input({ openCorrections: true }))).toBe("staff");
     expect(releaseAction(input({ enabled: false }))).toBe("staff");
     expect(releaseAction(input({ finalsReady: false, qa: null }))).toBe("wait");
-    expect(releaseAction(input({ manualEvaluation: true, finalsReady: false, qa: null }))).toBe("staff");
+    expect(releaseAction(input({ evaluationOrder: true, finalsReady: true, qa: null }))).toBe("release");
+    expect(releaseAction(input({ evaluationOrder: true, finalsReady: false, qa: null }))).toBe("wait");
+    expect(
+      releaseAction(input({ evaluationOrder: true, finalsReady: true, qa: null, reviewReason: "equivalency_qa_review" })),
+    ).toBe("staff");
+    expect(releaseAction(input({ evaluationOrder: true, finalsReady: true, qa: null, evaluationFailed: true }))).toBe(
+      "staff",
+    );
     expect(releaseAction(input({ status: "needs_review", reviewReason: "QA found issues" }))).toBe("staff");
     expect(releaseAction(input({ status: "delivered" }))).toBe("release");
   });

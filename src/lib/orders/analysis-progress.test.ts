@@ -226,8 +226,8 @@ describe("quote progress", () => {
     vi.spyOn(storage, "downloadObject").mockResolvedValue(bytes);
     vi.spyOn(storage, "uploadObject").mockResolvedValue(undefined);
     vi.spyOn(webhooks, "notifyOrder").mockResolvedValue(undefined);
-    vi.spyOn(evaluation, "startEvaluationQuote").mockResolvedValue({
-      status: "quoted",
+    vi.spyOn(evaluation, "completeEvaluation").mockResolvedValue({
+      status: "preview_ready",
       totalCents: 1995,
       billablePages: 1,
     });
@@ -259,7 +259,7 @@ describe("quote progress", () => {
 
     await analyzeOrder(dbHandle, orderId);
     expect(queue).not.toHaveBeenCalled();
-    expect(evaluation.startEvaluationQuote).toHaveBeenCalled();
+    expect(evaluation.completeEvaluation).toHaveBeenCalled();
   });
 
   it("queues translation after a bundle quote", async () => {
@@ -295,8 +295,8 @@ describe("quote progress", () => {
     vi.spyOn(storage, "downloadObject").mockResolvedValue(bytes);
     vi.spyOn(storage, "uploadObject").mockResolvedValue(undefined);
     vi.spyOn(webhooks, "notifyOrder").mockResolvedValue(undefined);
-    vi.spyOn(evaluation, "startEvaluationQuote").mockResolvedValue({
-      status: "quoted",
+    vi.spyOn(evaluation, "completeEvaluation").mockResolvedValue({
+      status: "preview_ready",
       totalCents: 2990,
       billablePages: 1,
     });
@@ -327,7 +327,7 @@ describe("quote progress", () => {
     });
 
     await analyzeOrder(dbHandle, orderId);
-    expect(evaluation.startEvaluationQuote).toHaveBeenCalled();
+    expect(evaluation.completeEvaluation).toHaveBeenCalled();
     expect(queue).toHaveBeenCalledWith(dbHandle, orderId, null);
   });
 });

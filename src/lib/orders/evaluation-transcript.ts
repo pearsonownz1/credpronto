@@ -193,6 +193,8 @@ export function courseExtractFromTranscript(text: string): TranscriptCourseRead 
         failures.push({ row: line, reason: resolved.reason });
         continue;
       }
+      // The printed title stays in both columns here so the mark math does not depend on a model.
+      // evaluateServiceFromText replaces englishName with the English course title.
       courses.push({ originalName, englishName: originalName, localCredits, localGrade: resolved.grade });
       continue;
     }

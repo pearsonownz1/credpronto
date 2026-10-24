@@ -30,7 +30,7 @@ import {
 } from "./page-order";
 import { buildCombinedOriginal, type SourceFile } from "./pdf/combine";
 import { pdfPageTexts } from "./pdf-text";
-import { startEvaluationQuote } from "./evaluation";
+import { completeEvaluation, shouldPrepareEvaluationReport, startEvaluationQuote } from "./evaluation";
 import { orderHasEvaluation } from "./service-selection";
 import { decideQuote, etaFromNow } from "./quote";
 import { humanReviewReason } from "./review-reason";
@@ -571,7 +571,7 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
 
     await replaceExtractedConfirmations(db, orderId, extractedFields);
     if (orderHasEvaluation(order) && order.degreeCount != null) {
-      const quoted = await startEvaluationQuote(db, order, {
+      const context = {
         sourceLanguage: distinct.length === 1 ? distinct[0] : null,
         confidence: confidences.length > 0 ? Math.min(...confidences) : null,
         billablePages: pageBillable.reduce((sum, pages) => sum + pages, 0),
@@ -584,15 +584,19 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
         pageOrderBasis: applied.basis,
         pageOrder: applied,
         token,
-      });
-      if (quoted.status === "quoted" && !(await hasEvent(db, orderId, "quote_shown"))) {
+      };
+      const prepared = shouldPrepareEvaluationReport(order)
+        ? await completeEvaluation(db, order, context)
+        : await startEvaluationQuote(db, order, context);
+      const ready = prepared.status === "preview_ready" || prepared.status === "quoted";
+      if (ready && !(await hasEvent(db, orderId, "quote_shown"))) {
         await insertEvent(db, orderId, "quote_shown", {
-          billablePages: quoted.billablePages,
-          totalCents: quoted.totalCents,
+          billablePages: prepared.billablePages,
+          totalCents: prepared.totalCents,
         });
       }
-      if (quoted.status === "quoted") await notifyOrder(db, orderId, "order.quoted");
-      if (quoted.status === "quoted" && order.includeTranslation) {
+      if (ready) await notifyOrder(db, orderId, "order.quoted");
+      if (ready && (order.includeTranslation || order.services?.includes("translation"))) {
         try {
           await queueEarlyTranslation(db, orderId, token);
         } catch (error) {
