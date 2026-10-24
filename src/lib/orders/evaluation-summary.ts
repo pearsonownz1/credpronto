@@ -82,6 +82,20 @@ export function evaluationServicePath(orderId: string, service: EvaluationServic
   return `${orderId}/${service}-evaluation.pdf`;
 }
 
+/**
+ * GCS evaluation PDFs at this version use the GCS logo and footer.
+ * Older finals paths still show the CredPronto mark and must be rewritten.
+ */
+export const GCS_EVALUATION_PDF_VERSION = 2;
+
+export function gcsEvaluationPdfPath(orderId: string, kind: EvaluationService): string {
+  return `${orderId}/gcs-${kind}-evaluation-v${GCS_EVALUATION_PDF_VERSION}.pdf`;
+}
+
+export function isCurrentGcsEvaluationPath(orderId: string, kind: EvaluationService, path: string): boolean {
+  return path.trim() === gcsEvaluationPdfPath(orderId, kind);
+}
+
 /** Course-by-course wins when both reports were stored. */
 export function storedEvaluationFile(
   files: Partial<Record<EvaluationService, string>> | null | undefined,

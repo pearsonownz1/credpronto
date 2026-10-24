@@ -1,9 +1,11 @@
 import { PDFDocument, StandardFonts, degrees, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import { BRAND_FOOTER } from "../brand";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT, PREVIEW_WATERMARK, PREVIEW_WATERMARK_OPACITY, previewWatermarkRgb } from "../constants";
+import { GCS_FOOTER } from "../gcs";
 import { usEquivalency } from "../grades";
 import type { DiplomaCredential, EvaluationResult } from "../types";
 import { loadAtaLogo, loadBrandLogo } from "./cover";
+import { GCS_COVER_LOGO_HEIGHT, loadGcsLogo } from "./gcs-cover";
 import { faceForCodePoint, fontFace, stableFontkit, type FontFaceId } from "./font";
 import { wrapLines } from "./layout";
 import { applyCredProntoPdfMetadata } from "./metadata";
@@ -31,6 +33,8 @@ export type EvaluationReportMeta = {
   degreeCount?: number | null;
   /** Detected billable page count. Printed so the report matches the quote. */
   detectedPages?: number | null;
+  /** GCS reports use the GEO Credential Services logo and footer. */
+  brand?: "credpronto" | "gcs";
 };
 
 const DEFAULT_META: EvaluationReportMeta = {
@@ -189,8 +193,12 @@ function fit(kit: Kit, text: string, size: number, weight: Weight, maxWidth: num
 
 type Logos = { brand: PDFImage; ata: PDFImage; signature: PDFImage };
 
-async function loadLogos(doc: PDFDocument): Promise<Logos> {
-  const brand = await doc.embedPng(loadBrandLogo());
+function reportFooter(meta: EvaluationReportMeta): string {
+  return meta.brand === "gcs" ? GCS_FOOTER : BRAND_FOOTER;
+}
+
+async function loadLogos(doc: PDFDocument, meta: EvaluationReportMeta): Promise<Logos> {
+  const brand = await doc.embedPng(meta.brand === "gcs" ? loadGcsLogo() : loadBrandLogo());
   const ata = await doc.embedPng(loadAtaLogo());
   const signature = await doc.embedPng(loadTintedOwnerSignature());
   return { brand, ata, signature };
@@ -224,7 +232,7 @@ function drawSignOff(page: PDFPage, kit: Kit, signature: PDFImage, issued: strin
 
 function drawHeader(page: PDFPage, kit: Kit, meta: EvaluationReportMeta, kind: string, logos: Logos): number {
   const contentTop = LETTER_HEIGHT_PT - 40;
-  const brandHeight = 22;
+  const brandHeight = meta.brand === "gcs" ? GCS_COVER_LOGO_HEIGHT : 22;
   const brandWidth = brandHeight * (logos.brand.width / logos.brand.height);
   page.drawImage(logos.brand, {
     x: MARGIN,
@@ -260,7 +268,8 @@ function drawHeader(page: PDFPage, kit: Kit, meta: EvaluationReportMeta, kind: s
   return rule - 26;
 }
 
-function drawFooter(page: PDFPage, kit: Kit): void {
+function drawFooter(page: PDFPage, kit: Kit, meta: EvaluationReportMeta): void {
+  const footer = reportFooter(meta);
   const footerY = 28;
   const ruleY = footerY + 16;
   page.drawLine({
@@ -270,25 +279,25 @@ function drawFooter(page: PDFPage, kit: Kit): void {
     color: LINE,
   });
   let size = 8;
-  let width = kit.width(BRAND_FOOTER, size, "regular");
+  let width = kit.width(footer, size, "regular");
   while (width > CONTENT_W && size > 6) {
     size -= 0.25;
-    width = kit.width(BRAND_FOOTER, size, "regular");
+    width = kit.width(footer, size, "regular");
   }
   const x = MARGIN + Math.max(0, (CONTENT_W - width) / 2);
-  kit.draw(page, BRAND_FOOTER, x, footerY, size, MUTED, "regular");
+  kit.draw(page, footer, x, footerY, size, MUTED, "regular");
 }
 
-function stampFooters(doc: PDFDocument, kit: Kit): void {
-  for (const page of doc.getPages()) drawFooter(page, kit);
+function stampFooters(doc: PDFDocument, kit: Kit, meta: EvaluationReportMeta): void {
+  for (const page of doc.getPages()) drawFooter(page, kit, meta);
 }
 
 function kitSample(result: unknown, meta: EvaluationReportMeta): string {
-  return `${JSON.stringify(result)} ${meta.reportId} ${meta.issued} ${EVALUATION_ADVISORY} ${BRAND_FOOTER} ${SIGN_ROLE_EVALUATOR} Date`;
+  return `${JSON.stringify(result)} ${meta.reportId} ${meta.issued} ${EVALUATION_ADVISORY} ${reportFooter(meta)} ${SIGN_ROLE_EVALUATOR} Date`;
 }
 
-async function finish(doc: PDFDocument, kit: Kit, watermark: boolean): Promise<Uint8Array> {
-  stampFooters(doc, kit);
+async function finish(doc: PDFDocument, kit: Kit, meta: EvaluationReportMeta, watermark: boolean): Promise<Uint8Array> {
+  stampFooters(doc, kit, meta);
   if (watermark) {
     const font = await doc.embedFont(StandardFonts.Helvetica);
     for (const page of doc.getPages()) drawWatermark(page, font);
@@ -487,7 +496,7 @@ async function renderDiploma(
   watermark: boolean,
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
-  const logos = await loadLogos(doc);
+  const logos = await loadLogos(doc, meta);
   const kit = await makeKit(doc, kitSample(result, meta));
   const credentials = result.credentials.length > 0 ? result.credentials : [];
   for (const credential of credentials) {
@@ -501,7 +510,7 @@ async function renderDiploma(
     drawSignOff(page, kit, logos.signature, meta.issued, y);
   }
   if (doc.getPageCount() === 0) doc.addPage([LETTER_WIDTH_PT, LETTER_HEIGHT_PT]);
-  return finish(doc, kit, watermark);
+  return finish(doc, kit, meta, watermark);
 }
 
 async function renderCourses(
@@ -510,7 +519,7 @@ async function renderCourses(
   watermark: boolean,
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
-  const logos = await loadLogos(doc);
+  const logos = await loadLogos(doc, meta);
   const kit = await makeKit(doc, kitSample(result, meta));
   const cursor: CourseCursor = {
     doc,
@@ -553,7 +562,7 @@ async function renderCourses(
 
   const columns = columnStarts();
   const courseCol = columns[0];
-  if (!courseCol) return finish(doc, kit, watermark);
+  if (!courseCol) return finish(doc, kit, meta, watermark);
 
   const paintCells = (cells: string[], strong: boolean, rowH: number) => {
     ensureRoom(cursor, rowH + 4);
@@ -637,7 +646,7 @@ async function renderCourses(
   }
   drawSignOff(cursor.page, kit, logos.signature, meta.issued, cursor.y);
 
-  return finish(doc, kit, watermark);
+  return finish(doc, kit, meta, watermark);
 }
 
 function pageYear(cursor: CourseCursor, label: string): void {

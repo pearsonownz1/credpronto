@@ -17,7 +17,7 @@ import {
 import { orderHasEvaluation, resolveServices, selectionPricePatch, servicesWithTranslation } from "./service-selection";
 import { bundleTranslationFile, deliveryFileTarget } from "./delivery-file";
 import { orderDownloadFilename } from "./download-name";
-import { storedEvaluationFile } from "./evaluation-summary";
+import { isCurrentGcsEvaluationPath, storedEvaluationFile } from "./evaluation-summary";
 import { withQuotedPages } from "./stored-pages";
 import {
   DOWNLOAD_URL_SECONDS,
@@ -368,7 +368,12 @@ export async function downloadOrderFile(
   }
   const { db, order } = await orderForToken(token);
   if (isGcsOrder(order) && file === "evaluation") {
-    const stored = storedEvaluationFile(order.serviceFiles);
+    let stored = storedEvaluationFile(order.serviceFiles);
+    if (!stored || !isCurrentGcsEvaluationPath(order.id, stored.kind, stored.path)) {
+      const { refreshStaleGcsEvaluation } = await import("./gcs-evaluate");
+      const refreshed = await refreshStaleGcsEvaluation(db, order.id);
+      stored = refreshed ? { kind: refreshed.kind, path: refreshed.path } : null;
+    }
     if (!stored) throw new HttpError("That file is not ready", 404);
     const documents = await listDocuments(db, order.id);
     const filename = orderDownloadFilename(

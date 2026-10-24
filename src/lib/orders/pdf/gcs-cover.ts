@@ -34,6 +34,9 @@ const PAGE_H = 792;
 const MARGIN_X = 48;
 const CONTENT_W = PAGE_W - MARGIN_X * 2;
 
+/** Logo height on the certificate cover. Evaluation reports use the same mark. */
+export const GCS_COVER_LOGO_HEIGHT = 34;
+
 /** Extra space under the letterhead so translated text does not sit on the rule. */
 export function gcsBodyTopInset(kind: "letter" | "certificate" | null): number {
   return kind ? 72 : 34;
@@ -294,7 +297,7 @@ export async function drawGcsCertificationPage(doc: PDFDocument, input: RenderIn
   const signature = await embedImage(doc, loadGcsSignature());
   const page = doc.addPage([PAGE_W, PAGE_H]);
   const contentTop = PAGE_H - 40;
-  const logoHeight = 34;
+  const logoHeight = GCS_COVER_LOGO_HEIGHT;
   const logoWidth = logoHeight * (images.logo.width / images.logo.height);
   page.drawImage(images.logo, {
     x: MARGIN_X,
