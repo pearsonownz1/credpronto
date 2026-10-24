@@ -2,7 +2,6 @@ import {
   FINALS_BUCKET,
   LETTER_HEIGHT_PT,
   LETTER_WIDTH_PT,
-  PREVIEWS_BUCKET,
   PREVIEW_URL_SECONDS,
 } from "./constants";
 import { listDocuments, listPages, listTranslations, updateOrder } from "./db";
@@ -93,10 +92,6 @@ function pageCountFor(order: OrderRecord, kind: EvaluationService): number {
   return count && count > 0 ? count : 1;
 }
 
-function previewCopyPath(orderId: string): string {
-  return `${orderId}/gcs-evaluation-v1.pdf`;
-}
-
 async function signedEvaluation(
   db: Db,
   path: string,
@@ -133,7 +128,6 @@ async function publishEvaluation(
   });
   const cleanPath = evaluationServicePath(order.id, result.kind);
   await uploadObject(db, FINALS_BUCKET, cleanPath, stamped, "application/pdf");
-  await uploadObject(db, PREVIEWS_BUCKET, previewCopyPath(order.id), stamped, "application/pdf");
   const stored: EvaluationResult = { ...result, pageCount: files.pageCount };
   const patch: Record<string, unknown> = {
     evaluation_result: stored,
