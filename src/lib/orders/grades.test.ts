@@ -1,9 +1,33 @@
 import { describe, expect, it } from "vitest";
+import { matchEdgeGradingScale, type EdgeGradingScaleRecord } from "./edge";
 import { GRADE_SCALE_20, credentialWasPassed, mapEdgeGrade, mapLocalGrade, scoreCourses, usEquivalency } from "./grades";
+
+const CAMEROON_20: EdgeGradingScaleRecord["rows"] = [
+  { indigenousGrade: "16 — 20", usEquivalent: "A" },
+  { indigenousGrade: "14 — 15", usEquivalent: "B+" },
+  { indigenousGrade: "12 — 13", usEquivalent: "B" },
+  { indigenousGrade: "10 — 11", usEquivalent: "C" },
+  { indigenousGrade: "0 — 9", usEquivalent: "F" },
+];
+
+/** Order 5274b9e5 relevé: 11 courses, printed total 300/30 = 10.00/20, ADMIS. */
+const CAMEROON_BAC = [
+  ["Sciences Economiques et Juridiques", 4, "9.5"],
+  ["Mathématiques Appliquées", 2, "12.5"],
+  ["Techniques Quantitatives de Gestion", 5, "8.4"],
+  ["Pratique Professionnelle (Pratique Ecrite)", 5, "12.6"],
+  ["Français", 3, "11.33"],
+  ["Philosophie", 2, "10"],
+  ["Anglais", 2, "7.5"],
+  ["Education Civique", 2, "12"],
+  ["Mathématiques", 2, "8.5"],
+  ["Histoire ou Géographie", 1, "6"],
+  ["Pratique Professionnelle (sur matériel)", 2, "6.5"],
+] as const;
 
 describe("grade scales", () => {
   it("maps a 20-point grade and a 10-point grade", () => {
-    expect(mapLocalGrade("14", "20")).toEqual({ usGrade: "B", points: 3 });
+    expect(mapLocalGrade("14", "20")).toEqual({ usGrade: "B+", points: 3.3 });
     expect(mapLocalGrade("8.5", "10")).toEqual({ usGrade: "B", points: 3 });
     expect(mapLocalGrade("B+", "letter")).toEqual({ usGrade: "B+", points: 3.3 });
     expect(mapLocalGrade("21", "20")).toBeNull();
@@ -26,10 +50,10 @@ describe("grade scales", () => {
       ],
       "20",
     );
-    expect(scored?.courses[0]).toMatchObject({ usSemesterHours: 6, usGrade: "B", gradePoints: 18 });
+    expect(scored?.courses[0]).toMatchObject({ usSemesterHours: 6, usGrade: "B+", gradePoints: 19.8 });
     expect(scored?.courses[1]).toMatchObject({ usGrade: "C", gradePoints: 8 });
     expect(scored?.totalHours).toBe(10);
-    expect(scored?.gpa).toBe(2.6);
+    expect(scored?.gpa).toBe(2.78);
     expect(scored?.usedEdge).toBe(false);
   });
 
@@ -58,15 +82,24 @@ describe("grade scales", () => {
   it("uses the PM 20-point bands with 10 as the pass line", () => {
     expect(mapLocalGrade("20", "20")?.usGrade).toBe("A");
     expect(mapLocalGrade("16", "20")?.usGrade).toBe("A");
-    expect(mapLocalGrade("15.99", "20")?.usGrade).toBe("B");
-    expect(mapLocalGrade("13,99", "20")?.usGrade).toBe("C");
+    expect(mapLocalGrade("15.99", "20")).toEqual({ usGrade: "B+", points: 3.3 });
+    expect(mapLocalGrade("14", "20")).toEqual({ usGrade: "B+", points: 3.3 });
+    expect(mapLocalGrade("13,99", "20")).toEqual({ usGrade: "B", points: 3 });
+    expect(mapLocalGrade("12", "20")).toEqual({ usGrade: "B", points: 3 });
+    expect(mapLocalGrade("11.99", "20")).toEqual({ usGrade: "C", points: 2 });
     expect(mapLocalGrade("10", "20")).toEqual({ usGrade: "C", points: 2 });
     expect(mapLocalGrade("9.99", "20")).toEqual({ usGrade: "F", points: 0 });
+    expect(GRADE_SCALE_20).toContain("14–15.99 is B+ (3.3)");
+    expect(GRADE_SCALE_20).toContain("12–13.99 is B (3.0)");
+    expect(GRADE_SCALE_20).toContain("10–11.99 is C (2.0)");
   });
 
   it("takes the pass line from the system scale, not the country", () => {
     expect(mapLocalGrade("11", "20", { passMark: 12 })?.usGrade).toBe("F");
-    expect(mapLocalGrade("12", "20", { passMark: 12 })?.usGrade).toBe("C");
+    expect(mapLocalGrade("12", "20", { passMark: 12 })).toEqual({ usGrade: "B", points: 3 });
+    expect(mapLocalGrade("13", "20", { passMark: 13 })).toEqual({ usGrade: "C", points: 2 });
+    expect(mapLocalGrade("12", "20", { passMark: 13 })?.usGrade).toBe("F");
+    expect(mapLocalGrade("14", "20", { passMark: 13 })).toEqual({ usGrade: "B+", points: 3.3 });
     expect(mapLocalGrade("10", "20", { passMark: Number.NaN })?.usGrade).toBe("C");
   });
 
@@ -116,11 +149,11 @@ describe("grade scales", () => {
       { credentialPassed: credentialWasPassed("Admis") },
     );
     expect(scored).not.toBeNull();
-    expect(scored!.courses.map((course) => course.usGrade)).toEqual(["D", "D", "C"]);
+    expect(scored!.courses.map((course) => course.usGrade)).toEqual(["D", "D", "B"]);
     expect(scored!.courses.some((course) => course.usGrade === "F")).toBe(false);
     expect(scored!.courses[0]).toMatchObject({ usGrade: "D", gradePoints: 2 });
     expect(scored!.courses[1]).toMatchObject({ usGrade: "D", gradePoints: 2 });
-    expect(scored!.gpa).toBe(1.33);
+    expect(scored!.gpa).toBe(1.67);
   });
 
   it("a failed credential still gives F", () => {
@@ -137,9 +170,9 @@ describe("grade scales", () => {
       { credentialPassed: credentialWasPassed("Ajourné") },
     );
     expect(scored).not.toBeNull();
-    expect(scored!.courses.map((course) => course.usGrade)).toEqual(["F", "C"]);
+    expect(scored!.courses.map((course) => course.usGrade)).toEqual(["F", "B"]);
     expect(scored!.courses[0]).toMatchObject({ usGrade: "F", gradePoints: 0 });
-    expect(scored!.gpa).toBe(1);
+    expect(scored!.gpa).toBe(1.5);
   });
 
   it("9b80cd30 Cameroon Bac at 10.00/20 (Admis): no passed subject is an F, GPA in C range", () => {
@@ -155,8 +188,78 @@ describe("grade scales", () => {
     );
     expect(scored).not.toBeNull();
     expect(scored!.courses.some((course) => course.usGrade === "F")).toBe(false);
-    expect(scored!.gpa).toBeGreaterThanOrEqual(2);
+    expect(scored!.courses.map((course) => course.usGrade)).toEqual([
+      "C",
+      "C",
+      "C",
+      "C",
+      "B",
+      "C",
+      "C",
+      "C",
+      "B",
+      "C",
+      "C",
+    ]);
+    expect(scored!.gpa).toBe(2.18);
+  });
+
+  it("matches Cameroon Francophone ranges, including decimals that fall between integer endpoints", () => {
+    expect(mapEdgeGrade("12.5", CAMEROON_20)).toEqual({ usGrade: "B", points: 3 });
+    expect(mapEdgeGrade("12,6", CAMEROON_20)).toEqual({ usGrade: "B", points: 3 });
+    expect(mapEdgeGrade("12", CAMEROON_20)).toEqual({ usGrade: "B", points: 3 });
+    expect(mapEdgeGrade("11.33", CAMEROON_20)).toEqual({ usGrade: "C", points: 2 });
+    expect(mapEdgeGrade("16", CAMEROON_20)).toEqual({ usGrade: "A", points: 4 });
+    expect(mapEdgeGrade("14.2", CAMEROON_20)).toEqual({ usGrade: "B+", points: 3.3 });
+    expect(mapEdgeGrade("9.5", CAMEROON_20)).toEqual({ usGrade: "F", points: 0 });
+    expect(mapEdgeGrade("9.5", CAMEROON_20, { credentialPassed: true })).toEqual({ usGrade: "D", points: 1 });
+    expect(mapEdgeGrade("12.5%", CAMEROON_20)).toBeNull();
+    expect(mapEdgeGrade("B", CAMEROON_20)).toBeNull();
+    expect(mapEdgeGrade("21", CAMEROON_20)).toBeNull();
+    expect(mapEdgeGrade("12.5", [{ indigenousGrade: "10 — 11", usEquivalent: "C" }])).toBeNull();
+
+    const francophone: EdgeGradingScaleRecord = {
+      id: "cm-francophone",
+      countrySlug: "cameroon",
+      title: "Cameroon Francophone General Grading Scale",
+      raw: null,
+      rows: CAMEROON_20,
+    };
+    const letters: EdgeGradingScaleRecord = {
+      id: "cm-letters",
+      countrySlug: "cameroon",
+      title: "Letter scale",
+      raw: null,
+      rows: [{ indigenousGrade: "A", usEquivalent: "A" }],
+    };
+    expect(
+      matchEdgeGradingScale([letters, francophone], {
+        country: "Cameroon",
+        title: "Baccalauréat",
+        grades: ["12.5", "12.6", "11.33", "9.5"],
+      })?.id,
+    ).toBe("cm-francophone");
+  });
+
+  it("floors a passed 10.00/20 Cameroon Bac at a 2.00 GPA and scores 12.5, 12.6, and 12 as B", () => {
+    const courses = CAMEROON_BAC.map(([originalName, localCredits, localGrade]) => ({
+      originalName,
+      englishName: originalName,
+      localCredits,
+      localGrade,
+    }));
+    const scored = scoreCourses(courses, "20", CAMEROON_20, { credentialPassed: true });
+    expect(scored).not.toBeNull();
+    const byGrade = new Map(scored!.courses.map((course) => [course.localGrade, course.usGrade]));
+    expect(byGrade.get("12.5")).toBe("B");
+    expect(byGrade.get("12.6")).toBe("B");
+    expect(byGrade.get("12")).toBe("B");
+    expect(byGrade.get("11.33")).toBe("C");
+    expect(byGrade.get("9.5")).toBe("D");
+    expect(scored!.courses.some((course) => course.usGrade === "F")).toBe(false);
+    expect(scored!.totalHours).toBe(30);
     expect(scored!.gpa).toBe(2);
+    expect(scored!.usedEdge).toBe(true);
   });
 });
 

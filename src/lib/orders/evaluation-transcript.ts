@@ -70,10 +70,17 @@ function countryOf(text: string): string {
   return "";
 }
 
+/** Trailing matricule or center code, such as `08 / 008 / 4055` after the printed name. */
+export function stripApplicantRegistration(name: string): string {
+  return name.replace(/\s+\d[\d\s/.-]*$/, "").trim();
+}
+
 function applicantOf(lines: readonly string[]): string {
   for (const line of lines) {
     const match = line.trim().match(/^(?:Mlle|Mme|Mr|Mrs|M)\.?\s+(.+)$/);
-    if (match?.[1] && !/^\d/.test(match[1])) return match[1].trim();
+    if (!match?.[1]) continue;
+    const name = stripApplicantRegistration(match[1]);
+    if (name && !/^\d/.test(name)) return name;
   }
   return "";
 }

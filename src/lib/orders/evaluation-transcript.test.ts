@@ -114,17 +114,29 @@ describe("course extract from the coefficient transcript", () => {
     expect(result.totalHours).toBe(30);
     expect(result.years[0]?.courses.map((course) => course.usGrade)).toEqual([
       "D",
+      "B",
+      "D",
+      "B",
+      "C",
       "C",
       "D",
-      "C",
-      "C",
-      "C",
-      "D",
-      "C",
+      "B",
       "D",
       "D",
       "D",
     ]);
+    expect(result.gpa).toBe(2);
+    expect(result.applicant).toBe("KOUAMOU NANA MYRTHE ARISTIDE");
+  });
+
+  it("strips a trailing registration number from the applicant line", () => {
+    const parsed = courseExtractFromTranscript(
+      TRANSCRIPT.replace(
+        "M KOUAMOU NANA MYRTHE ARISTIDE",
+        "M KOUAMOU NANA MYRTHE ARISTIDE                         08 / 008 / 4055",
+      ),
+    );
+    expect(parsed.extract?.applicant).toBe("KOUAMOU NANA MYRTHE ARISTIDE");
   });
 
   it("keeps a mark already out of 20 and divides only a value over 20", () => {

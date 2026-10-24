@@ -23,6 +23,7 @@ import { paidEvaluationDegreeCount } from "./evaluation-summary";
 import {
   courseExtractFromTranscript,
   recoverCourseExtract,
+  stripApplicantRegistration,
   textForPaidEvaluation,
   type TranscriptRowFailure,
 } from "./evaluation-transcript";
@@ -418,6 +419,7 @@ export function normalizeDiplomaExtract(extracted: DiplomaExtract): DiplomaExtra
   return {
     credentials: extracted.credentials.map((item) => ({
       ...item,
+      applicant: stripApplicantRegistration(item.applicant),
       country: normalizeEvaluationCountry(item.country),
       field: normalizeEvaluationField(item.field),
       dates: normalizeEvaluationDate(item.dates),
@@ -436,7 +438,7 @@ export function assembleDiploma(input: {
   if (input.documentsReviewed.length === 0) return null;
   const credentials = [];
   for (const [index, item] of input.extracted.credentials.entries()) {
-    const applicant = filled(item.applicant);
+    const applicant = filled(stripApplicantRegistration(item.applicant));
     const institution = filled(item.institution);
     const credential = filled(item.credential);
     if (!applicant || !institution || !credential) return null;
@@ -564,7 +566,7 @@ export function assembleCourse(
     equivalencyBasis?: string | null;
   },
 ): EvaluationResult | null {
-  const applicant = filled(extracted.applicant);
+  const applicant = filled(stripApplicantRegistration(extracted.applicant));
   const institution = filled(extracted.institution);
   // A regional board (CXC, WAEC) often prints no country; staff fill it like a diploma's.
   const country = orPending(normalizeEvaluationCountry(extracted.country));

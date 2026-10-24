@@ -2,7 +2,7 @@ export const GRADE_SCALE_10 =
   "Grades are on a 10-point scale. 9.0–10 is A (4.0), 8.0–8.9 is B (3.0), 7.0–7.9 is C (2.0), 6.0–6.9 is D (1.0), and below 6 is F (0).";
 
 export const GRADE_SCALE_20 =
-  "Grades are on a 20-point scale with 10 as the pass mark. 16–20 is A (4.0), 14–15.99 is B (3.0), 10–13.99 is C (2.0). Below 10 is D (1.0) when the credential was passed, and F (0) when the credential was failed.";
+  "Grades are on a 20-point scale with 10 as the pass mark. 16–20 is A (4.0), 14–15.99 is B+ (3.3), 12–13.99 is B (3.0), 10–11.99 is C (2.0). Below 10 is D (1.0) when the credential was passed, and F (0) when the credential was failed.";
 
 /** Default pass mark for a 20-point system (France, Cameroon and other French-model systems). */
 export const DEFAULT_PASS_MARK_20 = 10;
@@ -238,12 +238,14 @@ export function mapLocalGrade(
   if (grade > 20) return null;
   const pass = validPassMark(options?.passMark);
   const below = options?.credentialPassed === true ? (["D", 1] as const) : (["F", 0] as const);
-  return band(grade, [
+  // 12–13.99 is B when the pass line is 12 or lower. A higher pass line makes the pass mark itself a C.
+  const rows: Array<[number, string, number]> = [
     [Math.max(16, pass), "A", 4],
-    [Math.max(14, pass), "B", 3],
-    [pass, "C", 2],
-    [0, below[0], below[1]],
-  ]);
+    [Math.max(14, pass), "B+", 3.3],
+  ];
+  if (pass <= 12) rows.push([12, "B", 3]);
+  rows.push([pass, "C", 2], [0, below[0], below[1]]);
+  return band(grade, rows);
 }
 
 function validPassMark(value: number | undefined): number {
@@ -272,12 +274,37 @@ export type EdgeGradePoints = {
   usEquivalent: string;
 };
 
-export function mapEdgeGrade(localGrade: string, rows: readonly EdgeGradePoints[]): MappedGrade | null {
+const EDGE_RANGE = /^\s*(\d+(?:[.,]\d+)?)\s*(?:[-–—]|to)\s*(\d+(?:[.,]\d+)?)\s*$/i;
+
+/**
+ * A passed Francophone exam can print 10.00/20 after a sports bonus that is not one of the
+ * scored courses (300/30 versus about 297/30). An average within 0.10 of the pass mark
+ * still keeps the compensated C.
+ */
+const PASSED_AVERAGE_MARGIN = 0.1;
+
+export function mapEdgeGrade(
+  localGrade: string,
+  rows: readonly EdgeGradePoints[],
+  options?: GradeMapOptions,
+): MappedGrade | null {
   const key = gradeKey(localGrade);
   if (!key) return null;
-  const row = rows.find((item) => gradeKey(item.indigenousGrade) === key);
-  if (!row) return null;
-  return pointsFromUsEquivalent(row.usEquivalent);
+  const exact = rows.find((item) => gradeKey(item.indigenousGrade) === key);
+  if (exact) return condonedPass(pointsFromUsEquivalent(exact.usEquivalent), options);
+
+  const grade = plainNumber(localGrade);
+  if (grade == null) return null;
+  const ranges = rows.flatMap((row) => {
+    const bounds = numericRange(row.indigenousGrade);
+    if (!bounds) return [];
+    return [{ row, low: Math.min(bounds[0], bounds[1]), high: Math.max(bounds[0], bounds[1]) }];
+  });
+  if (ranges.length === 0) return null;
+
+  const matched = matchNumericRange(grade, ranges);
+  if (!matched) return null;
+  return condonedPass(pointsFromUsEquivalent(matched.row.usEquivalent), options);
 }
 
 export function scoreCourses(
@@ -297,7 +324,7 @@ export function scoreCourses(
   for (const course of courses) {
     const credits = noCredits ? 1 : course.localCredits;
     if (!Number.isFinite(credits) || credits < 0) return null;
-    const fromEdge = edgeRows && edgeRows.length > 0 ? mapEdgeGrade(course.localGrade, edgeRows) : null;
+    const fromEdge = edgeRows && edgeRows.length > 0 ? mapEdgeGrade(course.localGrade, edgeRows, options) : null;
     if (fromEdge) usedEdge = true;
     const mapped = fromEdge ?? mapLocalGrade(course.localGrade, scale, options);
     if (!mapped) {
@@ -317,7 +344,69 @@ export function scoreCourses(
   if (unmapped > Math.floor(courses.length * MAX_UNMAPPED_SHARE)) return null;
   const totalHours = round2(scored.reduce((sum, course) => sum + course.usSemesterHours, 0));
   if (totalHours <= 0 || gradedHours <= 0) return null;
-  return { courses: scored, totalHours, gpa: round2(points / gradedHours), usedEdge };
+  let gpa = round2(points / gradedHours);
+  if (scale === "20" && options?.credentialPassed === true) {
+    const average = weightedLocalAverage(courses, noCredits);
+    const pass = validPassMark(options.passMark);
+    if (average != null && round2(average + PASSED_AVERAGE_MARGIN) >= pass) gpa = Math.max(gpa, 2);
+  }
+  return { courses: scored, totalHours, gpa, usedEdge };
+}
+
+function plainNumber(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed || /%|[a-z]/i.test(trimmed)) return null;
+  if (!/^\d+(?:[.,]\d+)?$/.test(trimmed)) return null;
+  const grade = Number(trimmed.replace(",", "."));
+  return Number.isFinite(grade) ? grade : null;
+}
+
+function numericRange(value: string): [number, number] | null {
+  const match = value.trim().match(EDGE_RANGE);
+  if (!match?.[1] || !match[2]) return null;
+  const low = Number(match[1].replace(",", "."));
+  const high = Number(match[2].replace(",", "."));
+  if (!Number.isFinite(low) || !Number.isFinite(high)) return null;
+  return [low, high];
+}
+
+function matchNumericRange<T extends { low: number; high: number }>(grade: number, ranges: readonly T[]): T | null {
+  if (ranges.length === 1) {
+    const only = ranges[0]!;
+    return only.low <= grade && grade <= only.high ? only : null;
+  }
+  const minLow = Math.min(...ranges.map((item) => item.low));
+  const maxHigh = Math.max(...ranges.map((item) => item.high));
+  if (grade < minLow || grade > maxHigh) return null;
+  let matched: T | null = null;
+  for (const item of ranges) {
+    if (item.low <= grade && (matched == null || item.low > matched.low)) matched = item;
+  }
+  return matched;
+}
+
+/** F on a passed credential is a condoned D, matching the Francophone note for sub-10 marks. */
+function condonedPass(mapped: MappedGrade | null, options?: GradeMapOptions): MappedGrade | null {
+  if (!mapped) return null;
+  if (mapped.usGrade === "F" && mapped.points === 0 && options?.credentialPassed === true) {
+    return { usGrade: "D", points: 1 };
+  }
+  return mapped;
+}
+
+function weightedLocalAverage(courses: readonly RawCourse[], noCredits: boolean): number | null {
+  let weight = 0;
+  let total = 0;
+  for (const course of courses) {
+    const grade = plainNumber(course.localGrade);
+    if (grade == null) continue;
+    const credits = noCredits ? 1 : course.localCredits;
+    if (!Number.isFinite(credits) || credits <= 0) continue;
+    weight += credits;
+    total += credits * grade;
+  }
+  if (weight <= 0) return null;
+  return total / weight;
 }
 
 function gradeKey(value: string): string {
@@ -331,7 +420,7 @@ function gradeKey(value: string): string {
 }
 
 function pointsFromUsEquivalent(value: string): MappedGrade | null {
-  const letter = value.trim().toUpperCase().match(/\b(A|B|C|D|F)([+-])?\b/);
+  const letter = value.trim().toUpperCase().match(/\b(A|B|C|D|F)([+-])?(?![A-Z])/);
   if (letter) {
     const token = `${letter[1]}${letter[2] ?? ""}`;
     const points = LETTER_POINTS[token];
