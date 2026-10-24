@@ -32,9 +32,9 @@ import { concatPdfs } from "./pdf/merge";
 import { etaFromNow } from "./quote";
 import {
   EQUIVALENCY_QA_RESEARCH,
-  EQUIVALENCY_QA_REVIEW,
   PENDING_EQUIVALENCY,
   awaitingEquivalencyPublish,
+  diplomaEquivalencyPending,
 } from "./equivalency";
 import {
   combineEquivalencyRoutes,
@@ -1185,6 +1185,24 @@ async function storeCleanEvaluation(
   return path;
 }
 
+function equivalencyFieldsPending(result: EvaluationResult): boolean {
+  if (result.kind === "diploma") return diplomaEquivalencyPending(result.credentials);
+  return result.usEquivalency === PENDING_EQUIVALENCY;
+}
+
+/**
+ * A confident qa_review report with no pending equivalency fields is ready to release.
+ * Research, or any field still marked pending, stays on the research hold.
+ */
+function reviewReasonForPreparedEvaluation(
+  route: EquivalencyRoute,
+  results: readonly EvaluationResult[],
+): string | null {
+  const pending = results.some(equivalencyFieldsPending);
+  if (route === "qa_review" && !pending) return null;
+  return EQUIVALENCY_QA_RESEARCH;
+}
+
 export async function completeEvaluation(
   db: Db,
   order: OrderRecord,
@@ -1266,7 +1284,7 @@ export async function completeEvaluation(
     const serviceFiles = { ...(order.serviceFiles ?? {}), [service]: cleanPath };
     await updateOrder(db, order.id, {
       status: "preview_ready",
-      review_reason: built.route === "qa_review" ? EQUIVALENCY_QA_REVIEW : EQUIVALENCY_QA_RESEARCH,
+      review_reason: reviewReasonForPreparedEvaluation(built.route, [stored]),
       eta_at: null,
       source_language: language,
       language_confirmed: true,
@@ -1367,8 +1385,8 @@ async function completeSelectedEvaluations(
   try {
     const previews: Uint8Array[] = [];
     const results: EvaluationResult[] = [];
+    const routes: EquivalencyRoute[] = [];
     const serviceFiles: Partial<Record<EvaluationService, string>> = { ...(order.serviceFiles ?? {}) };
-    let route: EquivalencyRoute = "qa_research";
     let edge: ReturnType<typeof storedEdgeMatch> = storedEdgeMatch({
       edgeCredentialId: null,
       edgeGradingScaleId: null,
@@ -1378,7 +1396,7 @@ async function completeSelectedEvaluations(
       const text = await pageTextForService(db, order, service, input.pageText);
       const built = await evaluateServiceFromText(db, order, service, text, input.filenames);
       edge = storedEdgeMatch(built);
-      if (built.route === "qa_review") route = "qa_review";
+      routes.push(built.route);
       if (!built.result) {
         await markPreview(db, order.id, version, "failed");
         const held = await hold(UNMAPPED_REASON, language);
@@ -1397,11 +1415,12 @@ async function completeSelectedEvaluations(
     }
     const preview = previews.length === 1 ? previews[0]! : await concatPdfs(previews);
     const primary = results.find((result) => result.kind === "diploma") ?? results[0] ?? null;
+    const route = combineEquivalencyRoutes(routes);
     await uploadObject(db, PREVIEWS_BUCKET, reportPath, preview, "application/pdf");
     const quote = quoteFor(language);
     await updateOrder(db, order.id, {
       status: "preview_ready",
-      review_reason: route === "qa_review" ? EQUIVALENCY_QA_REVIEW : EQUIVALENCY_QA_RESEARCH,
+      review_reason: reviewReasonForPreparedEvaluation(route, results),
       eta_at: null,
       source_language: language,
       language_confirmed: true,
