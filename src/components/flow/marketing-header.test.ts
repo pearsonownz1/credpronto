@@ -8,7 +8,7 @@ vi.mock("next/image", () => ({
 
 import { MarketingHeaderFrame } from "./marketing-header";
 
-function renderNav(section?: "translations" | "evaluations" | "preval" | "integrations" | "pricing") {
+function renderNav(section?: "translations" | "evaluations" | "preval" | "pricing") {
   return renderToStaticMarkup(
     createElement(MarketingHeaderFrame, {
       section,
@@ -48,12 +48,13 @@ describe("marketing header", () => {
       const labels = [...region.matchAll(/<a\b[^>]*>([^<]+)<\/a>/g)].map((match) => match[1]);
       const translations = labels.indexOf("Translations");
       const preval = labels.indexOf("PreVal");
-      const integrations = labels.indexOf("Integrations");
+      const pricing = labels.indexOf("Pricing");
       expect(translations).toBeGreaterThanOrEqual(0);
       expect(preval).toBe(translations + 1);
-      expect(integrations).toBe(preval + 1);
+      expect(pricing).toBe(preval + 1);
+      expect(labels).not.toContain("Integrations");
     }
-    expect(html).toContain('href="/dashboard/integrations"');
+    expect(html).not.toContain('href="/dashboard/integrations"');
     expect(html).toContain('href="/translate"');
     expect(html).toContain(">Get started<");
   });
