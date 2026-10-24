@@ -1,9 +1,25 @@
 import { inflateSync } from "node:zlib";
 import { extractText, getDocumentProxy } from "unpdf";
 import { describe, expect, it } from "vitest";
+import { BRAND_FOOTER } from "../brand";
 import { PREVIEW_WATERMARK } from "../constants";
+import { GCS_FOOTER } from "../gcs";
 import type { EvaluationResult } from "../types";
 import { evaluationReportId, publicEvaluationReport, renderEvaluationPdfs } from "./evaluation";
+import { GCS_COVER_LOGO_HEIGHT } from "./gcs-cover";
+
+function pdfSource(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString("latin1");
+}
+
+function drawnImageHeights(bytes: Uint8Array): number[] {
+  const heights: number[] = [];
+  for (const match of pdfOperators(bytes).matchAll(/[\d.]+ 0 0 ([\d.]+) [\d.-]+ [\d.-]+ cm/g)) {
+    const height = Number(match[1]);
+    if (Number.isFinite(height)) heights.push(height);
+  }
+  return heights;
+}
 
 function pdfOperators(bytes: Uint8Array): string {
   const raw = Buffer.from(bytes);
@@ -199,5 +215,36 @@ describe("evaluation PDFs", () => {
 
   it("builds a stable report id from the order id", () => {
     expect(evaluationReportId("4b7cd466-eb4f-cdb3-5cbf-c62a9efcfcc8")).toBe("CP-E-4B7CD466");
+  });
+
+  it("keeps the CredPronto logo and footer unless the report is GCS", async () => {
+    const files = await renderEvaluationPdfs(courses, { reportId: "CP-E-SAMPLE", issued: "Oct 11, 2026", brand: "credpronto" });
+    const source = pdfSource(files.clean);
+    const text = await textOf(files.clean);
+    expect(source).toContain("/Width 848");
+    expect(source).not.toContain("/Width 492");
+    expect(drawnImageHeights(files.clean)).toContain(22);
+    expect(drawnImageHeights(files.clean)).not.toContain(GCS_COVER_LOGO_HEIGHT);
+    expect(text).toContain(BRAND_FOOTER);
+    expect(text).not.toContain(GCS_FOOTER);
+  });
+
+  it("embeds the GCS cover logo and footer on a GCS evaluation", async () => {
+    const files = await renderEvaluationPdfs(courses, {
+      reportId: "CP-E-SAMPLE",
+      issued: "Oct 11, 2026",
+      brand: "gcs",
+    });
+    const source = pdfSource(files.clean);
+    const text = await textOf(files.clean);
+    expect(source).toContain("/Width 492");
+    expect(source).not.toContain("/Width 848");
+    expect(drawnImageHeights(files.clean)).toContain(GCS_COVER_LOGO_HEIGHT);
+    expect(text).toContain(GCS_FOOTER);
+    expect(text).not.toContain(BRAND_FOOTER);
+    expect(text).not.toContain("CredPronto");
+    const preview = await textOf(files.preview);
+    expect(preview).toContain(GCS_FOOTER);
+    expect(preview).not.toContain(BRAND_FOOTER);
   });
 });

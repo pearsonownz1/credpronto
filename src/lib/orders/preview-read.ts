@@ -1,7 +1,7 @@
 import { FINALS_BUCKET, ORIGINALS_BUCKET, PREVIEW_URL_SECONDS, PREVIEWS_BUCKET } from "./constants";
 import { UNIT_PRICE_CENTS } from "./constants";
 import { evaluationPrice, isTranslationBundle } from "./evaluation-price";
-import { storedEvaluationFile } from "./evaluation-summary";
+import { isCurrentGcsEvaluationPath, storedEvaluationFile } from "./evaluation-summary";
 import {
   insertEvent,
   latestReadyPreview,
@@ -114,9 +114,16 @@ export async function getPreview(token: string): Promise<PreviewRead> {
   let reportUrl = sources.reportPath ? previews.get(sources.reportPath) ?? null : null;
   let reportPageCount = order.evaluationPageCount ?? pages.length;
   const gcsReport = order.brand === "gcs" ? storedEvaluationFile(order.serviceFiles) : null;
-  if (gcsReport) {
+  if (gcsReport && isCurrentGcsEvaluationPath(order.id, gcsReport.kind, gcsReport.path)) {
     reportUrl = await signedObjectUrl(db, FINALS_BUCKET, gcsReport.path, PREVIEW_URL_SECONDS);
     reportPageCount = order.evaluationPageCount ?? 1;
+  } else if (order.brand === "gcs" && (gcsReport || (order.evaluationPageCount ?? 0) > 0)) {
+    const { refreshStaleGcsEvaluation } = await import("./gcs-evaluate");
+    const refreshed = await refreshStaleGcsEvaluation(db, order.id);
+    if (refreshed) {
+      reportUrl = await signedObjectUrl(db, FINALS_BUCKET, refreshed.path, PREVIEW_URL_SECONDS);
+      reportPageCount = refreshed.pageCount;
+    }
   }
   const totalMs = elapsed(started);
   const timing = serverTiming({ lookup: lookupMs, reads: readsMs, sign: signMs, total: totalMs });

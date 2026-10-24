@@ -14,6 +14,8 @@ import { generateOrderToken, hashOrderToken } from "./token";
 import type { Db } from "./storage";
 import type { CorrectionRecord, PageRecord } from "./types";
 import type { PreviewOrderRow } from "./db";
+import { gcsEvaluationPdfPath } from "./evaluation-summary";
+import * as gcsEvaluate from "./gcs-evaluate";
 
 const orderId = "28492f38-1111-4111-8111-111111111111";
 const token = generateOrderToken();
@@ -243,7 +245,7 @@ describe("GET preview timing", () => {
   });
 
   it("signs a stored GCS evaluation from finals with no watermarked preview path", async () => {
-    const path = `${orderId}/course_by_course-evaluation.pdf`;
+    const path = gcsEvaluationPdfPath(orderId, "course_by_course");
     vi.spyOn(access, "orderForPreview").mockResolvedValue({
       db: {} as Db,
       order: previewOrder({
@@ -279,6 +281,51 @@ describe("GET preview timing", () => {
     expect(preview.body.report?.url).not.toContain("preview-v3");
     expect(storage.signedObjectUrl).toHaveBeenCalledWith(expect.anything(), "finals", path, 600);
     expect(preview.body.translation.url).toContain("/previews/");
+  });
+
+  it("rewrites a stale GCS evaluation before signing it on reload", async () => {
+    const stale = `${orderId}/course_by_course-evaluation.pdf`;
+    const fresh = gcsEvaluationPdfPath(orderId, "course_by_course");
+    vi.spyOn(access, "orderForPreview").mockResolvedValue({
+      db: {} as Db,
+      order: previewOrder({
+        brand: "gcs",
+        serviceFiles: { course_by_course: stale },
+        evaluationPageCount: 1,
+      }),
+      token,
+    });
+    vi.spyOn(db, "latestReadyPreview").mockResolvedValue({
+      id: "preview-1",
+      version: 3,
+      previewPath: `${orderId}/preview-v3.pdf`,
+      status: "ready",
+    });
+    vi.spyOn(db, "listPreviewFrames").mockResolvedValue({
+      documents: [{ id: "doc-1", filename: "acta.pdf", position: 0, appliedPosition: null }],
+      pages: ninePages,
+    });
+    vi.spyOn(db, "listPreviewCorrections").mockResolvedValue([]);
+    vi.spyOn(db, "insertEvent").mockResolvedValue();
+    vi.spyOn(storage, "signedObjectUrls").mockImplementation(async (_db, bucket, paths) => {
+      return new Map(paths.map((item) => [item, `https://signed.example/${bucket}/${item}`]));
+    });
+    vi.spyOn(storage, "signedObjectUrl").mockResolvedValue(`https://signed.example/finals/${fresh}`);
+    vi.spyOn(gcsEvaluate, "refreshStaleGcsEvaluation").mockResolvedValue({
+      kind: "course_by_course",
+      path: fresh,
+      pageCount: 2,
+    });
+
+    const preview = await getPreview(token);
+
+    expect(gcsEvaluate.refreshStaleGcsEvaluation).toHaveBeenCalledWith(expect.anything(), orderId);
+    expect(preview.body.report).toEqual({
+      url: `https://signed.example/finals/${fresh}`,
+      pageCount: 2,
+    });
+    expect(storage.signedObjectUrl).toHaveBeenCalledWith(expect.anything(), "finals", fresh, 600);
+    expect(storage.signedObjectUrl).not.toHaveBeenCalledWith(expect.anything(), "finals", stale, 600);
   });
 });
 

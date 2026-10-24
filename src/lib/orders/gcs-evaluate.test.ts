@@ -3,7 +3,8 @@ import { downloadOrderFile } from "./customer";
 import * as db from "./db";
 import { HttpError } from "./errors";
 import * as evaluation from "./evaluation";
-import { gcsEvaluationSourceText, evaluateGcsOrder } from "./gcs-evaluate";
+import { gcsEvaluationPdfPath } from "./evaluation-summary";
+import { gcsEvaluationSourceText, evaluateGcsOrder, refreshStaleGcsEvaluation } from "./gcs-evaluate";
 import * as access from "./order-access";
 import * as pdf from "./pdf/evaluation";
 import * as storage from "./storage";
@@ -186,7 +187,7 @@ describe("evaluateGcsOrder", () => {
     );
     expect(pdf.renderEvaluationPdfs).toHaveBeenCalledWith(
       course,
-      expect.objectContaining({ degreeCount: 1, detectedPages: 2 }),
+      expect.objectContaining({ degreeCount: 1, detectedPages: 2, brand: "gcs" }),
     );
     expect(verification.stampFinishedPdf).toHaveBeenCalledWith(handle, clean, {
       orderId,
@@ -196,7 +197,7 @@ describe("evaluateGcsOrder", () => {
     expect(storage.uploadObject).toHaveBeenCalledWith(
       handle,
       "finals",
-      `${orderId}/course_by_course-evaluation.pdf`,
+      gcsEvaluationPdfPath(orderId, "course_by_course"),
       clean,
       "application/pdf",
     );
@@ -213,7 +214,7 @@ describe("evaluateGcsOrder", () => {
       expect.objectContaining({
         evaluation_result: expect.objectContaining({ kind: "course_by_course", pageCount: 1 }),
         evaluation_results: [expect.objectContaining({ kind: "course_by_course", pageCount: 1 })],
-        service_files: { course_by_course: `${orderId}/course_by_course-evaluation.pdf` },
+        service_files: { course_by_course: gcsEvaluationPdfPath(orderId, "course_by_course") },
         edge_credential_id: "edge-1",
         edge_grading_scale_id: "scale-1",
         edge_match_method: "base",
@@ -230,7 +231,7 @@ describe("evaluateGcsOrder", () => {
     expect(storage.signedObjectUrl).toHaveBeenCalledWith(
       handle,
       "finals",
-      `${orderId}/course_by_course-evaluation.pdf`,
+      gcsEvaluationPdfPath(orderId, "course_by_course"),
       600,
     );
   });
@@ -256,13 +257,13 @@ describe("evaluateGcsOrder", () => {
       handle,
       orderId,
       expect.objectContaining({
-        service_files: { diploma: `${orderId}/diploma-evaluation.pdf` },
+        service_files: { diploma: gcsEvaluationPdfPath(orderId, "diploma") },
       }),
     );
   });
 
-  it("returns a stored finals file without running the model again", async () => {
-    const path = `${orderId}/course_by_course-evaluation.pdf`;
+  it("returns a stored GCS-branded finals file without running the model again", async () => {
+    const path = gcsEvaluationPdfPath(orderId, "course_by_course");
     vi.spyOn(access, "orderForToken").mockResolvedValue({
       db: handle,
       order: order({
@@ -285,6 +286,45 @@ describe("evaluateGcsOrder", () => {
     expect(storage.signedObjectUrl).toHaveBeenCalledWith(handle, "finals", path, 600);
   });
 
+  it("re-renders a cached CredPronto evaluation when the result is already stored", async () => {
+    const stale = `${orderId}/course_by_course-evaluation.pdf`;
+    const stored = { ...course, pageCount: 2 };
+    vi.spyOn(access, "orderForToken").mockResolvedValue({
+      db: handle,
+      order: order({
+        serviceFiles: { diploma: `${orderId}/diploma-evaluation.pdf`, course_by_course: stale },
+        evaluationResult: stored,
+      }),
+      token: "tok",
+    });
+
+    const payload = await evaluateGcsOrder("tok");
+
+    expect(evaluation.evaluateServiceFromText).not.toHaveBeenCalled();
+    expect(pdf.renderEvaluationPdfs).toHaveBeenCalledWith(stored, expect.objectContaining({ brand: "gcs" }));
+    expect(storage.uploadObject).toHaveBeenCalledWith(
+      handle,
+      "finals",
+      gcsEvaluationPdfPath(orderId, "course_by_course"),
+      clean,
+      "application/pdf",
+    );
+    expect(db.updateOrder).toHaveBeenCalledWith(
+      handle,
+      orderId,
+      expect.objectContaining({
+        service_files: { course_by_course: gcsEvaluationPdfPath(orderId, "course_by_course") },
+      }),
+    );
+    expect(payload.evaluation).toMatchObject({ kind: "course_by_course", pageCount: 1 });
+    expect(storage.signedObjectUrl).toHaveBeenCalledWith(
+      handle,
+      "finals",
+      gcsEvaluationPdfPath(orderId, "course_by_course"),
+      600,
+    );
+  });
+
   it("re-renders a stored result when the PDF is missing", async () => {
     vi.spyOn(access, "orderForToken").mockResolvedValue({
       db: handle,
@@ -295,7 +335,7 @@ describe("evaluateGcsOrder", () => {
     const payload = await evaluateGcsOrder("tok");
 
     expect(evaluation.evaluateServiceFromText).not.toHaveBeenCalled();
-    expect(pdf.renderEvaluationPdfs).toHaveBeenCalledWith(diploma, expect.any(Object));
+    expect(pdf.renderEvaluationPdfs).toHaveBeenCalledWith(diploma, expect.objectContaining({ brand: "gcs" }));
     expect(payload.evaluation.kind).toBe("diploma");
   });
 
@@ -325,8 +365,32 @@ describe("GCS evaluation download", () => {
     vi.restoreAllMocks();
   });
 
+  it("re-renders a stale file when the preview order is reloaded", async () => {
+    const stored = { ...diploma, pageCount: 1 };
+    vi.spyOn(storage, "uploadObject").mockResolvedValue();
+    vi.spyOn(storage, "signedObjectUrl").mockResolvedValue("https://signed.example/eval.pdf");
+    vi.spyOn(verification, "stampFinishedPdf").mockImplementation(async (_db, bytes) => bytes);
+    vi.spyOn(pdf, "renderEvaluationPdfs").mockResolvedValue({ clean, preview: new Uint8Array([9]), pageCount: 1 });
+    vi.spyOn(db, "updateOrder").mockResolvedValue(true);
+    vi.spyOn(db, "getOrderById").mockResolvedValue(
+      order({
+        serviceFiles: { diploma: `${orderId}/diploma-evaluation.pdf` },
+        evaluationResult: stored,
+      }),
+    );
+
+    const file = await refreshStaleGcsEvaluation(handle, orderId);
+
+    expect(pdf.renderEvaluationPdfs).toHaveBeenCalledWith(stored, expect.objectContaining({ brand: "gcs" }));
+    expect(file).toEqual({
+      kind: "diploma",
+      path: gcsEvaluationPdfPath(orderId, "diploma"),
+      pageCount: 1,
+    });
+  });
+
   it("signs the stored evaluation without a payment", async () => {
-    const path = `${orderId}/diploma-evaluation.pdf`;
+    const path = gcsEvaluationPdfPath(orderId, "diploma");
     vi.spyOn(access, "orderForToken").mockResolvedValue({
       db: handle,
       order: order({ serviceFiles: { diploma: path }, targetLanguage: "en" }),
@@ -349,5 +413,33 @@ describe("GCS evaluation download", () => {
       download: "transcript-evaluation.pdf",
     });
     expect(db.insertEvent).toHaveBeenCalledWith(handle, orderId, "downloaded", { file: "evaluation", brand: "gcs" });
+  });
+
+  it("downloads a rewritten GCS evaluation instead of the cached CredPronto PDF", async () => {
+    const stale = `${orderId}/diploma-evaluation.pdf`;
+    const fresh = gcsEvaluationPdfPath(orderId, "diploma");
+    vi.spyOn(access, "orderForToken").mockResolvedValue({
+      db: handle,
+      order: order({ serviceFiles: { diploma: stale }, evaluationResult: diploma, targetLanguage: "en" }),
+      token: "tok",
+    });
+    vi.spyOn(db, "listDocuments").mockResolvedValue([document()]);
+    vi.spyOn(storage, "signedObjectUrl").mockResolvedValue("https://signed.example/download.pdf");
+    vi.spyOn(db, "insertEvent").mockResolvedValue();
+    const gcs = await import("./gcs-evaluate");
+    vi.spyOn(gcs, "refreshStaleGcsEvaluation").mockResolvedValue({
+      kind: "diploma",
+      path: fresh,
+      pageCount: 1,
+    });
+
+    const body = await downloadOrderFile("tok", "evaluation");
+
+    expect(gcs.refreshStaleGcsEvaluation).toHaveBeenCalledWith(handle, orderId);
+    expect(body).toMatchObject({ url: "https://signed.example/download.pdf", filename: "transcript-evaluation.pdf" });
+    expect(storage.signedObjectUrl).toHaveBeenCalledWith(handle, "finals", fresh, 300, {
+      download: "transcript-evaluation.pdf",
+    });
+    expect(storage.signedObjectUrl).not.toHaveBeenCalledWith(handle, "finals", stale, 300, expect.anything());
   });
 });

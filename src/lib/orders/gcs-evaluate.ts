@@ -4,17 +4,19 @@ import {
   LETTER_WIDTH_PT,
   PREVIEW_URL_SECONDS,
 } from "./constants";
-import { listDocuments, listPages, listTranslations, updateOrder } from "./db";
+import { getOrderById, listDocuments, listPages, listTranslations, updateOrder } from "./db";
 import { HttpError } from "./errors";
 import { evaluateServiceFromText, type ServiceFromText } from "./evaluation";
 import { textForPaidEvaluation } from "./evaluation-transcript";
-import { evaluationServicePath, storedEvaluationFile } from "./evaluation-summary";
+import { gcsEvaluationPdfPath, isCurrentGcsEvaluationPath, storedEvaluationFile } from "./evaluation-summary";
 import { isGcsOrder } from "./gcs";
 import { orderForToken } from "./order-access";
 import { evaluationIssuedLabel, evaluationReportId, renderEvaluationPdfs } from "./pdf/evaluation";
 import { signedObjectUrl, uploadObject, type Db } from "./storage";
 import type { EvaluationResult, EvaluationService, OrderRecord, PageRecord, TranslationRecord } from "./types";
 import { stampFinishedPdf } from "./verification";
+
+const EVALUATION_KINDS = ["course_by_course", "diploma"] as const;
 
 /** OCR shorter than this is treated as sparse and combined with the translation. */
 const SPARSE_EVALUATION_CHARS = 40;
@@ -92,6 +94,23 @@ function pageCountFor(order: OrderRecord, kind: EvaluationService): number {
   return count && count > 0 ? count : 1;
 }
 
+function currentBrandedFile(order: OrderRecord): { kind: EvaluationService; path: string } | null {
+  const existing = storedEvaluationFile(order.serviceFiles);
+  if (!existing || !isCurrentGcsEvaluationPath(order.id, existing.kind, existing.path)) return null;
+  return existing;
+}
+
+/** Keep GCS-branded files and drop finals that still use the CredPronto logo. */
+function serviceFilesAfterPublish(order: OrderRecord, kind: EvaluationService, path: string) {
+  const next: Partial<Record<EvaluationService, string>> = {};
+  for (const key of EVALUATION_KINDS) {
+    const stored = order.serviceFiles?.[key]?.trim();
+    if (stored && isCurrentGcsEvaluationPath(order.id, key, stored)) next[key] = stored;
+  }
+  next[kind] = path;
+  return next;
+}
+
 async function signedEvaluation(
   db: Db,
   path: string,
@@ -121,18 +140,19 @@ async function publishEvaluation(
     issued: evaluationIssuedLabel(order.createdAt),
     degreeCount: order.degreeCount ?? 1,
     detectedPages: order.billablePages,
+    brand: "gcs",
   });
   const stamped = await stampFinishedPdf(db, files.clean, {
     orderId: order.id,
     documentType: "evaluation",
   });
-  const cleanPath = evaluationServicePath(order.id, result.kind);
+  const cleanPath = gcsEvaluationPdfPath(order.id, result.kind);
   await uploadObject(db, FINALS_BUCKET, cleanPath, stamped, "application/pdf");
   const stored: EvaluationResult = { ...result, pageCount: files.pageCount };
   const patch: Record<string, unknown> = {
     evaluation_result: stored,
     evaluation_results: [stored],
-    service_files: { ...(order.serviceFiles ?? {}), [result.kind]: cleanPath },
+    service_files: serviceFilesAfterPublish(order, result.kind, cleanPath),
   };
   if (built?.edgeCredentialId) patch.edge_credential_id = built.edgeCredentialId;
   if (built?.edgeGradingScaleId) patch.edge_grading_scale_id = built.edgeGradingScaleId;
@@ -141,10 +161,39 @@ async function publishEvaluation(
   return signedEvaluation(db, cleanPath, files.pageCount, result.kind);
 }
 
+export type GcsEvaluationFile = {
+  kind: EvaluationService;
+  path: string;
+  pageCount: number;
+};
+
 /**
- * Free GCS evaluation. A stored finals PDF is signed and returned.
- * A stored result with no file is rendered again. Otherwise the page text is
- * read as a transcript, then as a diploma when that transcript has no courses.
+ * Sign a GCS evaluation that already uses the GCS logo.
+ * A stored result whose finals path is missing or still the CredPronto file is rendered again.
+ */
+export async function ensureGcsEvaluationPdf(db: Db, order: OrderRecord): Promise<GcsEvaluationFile | null> {
+  const current = currentBrandedFile(order);
+  if (current) return { ...current, pageCount: pageCountFor(order, current.kind) };
+  if (!order.evaluationResult) return null;
+  const published = await publishEvaluation(db, order, order.evaluationResult);
+  return {
+    kind: published.evaluation.kind,
+    path: gcsEvaluationPdfPath(order.id, published.evaluation.kind),
+    pageCount: published.evaluation.pageCount,
+  };
+}
+
+/** Reload path. Reads the order and rewrites a pre-GCS-logo evaluation when the result is stored. */
+export async function refreshStaleGcsEvaluation(db: Db, orderId: string): Promise<GcsEvaluationFile | null> {
+  const order = await getOrderById(db, orderId);
+  if (!order || !isGcsOrder(order)) return null;
+  return ensureGcsEvaluationPdf(db, order);
+}
+
+/**
+ * Free GCS evaluation. A stored GCS-branded finals PDF is signed and returned.
+ * A stored result with no file, or a file that still uses the CredPronto logo, is rendered again.
+ * Otherwise the page text is read as a transcript, then as a diploma when that transcript has no courses.
  */
 export async function evaluateGcsOrder(token: string): Promise<GcsEvaluationPayload> {
   const { db, order } = await orderForToken(token);
@@ -153,14 +202,8 @@ export async function evaluateGcsOrder(token: string): Promise<GcsEvaluationPayl
     throw new HttpError("This translation is not ready to evaluate", 409);
   }
 
-  const existing = storedEvaluationFile(order.serviceFiles);
-  if (existing) {
-    return signedEvaluation(db, existing.path, pageCountFor(order, existing.kind), existing.kind);
-  }
-
-  if (order.evaluationResult) {
-    return publishEvaluation(db, order, order.evaluationResult);
-  }
+  const ready = await ensureGcsEvaluationPdf(db, order);
+  if (ready) return signedEvaluation(db, ready.path, ready.pageCount, ready.kind);
 
   const documents = await listDocuments(db, order.id);
   const documentIds = documents.map((document) => document.id);
