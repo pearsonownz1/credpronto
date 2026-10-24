@@ -265,6 +265,8 @@ export function planDocument(input: {
   size: number;
   measure: Measure;
   hasPhoto: boolean;
+  /** Pushes letter and certificate text down so a letterhead can sit above it. */
+  topInset?: number;
 }): DocumentPlan {
   if (input.kind === "certificate") return planCertificate(input);
   return planLetter(input);
@@ -277,12 +279,13 @@ function planLetter(input: {
   footer: number;
   size: number;
   measure: Measure;
+  topInset?: number;
 }): DocumentPlan {
   const margin = Math.max(54, Math.min(68, input.width * 0.09));
   const maxWidth = input.width - margin * 2;
   const texts: PlanText[] = [];
   const rules: PlanRule[] = [];
-  let y = input.height - margin;
+  let y = input.height - margin - (input.topInset ?? 0);
   const serif = false;
   const size = input.size;
   const leading = size * 1.38;
@@ -490,6 +493,7 @@ function planLabeledCertificate(input: {
   footer: number;
   size: number;
   measure: Measure;
+  topInset?: number;
 }): DocumentPlan {
   const texts: PlanText[] = [];
   const rules: PlanRule[] = [];
@@ -500,7 +504,7 @@ function planLabeledCertificate(input: {
     x: inset,
     y: input.footer + 6,
     w: input.width - inset * 2,
-    h: input.height - input.footer - 6 - 22,
+    h: input.height - input.footer - 6 - 22 - (input.topInset ?? 0),
     radius: 18,
     stroke: 1.6,
   };
@@ -642,6 +646,7 @@ function planCertificate(input: {
   size: number;
   measure: Measure;
   hasPhoto: boolean;
+  topInset?: number;
 }): DocumentPlan {
   if (input.blocks.some((block) => block.type === "kv" || block.type === "fields" || block.type === "table")) {
     return planLabeledCertificate(input);
@@ -655,7 +660,7 @@ function planCertificate(input: {
     x: inset,
     y: input.footer + 6,
     w: input.width - inset * 2,
-    h: input.height - input.footer - 6 - 22,
+    h: input.height - input.footer - 6 - 22 - (input.topInset ?? 0),
     radius: 18,
     stroke: 1.6,
   };

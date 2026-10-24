@@ -154,6 +154,13 @@ function readServices(value: unknown): string[] | null {
   return names.length > 0 ? names : null;
 }
 
+function readOrderBrand(value: unknown): "gcs" | null {
+  if (value == null || value === "") return null;
+  if (value === "credpronto") return null;
+  if (value === "gcs") return "gcs";
+  throw new HttpError("Unknown order brand", 400);
+}
+
 function asText(value: unknown): string | null {
   if (typeof value === "string") {
     const trimmed = value.trim();
@@ -181,6 +188,10 @@ export type DirectOrderFields = {
   utmCampaign: string | null;
   gclid: string | null;
   landingPath: string | null;
+  brand: "gcs" | null;
+  clientName: string | null;
+  sourceLanguage: string | null;
+  targetLanguage: string | null;
 };
 
 function readPreEvaluationId(value: unknown): string | null {
@@ -236,6 +247,10 @@ export function parseDirectOrder(body: unknown): DirectOrderFields {
     utmCampaign: asText(record.utm_campaign),
     gclid: asText(record.gclid),
     landingPath: asText(record.landing_path),
+    brand: readOrderBrand(record.brand),
+    clientName: asText(record.clientName),
+    sourceLanguage: asText(record.sourceLanguage),
+    targetLanguage: asText(record.targetLanguage),
   };
 }
 

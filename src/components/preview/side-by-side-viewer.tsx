@@ -77,7 +77,7 @@ function useIsMobile() {
 
 export type ViewerFocus = { page: number; nonce: number };
 
-export type PreviewChrome = "customer" | "staff" | "readonly";
+export type PreviewChrome = "customer" | "staff" | "readonly" | "gcs";
 
 function showsPurchaseChrome(chrome: PreviewChrome) {
   return chrome === "customer";
@@ -90,6 +90,7 @@ type ViewerProps = {
   focusPage?: ViewerFocus | null;
   onBuy?: (body: CheckoutBody) => void | Promise<void>;
   onCorrect?: (input: { page: number; note: string }) => Promise<void>;
+  onDownload?: () => void | Promise<void>;
   notice?: string;
   noticeTestId?: string;
   /** When the page already started PDFium, skip a second wasm download. */
@@ -138,6 +139,7 @@ function SideBySideEngine({
   focusPage = null,
   onBuy,
   onCorrect,
+  onDownload,
   notice,
   noticeTestId,
   shellLayout,
@@ -187,7 +189,7 @@ function SideBySideEngine({
     [sourceOriginal, sourceTranslation],
   );
 
-  const layout = shellLayout ?? (chrome === "readonly" ? "embedded" : "page");
+  const layout = shellLayout ?? (chrome === "readonly" || chrome === "gcs" ? "embedded" : "page");
   const purchase = showsPurchaseChrome(chrome);
 
   if (error || files.failed) {
@@ -235,6 +237,7 @@ function SideBySideEngine({
         focusPage={focusPage}
         panel={panel}
         onCorrect={onCorrect}
+        onDownload={onDownload}
         notice={notice}
         noticeTestId={noticeTestId}
         onDocumentError={files.recover}
@@ -289,6 +292,7 @@ function ViewerWorkspace({
   focusPage,
   panel,
   onCorrect,
+  onDownload,
   notice,
   noticeTestId,
   onDocumentError,
@@ -299,6 +303,7 @@ function ViewerWorkspace({
   focusPage: ViewerFocus | null;
   panel: AddonPanelState;
   onCorrect?: (input: { page: number; note: string }) => Promise<void>;
+  onDownload?: () => void | Promise<void>;
   notice?: string;
   noticeTestId?: string;
   onDocumentError: () => void;
@@ -733,6 +738,31 @@ function ViewerWorkspace({
               ) : null}
             </div>
             ) : null}
+            {chrome === "gcs" ? (
+            <div className="relative flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                data-testid="flag-correction"
+                className="inline-flex h-[34px] items-center rounded-[var(--cp-radius)] border border-line bg-bg px-3 text-[13px] font-semibold text-ink"
+                onClick={openCorrection}
+              >
+                Flag a correction
+              </button>
+              <button
+                type="button"
+                data-testid="download-certified"
+                className="inline-flex h-[34px] items-center rounded-[var(--cp-radius)] bg-primary px-3 text-[13px] font-semibold text-primary-ink"
+                onClick={() => void onDownload?.()}
+              >
+                Download certified PDF
+              </button>
+              {popover && !isMobile ? (
+                <div className="absolute top-[calc(100%+8px)] right-0 z-30">
+                  {popover}
+                </div>
+              ) : null}
+            </div>
+            ) : null}
           </div>
           {popover && isMobile ? (
             <div className="fixed inset-x-4 bottom-28 z-30">{popover}</div>
@@ -744,9 +774,9 @@ function ViewerWorkspace({
         <DocumentPane
           key={visible}
           role={visible}
-          label={visible === "original" ? "Original" : "Translation"}
+          label={visible === "original" ? "Original" : chrome === "gcs" ? "Certified Translation" : "Translation"}
           subtitle={order[visible].subtitle}
-          watermark={visible === "translation"}
+          watermark={visible === "translation" && chrome !== "gcs"}
           onDocumentError={onDocumentError}
         />
       ))}

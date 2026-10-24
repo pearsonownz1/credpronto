@@ -20,6 +20,8 @@ import {
   listTranslations,
 } from "./db";
 import { recordTranslationFailure, translateOrder } from "./translation";
+import { isGcsOrder } from "./gcs";
+import { confirmFreeGcsQuote } from "./gcs-release";
 import { withQuotedPages } from "./stored-pages";
 import { toCustomerOrder, type CustomerOrder } from "./view";
 import { serviceDb, type Db } from "./storage";
@@ -82,6 +84,7 @@ export async function processOrder(orderId: string, token: string | null = null)
 
   if (order.status === "draft" || (order.status === "failed" && !order.languageConfirmed)) {
     await analyzeOrder(db, order.id, token);
+    await continueFreeGcsOrder(db, order.id, token);
     return;
   }
 
@@ -103,6 +106,21 @@ export async function processOrder(orderId: string, token: string | null = null)
   ) {
     await translateOrder(db, order.id, token);
   }
+}
+
+/** A quoted GCS order skips payment and keeps translating in this same run. */
+async function continueFreeGcsOrder(db: Db, orderId: string, token: string | null): Promise<void> {
+  const fresh = await getOrderById(db, orderId);
+  if (!fresh || !isGcsOrder(fresh)) return;
+  const ready = fresh.status === "quoted" && Boolean(fresh.sourceLanguage);
+  await confirmFreeGcsQuote(db, orderId, {
+    sourceLanguage: fresh.sourceLanguage,
+    quoted: ready,
+    pagesRead: fresh.progress.pagesRead,
+    pagesTotal: fresh.progress.pagesTotal,
+  });
+  if (!ready) return;
+  await translateOrder(db, orderId, token);
 }
 
 /** `after()` work. A thrown translation still leaves status and review_reason. */

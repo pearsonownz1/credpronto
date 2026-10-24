@@ -185,6 +185,35 @@ describe("dashboard server auth", () => {
     expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
   });
 
+  it("rewrites translate.gcs.org onto the free GCS page and leaves the API alone", async () => {
+    vi.stubEnv("CREDPRONTO_MOCK", "");
+    vi.stubEnv("NEXT_PUBLIC_CREDPRONTO_MOCK", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
+
+    const home = await proxy(
+      new NextRequest("https://translate.gcs.org/", {
+        headers: { "x-forwarded-host": "translate.gcs.org" },
+      }),
+    );
+    expect(home.headers.get("x-middleware-rewrite")).toContain("/gcs-translate");
+    expect(home.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+
+    const translate = await proxy(
+      new NextRequest("https://translate.gcs.org/translate", {
+        headers: { "x-forwarded-host": "translate.gcs.org" },
+      }),
+    );
+    expect(translate.headers.get("x-middleware-rewrite")).toContain("/gcs-translate");
+
+    const api = await proxy(
+      new NextRequest("https://translate.gcs.org/api/gcs/pin", {
+        headers: { "x-forwarded-host": "translate.gcs.org" },
+      }),
+    );
+    expect(api.headers.get("x-middleware-rewrite")).toBeNull();
+  });
+
   it("leaves public pages open", async () => {
     vi.stubEnv("CREDPRONTO_MOCK", "");
     vi.stubEnv("NEXT_PUBLIC_CREDPRONTO_MOCK", "");

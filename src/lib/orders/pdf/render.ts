@@ -13,7 +13,8 @@ import {
   type RenderPage,
 } from "./layout";
 import { drawCertificationPage, drawFinalFooter } from "./cover";
-import { applyCredProntoPdfMetadata } from "./metadata";
+import { drawGcsLetterhead, drawGcsPageFooter, embedGcsLetterhead, gcsBodyTopInset, type GcsLetterhead } from "./gcs-cover";
+import { applyCredProntoPdfMetadata, applyPdfMetadata } from "./metadata";
 import { blocksToParagraphs, finalizeBlocks, structurePage } from "./structure";
 
 export type { RenderInput, RenderPage } from "./layout";
@@ -424,24 +425,28 @@ function drawBody(
     certified: boolean;
     serif: SerifFaces | null;
     image: PDFImage | null;
+    topInset?: number;
+    letterhead?: GcsLetterhead | null;
   },
 ): string {
   const { widthPt, heightPt } = pageSize(pageSpec);
   const margin = Math.min(48, widthPt * 0.08, heightPt * 0.08);
   const maxWidth = Math.max(40, widthPt - margin * 2);
   const blocks = blocksFor(pageSpec);
-  const footer = options.certified ? 48 : Math.max(28, margin * 0.7);
+  const footer = options.certified || options.letterhead ? 48 : Math.max(28, margin * 0.7);
   const kind = documentKind({ ...pageSpec, blocks });
+  const topInset = options.topInset ?? 0;
+  if (options.letterhead) drawGcsLetterhead(page, faces.regular, options.letterhead);
   let painted = "";
   if (kind) {
     const measure = (text: string, size: number, style: PlanStyle) =>
       widthPlanned(text, size, style, options.serif, faces.upright, faces.italic);
     const hasPhoto = Boolean(options.image);
     let size = 12;
-    let plan = planDocument({ kind, blocks, width: widthPt, height: heightPt, footer, size, measure, hasPhoto });
+    let plan = planDocument({ kind, blocks, width: widthPt, height: heightPt, footer, size, measure, hasPhoto, topInset });
     while (plan.overflow && size > 8) {
       size -= 0.5;
-      plan = planDocument({ kind, blocks, width: widthPt, height: heightPt, footer, size, measure, hasPhoto });
+      plan = planDocument({ kind, blocks, width: widthPt, height: heightPt, footer, size, measure, hasPhoto, topInset });
     }
     if (plan.frame) drawRounded(page, plan.frame);
     for (const box of plan.boxes) drawRounded(page, box);
@@ -464,7 +469,7 @@ function drawBody(
     let chosenRules: PlanRule[] = [];
     let size = 11;
     while (size >= 8) {
-      const top = heightPt - margin - size;
+      const top = heightPt - margin - size - topInset;
       const laid = layoutBlocks(blocks, faces.upright, faces.italic, size, margin, maxWidth, top);
       chosen = laid.paints;
       chosenRules = laid.rules;
@@ -480,6 +485,14 @@ function drawBody(
     painted = visible.map((paint) => paint.text).join(" ");
   }
 
+  if (options.letterhead) {
+    drawGcsPageFooter(page, faces.regular, {
+      orderId: options.orderId,
+      pageNumber: pageSpec.combinedPageNumber + 1,
+      pageCount: options.translationPages + 1,
+    });
+    return painted;
+  }
   if (options.certified) {
     drawFinalFooter(page, faces.regular, {
       orderId: options.orderId,
@@ -504,10 +517,12 @@ async function renderTranslationPdf(
   watermark: boolean,
 ): Promise<{ bytes: Uint8Array; pageTexts: PaintedPageText[] }> {
   assertContiguousPages(input.pages);
+  const gcs = input.brand === "gcs";
   const ordered = [...input.pages].sort((a, b) => a.combinedPageNumber - b.combinedPageNumber);
   const doc = await PDFDocument.create();
   const pageBlocks = ordered.map((page) => blocksFor(page));
   const faces = await embedFaces(doc, pageBlocks.flat());
+  const letterhead = gcs ? await embedGcsLetterhead(doc) : null;
   const needsSerif = ordered.some((page, index) => documentKind({ ...page, blocks: pageBlocks[index] }) === "certificate");
   const serif = needsSerif ? await embedSerif(doc) : null;
   const images = new Map<number, PDFImage>();
@@ -526,25 +541,29 @@ async function renderTranslationPdf(
     const { widthPt, heightPt } = pageSize(pageSpec);
     const page = doc.addPage([widthPt, heightPt]);
     const pageFaces = faces;
-    const text = drawBody(page, pageFaces, { ...pageSpec, blocks: pageBlocks[index] }, {
+    const blocks = pageBlocks[index];
+    const kind = documentKind({ ...pageSpec, blocks });
+    const text = drawBody(page, pageFaces, { ...pageSpec, blocks }, {
       orderId: input.orderId,
       translationPages: ordered.length,
-      certified: !watermark,
+      certified: !watermark || gcs,
       serif,
       image: images.get(index) ?? null,
+      topInset: gcs ? gcsBodyTopInset(kind) : 0,
+      letterhead,
     });
     pageTexts.push({ number: pageSpec.combinedPageNumber, text });
-    if (watermark) drawWatermark(page, faces.regular, widthPt, heightPt);
+    if (watermark && !gcs) drawWatermark(page, faces.regular, widthPt, heightPt);
   });
 
-  applyCredProntoPdfMetadata(doc);
+  applyPdfMetadata(doc, gcs ? "gcs" : "credpronto");
   return { bytes: await doc.save(), pageTexts };
 }
 
 export async function renderCertificationPdf(input: RenderInput): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   await drawCertificationPage(doc, input);
-  applyCredProntoPdfMetadata(doc);
+  applyPdfMetadata(doc, input.brand === "gcs" ? "gcs" : "credpronto");
   return doc.save();
 }
 
@@ -568,7 +587,11 @@ export async function replaceCoverPage(cleanPdf: Uint8Array, cover: Uint8Array):
  * The preview is produced by its own pass with the watermark drawn into the
  * page content. It is not a copy of the clean file.
  */
-async function prependPdf(cover: Uint8Array, body: Uint8Array): Promise<Uint8Array> {
+async function prependPdf(
+  cover: Uint8Array,
+  body: Uint8Array,
+  brand?: RenderInput["brand"],
+): Promise<Uint8Array> {
   const merged = await PDFDocument.create();
   const coverDoc = await PDFDocument.load(cover);
   const bodyDoc = await PDFDocument.load(body);
@@ -577,11 +600,22 @@ async function prependPdf(cover: Uint8Array, body: Uint8Array): Promise<Uint8Arr
     ...(await merged.copyPages(bodyDoc, bodyDoc.getPageIndices())),
   ];
   for (const page of pages) merged.addPage(page);
-  applyCredProntoPdfMetadata(merged);
+  applyPdfMetadata(merged, brand === "gcs" ? "gcs" : "credpronto");
   return merged.save();
 }
 
 export async function renderOrderPdfs(input: RenderInput): Promise<RenderedFiles> {
+  if (input.brand === "gcs") {
+    const certification = await renderCertificationPdf(input);
+    const cleanBody = await renderTranslationPdf(input, false);
+    const cleanTranslation = await prependPdf(certification, cleanBody.bytes, "gcs");
+    return {
+      cleanTranslation,
+      watermarkedPreview: cleanTranslation,
+      certification,
+      pageTexts: cleanBody.pageTexts,
+    };
+  }
   const [cleanPass, previewPass] = translationRenderPasses();
   const certification = await renderCertificationPdf(input);
   const cleanBody = await renderTranslationPdf(input, cleanPass.watermark);

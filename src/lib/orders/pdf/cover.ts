@@ -267,6 +267,11 @@ export function drawFinalFooter(
 }
 
 export async function drawCertificationPage(doc: PDFDocument, input: RenderInput): Promise<void> {
+  if (input.brand === "gcs") {
+    const { drawGcsCertificationPage } = await import("./gcs-cover");
+    await drawGcsCertificationPage(doc, input);
+    return;
+  }
   const cover = resolveCover(input);
   const sample = [
     cover.clientName,
