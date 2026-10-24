@@ -134,10 +134,18 @@ describe("grade scales", () => {
     expect(credentialWasPassed(decision)).toBe(false);
   });
 
-  it("a passed Bac with sub-10 subjects gives D's and no F's, and keeps the GPA", () => {
+  it("a passed Bac condones only 8–9.99 and keeps the computed GPA", () => {
     expect(credentialWasPassed("Admis")).toBe(true);
     expect(credentialWasPassed("Passed")).toBe(true);
-    expect(GRADE_SCALE_20).toContain("Below 10 is D (1.0) when the credential was passed");
+    expect(GRADE_SCALE_20).toContain("8–9.99 is D (1.0) when the credential was passed");
+    expect(GRADE_SCALE_20).toContain("below 8 is F (0)");
+    expect(mapLocalGrade("9.5", "20", { credentialPassed: true })).toEqual({ usGrade: "D", points: 1 });
+    expect(mapLocalGrade("8", "20", { credentialPassed: true })).toEqual({ usGrade: "D", points: 1 });
+    expect(mapLocalGrade("8.4", "20", { credentialPassed: true })).toEqual({ usGrade: "D", points: 1 });
+    expect(mapLocalGrade("7.99", "20", { credentialPassed: true })).toEqual({ usGrade: "F", points: 0 });
+    expect(mapLocalGrade("7.5", "20", { credentialPassed: true })).toEqual({ usGrade: "F", points: 0 });
+    expect(mapLocalGrade("6", "20", { credentialPassed: true })).toEqual({ usGrade: "F", points: 0 });
+    expect(mapLocalGrade("9.5", "20", { credentialPassed: false })).toEqual({ usGrade: "F", points: 0 });
     const scored = scoreCourses(
       [
         { originalName: "Mathématiques", englishName: "Mathematics", localCredits: 2, localGrade: "8" },
@@ -213,6 +221,11 @@ describe("grade scales", () => {
     expect(mapEdgeGrade("14.2", CAMEROON_20)).toEqual({ usGrade: "B+", points: 3.3 });
     expect(mapEdgeGrade("9.5", CAMEROON_20)).toEqual({ usGrade: "F", points: 0 });
     expect(mapEdgeGrade("9.5", CAMEROON_20, { credentialPassed: true })).toEqual({ usGrade: "D", points: 1 });
+    expect(mapEdgeGrade("8", CAMEROON_20, { credentialPassed: true })).toEqual({ usGrade: "D", points: 1 });
+    expect(mapEdgeGrade("8.4", CAMEROON_20, { credentialPassed: true })).toEqual({ usGrade: "D", points: 1 });
+    expect(mapEdgeGrade("7.5", CAMEROON_20, { credentialPassed: true })).toEqual({ usGrade: "F", points: 0 });
+    expect(mapEdgeGrade("6.5", CAMEROON_20, { credentialPassed: true })).toEqual({ usGrade: "F", points: 0 });
+    expect(mapEdgeGrade("6", CAMEROON_20, { credentialPassed: true })).toEqual({ usGrade: "F", points: 0 });
     expect(mapEdgeGrade("12.5%", CAMEROON_20)).toBeNull();
     expect(mapEdgeGrade("B", CAMEROON_20)).toBeNull();
     expect(mapEdgeGrade("21", CAMEROON_20)).toBeNull();
@@ -241,7 +254,7 @@ describe("grade scales", () => {
     ).toBe("cm-francophone");
   });
 
-  it("floors a passed 10.00/20 Cameroon Bac at a 2.00 GPA and scores 12.5, 12.6, and 12 as B", () => {
+  it("scores the passed Cameroon Bac at the computed GPA, with D only from 8 through 9.99", () => {
     const courses = CAMEROON_BAC.map(([originalName, localCredits, localGrade]) => ({
       originalName,
       englishName: originalName,
@@ -256,9 +269,13 @@ describe("grade scales", () => {
     expect(byGrade.get("12")).toBe("B");
     expect(byGrade.get("11.33")).toBe("C");
     expect(byGrade.get("9.5")).toBe("D");
-    expect(scored!.courses.some((course) => course.usGrade === "F")).toBe(false);
+    expect(byGrade.get("8.4")).toBe("D");
+    expect(byGrade.get("8.5")).toBe("D");
+    expect(byGrade.get("7.5")).toBe("F");
+    expect(byGrade.get("6.5")).toBe("F");
+    expect(byGrade.get("6")).toBe("F");
     expect(scored!.totalHours).toBe(30);
-    expect(scored!.gpa).toBe(2);
+    expect(scored!.gpa).toBe(1.6);
     expect(scored!.usedEdge).toBe(true);
   });
 });

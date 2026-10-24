@@ -119,13 +119,13 @@ describe("course extract from the coefficient transcript", () => {
       "B",
       "C",
       "C",
-      "D",
+      "F",
       "B",
       "D",
-      "D",
-      "D",
+      "F",
+      "F",
     ]);
-    expect(result.gpa).toBe(2);
+    expect(result.gpa).toBe(1.6);
     expect(result.applicant).toBe("KOUAMOU NANA MYRTHE ARISTIDE");
   });
 

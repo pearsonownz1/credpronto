@@ -2,7 +2,7 @@ export const GRADE_SCALE_10 =
   "Grades are on a 10-point scale. 9.0–10 is A (4.0), 8.0–8.9 is B (3.0), 7.0–7.9 is C (2.0), 6.0–6.9 is D (1.0), and below 6 is F (0).";
 
 export const GRADE_SCALE_20 =
-  "Grades are on a 20-point scale with 10 as the pass mark. 16–20 is A (4.0), 14–15.99 is B+ (3.3), 12–13.99 is B (3.0), 10–11.99 is C (2.0). Below 10 is D (1.0) when the credential was passed, and F (0) when the credential was failed.";
+  "Grades are on a 20-point scale with 10 as the pass mark. 16–20 is A (4.0), 14–15.99 is B+ (3.3), 12–13.99 is B (3.0), 10–11.99 is C (2.0), 8–9.99 is D (1.0) when the credential was passed, and below 8 is F (0).";
 
 /** Default pass mark for a 20-point system (France, Cameroon and other French-model systems). */
 export const DEFAULT_PASS_MARK_20 = 10;
@@ -185,8 +185,8 @@ function foldDecision(result: string | null | undefined): string {
 /**
  * Maps a printed mark to a U.S. letter. For 20-point systems the pass line comes from the
  * system's scale (passMark, default 10): any mark at or above it is a passing letter.
- * A mark under that line is D (1.0) when the credential overall was passed, and F (0)
- * when the credential was failed or the document does not state a result.
+ * On a passed credential, 8–9.99 is a condoned D (1.0). A mark under 8 is F (0), and so is
+ * 8–9.99 when the credential was failed or the document does not state a result.
  */
 export function mapLocalGrade(
   localGrade: string,
@@ -237,15 +237,18 @@ export function mapLocalGrade(
   }
   if (grade > 20) return null;
   const pass = validPassMark(options?.passMark);
-  const below = options?.credentialPassed === true ? (["D", 1] as const) : (["F", 0] as const);
-  // 12–13.99 is B when the pass line is 12 or lower. A higher pass line makes the pass mark itself a C.
-  const rows: Array<[number, string, number]> = [
-    [Math.max(16, pass), "A", 4],
-    [Math.max(14, pass), "B+", 3.3],
-  ];
-  if (pass <= 12) rows.push([12, "B", 3]);
-  rows.push([pass, "C", 2], [0, below[0], below[1]]);
-  return band(grade, rows);
+  if (grade >= pass) {
+    // 12–13.99 is B when the pass line is 12 or lower. A higher pass line makes the pass mark itself a C.
+    const rows: Array<[number, string, number]> = [
+      [Math.max(16, pass), "A", 4],
+      [Math.max(14, pass), "B+", 3.3],
+    ];
+    if (pass <= 12) rows.push([12, "B", 3]);
+    rows.push([pass, "C", 2]);
+    return band(grade, rows);
+  }
+  if (grade >= 8 && grade < 10 && options?.credentialPassed === true) return { usGrade: "D", points: 1 };
+  return { usGrade: "F", points: 0 };
 }
 
 function validPassMark(value: number | undefined): number {
@@ -276,13 +279,6 @@ export type EdgeGradePoints = {
 
 const EDGE_RANGE = /^\s*(\d+(?:[.,]\d+)?)\s*(?:[-–—]|to)\s*(\d+(?:[.,]\d+)?)\s*$/i;
 
-/**
- * A passed Francophone exam can print 10.00/20 after a sports bonus that is not one of the
- * scored courses (300/30 versus about 297/30). An average within 0.10 of the pass mark
- * still keeps the compensated C.
- */
-const PASSED_AVERAGE_MARGIN = 0.1;
-
 export function mapEdgeGrade(
   localGrade: string,
   rows: readonly EdgeGradePoints[],
@@ -291,7 +287,7 @@ export function mapEdgeGrade(
   const key = gradeKey(localGrade);
   if (!key) return null;
   const exact = rows.find((item) => gradeKey(item.indigenousGrade) === key);
-  if (exact) return condonedPass(pointsFromUsEquivalent(exact.usEquivalent), options);
+  if (exact) return pointsFromUsEquivalent(exact.usEquivalent);
 
   const grade = plainNumber(localGrade);
   if (grade == null) return null;
@@ -304,7 +300,7 @@ export function mapEdgeGrade(
 
   const matched = matchNumericRange(grade, ranges);
   if (!matched) return null;
-  return condonedPass(pointsFromUsEquivalent(matched.row.usEquivalent), options);
+  return condonedRangePass(pointsFromUsEquivalent(matched.row.usEquivalent), grade, options);
 }
 
 export function scoreCourses(
@@ -344,13 +340,7 @@ export function scoreCourses(
   if (unmapped > Math.floor(courses.length * MAX_UNMAPPED_SHARE)) return null;
   const totalHours = round2(scored.reduce((sum, course) => sum + course.usSemesterHours, 0));
   if (totalHours <= 0 || gradedHours <= 0) return null;
-  let gpa = round2(points / gradedHours);
-  if (scale === "20" && options?.credentialPassed === true) {
-    const average = weightedLocalAverage(courses, noCredits);
-    const pass = validPassMark(options.passMark);
-    if (average != null && round2(average + PASSED_AVERAGE_MARGIN) >= pass) gpa = Math.max(gpa, 2);
-  }
-  return { courses: scored, totalHours, gpa, usedEdge };
+  return { courses: scored, totalHours, gpa: round2(points / gradedHours), usedEdge };
 }
 
 function plainNumber(value: string): number | null {
@@ -385,28 +375,26 @@ function matchNumericRange<T extends { low: number; high: number }>(grade: numbe
   return matched;
 }
 
-/** F on a passed credential is a condoned D, matching the Francophone note for sub-10 marks. */
-function condonedPass(mapped: MappedGrade | null, options?: GradeMapOptions): MappedGrade | null {
+/**
+ * An F range such as `0 — 9` condones only 8–9.99 on a passed credential.
+ * A mark under 8 stays F.
+ */
+function condonedRangePass(
+  mapped: MappedGrade | null,
+  grade: number,
+  options?: GradeMapOptions,
+): MappedGrade | null {
   if (!mapped) return null;
-  if (mapped.usGrade === "F" && mapped.points === 0 && options?.credentialPassed === true) {
+  if (
+    mapped.usGrade === "F" &&
+    mapped.points === 0 &&
+    options?.credentialPassed === true &&
+    grade >= 8 &&
+    grade < 10
+  ) {
     return { usGrade: "D", points: 1 };
   }
   return mapped;
-}
-
-function weightedLocalAverage(courses: readonly RawCourse[], noCredits: boolean): number | null {
-  let weight = 0;
-  let total = 0;
-  for (const course of courses) {
-    const grade = plainNumber(course.localGrade);
-    if (grade == null) continue;
-    const credits = noCredits ? 1 : course.localCredits;
-    if (!Number.isFinite(credits) || credits <= 0) continue;
-    weight += credits;
-    total += credits * grade;
-  }
-  if (weight <= 0) return null;
-  return total / weight;
 }
 
 function gradeKey(value: string): string {

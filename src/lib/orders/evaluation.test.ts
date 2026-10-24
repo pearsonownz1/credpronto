@@ -281,7 +281,7 @@ describe("assemble evaluation", () => {
     ).toBeNull();
   });
 
-  it("gives a passed Bac D for a subject under 10 and still reports the GPA", () => {
+  it("gives a passed Bac D only for 8–9.99 and keeps a GPA under 2.00", () => {
     const result = assembleCourse({
       applicant: "Awa Ngo",
       institution: "Lycée de Yaoundé",
@@ -294,15 +294,15 @@ describe("assemble evaluation", () => {
           year: "2024",
           courses: [
             { originalName: "Mathématiques", englishName: "Mathematics", localCredits: 2, localGrade: "8" },
+            { originalName: "Anglais", englishName: "English", localCredits: 2, localGrade: "7.5" },
             { originalName: "Français", englishName: "French", localCredits: 2, localGrade: "12" },
           ],
         },
       ],
     });
-    expect(result).toMatchObject({ kind: "course_by_course", gpa: 2, gradeScale: GRADE_SCALE_20 });
+    expect(result).toMatchObject({ kind: "course_by_course", gpa: 1.33, gradeScale: GRADE_SCALE_20 });
     if (result?.kind !== "course_by_course") return;
-    expect(result.years[0]?.courses.map((course) => course.usGrade)).toEqual(["D", "B"]);
-    expect(result.years[0]?.courses.some((course) => course.usGrade === "F")).toBe(false);
+    expect(result.years[0]?.courses.map((course) => course.usGrade)).toEqual(["D", "F", "B"]);
   });
 
   it("gives F for a subject under 10 when the credential was failed", () => {
