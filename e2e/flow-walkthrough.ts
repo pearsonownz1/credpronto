@@ -44,7 +44,7 @@ export async function walkCustomerFlow(
   await page.getByTestId("nav-get-started").filter({ visible: true }).click();
   await expect(page).toHaveURL(/\/translate$/);
   await expect(shown(page, "upload-drop")).toBeVisible();
-  await expect(shown(page, "email")).toHaveValue("maria.ruiz@email.com");
+  await expect(shown(page, "email")).toHaveCount(0);
   await expect(shown(page, "preview-email")).toHaveCount(0);
   await expect(shown(page, "fix-email")).toHaveCount(0);
   await expect(shown(page, "file-list")).toContainText("acta-nacimiento.pdf");
@@ -59,7 +59,9 @@ export async function walkCustomerFlow(
   const card = page.getByTestId("create-account-card");
   await expect(card.getByRole("heading", { name: "Create your account" })).toBeVisible();
   await expect(card.getByText("Track your order and download your files anytime.")).toBeVisible();
-  await expect(card.getByRole("textbox", { name: "Email", exact: true })).toHaveValue("maria.ruiz@email.com");
+  const accountEmailField = card.getByRole("textbox", { name: "Email", exact: true });
+  await expect(accountEmailField).toHaveValue("");
+  await accountEmailField.fill("maria.ruiz@email.com");
   await expect(card.getByText("Check your email to confirm your account. Then sign in.")).toHaveCount(0);
   await expect(card.getByText("8+ characters")).toBeVisible();
   await expect(card.getByText("Looks good")).toHaveCount(0);

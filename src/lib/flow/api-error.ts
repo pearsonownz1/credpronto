@@ -1,10 +1,12 @@
 export class FlowApiError extends Error {
   status: number;
+  readonly code: string | null;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code: string | null = null) {
     super(message);
     this.name = "FlowApiError";
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -32,6 +34,15 @@ export function readApiError(body: unknown): string | null {
     return record.message.trim().slice(0, 300);
   }
   return null;
+}
+
+/** Top-level `code` on an API error body, such as `already_ordered`. */
+export function readApiErrorCode(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  const code = (body as { code?: unknown }).code;
+  if (typeof code !== "string") return null;
+  const trimmed = code.trim();
+  return trimmed || null;
 }
 
 /** A message safe to show. Never the bare fallback "Request failed". */

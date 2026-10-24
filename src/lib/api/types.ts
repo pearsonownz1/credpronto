@@ -68,6 +68,8 @@ export type StaffPage = {
   pageNumber: number;
   sourceText: string | null;
   paragraphs: string[];
+  /** Source line index for each paragraph, when the translation stores or derives one. */
+  sourceIndexes?: number[];
 };
 
 export type StaffCorrection = {
@@ -129,6 +131,19 @@ export type StaffDetail = {
     service: "diploma" | "course_by_course";
     uploaded: boolean;
     fileName?: string;
+    /** Short-lived staff link for a stored evaluation PDF. */
+    url?: string;
+  }>;
+  /** Structured text for each stored evaluation. Absent until the order payload includes it. */
+  evaluations?: Array<{
+    service: "diploma" | "course_by_course";
+    heading: string;
+    lines: string[];
+  }>;
+  /** Reasons from the last paid evaluation run. Empty once that service is stored. */
+  evaluationFailures?: Array<{
+    service: "diploma" | "course_by_course";
+    reason: string;
   }>;
   equivalencyCredentials: Array<{
     credential: string;
@@ -172,6 +187,8 @@ export type StaffDetail = {
     mail: {
       status: "pending" | "shipped";
       trackingNumber: string | null;
+      carrier: string | null;
+      shippedAt: string | null;
       address: {
         name: string;
         line1: string;
@@ -182,7 +199,7 @@ export type StaffDetail = {
         country: "US";
       } | null;
     } | null;
-    notarization: { status: "pending" | "done" } | null;
+    notarization: { status: "pending" | "notarized" | "done" } | null;
   };
 };
 

@@ -15,6 +15,7 @@ import * as dispatch from "./translation-dispatch";
 import { QA_REVIEW_REASON } from "./qa";
 import * as email from "./email";
 import { runTranslationAssemble, translateOrder } from "./translation";
+import * as verification from "./verification";
 
 const orderId = "28492f38-3333-4333-8333-333333333333";
 const dispatchFailure = "Translation dispatch failed (401): unauthorized";
@@ -433,6 +434,7 @@ describe("retry a translation that failed to dispatch", () => {
       ],
     });
     vi.spyOn(storage, "uploadObject").mockResolvedValue(undefined);
+    vi.spyOn(verification, "stampFinishedPdf").mockImplementation(async (_db, bytes) => bytes);
   });
 
   it("resets the order, starts a new version, ignores stale jobs, and lets assembly mark the preview ready", async () => {

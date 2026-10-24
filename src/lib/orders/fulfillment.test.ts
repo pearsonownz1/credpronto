@@ -32,7 +32,7 @@ describe("fulfillment tasks", () => {
         notarizationStatus: "pending",
       }),
     ).toEqual({
-      mail: { status: "pending", trackingNumber: null, address },
+      mail: { status: "pending", trackingNumber: null, carrier: null, shippedAt: null, address },
       notarization: { status: "pending" },
     });
   });

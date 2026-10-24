@@ -4,6 +4,7 @@ import {
   fallbackReadingPercent,
   liveReadingPercent,
   progressForOrder,
+  publicOrderProgress,
   readingPresentation,
   readOrderProgress,
   uploadFallbackPercent,
@@ -148,6 +149,27 @@ describe("reading presentation", () => {
   });
 
   it("requires integer page counts for a stored progress value", () => {
+    expect(
+      asOrderProgress({
+        step: "done",
+        pagesRead: 2,
+        pagesTotal: 2,
+        evaluationFailures: [{ service: "course_by_course", reason: "The transcript could not be read." }],
+      }),
+    ).toEqual({
+      step: "done",
+      pagesRead: 2,
+      pagesTotal: 2,
+      evaluationFailures: [{ service: "course_by_course", reason: "The transcript could not be read." }],
+    });
+    expect(
+      publicOrderProgress({
+        step: "done",
+        pagesRead: 2,
+        pagesTotal: 2,
+        evaluationFailures: [{ service: "course_by_course", reason: "The transcript could not be read." }],
+      }),
+    ).toEqual({ step: "done", pagesRead: 2, pagesTotal: 2 });
     expect(asOrderProgress({ step: "reading", pagesRead: 6, pagesTotal: 9 })).toEqual({
       step: "reading",
       pagesRead: 6,

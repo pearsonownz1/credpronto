@@ -1,14 +1,16 @@
 import { HttpError } from "./errors";
-import type { ShippingAddress } from "./types";
+import type { NotarizationStatus, ShippingAddress } from "./types";
 
 export type MailTask = {
   status: "pending" | "shipped";
   trackingNumber: string | null;
+  carrier: string | null;
+  shippedAt: string | null;
   address: ShippingAddress | null;
 };
 
 export type NotarizationTask = {
-  status: "pending" | "done";
+  status: NotarizationStatus;
 };
 
 export type OrderFulfillment = {
@@ -19,14 +21,18 @@ export type OrderFulfillment = {
 export function fulfillmentFor(order: {
   mailStatus: "pending" | "shipped" | null;
   mailTracking: string | null;
+  mailCarrier?: string | null;
+  mailShippedAt?: string | null;
   shippingAddress: ShippingAddress | null;
-  notarizationStatus: "pending" | "done" | null;
+  notarizationStatus: NotarizationStatus | null;
 }): OrderFulfillment {
   return {
     mail: order.mailStatus
       ? {
           status: order.mailStatus,
           trackingNumber: order.mailTracking,
+          carrier: order.mailCarrier ?? null,
+          shippedAt: order.mailShippedAt ?? null,
           address: order.shippingAddress,
         }
       : null,

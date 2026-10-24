@@ -12,6 +12,7 @@ import {
 } from "./evaluation-review";
 import * as staff from "./staff";
 import * as storage from "./storage";
+import * as verification from "./verification";
 import type { DeliveryRecord, OrderRecord, PaymentRecord } from "./types";
 import * as webhooks from "./webhook-delivery";
 
@@ -107,6 +108,7 @@ describe("deliverEvaluationReport", () => {
     vi.spyOn(db, "customerEmail").mockResolvedValue("ada@example.com");
     vi.spyOn(finalEmail, "sendFinalCustomerEmail").mockResolvedValue({ sent: true, skipped: false });
     vi.spyOn(storage, "uploadObject").mockResolvedValue(undefined);
+    vi.spyOn(verification, "stampFinishedPdf").mockImplementation(async (_db, bytes) => bytes);
     vi.spyOn(webhooks, "notifyOrder").mockResolvedValue(undefined);
     vi.spyOn(webhooks, "notifyLifecycle").mockResolvedValue(undefined);
   });
@@ -119,14 +121,20 @@ describe("deliverEvaluationReport", () => {
       body,
     });
 
+    const stamped = Uint8Array.from([9, 8, 7]);
+    vi.mocked(verification.stampFinishedPdf).mockResolvedValue(stamped);
     const result = await deliverEvaluationReport(orderId, request);
 
     expect(result).toEqual({ status: "delivered", email: "sent" });
+    expect(verification.stampFinishedPdf).toHaveBeenCalledWith(expect.anything(), expect.any(Uint8Array), {
+      orderId,
+      documentType: "evaluation",
+    });
     expect(storage.uploadObject).toHaveBeenCalledWith(
       expect.anything(),
       "finals",
       `${orderId}/evaluation.pdf`,
-      expect.any(Uint8Array),
+      stamped,
       "application/pdf",
     );
     expect(db.updateOrder).toHaveBeenCalledWith(expect.anything(), orderId, {
@@ -286,6 +294,7 @@ describe("deliverEvaluationReport", () => {
       expect.any(Uint8Array),
       "application/pdf",
     );
+    expect(verification.stampFinishedPdf).not.toHaveBeenCalled();
     expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
 
     const second = new FormData();
@@ -294,6 +303,11 @@ describe("deliverEvaluationReport", () => {
     await expect(
       deliverEvaluationReport(orderId, new Request("https://credpronto.com", { method: "POST", body: second })),
     ).resolves.toEqual({ status: "delivered", email: "sent" });
+    expect(verification.stampFinishedPdf).toHaveBeenCalledTimes(1);
+    expect(verification.stampFinishedPdf).toHaveBeenCalledWith(expect.anything(), expect.any(Uint8Array), {
+      orderId,
+      documentType: "evaluation",
+    });
     expect(storage.uploadObject).toHaveBeenCalledWith(
       expect.anything(),
       "finals",

@@ -1,7 +1,56 @@
 import type { Page } from "@playwright/test";
 
+export type ClioStub = {
+  connected?: boolean;
+  /** When set to 400 or higher, status returns this status and `statusError`. */
+  statusStatus?: number;
+  statusError?: string;
+  disconnectStatus?: number;
+  disconnectError?: string;
+};
+
 /** Browser stubs for the integrations page. Sample rows stay in the test, not the app. */
-export async function stubIntegrations(page: Page) {
+export async function stubIntegrations(page: Page, clio: ClioStub = {}) {
+  let connected = clio.connected ?? false;
+  await page.route("**/api/integrations/clio/**", async (route) => {
+    const url = new URL(route.request().url());
+    const method = route.request().method();
+    if (url.pathname === "/api/integrations/clio/status" && method === "GET") {
+      if (clio.statusStatus && clio.statusStatus >= 400) {
+        await route.fulfill({
+          status: clio.statusStatus,
+          json: { error: clio.statusError ?? "Clio storage is not ready" },
+        });
+        return;
+      }
+      await route.fulfill({
+        json: connected ? { connected: true, region: "us" } : { connected: false },
+      });
+      return;
+    }
+    if (url.pathname === "/api/integrations/clio/disconnect" && method === "POST") {
+      if (clio.disconnectStatus && clio.disconnectStatus >= 400) {
+        await route.fulfill({
+          status: clio.disconnectStatus,
+          json: { error: clio.disconnectError ?? "Clio could not be disconnected." },
+        });
+        return;
+      }
+      connected = false;
+      await route.fulfill({ json: { connected: false } });
+      return;
+    }
+    if (url.pathname === "/api/integrations/clio/connect" && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: "<!doctype html><title>Clio connect</title>",
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
   await page.route("**/api/me/**", async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;

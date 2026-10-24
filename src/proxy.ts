@@ -29,10 +29,22 @@ function signInRedirect(request: NextRequest): NextResponse {
   return response;
 }
 
+function isVerifyPath(pathname: string): boolean {
+  return pathname === "/verify" || pathname.startsWith("/verify/");
+}
+
 function withPrivateRobots(response: NextResponse, pathname: string): NextResponse {
-  if (pathname === "/preview" || pathname.startsWith("/preview/") || pathname === "/order" || pathname.startsWith("/order/")) {
+  if (
+    pathname === "/preview" ||
+    pathname.startsWith("/preview/") ||
+    pathname === "/order" ||
+    pathname.startsWith("/order/") ||
+    isVerifyPath(pathname)
+  ) {
     response.headers.set("X-Robots-Tag", ROBOTS_NOINDEX);
   }
+  // The page is keyed by an access token and then loads a short-lived PDF link.
+  if (isVerifyPath(pathname)) response.headers.set("Cache-Control", PRIVATE_NO_STORE);
   return response;
 }
 

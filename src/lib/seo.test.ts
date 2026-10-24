@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import robots from "@/app/robots";
 import sitemap from "@/app/sitemap";
 import { EVALUATIONS_CANONICAL_URL } from "@/lib/evaluations/catalog";
+import { PRE_EVALUATION_CANONICAL } from "@/lib/pre-evaluation/handoff";
 import { FAQ_CANONICAL, GUIDES_CANONICAL } from "@/lib/content/faq";
 import {
   API_DOCS_CANONICAL,
   HOME_CANONICAL,
+  PREVAL_CANONICAL,
   ROBOTS_NOINDEX,
   SITE_ORIGIN,
   TRANSLATE_CANONICAL,
@@ -20,7 +22,7 @@ describe("crawl policy", () => {
       rules: {
         userAgent: "*",
         allow: "/",
-        disallow: ["/preview/", "/order/", "/dashboard", "/admin", "/api"],
+        disallow: ["/preview/", "/order/", "/pre-evaluation/", "/verify/", "/dashboard", "/admin", "/api"],
       },
       sitemap: `${SITE_ORIGIN}/sitemap.xml`,
     });
@@ -31,6 +33,8 @@ describe("crawl policy", () => {
       HOME_CANONICAL,
       TRANSLATE_CANONICAL,
       EVALUATIONS_CANONICAL_URL,
+      PREVAL_CANONICAL,
+      PRE_EVALUATION_CANONICAL,
       GUIDES_CANONICAL,
       FAQ_CANONICAL,
       "https://www.credpronto.com/privacy",
@@ -45,6 +49,8 @@ describe("crawl policy", () => {
       "https://www.credpronto.com/guides/preview-your-translation-before-you-pay",
       "https://www.credpronto.com/guides/prepare-a-document-for-translation",
     ]);
+    expect(sitemap().some((entry) => entry.url === PREVAL_CANONICAL)).toBe(true);
+    expect(sitemap().some((entry) => entry.url.includes("/pre-evaluation/"))).toBe(false);
     expect(sitemap().some((entry) => entry.url.includes("/blog"))).toBe(false);
     expect(
       sitemap().some((entry) =>
@@ -74,6 +80,28 @@ describe("crawl policy", () => {
         source: "/order/:path*",
         headers: [{ key: "X-Robots-Tag", value: ROBOTS_NOINDEX }],
       },
+      {
+        source: "/pre-evaluation/:id",
+        headers: [{ key: "X-Robots-Tag", value: ROBOTS_NOINDEX }],
+      },
+      {
+        source: "/verify",
+        headers: [
+          { key: "X-Robots-Tag", value: ROBOTS_NOINDEX },
+          { key: "Cache-Control", value: "private, no-store" },
+        ],
+      },
+      {
+        source: "/verify/:path*",
+        headers: [
+          { key: "X-Robots-Tag", value: ROBOTS_NOINDEX },
+          { key: "Cache-Control", value: "private, no-store" },
+        ],
+      },
     ]);
+  });
+
+  it("leaves verification links out of the sitemap", () => {
+    expect(sitemap().some((entry) => entry.url.includes("/verify"))).toBe(false);
   });
 });

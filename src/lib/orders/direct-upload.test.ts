@@ -192,9 +192,80 @@ describe("document rows", () => {
       },
     ]);
   });
+
+  it("stores a page count when the server already counted the file", async () => {
+    const inserts: Array<Record<string, unknown>> = [];
+    const db = {
+      from(table: string) {
+        return {
+          insert(row: Record<string, unknown>) {
+            inserts.push({ table, ...row });
+            return { error: null };
+          },
+        };
+      },
+    };
+    await storeReferencedFiles(db as unknown as Db, SESSION, [
+      {
+        id: fileId(1),
+        path: objectPath(1, "diploma.pdf"),
+        filename: "diploma.pdf",
+        mime: "application/pdf",
+        size: 42,
+        pageCount: 2,
+      },
+    ]);
+    expect(inserts[0]).toMatchObject({ page_count: 2, position: 1 });
+  });
 });
 
 describe("direct order body", () => {
+  it("accepts a pre-evaluation with no other file and still rejects a client path", () => {
+    const token = "a".repeat(43);
+    expect(parseDirectOrder({ preEvaluationId: ` ${token} `, files: [] })).toEqual(
+      expect.objectContaining({ preEvaluationId: token, sessionId: "", files: [] }),
+    );
+    expect(parseDirectOrder({ preEvaluationId: token })).toMatchObject({ files: [], preEvaluationId: token });
+    expect(() => parseDirectOrder({ files: [] })).toThrow(/at least one file/);
+    expect(() => parseDirectOrder({})).toThrow(/at least one file/);
+    expect(() => parseDirectOrder({ preEvaluationId: 12 })).toThrow(HttpError);
+    expect(() =>
+      parseDirectOrder({
+        preEvaluationId: token,
+        pageCount: 4,
+      }),
+    ).toThrow(/Pages are counted/);
+    expect(() =>
+      parseDirectOrder({
+        preEvaluationId: token,
+        sessionId: "not-a-session",
+      }),
+    ).toThrow(/Unknown upload/);
+    expect(() =>
+      parseDirectOrder({
+        preEvaluationId: token,
+        sessionId: SESSION,
+        storagePath: "pre-evaluations/evil/secret.pdf",
+        files: [
+          {
+            path: "pre-evaluations/evil/secret.pdf",
+            filename: "secret.pdf",
+            mime: "application/pdf",
+            size: 10,
+          },
+        ],
+      }),
+    ).toThrow(/outside this upload/);
+  });
+
+  it("accepts a guest quote with no email", () => {
+    const parsed = parseDirectOrder({
+      sessionId: SESSION,
+      files: [{ path: objectPath(1), filename: "notes.pdf", mime: "application/pdf", size: 10 }],
+    });
+    expect(parsed.email).toBeNull();
+  });
+
   it("rejects a multipart body", async () => {
     const request = new Request("https://credpronto.test/api/orders", { method: "POST", body: "email=a" });
     await expect(readDirectOrder(request)).rejects.toThrow("Expected a JSON body");

@@ -10,6 +10,12 @@ test("phone integrations opens from the account menu", async ({ page }) => {
   await expect(page).toHaveURL(/\/dashboard\/integrations$/);
   await expect(page.getByRole("button", { name: "Close menu" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Integrations" })).toBeVisible();
+  await expect(page.getByTestId("integration-clio")).toContainText(
+    "Order certified translations from a Clio matter and save them back to it.",
+  );
+  await expect(page.getByTestId("integration-clio")).not.toContainText("Coming soon");
+  await expect(page.getByTestId("clio-connect")).toHaveAttribute("href", "/api/integrations/clio/connect");
+  await expect(page.getByTestId("clio-connect")).toHaveText("Connect");
   await expect(page.getByTestId("create-key")).toBeVisible();
   await expect(page.getByTestId("event-order.quoted")).toBeVisible();
   await expect(page.getByTestId("event-order.preview_ready")).toBeVisible();

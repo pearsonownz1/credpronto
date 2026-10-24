@@ -1,4 +1,6 @@
 import { adminOrderFields } from "@/lib/orders/admin-order-fields";
+import { parseEvaluationResult } from "@/lib/orders/evaluation-price";
+import { collectedEvaluationResults, evaluationSummaries, type EvaluationSummary } from "@/lib/orders/evaluation-summary";
 import { fulfillmentState } from "@/lib/orders/release-decision";
 import { sourceTextForDisplay } from "@/lib/orders/source-text";
 import type {
@@ -187,7 +189,44 @@ function paragraphsOf(value: unknown): string[] {
   if (!value || typeof value !== "object") return [];
   const paragraphs = (value as { paragraphs?: unknown }).paragraphs;
   if (!Array.isArray(paragraphs)) return [];
-  return paragraphs.filter((item): item is string => typeof item === "string");
+  return paragraphs.flatMap((item) => {
+    if (typeof item === "string") return item.trim() ? [item] : [];
+    if (item && typeof item === "object" && typeof (item as { text?: unknown }).text === "string") {
+      const text = (item as { text: string }).text;
+      return text.trim() ? [text] : [];
+    }
+    return [];
+  });
+}
+
+function sourceIndexesOf(value: unknown, count: number): number[] | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const listed = (value as { sourceIndexes?: unknown }).sourceIndexes;
+  const fromList =
+    Array.isArray(listed) && listed.length === count && listed.every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0)
+      ? listed
+      : null;
+  if (fromList) return fromList;
+  const paragraphs = (value as { paragraphs?: unknown }).paragraphs;
+  if (!Array.isArray(paragraphs)) return undefined;
+  const indexes = paragraphs.flatMap((item) => {
+    if (!item || typeof item !== "object" || typeof (item as { source_index?: unknown }).source_index !== "number") return [];
+    const sourceIndex = (item as { source_index: number }).source_index;
+    return Number.isInteger(sourceIndex) && sourceIndex >= 0 ? [sourceIndex] : [];
+  });
+  return indexes.length === count ? indexes : undefined;
+}
+
+function evaluationFailuresOf(value: unknown): StaffDetail["evaluationFailures"] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const item = entry as { service?: unknown; reason?: unknown };
+    const service = item.service === "diploma" || item.service === "course_by_course" ? item.service : null;
+    const reason = text(item.reason);
+    if (!service || !reason) return [];
+    return [{ service, reason }];
+  });
 }
 
 function equivalencyCredentials(value: unknown): StaffDetail["equivalencyCredentials"] {
@@ -257,12 +296,15 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
       const item = page as Record<string, unknown>;
       const pageNumber = amount(item.pageNumber);
       if (pageNumber == null) continue;
+      const paragraphs = paragraphsOf(item.translation);
+      const sourceIndexes = sourceIndexesOf(item.translation, paragraphs.length);
       pages.push({
         id: text(item.id) ?? `${documentId}-${pageNumber}`,
         documentId,
         pageNumber,
         sourceText: sourceTextForDisplay(item.sourceText ?? item.ocrText),
-        paragraphs: paragraphsOf(item.translation),
+        paragraphs,
+        ...(sourceIndexes ? { sourceIndexes } : {}),
       });
     }
   });
@@ -300,17 +342,22 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
     createdAt,
     reviewReason: text(row.reviewReason),
     service: row.service === "diploma" || row.service === "course_by_course" ? row.service : null,
-    ...adminOrderFields(
-      {
-        id,
-        services: stringList(row.services),
-        service: row.service === "diploma" || row.service === "course_by_course" ? row.service : null,
-        includeTranslation: row.includeTranslation === true,
-        serviceFiles: serviceFileMap(row.serviceFiles),
-      },
-      text(delivery?.finalPath),
+    ...withReportLinks(
+      adminOrderFields(
+        {
+          id,
+          services: stringList(row.services),
+          service: row.service === "diploma" || row.service === "course_by_course" ? row.service : null,
+          includeTranslation: row.includeTranslation === true,
+          serviceFiles: serviceFileMap(row.serviceFiles),
+        },
+        text(delivery?.finalPath),
+      ),
+      row.evaluationReports,
     ),
     equivalencyCredentials: equivalencyCredentials(row.evaluationResult),
+    evaluations: storedEvaluations(row),
+    evaluationFailures: evaluationFailuresOf(row.evaluationFailures),
     edge: parseEdge(row.edge),
     filename,
     pages,
@@ -333,6 +380,58 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
     evaluationStatusAt: parseEvaluationStatusAt(row.evaluationStatusAt),
     fulfillment: parseFulfillment(row.fulfillment),
   };
+}
+
+function withReportLinks<T extends { evaluationReports: Array<{ service: string; url?: string }> }>(
+  fields: T,
+  raw: unknown,
+): T {
+  const links = new Map<string, string>();
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      if (!entry || typeof entry !== "object") continue;
+      const item = entry as Record<string, unknown>;
+      const service = item.service === "diploma" || item.service === "course_by_course" ? item.service : null;
+      const url = text(item.url);
+      if (service && url) links.set(service, url);
+    }
+  }
+  if (links.size === 0) return fields;
+  return {
+    ...fields,
+    evaluationReports: fields.evaluationReports.map((report) => {
+      const url = links.get(report.service);
+      return url ? { ...report, url } : report;
+    }),
+  };
+}
+
+function storedEvaluations(row: Record<string, unknown>): EvaluationSummary[] {
+  const listed = listedSummaries(row.evaluations);
+  if (listed.length > 0) return listed;
+  const evaluationResult = parseEvaluationResult(row.evaluationResult ?? row.evaluation_result);
+  const raw = row.evaluationResults ?? row.evaluation_results;
+  const evaluationResults = Array.isArray(raw)
+    ? raw.flatMap((item) => {
+        const parsed = parseEvaluationResult(item);
+        return parsed ? [parsed] : [];
+      })
+    : [];
+  return evaluationSummaries(collectedEvaluationResults({ evaluationResult, evaluationResults }));
+}
+
+function listedSummaries(value: unknown): EvaluationSummary[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const item = entry as Record<string, unknown>;
+    const service = item.service === "diploma" || item.service === "course_by_course" ? item.service : null;
+    const heading = text(item.heading);
+    if (!service || !heading || !Array.isArray(item.lines)) return [];
+    const lines = item.lines.filter((line): line is string => typeof line === "string" && line.trim() !== "");
+    if (lines.length === 0) return [];
+    return [{ service, heading, lines }];
+  });
 }
 
 function stringList(value: unknown): string[] | null {
@@ -417,6 +516,8 @@ function parseMailTask(value: unknown): StaffDetail["fulfillment"]["mail"] {
   return {
     status,
     trackingNumber: text(row.trackingNumber),
+    carrier: text(row.carrier),
+    shippedAt: text(row.shippedAt),
     address: parseAddress(row.address),
   };
 }
@@ -424,7 +525,7 @@ function parseMailTask(value: unknown): StaffDetail["fulfillment"]["mail"] {
 function parseNotarizationTask(value: unknown): StaffDetail["fulfillment"]["notarization"] {
   if (!value || typeof value !== "object") return null;
   const status = text((value as Record<string, unknown>).status);
-  if (status !== "pending" && status !== "done") return null;
+  if (status !== "pending" && status !== "notarized" && status !== "done") return null;
   return { status };
 }
 

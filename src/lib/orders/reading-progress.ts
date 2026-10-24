@@ -1,3 +1,5 @@
+import { parseEvaluationFailures, type StoredEvaluationFailure } from "./evaluation-failures";
+
 export const READING_STEPS = [
   "uploaded",
   "reading",
@@ -39,12 +41,14 @@ export type OrderProgress = {
   retries?: number;
   pagesDone?: number;
   pagesTranslateTotal?: number;
+  /** Staff-only reasons from the last paid evaluation run. Omitted from customer JSON. */
+  evaluationFailures?: StoredEvaluationFailure[];
 };
 
 export const UPLOADED_PROGRESS: OrderProgress = { step: "uploaded", pagesRead: 0, pagesTotal: 0 };
 
 /** Customer and partner JSON. `delivered` is only the public step after an evaluation is delivered. */
-export type PublicOrderProgress = Omit<OrderProgress, "retries" | "step"> & {
+export type PublicOrderProgress = Omit<OrderProgress, "retries" | "evaluationFailures" | "step"> & {
   step: OrderProgress["step"] | "delivered";
 };
 
@@ -113,9 +117,11 @@ export function asOrderProgress(value: unknown): OrderProgress | null {
   const pagesTotal = integerCount(row.pagesTotal);
   if (pagesRead == null || pagesTotal == null || pagesRead < 0 || pagesTotal < 0) return null;
   const retries = storedRetries(row.retries);
+  const evaluationFailures = parseEvaluationFailures(row.evaluationFailures);
   const extra = {
     ...(retries == null ? {} : { retries }),
     ...translationCounts(row),
+    ...(evaluationFailures.length > 0 ? { evaluationFailures } : {}),
   };
   if (row.step === "translating") return { step: "translating", pagesRead, pagesTotal, ...extra };
   if (typeof row.step !== "string" || !STEP_SET.has(row.step)) return null;

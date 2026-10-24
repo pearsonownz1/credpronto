@@ -1,11 +1,15 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { FINALS_BUCKET, ORIGINALS_BUCKET, PREVIEWS_BUCKET } from "./constants";
+import { FINALS_BUCKET, ORIGINALS_BUCKET, PRE_EVALUATIONS_BUCKET, PREVIEWS_BUCKET } from "./constants";
 import { HttpError } from "./errors";
 
 export type Db = SupabaseClient;
 
-export type ObjectBucket = typeof ORIGINALS_BUCKET | typeof PREVIEWS_BUCKET | typeof FINALS_BUCKET;
+export type ObjectBucket =
+  | typeof ORIGINALS_BUCKET
+  | typeof PREVIEWS_BUCKET
+  | typeof FINALS_BUCKET
+  | typeof PRE_EVALUATIONS_BUCKET;
 
 export function serviceDb(): Db {
   try {

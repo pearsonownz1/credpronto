@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { PRE_EVAL_MAX_BYTES } from "@/lib/pre-evaluation/constants";
 
 const migrationsDir = path.join(process.cwd(), "supabase", "migrations");
 const addedEvents = ["account_linked", "translation_edited", "note_added", "approved"];
@@ -177,6 +178,63 @@ describe("auth migrations", () => {
     expect(sql.toLowerCase()).not.toMatch(/for delete/);
   });
 
+  it("lets a guest quote exist before it has an email", () => {
+    const sql = readFileSync(path.join(migrationsDir, "20261023160000_optional_customer_email.sql"), "utf8");
+    const lower = sql.toLowerCase();
+    expect(sql).toMatch(/alter table public\.customers/);
+    expect(sql).toMatch(/alter column email drop not null/);
+    expect(lower).not.toMatch(/\binsert\b/);
+    expect(lower).not.toMatch(/\bupdate\b/);
+    expect(lower).not.toMatch(/\bdelete\b/);
+    expect(lower).not.toMatch(/drop constraint/);
+    expect(lower).not.toMatch(/create type/);
+    expect(lower).not.toMatch(/add value/);
+  });
+
+  it("stores anonymous pre-evaluations behind RLS with no client policy", () => {
+    const file = files.find((name) => name.endsWith("_pre_evaluations.sql"));
+    expect(file).toBeTruthy();
+    expect(file! > "20261023180000").toBe(true);
+    expect(files.filter((name) => name.endsWith("_pre_evaluations.sql"))).toHaveLength(1);
+    const sql = readFileSync(path.join(migrationsDir, file!), "utf8");
+    expect(sql).toMatch(/create table public\.pre_evaluations/);
+    expect(sql).toMatch(/token_hash text not null unique/);
+    expect(sql).toMatch(/access_token text not null unique/);
+    expect(sql).toMatch(/email text/);
+    expect(sql).toMatch(/confidence is null or confidence in \('high', 'medium', 'low'\)/);
+    expect(sql).toMatch(/mime in \('application\/pdf', 'image\/jpeg', 'image\/png'\)/);
+    expect(sql).toContain(String(PRE_EVAL_MAX_BYTES));
+    expect(sql).toMatch(/enable row level security/);
+    expect(sql.toLowerCase()).not.toMatch(/create policy/);
+    expect(sql.toLowerCase()).not.toMatch(/grant [^;]*to (anon|authenticated)/);
+    expect(sql).toMatch(/to service_role/);
+    expect(sql.toLowerCase()).not.toMatch(/insert into public\.pre_evaluations/);
+    expect(sql).toMatch(/insert into storage\.buckets/);
+    expect(sql).toMatch(/'pre-evaluations', 'pre-evaluations', false/);
+    expect(sql).not.toMatch(/preview_path/);
+    expect(sql).not.toMatch(/consume_pre_evaluation_rate_limit/);
+  });
+
+  it("stores the watermarked preview and the short rate window separately from the applied pre-evaluation migration", () => {
+    const file = "20261023210000_pre_evaluation_preview_rate.sql";
+    expect(files).toContain(file);
+    expect(file > "20261023200000").toBe(true);
+    const sql = readFileSync(path.join(migrationsDir, file), "utf8");
+    const lower = sql.toLowerCase();
+    expect(sql).toMatch(/add column preview_path text/);
+    expect(sql).toMatch(/preview_path <> storage_path/);
+    expect(sql).toMatch(/create table public\.pre_evaluation_rate_windows/);
+    expect(sql).toMatch(/consume_pre_evaluation_rate_limit/);
+    expect(sql).toMatch(/on conflict \(subject_hash, kind, window_start\)/);
+    expect(sql).toMatch(/where rate_window\.hit_count < p_max/);
+    expect(sql).toMatch(/enable row level security/);
+    expect(lower).not.toMatch(/create policy/);
+    expect(lower).not.toMatch(/grant [^;]*to (anon|authenticated)/);
+    expect(sql).toMatch(/to service_role/);
+    expect(sql).toMatch(/revoke all on function public\.consume_pre_evaluation_rate_limit/);
+    expect(lower).not.toMatch(/insert into public\.pre_evaluations/);
+  });
+
   it("adds evaluation stages without a new order status", () => {
     const sql = readFileSync(path.join(migrationsDir, "20261021130000_evaluation_progress.sql"), "utf8");
     const lower = sql.toLowerCase();
@@ -195,5 +253,52 @@ describe("auth migrations", () => {
     expect(lower).not.toMatch(/add value/);
     expect(lower).not.toMatch(/insert into/);
     expect(lower).not.toMatch(/create policy/);
+  });
+
+  it("keeps Clio tokens behind row level security for the service role", () => {
+    const sql = readFileSync(path.join(migrationsDir, "20261023170000_clio_connections.sql"), "utf8");
+    expect(sql).toMatch(/create table public\.clio_connections/);
+    expect(sql).toMatch(/create table public\.clio_matter_orders/);
+    expect(sql).toMatch(/region in \('us', 'eu', 'ca', 'au'\)/);
+    expect(sql).toMatch(/enable row level security/);
+    expect(sql.toLowerCase()).not.toMatch(/create policy/);
+    expect(sql.toLowerCase()).not.toMatch(/grant [^;]*to (anon|authenticated)/);
+    expect(sql).toMatch(/to service_role/);
+    expect(sql.toLowerCase()).not.toMatch(/insert into/);
+  });
+
+  it("counts add-on cents in the paid translation price check", () => {
+    const sql = readFileSync(
+      path.join(migrationsDir, "20261023190000_translation_priced_when_paid.sql"),
+      "utf8",
+    );
+    const lower = sql.toLowerCase();
+    expect(sql).toMatch(/drop constraint orders_translation_priced_when_paid_chk/);
+    expect(sql).toMatch(/add constraint orders_translation_priced_when_paid_chk/);
+    expect(sql).toContain("total_cents = billable_pages * unit_price_cents + addon_cents");
+    expect(sql).toMatch(/language_confirmed/);
+    expect(sql).toMatch(/billable_pages is not null/);
+    expect(sql).toMatch(/billable_pages > 0/);
+    expect(sql).toMatch(/status not in \('paid', 'approved', 'delivered'\)/);
+    expect(lower).not.toMatch(/\bupdate\b/);
+    expect(lower).not.toMatch(/\binsert\b/);
+    expect(lower).not.toMatch(/\bdelete\b/);
+  });
+
+  it("adds final-file corrections, notarized, and mail fields without rewriting orders", () => {
+    const sql = readFileSync(path.join(migrationsDir, "20261023180000_admin_fulfillment.sql"), "utf8");
+    const lower = sql.toLowerCase();
+    expect(sql).toMatch(/create table public\.order_final_corrections/);
+    expect(sql).toMatch(/status in \('open', 'in_progress', 'fixed'\)/);
+    expect(sql).toMatch(/unique \(order_id\)/);
+    expect(sql).toMatch(/notarization_status in \('pending', 'notarized', 'done'\)/);
+    expect(sql).toMatch(/add column if not exists mail_carrier text/);
+    expect(sql).toMatch(/add column if not exists mail_shipped_at timestamptz/);
+    expect(sql).toMatch(/mail_status = 'shipped' or mail_shipped_at is null/);
+    expect(lower).not.toMatch(/\bupdate\s+(public\.)?orders\b/);
+    expect(lower).not.toMatch(/\binsert\s+into\b/);
+    expect(lower).not.toMatch(/correction_status/);
+    expect(lower).not.toMatch(/add value/);
+    expect(lower).not.toMatch(/alter table public\.corrections/);
   });
 });

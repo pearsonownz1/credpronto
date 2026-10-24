@@ -1,7 +1,7 @@
 import { readEmail, readJson, readNext, readOrderToken } from "@/lib/auth/body";
 import { emailHasAccount, generateConfirmLink } from "@/lib/auth/email-link";
 import { attachOrderToken } from "@/lib/auth/order-link";
-import { requestOrigin } from "@/lib/auth/redirect";
+import { orderTokenFromNext, requestOrigin } from "@/lib/auth/redirect";
 import { HttpError } from "@/lib/orders/errors";
 import { json, run } from "@/lib/orders/http";
 import { sendAuthLink } from "@/lib/orders/email";
@@ -12,7 +12,8 @@ export async function POST(request: Request) {
   return run(async () => {
     const body = await readJson(request);
     const email = readEmail(body);
-    const orderToken = readOrderToken(body);
+    const requestedNext = readNext(body);
+    const orderToken = readOrderToken(body) ?? orderTokenFromNext(requestedNext);
     const origin = requestOrigin(request);
 
     let exists = true;
@@ -27,11 +28,11 @@ export async function POST(request: Request) {
       email,
       purpose: "magiclink",
       origin,
-      next: readNext(body) ?? "/dashboard",
+      next: requestedNext ?? "/dashboard",
       orderToken,
     });
 
-    if (!exists) await attachOrderToken(serviceDb(), link.userId, orderToken);
+    if (!exists) await attachOrderToken(serviceDb(), link.userId, orderToken, email);
 
     const rendered = renderAuthLinkEmail({ confirmUrl: link.confirmUrl, purpose: "magiclink" });
     const mailed = await sendAuthLink(email, rendered);

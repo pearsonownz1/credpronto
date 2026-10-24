@@ -1,8 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { customerEmailError } from "@/lib/flow/customer-email";
 import {
   SERVICE_IDS,
   checksAfterToggle,
@@ -31,19 +31,39 @@ import {
 } from "@/lib/evaluations/catalog";
 import { UNIT_PRICE_CENTS } from "@/lib/orders/constants";
 import type { EvaluationService } from "@/lib/orders/types";
-import { buttonClasses, fieldClass } from "./ui";
+import type { PreEvaluationFile } from "@/lib/pre-evaluation/client";
+import { carriedFileDetail, orderPreEvaluationId } from "@/lib/pre-evaluation/stored-file";
+import { buttonClasses } from "./ui";
 import { useQuoteUpload } from "./use-quote-upload";
+
+export function UploadErrorNotice({ message, href }: { message: string; href?: string | null }) {
+  return (
+    <p role="alert" className="mt-3 text-sm text-[var(--cp-warn)]">
+      {href ? (
+        <Link href={href} className="font-semibold underline">
+          {message}
+        </Link>
+      ) : (
+        message
+      )}
+    </p>
+  );
+}
 
 type ListedFile = {
   id: string;
   name: string;
   kind: "pdf" | "image";
+  detail: string | null;
+  carried: boolean;
 };
 
 const SAMPLE_FILES: ListedFile[] = sampleCustomerOrder().documents.map((document) => ({
   id: document.id,
   name: document.filename,
   kind: document.filename.toLowerCase().endsWith(".pdf") ? "pdf" : "image",
+  detail: null,
+  carried: false,
 }));
 
 /** Rate only. Billable pages are counted on the server after it reads the document. */
@@ -142,24 +162,29 @@ export function UploadCard({
   intro,
   initialService,
   sessionEmail,
+  initialDegreeCount = null,
+  preEvaluationId = null,
+  carriedFile = null,
   onTrackChange,
 }: {
   intro?: { title: string; lede: string };
   initialService?: string | null;
   sessionEmail?: string | null;
+  initialDegreeCount?: number | null;
+  preEvaluationId?: string | null;
+  carriedFile?: PreEvaluationFile | null;
   onTrackChange?: (track: FlowTrack) => void;
 }) {
-  const { mock, pending, error, setError, submit } = useQuoteUpload();
+  const { mock, pending, error, errorHref, setError, submit } = useQuoteUpload();
   const signedInEmail = useQuoteEmail(sessionEmail);
   const inputRef = useRef<HTMLInputElement>(null);
-  const emailRef = useRef<HTMLInputElement>(null);
   const [start] = useState(() => uploadStateFromDraft(initialService));
-  const [email, setEmail] = useState(start.email || (mock ? "maria.ruiz@email.com" : ""));
-  const [emailError, setEmailError] = useState<string | null>(null);
   const [picked, setPicked] = useState<File[]>(start.files);
+  const [removedFor, setRemovedFor] = useState<string | null>(null);
   const [checks, setChecks] = useState<ServiceChecks>(start.checks);
   const [degrees, setDegrees] = useState(() => String(clampDegreeCount(Number(start.degrees))));
   const seenService = useRef(start.serviceKey);
+  const degreesTouched = useRef(false);
   const restoreFiles = useRef(start.files.length === 0 && draftHasStoredFiles());
 
   useEffect(() => {
@@ -178,19 +203,23 @@ export function UploadCard({
     const form = inputRef.current?.form ?? null;
     const domChecks = form ? readDomChecks(form) : null;
     const adopted = adoptUploadInputs(
-      { email, files: picked, checks },
+      { email: "", files: picked, checks },
       {
-        email: emailRef.current?.value ?? "",
+        email: "",
         files: inputRef.current?.files ? Array.from(inputRef.current.files) : [],
         checks: domChecks,
       },
     );
-    if (adopted.email !== email) setEmail(adopted.email);
     if (picked.length === 0 && adopted.files.length > 0) setPicked(adopted.files);
     if (adopted.checks !== checks) setChecks(adopted.checks);
     // Adopt the DOM once, before the first toggle can render empty React state over it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (degreesTouched.current || initialDegreeCount == null) return;
+    setDegrees(String(clampDegreeCount(initialDegreeCount)));
+  }, [initialDegreeCount]);
 
   useEffect(() => {
     const serviceKey = serviceKeyFrom(initialService);
@@ -202,27 +231,49 @@ export function UploadCard({
 
   useEffect(() => {
     writeUploadDraft({
-      email,
+      email: "",
       files: picked,
       checks,
       degrees,
       serviceKey: seenService.current,
     });
-  }, [email, picked, checks, degrees]);
+  }, [picked, checks, degrees]);
 
   useEffect(() => {
     const evaluation = checks.diploma || checks.courseByCourse;
     onTrackChange?.(evaluation && checks.translation ? "bundle" : evaluation ? "evaluation" : "translation");
   }, [checks.diploma, checks.courseByCourse, checks.translation, onTrackChange]);
 
-  const files: ListedFile[] =
+  const trimmedPreEvaluationId = preEvaluationId?.trim() || "";
+  const carriedId = orderPreEvaluationId({
+    id: trimmedPreEvaluationId,
+    file: carriedFile ?? null,
+    removed: removedFor != null && removedFor === trimmedPreEvaluationId,
+  });
+  const files: ListedFile[] = [];
+  if (carriedId && carriedFile) {
+    const pdf = carriedFile.mimeType === "application/pdf" || carriedFile.name.toLowerCase().endsWith(".pdf");
+    files.push({
+      id: `pre-evaluation-${carriedId}`,
+      name: carriedFile.name,
+      kind: pdf ? "pdf" : "image",
+      detail: carriedFileDetail(carriedFile),
+      carried: true,
+    });
+  }
+  const localFiles: ListedFile[] =
     mock && picked.length === 0
-      ? SAMPLE_FILES
+      ? files.length > 0
+        ? []
+        : SAMPLE_FILES
       : picked.map((file) => ({
           id: `${file.name}-${file.size}`,
           name: file.name,
           kind: file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf") ? "pdf" : "image",
+          detail: null,
+          carried: false,
         }));
+  files.push(...localFiles);
   const quote = uploadServiceQuote({
     checks,
     degreeCount: clampDegreeCount(Number(degrees)),
@@ -236,7 +287,13 @@ export function UploadCard({
   }
 
   function removeFile(index: number) {
-    setPicked((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    const file = files[index];
+    if (file?.carried) {
+      if (trimmedPreEvaluationId) setRemovedFor(trimmedPreEvaluationId);
+      return;
+    }
+    const localIndex = index - files.filter((row) => row.carried).length;
+    setPicked((current) => current.filter((_, currentIndex) => currentIndex !== localIndex));
   }
 
   function choice(): UploadChoice | null {
@@ -256,31 +313,23 @@ export function UploadCard({
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!signedInEmail) {
-      const problem = customerEmailError(email);
-      if (problem) {
-        setEmailError(problem);
-        setError(null);
-        emailRef.current?.focus();
-        return;
-      }
-    }
-    setEmailError(null);
     const selected = choice();
     if (!selected) {
       setError(choiceError());
       return;
     }
-    if (!mock && picked.length === 0) {
+    const keepingCarry = Boolean(carriedId && carriedFile);
+    if (!mock && picked.length === 0 && !keepingCarry) {
       setError("Add at least one PDF or photo.");
       return;
     }
     await submit({
-      email: signedInEmail ?? email,
       files: picked,
       choice: selected,
-      pageCount: null,
+      pageCount: keepingCarry && carriedFile && picked.length === 0 ? carriedFile.pageCount : null,
       signedIn: Boolean(signedInEmail),
+      preEvaluationId: keepingCarry ? carriedId : null,
+      carriedName: keepingCarry && carriedFile ? carriedFile.name : null,
     });
   }
 
@@ -340,7 +389,13 @@ export function UploadCard({
                     </span>
                   </label>
                   {showDegrees ? (
-                    <DegreeStepper count={quote.degreeCount} onChange={(next) => setDegrees(String(next))} />
+                    <DegreeStepper
+                      count={quote.degreeCount}
+                      onChange={(next) => {
+                        degreesTouched.current = true;
+                        setDegrees(String(next));
+                      }}
+                    />
                   ) : null}
                   {price != null ? (
                     <span data-testid={`choice-price-${item.id}`} className="ml-auto shrink-0 text-[14px] font-semibold tabular-nums">
@@ -405,10 +460,11 @@ export function UploadCard({
             className="mt-3 overflow-hidden rounded-[var(--cp-radius)] border border-line text-[13.5px]"
           >
             {files.map((file, index) => {
-              const removable = !(mock && picked.length === 0);
+              const removable = file.carried || !(mock && picked.length === 0);
               return (
                 <li
                   key={file.id}
+                  data-testid={file.carried ? "carried-file" : undefined}
                   className="flex items-center justify-between gap-3 border-t border-line px-3 py-2.5 first:border-t-0"
                 >
                   <span className="min-w-0 truncate">
@@ -416,7 +472,9 @@ export function UploadCard({
                     {file.name}
                   </span>
                   <span className="flex shrink-0 items-center gap-3">
-                    <span className="text-ink-muted">Added</span>
+                    <span className="text-ink-muted" data-testid={file.carried ? "carried-file-meta" : undefined}>
+                      {file.detail ?? "Added"}
+                    </span>
                     {removable ? (
                       <button
                         type="button"
@@ -440,39 +498,8 @@ export function UploadCard({
               : "Preview link goes to"}{" "}
             {signedInEmail}
           </p>
-        ) : (
-          <label className="mt-4 block">
-            <span className="mb-1.5 block text-[13px] font-semibold">
-              {(checks.diploma || checks.courseByCourse) && !checks.translation
-                ? "Email for your order"
-                : "Email for your preview link"}
-            </span>
-            <input
-              ref={emailRef}
-              data-testid="email"
-              type="email"
-              autoComplete="email"
-              value={email}
-              aria-invalid={emailError ? true : undefined}
-              aria-describedby={emailError ? "email-error" : undefined}
-              onChange={(event) => {
-                setEmail(event.target.value);
-                if (emailError) setEmailError(null);
-              }}
-              className={fieldClass}
-            />
-          </label>
-        )}
-        {emailError ? (
-          <p id="email-error" role="alert" data-testid="email-error" className="mt-1.5 text-sm text-[var(--cp-warn)]">
-            {emailError}
-          </p>
         ) : null}
-        {error ? (
-          <p role="alert" className="mt-3 text-sm text-[var(--cp-warn)]">
-            {error}
-          </p>
-        ) : null}
+        {error ? <UploadErrorNotice message={error} href={errorHref} /> : null}
         <button
           type="submit"
           data-testid="get-quote"

@@ -87,9 +87,9 @@ test("a loaded quote replaces the loading announcement", async ({ page }) => {
 });
 
 test("upload shows the reading progress immediately, with no loading screen", async ({ page }) => {
-  await page.goto("/translate");
-  const email = page.getByTestId("email").filter({ visible: true });
-  await expect(email).toHaveValue("maria.ruiz@email.com");
+  await signIn(page, "maria.ruiz@email.com", "/translate");
+  await expect(page).toHaveURL(/\/translate/);
+  await expect(page.getByTestId("email")).toHaveCount(0);
   await page.evaluate(() => {
     sessionStorage.setItem("credpronto-mock-upload-ms", "1200");
     sessionStorage.setItem("credpronto-mock-order-route", "1");

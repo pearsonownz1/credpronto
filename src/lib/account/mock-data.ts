@@ -378,6 +378,8 @@ export function mockStaffDetail(id: string): StaffDetail | null {
             mail: {
               status: "pending",
               trackingNumber: null,
+              carrier: null,
+              shippedAt: null,
               address: {
                 name: "Ada Lovelace",
                 line1: "2520 Venture Oaks Way",

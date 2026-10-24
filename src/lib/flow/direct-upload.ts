@@ -1,7 +1,7 @@
 import { DIRECT_FILE_LIMIT_MESSAGE, MAX_DIRECT_FILE_BYTES } from "@/lib/orders/constants";
 import { resolveUploadMime } from "@/lib/orders/file-type";
 import { readPublicSupabaseEnv } from "@/lib/supabase/env";
-import { FlowApiError, requestFailedMessage } from "./api-error";
+import { FlowApiError, readApiErrorCode, requestFailedMessage } from "./api-error";
 import { orderRequestChoice, type UploadChoice } from "./order-choice";
 import { dedupeUploads } from "./uploads";
 
@@ -41,7 +41,11 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   });
   const parsed = parseJson(await response.text());
   if (!response.ok) {
-    throw new FlowApiError(requestFailedMessage(parsed, response.status, response.statusText), response.status);
+    throw new FlowApiError(
+      requestFailedMessage(parsed, response.status, response.statusText),
+      response.status,
+      readApiErrorCode(parsed),
+    );
   }
   return parsed as T;
 }
@@ -143,14 +147,26 @@ function choicePayload(choice: UploadChoice): Record<string, unknown> {
 }
 
 export async function uploadOrderFiles(input: {
-  email: string;
+  email?: string | null;
   files: File[];
   choice?: UploadChoice;
+  preEvaluationId?: string | null;
   onProgress?: (ratio: number) => void;
   onFileProgress?: (files: FileUploadProgress[]) => void;
   putFile?: typeof putSignedFile;
 }): Promise<{ orderToken: string; orderId: string }> {
   const choice = input.choice ?? { orderType: "translation" as const };
+  const preEvaluationId = input.preEvaluationId?.trim() || "";
+  if (input.files.length === 0) {
+    if (!preEvaluationId) throw new FlowApiError("Upload at least one file", 400);
+    const email = input.email?.trim();
+    input.onProgress?.(1);
+    return postJson("/api/orders", {
+      ...(email ? { email } : {}),
+      preEvaluationId,
+      ...choicePayload(choice),
+    });
+  }
   const files = await filesToUpload(input.files);
   const ratios = files.map(() => 0);
   const report = () => {
@@ -189,8 +205,10 @@ export async function uploadOrderFiles(input: {
     report();
   }
 
+  const email = input.email?.trim();
   return postJson("/api/orders", {
-    email: input.email,
+    ...(email ? { email } : {}),
+    ...(preEvaluationId ? { preEvaluationId } : {}),
     sessionId: session.sessionId,
     files: session.uploads.map((upload) => ({
       path: upload.path,

@@ -19,6 +19,8 @@ import type {
   EvaluationLine,
   EvaluationResult,
   EvaluationService,
+  FinalCorrectionRecord,
+  FinalCorrectionStatus,
   OrderRecord,
   OrderType,
   PageOrderBasis,
@@ -140,7 +142,33 @@ export type CustomerOrder = {
   evaluationStatusAt?: Partial<Record<EvalStatus, string>>;
   /** Detected document title, or a readable form of the upload name. */
   documentTitle: string;
+  /**
+   * Latest request to fix this order's final file, or null when there is none.
+   * The delivered page treats `open` and `in_progress` as in flight.
+   * The customer's note, claim time, and stored file path stay off this payload.
+   */
+  finalCorrection: CustomerFinalCorrection | null;
 };
+
+/** Customer view of one `order_final_corrections` row. */
+export type CustomerFinalCorrection = {
+  id: string;
+  status: FinalCorrectionStatus;
+  createdAt: string;
+  fixedAt: string | null;
+};
+
+function customerFinalCorrection(
+  record: FinalCorrectionRecord | null | undefined,
+): CustomerFinalCorrection | null {
+  if (!record) return null;
+  return {
+    id: record.id,
+    status: record.status,
+    createdAt: record.createdAt,
+    fixedAt: record.fixedAt,
+  };
+}
 
 export function toCustomerOrder(input: {
   order: OrderRecord;
@@ -159,6 +187,8 @@ export function toCustomerOrder(input: {
   addons?: Array<{ id: AddonId }>;
   translationOutputs?: readonly unknown[];
   now?: number;
+  /** The order's final-file correction, when one exists. Extra record fields are dropped. */
+  finalCorrection?: FinalCorrectionRecord | null;
 }): CustomerOrder {
   const confidences = input.documents
     .map((document) => document.confidence)
@@ -309,6 +339,7 @@ export function toCustomerOrder(input: {
     fulfillment: fulfillmentState(input.order),
     ...customerEvalStatus(input.order),
     documentTitle,
+    finalCorrection: customerFinalCorrection(input.finalCorrection),
     delayed: isPreviewDelayed({
       status: input.order.status,
       previewVersion: input.previewVersion,

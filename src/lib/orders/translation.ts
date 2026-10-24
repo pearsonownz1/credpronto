@@ -22,10 +22,12 @@ import {
   translatedProse,
 } from "./pdf/source-mirror";
 import { blocksFromModel, blocksToParagraphs, formBlocksWhenCollapsed, type ModelBlock } from "./pdf/structure";
+import { segmentsInSourceOrder } from "./segment-source";
 import {
   claimOrderColumn,
   clearOrderColumn,
   customerEmail,
+  orderCustomerEmail,
   getOrderById,
   insertEvent,
   insertQaRun,
@@ -746,7 +748,7 @@ export async function runTranslationAssemble(
               pages: stored.map((page) => ({
                 pageNumber: page.page.pageNumber,
                 combinedPageNumber: page.page.number,
-                paragraphs: page.paragraphs,
+                paragraphs: segmentsInSourceOrder(page.page.ocrText, page.paragraphs),
                 blocks: page.blocks,
                 ...(page.kind ? { kind: page.kind } : {}),
                 ...(page.layoutFallback ? { layoutFallback: page.layoutFallback } : {}),
@@ -855,8 +857,9 @@ export async function runTranslationAssemble(
         });
         await resolveCorrections(db, open.map((correction) => correction.id), input.version);
 
-        if (clientEmail) {
-          await sendPreviewReady(clientEmail, {
+        const previewEmail = await orderCustomerEmail(db, order.id);
+        if (previewEmail) {
+          await sendPreviewReady(previewEmail, {
             token: run.token,
             orderId: order.id,
             sourceLanguage,

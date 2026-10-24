@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as db from "@/lib/orders/db";
 import { generateOrderToken } from "@/lib/orders/token";
-import { finishAuthenticatedUser } from "./finish";
+import { finishAuthenticatedUser, finishInstantSignup } from "./finish";
 
 vi.mock("@/lib/orders/storage", () => ({
   serviceDb: () => ({ kind: "service" }),
@@ -35,5 +35,26 @@ describe("email claiming after instant sign-up", () => {
       ),
     ).resolves.toEqual(["other-guest-order"]);
     expect(claim).toHaveBeenCalledWith(expect.anything(), "user-1", "ada@example.com");
+  });
+
+  it("writes the account email onto the quote named by the token", async () => {
+    vi.spyOn(db, "claimOrdersByCustomerEmail").mockResolvedValue([]);
+    vi.spyOn(db, "getOrderByHash").mockResolvedValue({
+      id: "token-order",
+      userId: null,
+      customerId: "cust-1",
+    } as never);
+    vi.spyOn(db, "updateOrder").mockResolvedValue(true);
+    vi.spyOn(db, "insertEvent").mockResolvedValue({} as never);
+    const assign = vi.spyOn(db, "assignOrderEmail").mockResolvedValue({ attached: false, customerId: "cust-1" });
+
+    await finishAuthenticatedUser({ ...instantUser, app_metadata: { email_verified: true } }, generateOrderToken());
+    expect(assign).toHaveBeenCalledWith(expect.anything(), "token-order", "cust-1", "ada@example.com");
+
+    expect(db.claimOrdersByCustomerEmail).toHaveBeenCalledTimes(1);
+    assign.mockClear();
+    await finishInstantSignup("user-1", generateOrderToken(), "ada@example.com");
+    expect(assign).toHaveBeenCalledWith(expect.anything(), "token-order", "cust-1", "ada@example.com");
+    expect(db.claimOrdersByCustomerEmail).toHaveBeenCalledTimes(1);
   });
 });

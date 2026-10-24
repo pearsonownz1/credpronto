@@ -56,9 +56,10 @@ export type CheckoutResult =
 
 export type FlowClient = {
   upload(input: {
-    email: string;
+    email?: string | null;
     files: File[];
     choice?: UploadChoice;
+    preEvaluationId?: string | null;
     onProgress?: (ratio: number) => void;
     onFileProgress?: (files: Array<{ name: string; ratio: number }>) => void;
   }): Promise<{
@@ -303,7 +304,8 @@ const mockClient: FlowClient = {
         ? withEvaluationChoice(sampleCustomerOrder(), choice)
         : sampleCustomerOrder();
     writeToken(MOCK_TOKEN);
-    writeEmail(email);
+    const trimmedEmail = email?.trim();
+    if (trimmedEmail) writeEmail(trimmedEmail);
     writeMockOrder(order);
     return { orderToken: MOCK_TOKEN, orderId: order.orderId };
   },
