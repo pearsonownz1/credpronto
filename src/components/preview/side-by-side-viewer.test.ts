@@ -27,14 +27,34 @@ const scrollListener = vi.hoisted(() => ({
         };
       }) => void),
 }));
+const embedMounts = vi.hoisted(() => ({ current: 0 }));
+const openDocumentUrl = vi.hoisted(() =>
+  vi.fn(() => ({
+    wait: (resolved?: (response: { task: { wait: () => void } }) => void) => {
+      resolved?.({ task: { wait: () => undefined } });
+    },
+  })),
+);
+const documentStatus = vi.hoisted(() => ({ current: null as string | null }));
+const viewportGated = vi.hoisted(() => ({ current: false }));
+const releaseGate = vi.hoisted(() => vi.fn());
 
 vi.mock("@embedpdf/core", () => ({
   createPluginRegistration: () => ({}),
 }));
 
-vi.mock("@embedpdf/core/react", () => ({
-  EmbedPDF: ({ children }: { children: ReactNode }) => children,
-}));
+vi.mock("@embedpdf/core/react", async () => {
+  const React = await import("react");
+  return {
+    EmbedPDF: ({ children }: { children: ReactNode }) => {
+      React.useEffect(() => {
+        embedMounts.current += 1;
+      }, []);
+      return children;
+    },
+    useDocumentState: () => (documentStatus.current ? { status: documentStatus.current } : null),
+  };
+});
 
 vi.mock("@embedpdf/engines/react", () => ({
   usePdfiumEngine: () => ({ engine: null, isLoading: false, error: null }),
@@ -43,6 +63,11 @@ vi.mock("@embedpdf/engines/react", () => ({
 vi.mock("@embedpdf/plugin-document-manager/react", () => ({
   DocumentManagerPluginPackage: {},
   DocumentContent: () => null,
+  useDocumentManagerCapability: () => ({
+    provides: { openDocumentUrl },
+    isLoading: false,
+    ready: Promise.resolve(),
+  }),
 }));
 
 vi.mock("@embedpdf/plugin-interaction-manager/react", () => ({
@@ -63,6 +88,7 @@ vi.mock("@embedpdf/plugin-scroll/react", () => ({
     provides: {
       forDocument: (id: string) => ({
         getTotalPages: () => pageTotals.current.get(id) ?? 0,
+        getCurrentPage: () => 1,
         getMetrics: () => ({
           currentPage: 1,
           pageVisibilityMetrics: [{ pageNumber: 1, original: { pageX: 0, pageY: 0 } }],
@@ -86,7 +112,18 @@ vi.mock("@embedpdf/plugin-thumbnail/react", () => ({
 vi.mock("@embedpdf/plugin-viewport/react", () => ({
   ViewportPluginPackage: {},
   Viewport: ({ children }: { children: ReactNode }) => children,
-  useViewportCapability: () => ({ provides: { isViewportMounted: () => true } }),
+  useViewportCapability: () => ({
+    provides: {
+      isViewportMounted: () => true,
+      isGated: () => viewportGated.current,
+      forDocument: () => ({
+        isGated: () => viewportGated.current,
+        getMetrics: () => ({ clientWidth: 800, clientHeight: 600 }),
+        releaseGate,
+      }),
+      onViewportResize: () => () => undefined,
+    },
+  }),
 }));
 
 vi.mock("@embedpdf/plugin-zoom/react", () => ({
@@ -135,6 +172,11 @@ afterEach(async () => {
   requestZoom.mockReset();
   zoomedIds.current = [];
   scrollListener.current = null;
+  openDocumentUrl.mockClear();
+  releaseGate.mockClear();
+  embedMounts.current = 0;
+  documentStatus.current = null;
+  viewportGated.current = false;
   pageTotals.current = new Map([
     ["original", 6],
     ["translation", 6],
@@ -202,6 +244,10 @@ describe("GCS side-by-side viewer", () => {
 
     expect(download?.textContent).toBe("Download Certified Translation");
     expect(evaluate?.textContent).toBe("Evaluate Document");
+    expect(evaluate?.className).toContain("bg-primary");
+    expect(evaluate?.className).toContain("text-primary-ink");
+    expect(evaluate?.className).not.toContain("bg-bg");
+    expect(download?.className).toContain("bg-primary");
     expect(download && evaluate && Boolean(download.compareDocumentPosition(evaluate) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     expect(host.querySelector('[data-testid="pane-evaluation"]')).toBeNull();
 
@@ -254,6 +300,74 @@ describe("GCS side-by-side viewer", () => {
       (host.querySelector('[data-testid="zoom-in"]') as HTMLButtonElement).click();
     });
     expect(zoomedIds.current).toEqual(["original", "translation", "evaluation"]);
+  });
+
+  it("opens the evaluation in the existing viewer and keeps the certified translation", async () => {
+    installMatchMedia(false);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    roots.push(root);
+    await act(async () => {
+      root.render(
+        createElement(SideBySideViewer, {
+          order: gcsOrder(),
+          chrome: "gcs",
+          engine: {} as never,
+        }),
+      );
+    });
+    const mounts = embedMounts.current;
+    expect(openDocumentUrl).not.toHaveBeenCalled();
+    expect(host.querySelector('[data-testid="pane-translation"]')).not.toBeNull();
+
+    await act(async () => {
+      root.render(
+        createElement(SideBySideViewer, {
+          order: gcsOrder(evaluationDocument),
+          chrome: "gcs",
+          engine: {} as never,
+        }),
+      );
+    });
+
+    expect(embedMounts.current).toBe(mounts);
+    expect(openDocumentUrl).toHaveBeenCalledTimes(1);
+    expect(openDocumentUrl).toHaveBeenCalledWith({
+      url: "/samples/evaluation.pdf",
+      documentId: "evaluation",
+      name: "Evaluation",
+      autoActivate: false,
+    });
+    expect(host.querySelector('[data-testid="pane-translation"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="pane-evaluation"]')).not.toBeNull();
+  });
+
+  it("pages through the certified translation when it is longer than the original", async () => {
+    installMatchMedia(false);
+    pageTotals.current = new Map([
+      ["original", 1],
+      ["translation", 2],
+      ["evaluation", 1],
+    ]);
+    const host = await renderViewer(gcsOrder(evaluationDocument));
+    expect(host.querySelector('[data-testid="page-status"]')?.textContent).toContain("of 2");
+    const next = host.querySelector('[data-testid="next-page"]') as HTMLButtonElement;
+    expect(next.disabled).toBe(false);
+    scrollToPage.mockClear();
+    await act(async () => {
+      next.click();
+    });
+    expect(scrollToPage.mock.calls.map((call) => call[0].pageNumber)).toEqual([1, 2, 1]);
+  });
+
+  it("releases a zoom gate after the document has loaded into a sized viewport", async () => {
+    installMatchMedia(false);
+    documentStatus.current = "loaded";
+    viewportGated.current = true;
+    await renderViewer(gcsOrder());
+    expect(requestZoom).toHaveBeenCalledWith("fit-width");
+    expect(releaseGate).toHaveBeenCalledWith("zoom");
   });
 
   it("switches the mobile viewer to the evaluation when it appears", async () => {

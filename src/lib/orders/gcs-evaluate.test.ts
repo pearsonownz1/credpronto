@@ -192,6 +192,7 @@ describe("evaluateGcsOrder", () => {
       orderId,
       documentType: "evaluation",
     });
+    expect(storage.uploadObject).toHaveBeenCalledTimes(1);
     expect(storage.uploadObject).toHaveBeenCalledWith(
       handle,
       "finals",
@@ -199,12 +200,12 @@ describe("evaluateGcsOrder", () => {
       clean,
       "application/pdf",
     );
-    expect(storage.uploadObject).toHaveBeenCalledWith(
+    expect(storage.uploadObject).not.toHaveBeenCalledWith(
       handle,
       "previews",
-      `${orderId}/gcs-evaluation-v1.pdf`,
-      clean,
-      "application/pdf",
+      expect.any(String),
+      expect.anything(),
+      expect.anything(),
     );
     expect(db.updateOrder).toHaveBeenCalledWith(
       handle,

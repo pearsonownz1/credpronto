@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPluginRegistration } from "@embedpdf/core";
-import { EmbedPDF } from "@embedpdf/core/react";
+import { EmbedPDF, useDocumentState } from "@embedpdf/core/react";
 import type { PdfEngine } from "@embedpdf/models";
 import {
   DocumentContent,
   DocumentManagerPluginPackage,
+  useDocumentManagerCapability,
 } from "@embedpdf/plugin-document-manager/react";
 import { InteractionManagerPluginPackage } from "@embedpdf/plugin-interaction-manager/react";
 import { RenderLayer, RenderPluginPackage } from "@embedpdf/plugin-render/react";
@@ -14,7 +15,6 @@ import {
   Scroller,
   ScrollPluginPackage,
   ScrollStrategy,
-  useScroll,
   useScrollCapability,
 } from "@embedpdf/plugin-scroll/react";
 import { ThumbnailPluginPackage } from "@embedpdf/plugin-thumbnail/react";
@@ -184,7 +184,7 @@ function SideBySideEngine({
   const files = usePreviewFileRecovery(original, translation, evaluation);
   const sourceOriginal = files.urls?.original ?? original;
   const sourceTranslation = files.urls?.translation ?? translation;
-  const sourceEvaluation = files.urls ? files.urls.evaluation : evaluation;
+  const sourceEvaluation = files.urls?.evaluation ?? evaluation;
   const plugins = useMemo(
     () => [
       createPluginRegistration(DocumentManagerPluginPackage, {
@@ -195,9 +195,6 @@ function SideBySideEngine({
             documentId: TRANSLATION_DOCUMENT_ID,
             name: "Translation",
           },
-          ...(sourceEvaluation
-            ? [{ url: sourceEvaluation, documentId: EVALUATION_DOCUMENT_ID, name: "Evaluation" }]
-            : []),
         ],
       }),
       createPluginRegistration(ViewportPluginPackage),
@@ -215,7 +212,7 @@ function SideBySideEngine({
         paddingY: 8,
       }),
     ],
-    [sourceOriginal, sourceTranslation, sourceEvaluation],
+    [sourceOriginal, sourceTranslation],
   );
 
   const layout = shellLayout ?? (chrome === "readonly" || chrome === "gcs" ? "embedded" : "page");
@@ -255,7 +252,7 @@ function SideBySideEngine({
 
   return (
     <EmbedPDF
-      key={`${sourceOriginal}:${sourceTranslation}:${sourceEvaluation ?? ""}`}
+      key={`${sourceOriginal}:${sourceTranslation}`}
       engine={engine}
       plugins={plugins}
     >
@@ -265,6 +262,7 @@ function SideBySideEngine({
         layout={layout}
         focusPage={focusPage}
         panel={panel}
+        sourceEvaluation={sourceEvaluation}
         onCorrect={onCorrect}
         onDownload={onDownload}
         onEvaluate={onEvaluate}
@@ -278,29 +276,36 @@ function SideBySideEngine({
 }
 
 function usePageCount(documentId: string) {
-  const scroll = useScroll(documentId);
   const { provides } = useScrollCapability();
+  const [currentPage, setCurrentPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
 
   useEffect(() => {
     if (!provides) return;
 
     const sync = () => {
-      const count = provides.forDocument(documentId).getTotalPages();
-      if (count > 0) setTotalPages(count);
+      try {
+        const scope = provides.forDocument(documentId);
+        const count = scope.getTotalPages();
+        const page = scope.getCurrentPage();
+        if (count > 0) setTotalPages(count);
+        if (page > 0) setCurrentPage(page);
+      } catch {
+        // The evaluation document is opened after the viewer mounts.
+      }
     };
 
     sync();
     const timers = [100, 400, 1000].map((delay) => window.setTimeout(sync, delay));
     const stopLayout = provides.onLayoutReady((event) => {
-      if (event.documentId === documentId && event.totalPages > 0) {
-        setTotalPages(event.totalPages);
-      }
+      if (event.documentId !== documentId) return;
+      if (event.totalPages > 0) setTotalPages(event.totalPages);
+      if (event.pageNumber > 0) setCurrentPage(event.pageNumber);
     });
     const stopPage = provides.onPageChange((event) => {
-      if (event.documentId === documentId && event.totalPages > 0) {
-        setTotalPages(event.totalPages);
-      }
+      if (event.documentId !== documentId) return;
+      if (event.totalPages > 0) setTotalPages(event.totalPages);
+      if (event.pageNumber > 0) setCurrentPage(event.pageNumber);
     });
 
     return () => {
@@ -310,10 +315,7 @@ function usePageCount(documentId: string) {
     };
   }, [documentId, provides]);
 
-  return {
-    currentPage: scroll.state.currentPage,
-    totalPages: totalPages || scroll.state.totalPages,
-  };
+  return { currentPage, totalPages };
 }
 
 function ViewerWorkspace({
@@ -322,6 +324,7 @@ function ViewerWorkspace({
   layout,
   focusPage,
   panel,
+  sourceEvaluation,
   onCorrect,
   onDownload,
   onEvaluate,
@@ -335,6 +338,7 @@ function ViewerWorkspace({
   layout: "page" | "embedded" | "fill";
   focusPage: ViewerFocus | null;
   panel: AddonPanelState;
+  sourceEvaluation: string | null;
   onCorrect?: (input: { page: number; note: string }) => Promise<void>;
   onDownload?: () => void | Promise<void>;
   onEvaluate?: () => void | Promise<void>;
@@ -357,7 +361,12 @@ function ViewerWorkspace({
   const { provides: scrollCapability } = useScrollCapability();
   const { provides: zoomCapability } = useZoomCapability();
   const { provides: viewportCapability } = useViewportCapability();
-  const leadScroll = usePageCount(DOCUMENT_ID[lead]);
+  const { provides: documentManager } = useDocumentManagerCapability();
+  const originalScroll = usePageCount(ORIGINAL_DOCUMENT_ID);
+  const translationScroll = usePageCount(TRANSLATION_DOCUMENT_ID);
+  const evaluationScroll = usePageCount(EVALUATION_DOCUMENT_ID);
+  const leadScroll =
+    lead === "translation" ? translationScroll : lead === "evaluation" ? evaluationScroll : originalScroll;
   const { state: leadZoom } = useZoom(DOCUMENT_ID[lead]);
   const snapshot = useRef<Snapshot>({
     pageNumber: 1,
@@ -378,7 +387,30 @@ function ViewerWorkspace({
     [hasEvaluation],
   );
   const seenEvaluationUrl = useRef<string | null>(null);
+  const openedEvaluationUrl = useRef<string | null>(null);
   const [evaluating, setEvaluating] = useState(false);
+
+  useEffect(() => {
+    if (!documentManager || !sourceEvaluation) return;
+    if (openedEvaluationUrl.current === sourceEvaluation) return;
+    openedEvaluationUrl.current = sourceEvaluation;
+    const task = documentManager.openDocumentUrl({
+      url: sourceEvaluation,
+      documentId: EVALUATION_DOCUMENT_ID,
+      name: "Evaluation",
+      autoActivate: false,
+    });
+    const fail = () => {
+      if (openedEvaluationUrl.current === sourceEvaluation) openedEvaluationUrl.current = null;
+      onDocumentError();
+    };
+    task.wait(
+      (response) => {
+        response.task.wait(() => undefined, fail);
+      },
+      fail,
+    );
+  }, [documentManager, onDocumentError, sourceEvaluation]);
 
   useEffect(() => {
     syncScrollRef.current = syncScroll;
@@ -603,7 +635,12 @@ function ViewerWorkspace({
   }
 
   const pageNumber = leadScroll.currentPage || 0;
-  const totalPages = leadScroll.totalPages || 0;
+  const totalPages = Math.max(
+    leadScroll.totalPages,
+    originalScroll.totalPages,
+    translationScroll.totalPages,
+    hasEvaluation ? evaluationScroll.totalPages : 0,
+  );
   const zoomPercent = Math.round((leadZoom.currentZoomLevel || 0) * 100);
   const visibleRoles: Role[] = isMobile
     ? [role]
@@ -860,7 +897,7 @@ function ViewerWorkspace({
               <button
                 type="button"
                 data-testid="evaluate-document"
-                className="inline-flex h-[34px] items-center rounded-[var(--cp-radius)] border border-line bg-bg px-3 text-[13px] font-semibold text-ink disabled:opacity-60"
+                className="inline-flex h-[34px] items-center rounded-[var(--cp-radius)] bg-primary px-3 text-[13px] font-semibold text-primary-ink disabled:opacity-60"
                 disabled={evaluating}
                 onClick={() => void evaluateDocument()}
               >
@@ -961,12 +998,12 @@ function usePreviewFileRecovery(original: string, translation: string, evaluatio
     evaluation: string | null;
   } | null>(null);
   const [phase, setPhase] = useState<"open" | "recovering" | "failed">("open");
-  const [sourceKey, setSourceKey] = useState(`${original}\0${translation}\0${evaluation ?? ""}`);
+  const [sourceKey, setSourceKey] = useState(`${original}\0${translation}`);
   const attemptRef = useRef(0);
   const generation = useRef(0);
   const lock = useRef(false);
   const ownedBlobs = useRef<string[]>([]);
-  const nextKey = `${original}\0${translation}\0${evaluation ?? ""}`;
+  const nextKey = `${original}\0${translation}`;
   if (sourceKey !== nextKey) {
     setSourceKey(nextKey);
     setUrls(null);
@@ -1066,9 +1103,11 @@ function DocumentPane({
   onDocumentError: () => void;
 }) {
   const documentId = DOCUMENT_ID[role];
+  const documentState = useDocumentState(documentId);
   const { currentPage, totalPages } = usePageCount(documentId);
   const { state: zoomState } = useZoom(documentId);
   const { provides: zoomCapability } = useZoomCapability();
+  const { provides: viewportCapability } = useViewportCapability();
   const zoom = Math.round((zoomState.currentZoomLevel || 0) * 100);
   const [zoomReady, setZoomReady] = useState(false);
 
@@ -1081,6 +1120,51 @@ function DocumentPane({
       });
     });
   }, [documentId, zoomCapability]);
+
+  useEffect(() => {
+    if (documentState?.status !== "loaded" || !zoomCapability || !viewportCapability) return;
+    let stopped = false;
+    let interval = 0;
+
+    const release = () => {
+      if (stopped) return;
+      try {
+        const scope = viewportCapability.forDocument(documentId);
+        const gated = scope.isGated() || viewportCapability.isGated(documentId);
+        if (!gated) {
+          if (interval) window.clearInterval(interval);
+          return;
+        }
+        const metrics = scope.getMetrics();
+        if (metrics.clientWidth <= 0 || metrics.clientHeight <= 0) return;
+        zoomCapability.forDocument(documentId).requestZoom(ZoomMode.FitWidth);
+        if (scope.isGated()) scope.releaseGate("zoom");
+      } catch {
+        // The viewport is registered a frame after the document reports loaded.
+      }
+    };
+
+    release();
+    const frame = window.requestAnimationFrame(() => {
+      release();
+      window.requestAnimationFrame(release);
+    });
+    const timers = [50, 160, 400].map((delay) => window.setTimeout(release, delay));
+    interval = window.setInterval(release, 100);
+    const stopResize = viewportCapability.onViewportResize((event) => {
+      if (event.documentId === documentId) release();
+    });
+    const stop = window.setTimeout(() => window.clearInterval(interval), 2000);
+
+    return () => {
+      stopped = true;
+      window.cancelAnimationFrame(frame);
+      timers.forEach((timer) => window.clearTimeout(timer));
+      window.clearInterval(interval);
+      window.clearTimeout(stop);
+      stopResize();
+    };
+  }, [documentId, documentState?.status, viewportCapability, zoomCapability]);
 
   return (
     <section
