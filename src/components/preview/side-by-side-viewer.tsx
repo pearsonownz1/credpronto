@@ -46,15 +46,35 @@ import { TranslationWatermark } from "./translation-watermark";
 
 export const ORIGINAL_DOCUMENT_ID = "original";
 export const TRANSLATION_DOCUMENT_ID = "translation";
+export const EVALUATION_DOCUMENT_ID = "evaluation";
 
 const MOBILE_QUERY = "(max-width: 767px)";
 
-type Role = "original" | "translation";
+type Role = "original" | "translation" | "evaluation";
 
 const DOCUMENT_ID: Record<Role, string> = {
   original: ORIGINAL_DOCUMENT_ID,
   translation: TRANSLATION_DOCUMENT_ID,
+  evaluation: EVALUATION_DOCUMENT_ID,
 };
+
+/** Null when the target document has no pages yet. Otherwise keep the page inside 1..total. */
+export function clampedPageNumber(pageNumber: number, totalPages: number): number | null {
+  if (!Number.isFinite(pageNumber) || !Number.isFinite(totalPages) || totalPages <= 0) return null;
+  const page = Math.trunc(pageNumber);
+  const total = Math.trunc(totalPages);
+  if (total <= 0) return null;
+  if (page < 1) return 1;
+  if (page > total) return total;
+  return page;
+}
+
+function roleForDocument(documentId: string): Role | null {
+  if (documentId === ORIGINAL_DOCUMENT_ID) return "original";
+  if (documentId === TRANSLATION_DOCUMENT_ID) return "translation";
+  if (documentId === EVALUATION_DOCUMENT_ID) return "evaluation";
+  return null;
+}
 
 type Snapshot = ScrollAnchor & { zoom: ZoomLevel };
 
@@ -91,6 +111,8 @@ type ViewerProps = {
   onBuy?: (body: CheckoutBody) => void | Promise<void>;
   onCorrect?: (input: { page: number; note: string }) => Promise<void>;
   onDownload?: () => void | Promise<void>;
+  onEvaluate?: () => void | Promise<void>;
+  onDownloadEvaluation?: () => void | Promise<void>;
   notice?: string;
   noticeTestId?: string;
   /** When the page already started PDFium, skip a second wasm download. */
@@ -140,6 +162,8 @@ function SideBySideEngine({
   onBuy,
   onCorrect,
   onDownload,
+  onEvaluate,
+  onDownloadEvaluation,
   notice,
   noticeTestId,
   shellLayout,
@@ -156,9 +180,11 @@ function SideBySideEngine({
   const panel = useAddonPanel(order, onBuy);
   const original = order.original.url;
   const translation = order.translation.url;
-  const files = usePreviewFileRecovery(original, translation);
+  const evaluation = order.evaluation?.url ?? null;
+  const files = usePreviewFileRecovery(original, translation, evaluation);
   const sourceOriginal = files.urls?.original ?? original;
   const sourceTranslation = files.urls?.translation ?? translation;
+  const sourceEvaluation = files.urls ? files.urls.evaluation : evaluation;
   const plugins = useMemo(
     () => [
       createPluginRegistration(DocumentManagerPluginPackage, {
@@ -169,6 +195,9 @@ function SideBySideEngine({
             documentId: TRANSLATION_DOCUMENT_ID,
             name: "Translation",
           },
+          ...(sourceEvaluation
+            ? [{ url: sourceEvaluation, documentId: EVALUATION_DOCUMENT_ID, name: "Evaluation" }]
+            : []),
         ],
       }),
       createPluginRegistration(ViewportPluginPackage),
@@ -186,7 +215,7 @@ function SideBySideEngine({
         paddingY: 8,
       }),
     ],
-    [sourceOriginal, sourceTranslation],
+    [sourceOriginal, sourceTranslation, sourceEvaluation],
   );
 
   const layout = shellLayout ?? (chrome === "readonly" || chrome === "gcs" ? "embedded" : "page");
@@ -226,7 +255,7 @@ function SideBySideEngine({
 
   return (
     <EmbedPDF
-      key={`${sourceOriginal}:${sourceTranslation}`}
+      key={`${sourceOriginal}:${sourceTranslation}:${sourceEvaluation ?? ""}`}
       engine={engine}
       plugins={plugins}
     >
@@ -238,6 +267,8 @@ function SideBySideEngine({
         panel={panel}
         onCorrect={onCorrect}
         onDownload={onDownload}
+        onEvaluate={onEvaluate}
+        onDownloadEvaluation={onDownloadEvaluation}
         notice={notice}
         noticeTestId={noticeTestId}
         onDocumentError={files.recover}
@@ -293,6 +324,8 @@ function ViewerWorkspace({
   panel,
   onCorrect,
   onDownload,
+  onEvaluate,
+  onDownloadEvaluation,
   notice,
   noticeTestId,
   onDocumentError,
@@ -304,6 +337,8 @@ function ViewerWorkspace({
   panel: AddonPanelState;
   onCorrect?: (input: { page: number; note: string }) => Promise<void>;
   onDownload?: () => void | Promise<void>;
+  onEvaluate?: () => void | Promise<void>;
+  onDownloadEvaluation?: () => void | Promise<void>;
   notice?: string;
   noticeTestId?: string;
   onDocumentError: () => void;
@@ -334,6 +369,16 @@ function ViewerWorkspace({
   const syncScrollRef = useRef(syncScroll);
   const suppressSync = useRef(false);
   const leadRef = useRef(lead);
+  const hasEvaluation = Boolean(order.evaluation);
+  const activeDocumentIds = useMemo(
+    () =>
+      hasEvaluation
+        ? [ORIGINAL_DOCUMENT_ID, TRANSLATION_DOCUMENT_ID, EVALUATION_DOCUMENT_ID]
+        : [ORIGINAL_DOCUMENT_ID, TRANSLATION_DOCUMENT_ID],
+    [hasEvaluation],
+  );
+  const seenEvaluationUrl = useRef<string | null>(null);
+  const [evaluating, setEvaluating] = useState(false);
 
   useEffect(() => {
     syncScrollRef.current = syncScroll;
@@ -341,19 +386,21 @@ function ViewerWorkspace({
   }, [lead, syncScroll]);
 
   useEffect(() => {
+    const url = order.evaluation?.url;
+    if (!isMobile || !url || seenEvaluationUrl.current === url) return;
+    seenEvaluationUrl.current = url;
+    pendingRestore.current = "evaluation";
+    leadRef.current = "evaluation";
+    setLead("evaluation");
+    setRole("evaluation");
+  }, [isMobile, order.evaluation?.url]);
+
+  useEffect(() => {
     if (!scrollCapability) return;
 
     return scrollCapability.onScroll((event) => {
-      const sourceRole: Role =
-        event.documentId === TRANSLATION_DOCUMENT_ID
-          ? "translation"
-          : "original";
-      if (
-        event.documentId !== ORIGINAL_DOCUMENT_ID &&
-        event.documentId !== TRANSLATION_DOCUMENT_ID
-      ) {
-        return;
-      }
+      const sourceRole = roleForDocument(event.documentId);
+      if (!sourceRole || !activeDocumentIds.includes(event.documentId)) return;
 
       if (pendingRestore.current) return;
 
@@ -367,28 +414,37 @@ function ViewerWorkspace({
 
       if (suppressSync.current || !syncScrollRef.current) return;
 
-      const targetId =
-        event.documentId === ORIGINAL_DOCUMENT_ID
-          ? TRANSLATION_DOCUMENT_ID
-          : ORIGINAL_DOCUMENT_ID;
-      const targetAnchor = visibleAnchor(
-        scrollCapability.forDocument(targetId).getMetrics(),
-      );
-      if (anchorsMatch(sourceAnchor, targetAnchor)) return;
-
-      suppressSync.current = true;
-      scrollCapability.forDocument(targetId).scrollToPage({
-        pageNumber: sourceAnchor.pageNumber,
-        pageCoordinates: { x: sourceAnchor.x, y: sourceAnchor.y },
-        alignX: 0,
-        alignY: 0,
-        behavior: "instant",
-      });
-      window.setTimeout(() => {
-        suppressSync.current = false;
-      }, 80);
+      let synced = false;
+      for (const targetId of activeDocumentIds) {
+        if (targetId === event.documentId) continue;
+        try {
+          const target = scrollCapability.forDocument(targetId);
+          const pageNumber = clampedPageNumber(sourceAnchor.pageNumber, target.getTotalPages());
+          if (pageNumber == null) continue;
+          const clamped = { ...sourceAnchor, pageNumber };
+          if (anchorsMatch(clamped, visibleAnchor(target.getMetrics()))) continue;
+          if (!synced) {
+            suppressSync.current = true;
+            synced = true;
+          }
+          target.scrollToPage({
+            pageNumber,
+            pageCoordinates: { x: sourceAnchor.x, y: sourceAnchor.y },
+            alignX: 0,
+            alignY: 0,
+            behavior: "instant",
+          });
+        } catch {
+          // A shorter report can still be loading while the original scrolls.
+        }
+      }
+      if (synced) {
+        window.setTimeout(() => {
+          suppressSync.current = false;
+        }, 80);
+      }
     });
-  }, [scrollCapability]);
+  }, [activeDocumentIds, scrollCapability]);
 
   useEffect(() => {
     if (
@@ -405,8 +461,11 @@ function ViewerWorkspace({
     let cancelled = false;
 
     const place = () => {
+      const total = scrollCapability.forDocument(documentId).getTotalPages();
+      const pageNumber = clampedPageNumber(shot.pageNumber, total);
+      if (pageNumber == null) return;
       scrollCapability.forDocument(documentId).scrollToPage({
-        pageNumber: shot.pageNumber,
+        pageNumber,
         pageCoordinates: { x: shot.x, y: shot.y },
         alignX: 0,
         alignY: 0,
@@ -463,21 +522,28 @@ function ViewerWorkspace({
     setLead(next);
   }
 
-  function jumpBoth(pageNumber: number, from: Role) {
-    rememberLead(from);
-    snapshot.current = { ...snapshot.current, pageNumber, x: 0, y: 0 };
-    suppressSync.current = true;
-    for (const documentId of [
-      ORIGINAL_DOCUMENT_ID,
-      TRANSLATION_DOCUMENT_ID,
-    ]) {
-      scrollCapability?.forDocument(documentId).scrollToPage({
-        pageNumber,
+  function scrollDocument(documentId: string, pageNumber: number) {
+    try {
+      const target = scrollCapability?.forDocument(documentId);
+      if (!target) return;
+      const page = clampedPageNumber(pageNumber, target.getTotalPages());
+      if (page == null) return;
+      target.scrollToPage({
+        pageNumber: page,
         alignX: 0,
         alignY: 0,
         behavior: "instant",
       });
+    } catch {
+      // Skip a document that has not reported its page count.
     }
+  }
+
+  function jumpBoth(pageNumber: number, from: Role) {
+    rememberLead(from);
+    snapshot.current = { ...snapshot.current, pageNumber, x: 0, y: 0 };
+    suppressSync.current = true;
+    for (const documentId of activeDocumentIds) scrollDocument(documentId, pageNumber);
     window.setTimeout(() => {
       suppressSync.current = false;
     }, 120);
@@ -489,14 +555,19 @@ function ViewerWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- jump when staff requests a page
   }, [focusPage, scrollCapability]);
 
+  function requestDocumentZoom(documentId: string, zoom: ZoomLevel) {
+    try {
+      zoomCapability?.forDocument(documentId).requestZoom(zoom);
+    } catch {
+      // The evaluation pane can mount a moment after the other two.
+    }
+  }
+
   function changeZoom(mode: "in" | "out" | "fit") {
     if (!zoomCapability) return;
     suppressSync.current = true;
-    const ids = [ORIGINAL_DOCUMENT_ID, TRANSLATION_DOCUMENT_ID];
     if (mode === "fit") {
-      for (const documentId of ids) {
-        zoomCapability.forDocument(documentId).requestZoom(ZoomMode.FitWidth);
-      }
+      for (const documentId of activeDocumentIds) requestDocumentZoom(documentId, ZoomMode.FitWidth);
       snapshot.current = { ...snapshot.current, zoom: ZoomMode.FitWidth };
     } else {
       const current =
@@ -504,9 +575,7 @@ function ViewerWorkspace({
           .currentZoomLevel || 1;
       const next =
         mode === "in" ? Math.min(current * 1.2, 4) : Math.max(current / 1.2, 0.4);
-      for (const documentId of ids) {
-        zoomCapability.forDocument(documentId).requestZoom(next);
-      }
+      for (const documentId of activeDocumentIds) requestDocumentZoom(documentId, next);
       snapshot.current = { ...snapshot.current, zoom: next };
     }
     window.setTimeout(() => {
@@ -538,7 +607,30 @@ function ViewerWorkspace({
   const zoomPercent = Math.round((leadZoom.currentZoomLevel || 0) * 100);
   const visibleRoles: Role[] = isMobile
     ? [role]
-    : ["original", "translation"];
+    : hasEvaluation
+      ? ["original", "translation", "evaluation"]
+      : ["original", "translation"];
+
+  async function evaluateDocument() {
+    if (evaluating || !onEvaluate) return;
+    setEvaluating(true);
+    try {
+      await onEvaluate();
+    } finally {
+      setEvaluating(false);
+    }
+  }
+
+  function paneDocument(visible: Role) {
+    if (visible === "evaluation") return order.evaluation;
+    return order[visible];
+  }
+
+  function paneLabel(visible: Role) {
+    if (visible === "original") return "Original";
+    if (visible === "evaluation") return "Evaluation";
+    return chrome === "gcs" ? "Certified Translation" : "Translation";
+  }
 
   function openCorrection() {
     setFlagPage(pageNumber || 1);
@@ -619,7 +711,7 @@ function ViewerWorkspace({
       toolbar={
         <div className="flex w-full flex-col">
           <div
-            className="mx-4 mt-3 grid grid-cols-2 rounded-[var(--cp-radius)] bg-[#eceff3] p-[3px] md:hidden"
+            className={`mx-4 mt-3 grid ${hasEvaluation ? "grid-cols-3" : "grid-cols-2"} rounded-[var(--cp-radius)] bg-[#eceff3] p-[3px] md:hidden`}
             role="group"
             aria-label="Document"
           >
@@ -637,6 +729,15 @@ function ViewerWorkspace({
             >
               Translation
             </SegmentButton>
+            {hasEvaluation ? (
+              <SegmentButton
+                pressed={role === "evaluation"}
+                testId="doc-toggle-evaluation"
+                onClick={() => showRole("evaluation")}
+              >
+                Evaluation
+              </SegmentButton>
+            ) : null}
           </div>
           <div className="flex w-full flex-wrap items-center gap-x-2.5 gap-y-2 px-4 py-2 md:h-[52px] md:flex-nowrap md:px-5 md:py-0">
             <IconButton
@@ -754,7 +855,16 @@ function ViewerWorkspace({
                 className="inline-flex h-[34px] items-center rounded-[var(--cp-radius)] bg-primary px-3 text-[13px] font-semibold text-primary-ink"
                 onClick={() => void onDownload?.()}
               >
-                Download certified PDF
+                Download Certified Translation
+              </button>
+              <button
+                type="button"
+                data-testid="evaluate-document"
+                className="inline-flex h-[34px] items-center rounded-[var(--cp-radius)] border border-line bg-bg px-3 text-[13px] font-semibold text-ink disabled:opacity-60"
+                disabled={evaluating}
+                onClick={() => void evaluateDocument()}
+              >
+                {evaluating ? "Evaluating..." : "Evaluate Document"}
               </button>
               {popover && !isMobile ? (
                 <div className="absolute top-[calc(100%+8px)] right-0 z-30">
@@ -770,16 +880,21 @@ function ViewerWorkspace({
         </div>
       }
     >
-      {visibleRoles.map((visible) => (
-        <DocumentPane
-          key={visible}
-          role={visible}
-          label={visible === "original" ? "Original" : chrome === "gcs" ? "Certified Translation" : "Translation"}
-          subtitle={order[visible].subtitle}
-          watermark={visible === "translation" && chrome !== "gcs"}
-          onDocumentError={onDocumentError}
-        />
-      ))}
+      {visibleRoles.map((visible) => {
+        const document = paneDocument(visible);
+        if (!document) return null;
+        return (
+          <DocumentPane
+            key={visible}
+            role={visible}
+            label={paneLabel(visible)}
+            subtitle={document.subtitle}
+            watermark={visible === "translation" && chrome !== "gcs"}
+            onDownload={visible === "evaluation" ? onDownloadEvaluation : undefined}
+            onDocumentError={onDocumentError}
+          />
+        );
+      })}
     </PreviewShell>
   );
 }
@@ -839,15 +954,19 @@ function IconButton({
   );
 }
 
-function usePreviewFileRecovery(original: string, translation: string) {
-  const [urls, setUrls] = useState<{ original: string; translation: string } | null>(null);
+function usePreviewFileRecovery(original: string, translation: string, evaluation: string | null) {
+  const [urls, setUrls] = useState<{
+    original: string;
+    translation: string;
+    evaluation: string | null;
+  } | null>(null);
   const [phase, setPhase] = useState<"open" | "recovering" | "failed">("open");
-  const [sourceKey, setSourceKey] = useState(`${original}\0${translation}`);
+  const [sourceKey, setSourceKey] = useState(`${original}\0${translation}\0${evaluation ?? ""}`);
   const attemptRef = useRef(0);
   const generation = useRef(0);
   const lock = useRef(false);
   const ownedBlobs = useRef<string[]>([]);
-  const nextKey = `${original}\0${translation}`;
+  const nextKey = `${original}\0${translation}\0${evaluation ?? ""}`;
   if (sourceKey !== nextKey) {
     setSourceKey(nextKey);
     setUrls(null);
@@ -882,22 +1001,25 @@ function usePreviewFileRecovery(original: string, translation: string) {
         await sleep(delay);
         if (generation.current !== gen) return;
         try {
-          const [originalBlob, translationBlob] = await Promise.all([
+          const [originalBlob, translationBlob, evaluationBlob] = await Promise.all([
             fetchPreviewFile(original),
             fetchPreviewFile(translation),
+            evaluation ? fetchPreviewFile(evaluation) : Promise.resolve(null),
           ]);
           if (generation.current !== gen) return;
           const nextOriginal = URL.createObjectURL(originalBlob);
           const nextTranslation = URL.createObjectURL(translationBlob);
+          const nextEvaluation = evaluationBlob ? URL.createObjectURL(evaluationBlob) : null;
           if (generation.current !== gen) {
             URL.revokeObjectURL(nextOriginal);
             URL.revokeObjectURL(nextTranslation);
+            if (nextEvaluation) URL.revokeObjectURL(nextEvaluation);
             return;
           }
           for (const url of ownedBlobs.current) URL.revokeObjectURL(url);
-          ownedBlobs.current = [nextOriginal, nextTranslation];
+          ownedBlobs.current = [nextOriginal, nextTranslation, ...(nextEvaluation ? [nextEvaluation] : [])];
           attemptRef.current = next;
-          setUrls({ original: nextOriginal, translation: nextTranslation });
+          setUrls({ original: nextOriginal, translation: nextTranslation, evaluation: nextEvaluation });
           setPhase("open");
           lock.current = false;
           return;
@@ -906,7 +1028,7 @@ function usePreviewFileRecovery(original: string, translation: string) {
         }
       }
     })();
-  }, [original, translation]);
+  }, [evaluation, original, translation]);
 
   const retry = useCallback(() => {
     generation.current += 1;
@@ -933,12 +1055,14 @@ function DocumentPane({
   label,
   subtitle,
   watermark,
+  onDownload,
   onDocumentError,
 }: {
   role: Role;
   label: string;
   subtitle: string;
   watermark?: boolean;
+  onDownload?: () => void | Promise<void>;
   onDocumentError: () => void;
 }) {
   const documentId = DOCUMENT_ID[role];
@@ -968,9 +1092,21 @@ function DocumentPane({
       aria-label={label}
       className="flex min-h-0 min-w-0 flex-1 flex-col border-line md:border-l md:first:border-l-0"
     >
-      <header className="flex h-10 shrink-0 items-center justify-between bg-bg px-5 text-[13px]">
+      <header className="flex h-10 shrink-0 items-center justify-between gap-3 bg-bg px-5 text-[13px]">
         <span className="font-semibold">{label}</span>
-        <span className="font-normal text-ink-muted">{subtitle}</span>
+        <span className="flex min-w-0 items-center gap-3">
+          {onDownload ? (
+            <button
+              type="button"
+              data-testid="download-evaluation"
+              className="shrink-0 font-semibold text-primary"
+              onClick={() => void onDownload()}
+            >
+              Download
+            </button>
+          ) : null}
+          <span className="truncate font-normal text-ink-muted">{subtitle}</span>
+        </span>
       </header>
       <div className="relative min-h-0 flex-1">
         <div className="absolute inset-0">

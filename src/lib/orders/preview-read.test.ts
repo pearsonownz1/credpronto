@@ -241,6 +241,45 @@ describe("GET preview timing", () => {
     await expect(getPreview(token)).rejects.toThrow(/finals/);
     expect(sign).not.toHaveBeenCalled();
   });
+
+  it("signs a stored GCS evaluation from finals with no watermarked preview path", async () => {
+    const path = `${orderId}/course_by_course-evaluation.pdf`;
+    vi.spyOn(access, "orderForPreview").mockResolvedValue({
+      db: {} as Db,
+      order: previewOrder({
+        brand: "gcs",
+        serviceFiles: { course_by_course: path },
+        evaluationPageCount: 1,
+      }),
+      token,
+    });
+    vi.spyOn(db, "latestReadyPreview").mockResolvedValue({
+      id: "preview-1",
+      version: 3,
+      previewPath: `${orderId}/preview-v3.pdf`,
+      status: "ready",
+    });
+    vi.spyOn(db, "listPreviewFrames").mockResolvedValue({
+      documents: [{ id: "doc-1", filename: "acta.pdf", position: 0, appliedPosition: null }],
+      pages: ninePages,
+    });
+    vi.spyOn(db, "listPreviewCorrections").mockResolvedValue([]);
+    vi.spyOn(db, "insertEvent").mockResolvedValue();
+    vi.spyOn(storage, "signedObjectUrls").mockImplementation(async (_db, bucket, paths) => {
+      return new Map(paths.map((item) => [item, `https://signed.example/${bucket}/${item}`]));
+    });
+    vi.spyOn(storage, "signedObjectUrl").mockResolvedValue(`https://signed.example/finals/${path}`);
+
+    const preview = await getPreview(token);
+
+    expect(preview.body.report).toEqual({
+      url: `https://signed.example/finals/${path}`,
+      pageCount: 1,
+    });
+    expect(preview.body.report?.url).not.toContain("preview-v3");
+    expect(storage.signedObjectUrl).toHaveBeenCalledWith(expect.anything(), "finals", path, 600);
+    expect(preview.body.translation.url).toContain("/previews/");
+  });
 });
 
 describe("preview cache", () => {

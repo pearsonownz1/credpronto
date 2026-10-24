@@ -16,6 +16,8 @@ import {
 } from "./evaluation-price";
 import { orderHasEvaluation, resolveServices, selectionPricePatch, servicesWithTranslation } from "./service-selection";
 import { bundleTranslationFile, deliveryFileTarget } from "./delivery-file";
+import { orderDownloadFilename } from "./download-name";
+import { storedEvaluationFile } from "./evaluation-summary";
 import { withQuotedPages } from "./stored-pages";
 import {
   DOWNLOAD_URL_SECONDS,
@@ -365,6 +367,21 @@ export async function downloadOrderFile(
     throw new HttpError("file must be translation, certification, evaluation, or original", 400);
   }
   const { db, order } = await orderForToken(token);
+  if (isGcsOrder(order) && file === "evaluation") {
+    const stored = storedEvaluationFile(order.serviceFiles);
+    if (!stored) throw new HttpError("That file is not ready", 404);
+    const documents = await listDocuments(db, order.id);
+    const filename = orderDownloadFilename(
+      "evaluation",
+      documents.map((document) => document.filename),
+      order.targetLanguage,
+    );
+    const url = await signedObjectUrl(db, FINALS_BUCKET, stored.path, DOWNLOAD_URL_SECONDS, {
+      download: filename,
+    });
+    await insertEvent(db, order.id, "downloaded", { file, brand: "gcs" });
+    return { url, filename, expiresInSeconds: DOWNLOAD_URL_SECONDS };
+  }
   if (isGcsOrder(order) && (file === "translation" || file === "certification")) {
     const delivery = await getDelivery(db, order.id);
     const documents = await listDocuments(db, order.id);

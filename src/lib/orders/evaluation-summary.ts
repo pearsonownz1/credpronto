@@ -82,6 +82,17 @@ export function evaluationServicePath(orderId: string, service: EvaluationServic
   return `${orderId}/${service}-evaluation.pdf`;
 }
 
+/** Course-by-course wins when both reports were stored. */
+export function storedEvaluationFile(
+  files: Partial<Record<EvaluationService, string>> | null | undefined,
+): { kind: EvaluationService; path: string } | null {
+  const course = files?.course_by_course?.trim();
+  if (course) return { kind: "course_by_course", path: course };
+  const diploma = files?.diploma?.trim();
+  if (diploma) return { kind: "diploma", path: diploma };
+  return null;
+}
+
 /** Diploma first, then course-by-course. A later copy of the same kind replaces the earlier one. */
 export function collectedEvaluationResults(order: {
   evaluationResult?: EvaluationResult | null;

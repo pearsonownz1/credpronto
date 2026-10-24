@@ -55,6 +55,8 @@ export type PreviewOrder = {
   pageCount: number;
   original: PreviewDocument;
   translation: PreviewDocument;
+  /** Credential evaluation shown beside the certified translation. */
+  evaluation?: PreviewDocument | null;
   pricing: {
     perPageCents: number;
     pages: number;
