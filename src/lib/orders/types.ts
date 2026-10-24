@@ -137,6 +137,8 @@ export type OrderRecord = {
   id: string;
   customerId: string;
   userId: string | null;
+  /** `gcs` is the free GEO Credential Services translation. Older rows omit it. */
+  brand?: "credpronto" | "gcs";
   serviceType: string;
   status: OrderStatus;
   sourceLanguage: string | null;

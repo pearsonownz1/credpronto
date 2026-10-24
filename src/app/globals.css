@@ -35,6 +35,10 @@ body:has([data-paid-compact]) > .preview-theme > div {
   min-height: 0;
 }
 
+body:has([data-gcs-flow]) > footer {
+  display: none;
+}
+
 .preview-theme {
   --cp-bg: #ffffff;
   --cp-bg-muted: #f6f7f9;

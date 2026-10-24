@@ -7,6 +7,8 @@ import { inReadingOrder } from "./page-order";
 import { CONFIRMATION_FIELD_KEYS } from "./fields";
 import { pageKind, type PageKind, type RenderBlock, type RenderPage } from "./pdf/layout";
 import { coverClientName, coverDocuments, coverSignature, coverTranslatorName, loadTranslatorSignature } from "./pdf/cover";
+import { gcsCoverClientName, isGcsOrder } from "./gcs";
+import { releaseFreeGcsOrder } from "./gcs-release";
 import { storeCertifiedTranslation } from "./final-file";
 import { documentKind } from "./pdf/document-layout";
 import { reconcileIdentifiers, verifyIdentifiers } from "./pdf/identifiers";
@@ -776,13 +778,15 @@ export async function runTranslationAssemble(
         const confirmations = await listConfirmations(db, input.orderId);
         const clientEmail = await customerEmail(db, order.customerId);
         const previewPath = `${input.orderId}/preview-v${input.version}.pdf`;
+        const gcs = isGcsOrder(order);
         const files = await renderOrderPdfs({
           orderId: input.orderId,
           sourceLanguage,
           targetLanguage: order.targetLanguage,
           date: today,
           pages: renderedPages,
-          clientName: coverClientName(confirmations, clientEmail),
+          brand: gcs ? "gcs" : "credpronto",
+          clientName: gcs ? gcsCoverClientName(confirmations) : coverClientName(confirmations, clientEmail),
           documents: coverDocuments(documents, pages, translatedCounts, translatedText),
           translatorName: coverTranslatorName(null),
           signature: coverSignature(null, configuredSignature),
@@ -794,6 +798,8 @@ export async function runTranslationAssemble(
           version: input.version,
           cleanTranslation: files.cleanTranslation,
           combinedOriginalPath: order.combinedOriginalPath,
+          appendOriginal: !gcs,
+          stampVerification: !gcs,
         });
         const certificationPath = translationPath;
         await uploadObject(db, "previews", previewPath, files.watermarkedPreview, "application/pdf");
@@ -856,6 +862,26 @@ export async function runTranslationAssemble(
           certification_path: certificationPath,
         });
         await resolveCorrections(db, open.map((correction) => correction.id), input.version);
+
+        if (gcs) {
+          const translatedCount = pagesToTranslate(pages).length;
+          const settled = checkedProgress(order.progress, {
+            step: "done",
+            pagesDone: translatedCount,
+            pagesTranslateTotal: translatedCount,
+          });
+          if (deadline.aborted) throw new AiUnavailableError("translation_timeout");
+          await releaseFreeGcsOrder(
+            db,
+            input.orderId,
+            { finalPath: translationPath, certificationPath },
+            settled,
+          );
+          await markRunReady(db, input.orderId, input.version);
+          const { notifyLifecycle } = await import("./webhook-delivery");
+          await notifyLifecycle(db, input.orderId, "order.preview_ready");
+          return;
+        }
 
         const previewEmail = await orderCustomerEmail(db, order.id);
         if (previewEmail) {

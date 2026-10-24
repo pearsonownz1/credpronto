@@ -88,24 +88,35 @@ export async function storeCertifiedTranslation(
     version: number;
     cleanTranslation: Uint8Array;
     combinedOriginalPath: string | null;
+    /** GCS keeps the certificate layout and does not append the original. */
+    appendOriginal?: boolean;
+    /** GCS does not add the CredPronto verification band. */
+    stampVerification?: boolean;
   },
 ): Promise<string> {
-  const documents = inReadingOrder(await listDocuments(db, input.orderId));
-  const original = await loadOriginalPdf(db, {
-    combinedOriginalPath: input.combinedOriginalPath,
-    documents,
-  });
-  const footerPages = original ? await pdfPageCount(input.cleanTranslation) : 0;
-  const prepared = original
-    ? await stampPacketPageNumbers(await appendPdf(input.cleanTranslation, original), {
+  const appendOriginal = input.appendOriginal !== false;
+  const stampVerification = input.stampVerification !== false;
+  let prepared = input.cleanTranslation;
+  if (appendOriginal) {
+    const documents = inReadingOrder(await listDocuments(db, input.orderId));
+    const original = await loadOriginalPdf(db, {
+      combinedOriginalPath: input.combinedOriginalPath,
+      documents,
+    });
+    if (original) {
+      const footerPages = await pdfPageCount(input.cleanTranslation);
+      prepared = await stampPacketPageNumbers(await appendPdf(input.cleanTranslation, original), {
         orderId: input.orderId,
         footerPages,
+      });
+    }
+  }
+  const bytes = stampVerification
+    ? await stampFinishedPdf(db, prepared, {
+        orderId: input.orderId,
+        documentType: "translation",
       })
-    : input.cleanTranslation;
-  const bytes = await stampFinishedPdf(db, prepared, {
-    orderId: input.orderId,
-    documentType: "translation",
-  });
+    : prepared;
   const path = certifiedTranslationObjectPath(input.orderId, input.version);
   await uploadObject(db, FINALS_BUCKET, path, bytes, PDF_TYPE);
   return path;

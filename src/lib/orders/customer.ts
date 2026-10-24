@@ -4,6 +4,7 @@ import { addonStripeLines, parseCheckoutBody, serviceCents } from "./addons";
 import { rejectCustomerTotal } from "./customer-total";
 import { checkoutBlockReason } from "./equivalency";
 import { downloadGate } from "./access";
+import { isGcsOrder } from "./gcs";
 import { checkoutPreviewImageUrl } from "./checkout-image";
 import { checkoutLineProduct, checkoutProductDescription } from "./checkout-preview";
 import {
@@ -364,6 +365,29 @@ export async function downloadOrderFile(
     throw new HttpError("file must be translation, certification, evaluation, or original", 400);
   }
   const { db, order } = await orderForToken(token);
+  if (isGcsOrder(order) && (file === "translation" || file === "certification")) {
+    const delivery = await getDelivery(db, order.id);
+    const documents = await listDocuments(db, order.id);
+    const names = documents.map((document) => document.filename);
+    const allowed = deliveryFileTarget({
+      file,
+      service: order.service,
+      services: order.services,
+      orderType: order.orderType,
+      serviceType: order.serviceType,
+      finalPath: delivery?.finalPath ?? order.finalTranslationPath,
+      certificationPath: delivery?.certificationPath ?? order.certificationPath,
+      documentNames: names,
+      targetLanguage: order.targetLanguage,
+      includeTranslation: order.includeTranslation,
+    });
+    if (!allowed) throw new HttpError("That file is not ready", 404);
+    const url = await signedObjectUrl(db, FINALS_BUCKET, allowed.path, DOWNLOAD_URL_SECONDS, {
+      download: allowed.filename,
+    });
+    await insertEvent(db, order.id, "downloaded", { file, brand: "gcs" });
+    return { url, filename: allowed.filename, expiresInSeconds: DOWNLOAD_URL_SECONDS };
+  }
   const payment = await settledPayment(db, order.id);
   const documents = await listDocuments(db, order.id);
   const names = documents.map((document) => document.filename);
@@ -524,6 +548,7 @@ function serviceStripeLines(input: {
 
 export async function startCheckout(token: string, body: unknown = {}, requestUrl?: string) {
   const { db, order: stored } = await orderForToken(token);
+  if (isGcsOrder(stored)) throw new HttpError("This certified translation is already included.", 409);
   if (body && typeof body === "object" && !Array.isArray(body)) {
     rejectCustomerTotal(body as Record<string, unknown>);
   }
@@ -591,7 +616,7 @@ export async function startCheckout(token: string, body: unknown = {}, requestUr
     await insertEvent(db, order.id, "checkout_started", { mode: "paid_test" });
     const sessionId = `paid_test_${randomUUID()}`;
     const paidAt = new Date().toISOString();
-    const payment = await insertPayment(db, {
+    await insertPayment(db, {
       orderId: order.id,
       sessionId,
       amountCents: total,

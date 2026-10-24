@@ -67,6 +67,7 @@ function mapOrder(row: Row): OrderRecord {
     id: String(row.id),
     customerId: String(row.customer_id),
     userId: str(row.user_id),
+    brand: row.brand === "gcs" ? "gcs" : "credpronto",
     serviceType: str(row.service_type) ?? "translation",
     status: String(row.status) as OrderStatus,
     sourceLanguage: str(row.source_language),
@@ -383,6 +384,7 @@ export async function insertOrder(
     sourceLanguage?: string | null;
     targetLanguage?: string | null;
     languageConfirmed?: boolean;
+    brand?: "gcs";
   },
 ): Promise<OrderRecord> {
   const { data, error } = await db
@@ -415,6 +417,7 @@ export async function insertOrder(
       ...(input.sourceLanguage ? { source_language: input.sourceLanguage } : {}),
       ...(input.targetLanguage ? { target_language: input.targetLanguage } : {}),
       ...(input.languageConfirmed ? { language_confirmed: true } : {}),
+      ...(input.brand ? { brand: input.brand } : {}),
     })
     .select("*")
     .single();

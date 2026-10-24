@@ -94,6 +94,8 @@ export type RenderInput = {
   translatorName?: string | null;
   /** Ignored on the cover. The printed signature is the owner asset. */
   signature?: Uint8Array | null;
+  /** `gcs` prints the GEO Credential Services certificate and letterhead. */
+  brand?: "credpronto" | "gcs" | null;
 };
 
 export function assertContiguousPages(pages: { combinedPageNumber: number }[]): void {

@@ -38,6 +38,7 @@ import { notifyOrder } from "./webhook-delivery";
 import { downloadObject, uploadObject } from "./storage";
 import { quotePage, storedDensity } from "./billing";
 import { queueEarlyTranslation } from "./translation-jobs";
+import { isGcsOrder } from "./gcs";
 import type { ReadingStep } from "./reading-progress";
 import { countWords } from "./words";
 import type { DocumentRecord } from "./types";
@@ -607,11 +608,15 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
       return;
     }
 
+    const detectedSource = distinct.length === 1 ? distinct[0] : null;
+    const sourceLanguage = isGcsOrder(order) && order.sourceLanguage ? order.sourceLanguage : detectedSource;
+    const free = isGcsOrder(order);
     await updateOrder(db, orderId, {
       status: decision.status,
-      source_language: distinct.length === 1 ? distinct[0] : null,
+      source_language: sourceLanguage,
       billable_pages: decision.billablePages,
-      total_cents: decision.totalCents,
+      total_cents: free ? 0 : decision.totalCents,
+      ...(free ? { translation_cents: 0, unit_price_cents: 0 } : {}),
       review_reason: decision.reviewReason,
       eta_at: etaFromNow(decision.etaHours),
       combined_original_path: combinedPath,
@@ -623,7 +628,7 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
     if (decision.status === "quoted" && !(await hasEvent(db, orderId, "quote_shown"))) {
       await insertEvent(db, orderId, "quote_shown", {
         billablePages: decision.billablePages,
-        totalCents: decision.totalCents,
+        totalCents: free ? 0 : decision.totalCents,
       });
     }
     if (decision.status === "quoted") await notifyOrder(db, orderId, "order.quoted");

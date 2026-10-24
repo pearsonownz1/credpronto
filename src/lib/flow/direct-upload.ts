@@ -146,6 +146,21 @@ function choicePayload(choice: UploadChoice): Record<string, unknown> {
   return orderRequestChoice(choice);
 }
 
+function gcsPayload(input: {
+  brand?: "gcs";
+  clientName?: string | null;
+  sourceLanguage?: string | null;
+  targetLanguage?: string | null;
+}): Record<string, unknown> {
+  if (input.brand !== "gcs") return {};
+  return {
+    brand: "gcs",
+    ...(input.clientName?.trim() ? { clientName: input.clientName.trim() } : {}),
+    ...(input.sourceLanguage?.trim() ? { sourceLanguage: input.sourceLanguage.trim() } : {}),
+    ...(input.targetLanguage?.trim() ? { targetLanguage: input.targetLanguage.trim() } : {}),
+  };
+}
+
 export async function uploadOrderFiles(input: {
   email?: string | null;
   files: File[];
@@ -154,6 +169,10 @@ export async function uploadOrderFiles(input: {
   onProgress?: (ratio: number) => void;
   onFileProgress?: (files: FileUploadProgress[]) => void;
   putFile?: typeof putSignedFile;
+  brand?: "gcs";
+  clientName?: string | null;
+  sourceLanguage?: string | null;
+  targetLanguage?: string | null;
 }): Promise<{ orderToken: string; orderId: string }> {
   const choice = input.choice ?? { orderType: "translation" as const };
   const preEvaluationId = input.preEvaluationId?.trim() || "";
@@ -165,6 +184,7 @@ export async function uploadOrderFiles(input: {
       ...(email ? { email } : {}),
       preEvaluationId,
       ...choicePayload(choice),
+      ...gcsPayload(input),
     });
   }
   const files = await filesToUpload(input.files);
@@ -217,5 +237,6 @@ export async function uploadOrderFiles(input: {
       size: upload.size,
     })),
     ...choicePayload(choice),
+    ...gcsPayload(input),
   });
 }

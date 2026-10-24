@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { optionalUser } from "@/lib/auth/session";
+import { assertGcsPin } from "@/lib/gcs/pin";
 import { linkPreEvaluationOrder, releasePreEvaluationOrder } from "@/lib/pre-evaluation/db";
 import {
   assertClassifiedPreEvaluation,
@@ -8,6 +9,7 @@ import {
 } from "@/lib/pre-evaluation/owned-file";
 import { ORIGINALS_BUCKET } from "./constants";
 import {
+  confirmFields,
   deleteOrder,
   insertCustomerWithoutEmail,
   insertDocument,
@@ -16,6 +18,7 @@ import {
   upsertCustomer,
   type Db,
 } from "./db";
+import { isGcsBrand, readGcsClientName, readGcsSourceLanguage, readGcsTargetLanguage } from "./gcs";
 import { readDirectOrder, referencedOriginals, storeReferencedFiles } from "./direct-upload";
 import { HttpError } from "./errors";
 import { assertEmail, safeFilename } from "./files";
@@ -56,6 +59,8 @@ export async function createOrder(request: Request): Promise<{
   orderType: OrderType;
 }> {
   const body = await readDirectOrder(request);
+  const gcs = isGcsBrand(body.brand);
+  if (gcs) assertGcsPin(request);
   const session = await optionalUser();
   const { email, userId } = resolveOrderCustomer({
     session: session ? { id: session.id, email: session.email } : null,
@@ -68,6 +73,12 @@ export async function createOrder(request: Request): Promise<{
     includeTranslation: body.includeTranslation,
     services: body.services,
   });
+  if (gcs && (choice.orderType !== "translation" || body.preEvaluationId)) {
+    throw new HttpError("Upload one document", 400);
+  }
+  const clientName = gcs ? readGcsClientName(body.clientName) : null;
+  const sourceLanguage = gcs ? readGcsSourceLanguage(body.sourceLanguage) : null;
+  const targetLanguage = gcs ? readGcsTargetLanguage(body.targetLanguage) : null;
 
   const db = serviceDb();
   const sessionId = body.sessionId || randomUUID();
@@ -109,6 +120,16 @@ export async function createOrder(request: Request): Promise<{
     gclid: body.gclid,
     landingPath: body.landingPath,
     userId,
+    ...(gcs
+      ? {
+          brand: "gcs" as const,
+          totalCents: 0,
+          translationCents: 0,
+          unitPriceCents: 0,
+          targetLanguage,
+          ...(sourceLanguage ? { sourceLanguage } : {}),
+        }
+      : {}),
   });
 
   let claimed = false;
@@ -121,7 +142,13 @@ export async function createOrder(request: Request): Promise<{
     const files = copied ? [copied, ...uploaded] : uploaded;
     if (files.length < 1) throw new HttpError("Upload at least one file", 400);
     await insertEvent(db, order.id, "upload_started", { fileCount: files.length });
+    if (gcs && files.length !== 1) throw new HttpError("Upload one document", 400);
     await storeReferencedFiles(db, order.id, files);
+    if (clientName && files[0]) {
+      await confirmFields(db, order.id, [
+        { documentId: files[0].id, fieldKey: "full_name", confirmedValue: clientName },
+      ]);
+    }
     await insertEvent(db, order.id, "upload_done", { fileCount: files.length });
     await insertEvent(db, order.id, "staff_notified", { channel: "event" });
     return {

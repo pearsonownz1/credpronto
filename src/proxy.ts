@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { safeNextPath } from "@/lib/auth/redirect";
+import { gcsFlowRequest, gcsRewriteTarget, requestHost } from "@/lib/gcs/host";
 import { waitsForCheckoutOrder } from "@/lib/orders/checkout-return";
 import { publicOrderSegment } from "@/lib/orders/public-order";
 import { publicOrderExists } from "@/lib/orders/public-order-server";
@@ -108,6 +109,26 @@ export async function proxy(request: NextRequest) {
       }
       return withPrivateRobots(redirect, pathname);
     }
+    session.response.headers.set("Cache-Control", PRIVATE_NO_STORE);
+  }
+
+  const host = requestHost(request.headers);
+  const target = gcsRewriteTarget(host, pathname);
+  if (target) {
+    const url = request.nextUrl.clone();
+    url.pathname = target;
+    const headers = new Headers(request.headers);
+    headers.set("x-gcs-flow", "1");
+    const rewritten = NextResponse.rewrite(url, { request: { headers } });
+    for (const cookie of session.response.headers.getSetCookie()) {
+      rewritten.headers.append("set-cookie", cookie);
+    }
+    rewritten.headers.set("X-Robots-Tag", ROBOTS_NOINDEX);
+    rewritten.headers.set("Cache-Control", PRIVATE_NO_STORE);
+    return rewritten;
+  }
+  if (gcsFlowRequest(host, pathname)) {
+    session.response.headers.set("X-Robots-Tag", ROBOTS_NOINDEX);
     session.response.headers.set("Cache-Control", PRIVATE_NO_STORE);
   }
 
