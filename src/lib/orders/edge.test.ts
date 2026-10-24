@@ -7,6 +7,7 @@ import {
   countrySlug,
   countrySlugFallbackFilter,
   draftEquivalency,
+  NO_EDGE_MATCH_REASON,
   edgeContentExcerpt,
   edgeEquivalencyPrompt,
   edgeRowsFromSource,
@@ -374,7 +375,7 @@ describe("EDGE reference matching", () => {
   it("keeps an unmapped equivalency when EDGE does not support a confident label", () => {
     expect(
       chooseEquivalency({ matched: false, edgeUsEquivalency: null, ai: null, printed: "Licence" }),
-    ).toBe("Bachelor's degree");
+    ).toBe(PENDING_EQUIVALENCY);
     expect(
       chooseEquivalency({ matched: false, edgeUsEquivalency: null, ai: null, printed: "Certificado" }),
     ).toBe(PENDING_EQUIVALENCY);
@@ -481,7 +482,6 @@ describe("EDGE equivalency suggestions", () => {
     const high = draftEquivalency({
       printed: "Example Diploma",
       suggestion: equivalency({ id: "high", confidence: "high" }),
-      fallback: PENDING_EQUIVALENCY,
     });
     expect(high).toEqual({
       usEquivalency: "Bachelor's degree",
@@ -492,23 +492,20 @@ describe("EDGE equivalency suggestions", () => {
       draftEquivalency({
         printed: "Example Diploma",
         suggestion: equivalency({ id: "medium", confidence: "medium", usEquivalency: "Master's degree" }),
-        fallback: PENDING_EQUIVALENCY,
-      }).route,
+        }).route,
     ).toBe("qa_review");
     expect(
       draftEquivalency({
         printed: "Licence",
         suggestion: equivalency({ id: "low", confidence: "low" }),
-        fallback: PENDING_EQUIVALENCY,
-      }),
-    ).toMatchObject({ usEquivalency: "Bachelor's degree", route: "qa_research" });
+        }),
+    ).toMatchObject({ usEquivalency: PENDING_EQUIVALENCY, route: "qa_research" });
     expect(
       draftEquivalency({
         printed: "Certificado",
         suggestion: null,
-        fallback: PENDING_EQUIVALENCY,
-      }),
-    ).toEqual({ usEquivalency: PENDING_EQUIVALENCY, basis: null, route: "qa_research" });
+        }),
+    ).toEqual({ usEquivalency: PENDING_EQUIVALENCY, basis: NO_EDGE_MATCH_REASON, route: "qa_research" });
     expect(combineEquivalencyRoutes(["qa_review", "qa_review"])).toBe("qa_review");
     expect(combineEquivalencyRoutes(["qa_review", "qa_research"])).toBe("qa_research");
     expect(combineEquivalencyRoutes([])).toBe("qa_research");
@@ -558,3 +555,54 @@ function scriptedEdgeDb(script: Array<{ data: unknown[] }>): {
   };
   return { db: db as unknown as Db, calls };
 }
+
+describe("matchEdgeCredential aliases and country names", () => {
+  const dr = (id: string, title: string) => credential({ id, title, countrySlug: "dominican-republic", country: "Dominican Republic" });
+  const tr = (id: string, title: string) => credential({ id, title, countrySlug: "turkiye", country: "Türkiye" });
+  const pk = (id: string, title: string) => credential({ id, title, countrySlug: "pakistan", country: "Pakistan" });
+
+  it("maps native country names to the EDGE slug", () => {
+    expect(countrySlug("República Dominicana")).toBe("dominican-republic");
+    expect(countrySlug("Cameroun")).toBe("cameroon");
+    expect(countrySlug("Republic of Ghana")).toBe("ghana");
+    expect(countrySlug("Korea")).toBe("korea");
+  });
+
+  it("matches one name inside a glossed or slash-separated EDGE title", () => {
+    const rows = [tr("lise", "Lise Diplomasi (General Secondary School/Lyceum Diploma)"), tr("meslek", "Meslek Lise Diplomasi (Vocational Secondary School/Lyceum Diploma)")];
+    expect(matchEdgeCredential(rows, { country: "Türkiye", title: "LİSE DİPLOMASI" })?.id).toBe("lise");
+  });
+
+  it("matches an abbreviation or a title printed with Examination", () => {
+    const rows = [pk("hsc", "Higher Secondary Certificate (HSC), Intermediate Certificate"), pk("ssc", "Secondary School Certificate/School Leaving Certificate")];
+    expect(matchEdgeCredential(rows, { country: "Pakistan", title: "Higher Secondary Certificate Examination" })?.id).toBe("hsc");
+    expect(matchEdgeCredential(rows, { country: "Pakistan", title: "HSC" })?.id).toBe("hsc");
+  });
+
+  it("repairs mojibake in catalog titles", () => {
+    const rows = [dr("m", "Especialista/MaestrÃ\u00ADa"), dr("l", "Licenciatura en (field)")];
+    expect(matchEdgeCredential(rows, { country: "República Dominicana", title: "Maestría" })?.id).toBe("m");
+  });
+
+  it("does not guess a field-specific row for a bare degree title", () => {
+    const rows = [pk("bds", "Bachelor of Dentistry/Bachelor of Science in Dentistry (BDS)")];
+    expect(matchEdgeCredential(rows, { country: "Pakistan", title: "Bachelor of Science" })).toBeNull();
+    expect(matchEdgeCredential(rows, { country: "Pakistan", title: "Diploma" })).toBeNull();
+  });
+});
+
+describe("matchEdgeCredential round 2", () => {
+  const gh = (id: string, title: string) => credential({ id, title, countrySlug: "ghana", country: "Ghana" });
+  const br = (id: string, title: string) => credential({ id, title, countrySlug: "brazil", country: "Brazil" });
+
+  it("maps a named English bachelor's to a country's generic Bachelor's Degree row", () => {
+    const rows = [gh("ba", "Bachelor's Degree"), gh("mb", "Bachelor of Medicine, Bachelor of Surgery (MB ChB)")];
+    expect(matchEdgeCredential(rows, { country: "Ghana", title: "Bachelor of Arts" })?.id).toBe("ba");
+  });
+
+  it("collapses Portuguese degree forms on both sides", () => {
+    const rows = [br("ms", "Título de Mestre/Grau de Mestre/Diploma de Mestrado (Master's Degree Program)"), br("dr", "Título de Doutor/Grau de Doutor/Diploma de Doutor (Doctoral Degree, PhD Degree)")];
+    expect(matchEdgeCredential(rows, { country: "Brazil", title: "MESTRE EM SISTEMAS E COMPUTAÇÃO" })?.id).toBe("ms");
+    expect(matchEdgeCredential(rows, { country: "Brazil", title: "Doutora em Ciências Biológicas" })?.id).toBe("dr");
+  });
+});

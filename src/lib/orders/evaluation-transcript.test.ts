@@ -259,6 +259,56 @@ Biologie | | 16`),
     ]);
   });
 
+  it("leaves percent, 4.0, and Roman grades as printed", () => {
+    const percent = recoverCourseExtract({
+      applicant: "A. Student",
+      institution: "Example University",
+      country: "Pakistan",
+      credential: "Higher Secondary Certificate",
+      scale: "100",
+      years: [
+        {
+          year: "2019",
+          courses: [{ originalName: "Mathematics", englishName: "Mathematics", localCredits: 3, localGrade: "85" }],
+        },
+      ],
+    });
+    expect(percent.failures).toEqual([]);
+    expect(percent.extract.scale).toBe("100");
+    expect(percent.extract.years[0]?.courses[0]?.localGrade).toBe("85");
+
+    const points = recoverCourseExtract({
+      applicant: "A. Student",
+      institution: "Example University",
+      country: "United States",
+      credential: "Bachelor of Science",
+      scale: "4",
+      years: [
+        {
+          year: "2019",
+          courses: [{ originalName: "Chemistry", englishName: "Chemistry", localCredits: 4, localGrade: "3.7" }],
+        },
+      ],
+    });
+    expect(points.extract.years[0]?.courses[0]?.localGrade).toBe("3.7");
+
+    const roman = recoverCourseExtract({
+      applicant: "A. Student",
+      institution: "Example School",
+      country: "Jamaica",
+      credential: "CSEC",
+      scale: "roman",
+      years: [
+        {
+          year: "2019",
+          courses: [{ originalName: "Mathematics", englishName: "Mathematics", localCredits: 0, localGrade: "I" }],
+        },
+      ],
+    });
+    expect(roman.failures).toEqual([]);
+    expect(roman.extract.years[0]?.courses[0]?.localGrade).toBe("I");
+  });
+
   it("gives course-by-course the transcript page and the diploma the other page", () => {
     const documents = [
       { id: "doc-diploma", position: 1 },

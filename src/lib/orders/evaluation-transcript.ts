@@ -1,3 +1,4 @@
+import type { GradeScale } from "./grades";
 import type { EvaluationService } from "./types";
 
 export type TranscriptCourseExtract = {
@@ -5,7 +6,7 @@ export type TranscriptCourseExtract = {
   institution: string;
   country: string;
   credential: string;
-  scale: "10" | "20" | "letter";
+  scale: GradeScale;
   result?: string;
   years: Array<{
     year: string;
@@ -236,7 +237,9 @@ export function courseExtractFromTranscript(text: string): TranscriptCourseRead 
 export function recoverCourseExtract<T extends TranscriptCourseExtract>(
   extracted: T,
 ): { extract: T; failures: TranscriptRowFailure[] } {
-  if (extracted.scale === "letter") return { extract: extracted, failures: [] };
+  // Coefficient recovery is only for a 10- or 20-point relevé.
+  // Percent, 4.0, Roman, and letter grades stay as printed.
+  if (extracted.scale !== "10" && extracted.scale !== "20") return { extract: extracted, failures: [] };
   let scale = extracted.scale;
   const failures: TranscriptRowFailure[] = [];
   const years = [];

@@ -78,14 +78,44 @@ export type EquivalencyDraft = {
 const EXCERPT_CHARS = 400;
 
 /** Slug used as edge_credentials.country_slug and as the source-object key. */
+/** Native-language and short country names, keyed by slug, mapped to the EDGE slug. */
+const COUNTRY_SLUG_ALIASES: Readonly<Record<string, string>> = {
+  "republica-dominicana": "dominican-republic",
+  "rep-dominicana": "dominican-republic",
+  "cameroun": "cameroon",
+  "brasil": "brazil",
+  "turkey": "turkiye",
+  "turquia": "turkiye",
+  "mexique": "mexico",
+  "espana": "spain",
+  "deutschland": "germany",
+  "italia": "italy",
+  "nippon": "japan",
+  "cote-divoire": "cote-d-ivoire",
+  "ivory-coast": "cote-d-ivoire",
+  "burma": "myanmar",
+  "south-korea": "korea-republic-of-south-korea",
+  "republic-of-korea": "korea-republic-of-south-korea",
+  "uk": "united-kingdom",
+  "usa": "united-states",
+  "kingdom-of-saudi-arabia": "saudi-arabia",
+  "peoples-republic-of-china": "china",
+  "people-s-republic-of-china": "china",
+  "prc": "china",
+};
+
 export function countrySlug(country: string): string {
-  return country
+  const slug = country
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
     .toLowerCase()
     .replace(/&/g, " and ")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+  if (COUNTRY_SLUG_ALIASES[slug]) return COUNTRY_SLUG_ALIASES[slug];
+  // "Republic of Ghana", "Federal Republic of Nigeria", "Islamic Republic of Pakistan".
+  const stripped = slug.replace(/^(?:the-)?(?:[a-z]+-)?(?:republic|kingdom|state|sultanate|commonwealth)-of-(?:the-)?/, "");
+  return COUNTRY_SLUG_ALIASES[stripped] ?? stripped;
 }
 
 /**
@@ -119,8 +149,21 @@ function countrySlugOverlaps(orderSlug: string, stored: string): boolean {
   );
 }
 
+/** "MaestrÃ­a" (UTF-8 read as Latin-1) back to "Maestría". Leaves clean text alone. */
+function repairMojibake(value: string): string {
+  if (!/[ÃÂ][\u0080-\u00ff]/.test(value)) return value;
+  const codes = Array.from(value, (char) => char.charCodeAt(0));
+  if (codes.some((code) => code > 0xff)) return value;
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(codes));
+  } catch {
+    return value;
+  }
+}
+
 export function normalizeCredentialTitle(title: string): string {
-  return title
+  return repairMojibake(title)
+    .replace(/[®™©]/g, " ")
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
     .toLowerCase()
@@ -164,6 +207,18 @@ const DEGREE_FORMS: ReadonlyArray<readonly [string, string]> = [
   ["tecnico", "tecnico"],
   ["bacharela", "bacharelado"],
   ["bacharel", "bacharelado"],
+  ["titulo de bacharel", "bacharelado"],
+  ["grau de bacharel", "bacharelado"],
+  ["titulo de mestre", "mestrado"],
+  ["grau de mestre", "mestrado"],
+  ["diploma de mestrado", "mestrado"],
+  ["mestra", "mestrado"],
+  ["mestre", "mestrado"],
+  ["titulo de doutor", "doutorado"],
+  ["grau de doutor", "doutorado"],
+  ["diploma de doutor", "doutorado"],
+  ["doutora", "doutorado"],
+  ["doutor", "doutorado"],
 ];
 
 const DEGREE_FORM_PATTERN = new RegExp(
@@ -322,12 +377,31 @@ export function matchEdgeCredential(
     return chosen ? tagged(chosen, "base") : null;
   }
 
+  // A bare "Diploma" or "Certificate" says nothing about the level. Leave it for staff.
+  const printedGeneric = genericDegreeKey(normalized);
+  if (BARE_TITLES.has(normalized.replace(/\s*\b(?:hons?|honours|honors)\b/g, "").trim())) return null;
+
+  // EDGE packs several names into one title: "Bachiller / Bachillerato",
+  // "Higher Secondary Certificate (HSC)", "Licence/Bachelor's degree".
+  // Printed form first, then the collapsed base form.
+  for (const keys of [[normalized, stripExamination(normalized), printedGeneric], [base]]) {
+    const wanted = new Set(keys.filter(Boolean));
+    const aliasHits = pool.filter((row) => credentialAliases(row.title).some((alias) => wanted.has(alias)));
+    if (aliasHits.length === 1) return tagged(aliasHits[0]!, "base");
+    if (aliasHits.length > 1) return null;
+  }
+
+  // A bare "Bachelor of Science" says nothing about the field. Do not fuzzy it
+  // onto "Bachelor of Science in Dentistry"; leave it for staff.
+  if (GENERIC_DEGREE_KEYS.has(printedGeneric)) return null;
+
   const ranked = pool
     .map((row) => ({
       row,
       score: Math.max(
         titleScore(normalized, normalizeCredentialTitle(row.title)),
         titleScore(base, baseCredentialTitle(row.title)),
+        ...credentialAliases(row.title).map((alias) => titleScore(stripExamination(normalized), alias)),
       ),
     }))
     .filter((item) => item.score >= 0.8)
@@ -345,6 +419,47 @@ export function matchEdgeCredential(
     shared,
   );
   return chosen ? tagged(chosen, "fuzzy") : null;
+}
+
+const GENERIC_DEGREE_KEYS = new Set(["bachelor", "master"]);
+const BARE_TITLES = new Set(["diploma", "certificate", "degree", "bachelor", "master"]);
+
+/** "Bachelor of Science", "Bachelor's Degree", "Bachelors" → "bachelor". Other titles pass through. */
+function genericDegreeKey(normalized: string): string {
+  const value = normalized.replace(/\s*\b(?:hons?|honours|honors)\b/g, "").trim();
+  if (/^(?:bachelor s degree|bachelors degree|bachelor degree|bachelors?|bachelor of (?:arts|science|sciences))$/.test(value)) return "bachelor";
+  if (/^(?:master s degree|masters degree|master degree|masters?|master of (?:arts|science|sciences))$/.test(value)) return "master";
+  return value;
+}
+
+function stripExamination(normalized: string): string {
+  return normalized.replace(/\s+(?:examination|exam|examinations)$/, "").trim();
+}
+
+function credentialAliases(title: string): string[] {
+  const out = new Set<string>();
+  const clean = repairMojibake(title);
+  for (const inner of clean.match(/\(([^)]+)\)/g) ?? []) {
+    const value = inner.slice(1, -1).trim();
+    // Abbreviations such as (HSC), (WASSCE), (CSEC). Not qualifiers like (traditional).
+    if (/^[A-Z][A-Z.\-]{1,9}$/.test(value)) out.add(normalizeCredentialTitle(value));
+  }
+  const withoutGloss = clean.replace(/\([^)]*\)/g, " ");
+  for (const part of withoutGloss.split(/\s*\/\s*|\s+or\s+|\s+OR\s+|\s*;\s*|,\s+/)) {
+    const normalized = normalizeCredentialTitle(part);
+    if (normalized.length < 3) continue;
+    out.add(normalized);
+    out.add(stripExamination(normalized));
+    // Collapsed degree form ("Título de Mestre" → "mestrado"), but never by dropping a field:
+    // "Bachelor of Science in Dentistry" must not become plain "bachelor of science".
+    DEGREE_FORM_PATTERN.lastIndex = 0;
+    const mapped = normalized.replace(DEGREE_FORM_PATTERN, (match) => DEGREE_BASE.get(match.replace(/\s+/g, " ")) ?? match);
+    if (!FIELD_PHRASE.test(mapped)) out.add(mapped);
+    if (/^(?:bachelor s degree|bachelors degree|bachelors?|master s degree|masters degree|masters?)$/.test(normalized)) {
+      out.add(genericDegreeKey(normalized));
+    }
+  }
+  return [...out].filter(Boolean);
 }
 
 function tagged(row: EdgeCredentialRecord, matchMethod: CredentialMatchMethod): EdgeCredentialMatch {
@@ -418,7 +533,7 @@ export function chooseEquivalency(input: {
   ai: { usEquivalency: string; confident: boolean } | null;
   printed: string;
 }): string {
-  if (!input.matched) return usEquivalency(input.printed) ?? PENDING_EQUIVALENCY;
+  if (!input.matched) return PENDING_EQUIVALENCY;
   if (input.ai?.confident) {
     const proposed = canonicalUsEquivalency(input.ai.usEquivalency);
     if (proposed) return proposed;
@@ -470,22 +585,29 @@ export function equivalencyCredentialId(input: {
   return null;
 }
 
-export function draftEquivalency(input: {
-  printed: string;
-  suggestion: EdgeEquivalencyRecord | null;
-  fallback: string;
-}): EquivalencyDraft {
+/** Staff-only reasons stored as the basis when no level is suggested. */
+export const NO_EDGE_MATCH_REASON = "No EDGE credential matched this title. No level is suggested; staff must research the credential.";
+export const WEAK_EDGE_MATCH_REASON = "The EDGE suggestion for this credential is low confidence or has no usable level. No level is suggested; staff must confirm it.";
+
+/**
+ * Only a medium or high EDGE suggestion fills a level. Anything weaker leaves the level
+ * pending and routes the order to research with a reason; nothing is guessed from the title.
+ */
+export function draftEquivalency(input: { printed: string; suggestion: EdgeEquivalencyRecord | null }): EquivalencyDraft {
   if (!input.suggestion) {
-    return { usEquivalency: input.fallback, basis: null, route: "qa_research" };
+    return { usEquivalency: PENDING_EQUIVALENCY, basis: NO_EDGE_MATCH_REASON, route: "qa_research" };
   }
-  const label = canonicalUsEquivalency(input.suggestion.usEquivalency) ?? input.fallback;
-  const usable = label !== PENDING_EQUIVALENCY;
+  const label = canonicalUsEquivalency(input.suggestion.usEquivalency);
   const confident = input.suggestion.confidence === "high" || input.suggestion.confidence === "medium";
-  return {
-    usEquivalency: label,
-    basis: input.suggestion.basis.trim() || null,
-    route: usable && confident ? "qa_review" : "qa_research",
-  };
+  if (!label || !confident) {
+    const edgeBasis = input.suggestion.basis.trim();
+    return {
+      usEquivalency: PENDING_EQUIVALENCY,
+      basis: edgeBasis ? `${WEAK_EDGE_MATCH_REASON} EDGE note: ${edgeBasis}` : WEAK_EDGE_MATCH_REASON,
+      route: "qa_research",
+    };
+  }
+  return { usEquivalency: label, basis: input.suggestion.basis.trim() || null, route: "qa_review" };
 }
 
 export function combineEquivalencyRoutes(routes: readonly EquivalencyRoute[]): EquivalencyRoute {

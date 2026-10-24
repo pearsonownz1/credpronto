@@ -21,7 +21,6 @@ import {
 } from "@/lib/orders/edge";
 import { PENDING_EQUIVALENCY } from "@/lib/orders/equivalency";
 import type { PrintedCredential } from "@/lib/orders/evaluation";
-import { usEquivalency } from "@/lib/orders/grades";
 import type { PreEvalConfidence } from "./constants";
 
 const proposalSchema = z.object({
@@ -105,7 +104,6 @@ export function suggestFromEdgeRows(input: {
   const draft = draftEquivalency({
     printed: input.printed.credential,
     suggestion,
-    fallback: usEquivalency(input.printed.credential) ?? PENDING_EQUIVALENCY,
   });
   const equivalent = draft.usEquivalency;
   const confidence: PreEvalConfidence =

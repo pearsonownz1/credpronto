@@ -35,12 +35,9 @@ import {
   awaitingEquivalencyPublish,
 } from "./equivalency";
 import {
-  chooseEquivalency,
   combineEquivalencyRoutes,
   countrySlug,
   draftEquivalency,
-  edgeContentExcerpt,
-  edgeEquivalencyPrompt,
   equivalencyCredentialId,
   matchEdgeCredential,
   matchEdgeGradingScale,
@@ -58,7 +55,6 @@ import {
   credentialWasPassed,
   gradeScaleText,
   scoreCourses,
-  usEquivalency,
   type RawCourse,
 } from "./grades";
 import { IMAGE_QUALITY_REASON } from "./image-quality";
@@ -114,22 +110,12 @@ const diplomaSchema = z.object({
       institution: z.string(),
       country: z.string(),
       credential: z.string(),
+      /** English name of the credential when the printed title is not in English or not in Latin script. */
+      englishCredential: z.string().optional(),
       field: z.string(),
       dates: z.string(),
     }),
   ),
-});
-
-const equivalencySchema = z.object({
-  usEquivalency: z.enum([
-    "High school diploma",
-    "Associate degree",
-    "Bachelor's degree",
-    "Master's degree",
-    "Doctoral degree",
-    "",
-  ]),
-  confident: z.boolean(),
 });
 
 const courseSchema = z.object({
@@ -137,7 +123,8 @@ const courseSchema = z.object({
   institution: z.string(),
   country: z.string(),
   credential: z.string(),
-  scale: z.enum(["10", "20", "letter"]),
+  englishCredential: z.string().optional(),
+  scale: z.enum(["10", "20", "100", "4", "roman", "letter"]),
   /** Overall decision as printed, such as Admis or Ajourné. Empty when the document does not state one. */
   result: z.string().optional(),
   years: z.array(
@@ -195,7 +182,7 @@ export function assembleDiploma(input: {
       credential,
       field: orPending(item.field, subjectFromTitle(credential) ?? ""),
       dates: orPending(item.dates),
-      usEquivalency: input.equivalencies?.[index] ?? usEquivalency(credential) ?? PENDING_EQUIVALENCY,
+      usEquivalency: input.equivalencies?.[index] ?? PENDING_EQUIVALENCY,
       ...(input.bases?.[index]?.trim() ? { equivalencyBasis: input.bases[index]?.trim() } : {}),
       documentsReviewed: input.documentsReviewed,
     });
@@ -311,20 +298,22 @@ export function assembleCourse(
 ): EvaluationResult | null {
   const applicant = filled(extracted.applicant);
   const institution = filled(extracted.institution);
-  const country = filled(extracted.country);
+  // A regional board (CXC, WAEC) often prints no country; staff fill it like a diploma's.
+  const country = orPending(extracted.country);
   const credential = filled(extracted.credential);
-  if (!applicant || !institution || !country || !credential) return null;
-  if (extracted.years.length === 0) return null;
+  if (!applicant || !institution || !credential) return null;
+  // Empty year groups are dropped; an unlabeled group keeps its courses under a neutral label.
+  const yearGroups = extracted.years.filter((year) => year.courses.length > 0);
+  if (yearGroups.length === 0) return null;
 
   const flat: RawCourse[] = [];
-  for (const year of extracted.years) {
-    if (!filled(year.year) || year.courses.length === 0) return null;
+  for (const year of yearGroups) {
     for (const course of year.courses) {
-      const originalName = filled(course.originalName);
-      const englishName = filled(course.englishName);
-      const localGrade = filled(course.localGrade);
-      if (!originalName || !englishName || !localGrade) return null;
-      flat.push({ originalName, englishName, localCredits: course.localCredits, localGrade });
+      const originalName = filled(course.originalName) ?? filled(course.englishName);
+      const englishName = filled(course.englishName) ?? originalName;
+      if (!originalName || !englishName) return null;
+      // A blank grade counts as unreadable; scoreCourses tolerates a few of those.
+      flat.push({ originalName, englishName, localCredits: course.localCredits, localGrade: course.localGrade.trim() || "—" });
     }
   }
 
@@ -335,10 +324,10 @@ export function assembleCourse(
 
   let index = 0;
   const years = [];
-  for (const year of extracted.years) {
+  for (const year of yearGroups) {
     const courses = scored.courses.slice(index, index + year.courses.length);
     index += year.courses.length;
-    years.push({ year: year.year.trim(), courses });
+    years.push({ year: year.year.trim() || UNLABELED_YEAR, courses });
   }
 
   return {
@@ -356,26 +345,33 @@ export function assembleCourse(
   };
 }
 
+/** Shown for a group of courses printed without a year or term. */
+export const UNLABELED_YEAR = "Year not printed";
+
 const DIPLOMA_EXTRACT_INSTRUCTIONS = `Extract each degree from this credential document.
 Return one credential per degree that is printed. Copy names, institutions, countries, fields, and dates as printed.
 credential is the degree title as printed (for example Licence, Licenciatura, Licenciada, Licenciado, Maîtrise, Bachillerato).
 field is the subject. For "Licenciada en Administración de Empresas", field is "Administración de Empresas".
-country is the country of the institution. If the country is not printed, infer it from the city or state (Guadalajara, Jalisco is Mexico). Use an empty string only when no place is printed.
+country is the country of the institution that awarded the credential, written in English (Dominican Republic, not República Dominicana). If the country is not printed, infer it from the city or state (Guadalajara, Jalisco is Mexico). For a regional examination board such as CXC (Caribbean Examinations Council) or WAEC (West African Examinations Council), country is the candidate's own country, taken from the school, centre, or address. Use an empty string only when no place is printed.
+englishCredential is the usual English name of the credential (for example Higher Secondary Certificate, Bachelor of Medicine). Leave it empty when credential is already in English.
 dates is the examination or conferral date as printed.
 Return the student's granted title even when a field is missing. Do not add degrees for the rector or other signatories. Do not invent a degree.`;
 
 const COURSE_EXTRACT_INSTRUCTIONS = `Extract this academic transcript into a course-by-course table.
 Group courses by the academic year printed on the page. Keep each year label as printed.
 When the page is one examination session and has no academic year, use the session year as the year label.
+credential is the credential title as printed. englishCredential is its usual English name, empty when it is already in English.
+country is the country of the institution that awarded the credential, written in English (Dominican Republic, not República Dominicana). If the country is not printed, infer it from the city or state (Guadalajara, Jalisco is Mexico). For a regional examination board such as CXC (Caribbean Examinations Council) or WAEC (West African Examinations Council), country is the candidate's own country, taken from the school, centre, or address. Use an empty string only when no place is printed.
 originalName is the course title as printed. englishName is the English name.
 localCredits and localGrade are the values as printed. localGrade is a string.
 When the columns are Subject, Coefficient, and Note × Coefficient, localCredits is the coefficient and localGrade is the mark out of 20: (Note × Coefficient) / Coefficient. Do not copy the weighted product as the grade.
 Do not include total, average, decision, or bonus rows as courses.
-scale is "10" when grades are out of 10, "20" when grades are out of 20, and "letter" when grades are already A–F.
+scale is "10" when grades are out of 10 (Brazil, Spain), "20" when out of 20 (France, Cameroon), "100" for marks or percentages out of 100 (India, Pakistan, Ghana marks), "4" for grade points on a 4.0 scale, "roman" for CXC/CSEC grades I to VI, and "letter" when grades are already A–F.
+localGrade is the grade as printed: a number, a letter, a Roman numeral, or a word such as Pass. localCredits is 0 when no credits or hours are printed.
 result is the overall decision printed on the credential, such as Admis, Passed, Réussi, Ajourné, Refusé, or Failed. Use an empty string when no overall result is printed.
-Do not invent courses.`;
+Do not convert grades. Do not invent courses.`;
 
-async function extractDiploma(text: string): Promise<DiplomaExtract> {
+export async function extractDiploma(text: string): Promise<DiplomaExtract> {
   return generateObject(diplomaSchema, [
     {
       role: "user",
@@ -404,7 +400,7 @@ async function extractDiplomaFile(file: { bytes: Uint8Array; mime: string }): Pr
   ]);
 }
 
-async function extractCourses(text: string): Promise<CourseExtract> {
+async function extractCourseChunk(text: string, part: string): Promise<CourseExtract> {
   return generateObject(courseSchema, [
     {
       role: "user",
@@ -414,11 +410,78 @@ async function extractCourses(text: string): Promise<CourseExtract> {
           text: `${COURSE_EXTRACT_INSTRUCTIONS}
 
 Document text:
-${text.slice(0, 12000)}`,
+${part}${text}`,
         },
       ],
     },
-  ]);
+  ], undefined, { lowReasoning: true });
+}
+
+/** Characters per course-extraction call. Longer transcripts are split on line breaks. */
+export const COURSE_CHUNK_CHARS = 9000;
+
+export function splitTranscript(text: string, size = COURSE_CHUNK_CHARS): string[] {
+  const chunks: string[] = [];
+  let current = "";
+  for (const line of text.split("\n")) {
+    const piece = line.slice(0, size);
+    if (current && current.length + piece.length + 1 > size) {
+      chunks.push(current);
+      current = "";
+    }
+    current = current ? `${current}\n${piece}` : piece;
+  }
+  if (current.trim()) chunks.push(current);
+  return chunks.length > 0 ? chunks : [""];
+}
+
+/** Header fields from the first chunk that has them; years merged by label in reading order. */
+export function mergeCourseExtracts(parts: readonly CourseExtract[]): CourseExtract {
+  const first = (pick: (part: CourseExtract) => string | undefined) =>
+    parts.map(pick).find((value) => value != null && value.trim() !== "") ?? "";
+  const years: CourseExtract["years"] = [];
+  const seen = new Set<string>();
+  for (const part of parts) {
+    for (const year of part.years) {
+      const label = year.year.trim();
+      const fresh = year.courses.filter((course) => {
+        const key = `${label}|${course.originalName.trim().toLowerCase()}|${course.localGrade.trim()}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      const existing = years.find((item) => item.year.trim() === label);
+      if (existing) existing.courses.push(...fresh);
+      else if (fresh.length > 0) years.push({ year: year.year, courses: [...fresh] });
+    }
+  }
+  const counts = new Map<CourseExtract["scale"], number>();
+  for (const part of parts) {
+    const weight = part.years.reduce((sum, year) => sum + year.courses.length, 0);
+    counts.set(part.scale, (counts.get(part.scale) ?? 0) + weight);
+  }
+  const scale = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "letter";
+  return {
+    applicant: first((part) => part.applicant),
+    institution: first((part) => part.institution),
+    country: first((part) => part.country),
+    credential: first((part) => part.credential),
+    englishCredential: first((part) => part.englishCredential),
+    scale,
+    result: first((part) => part.result),
+    years,
+  };
+}
+
+export async function extractCourses(text: string): Promise<CourseExtract> {
+  const chunks = splitTranscript(text);
+  const parts: CourseExtract[] = [];
+  for (const [index, chunk] of chunks.entries()) {
+    const part =
+      chunks.length > 1 ? `(Part ${index + 1} of ${chunks.length} of one transcript. Extract only the courses in this part.)\n` : "";
+    parts.push(await extractCourseChunk(chunk, part));
+  }
+  return parts.length === 1 ? parts[0]! : mergeCourseExtracts(parts);
 }
 
 async function extractCoursesFile(file: { bytes: Uint8Array; mime: string }): Promise<CourseExtract> {
@@ -567,42 +630,6 @@ async function edgeCatalog(
   }
 }
 
-async function proposeEquivalency(printed: string, hit: EdgeHit): Promise<string> {
-  if (!hit.credential) {
-    return chooseEquivalency({ matched: false, edgeUsEquivalency: null, ai: null, printed });
-  }
-  let ai: { usEquivalency: string; confident: boolean } | null = null;
-  try {
-    ai = await generateObject(equivalencySchema, [
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: edgeEquivalencyPrompt({
-              country: hit.credential.country,
-              printedTitle: printed,
-              edgeTitle: hit.credential.title,
-              levelNumber: hit.credential.levelNumber,
-              levelTitle: hit.credential.levelTitle,
-              contentExcerpt: edgeContentExcerpt(hit.credential.content, 1200),
-              usEquivalencyHint: hit.credential.usEquivalency,
-              gradingRows: hit.scale?.rows ?? [],
-            }),
-          },
-        ],
-      },
-    ]);
-  } catch (error) {
-    console.error("edge equivalency proposal failed", error);
-  }
-  return chooseEquivalency({
-    matched: true,
-    edgeUsEquivalency: hit.credential.usEquivalency,
-    ai,
-    printed,
-  });
-}
 
 async function suggestionForCredential(db: Db, edgeCredentialId: string | null): Promise<EdgeEquivalencyRecord | null> {
   if (!edgeCredentialId) return null;
@@ -627,20 +654,10 @@ async function draftForCredential(
     singleCredential,
   });
   const suggestion = await suggestionForCredential(db, edgeCredentialId);
-  if (suggestion) {
-    return {
-      draft: draftEquivalency({ printed, suggestion, fallback: PENDING_EQUIVALENCY }),
-      edgeCredentialId,
-    };
-  }
-  const fallback = await proposeEquivalency(printed, hit);
-  return {
-    draft: draftEquivalency({ printed, suggestion: null, fallback }),
-    edgeCredentialId,
-  };
+  return { draft: draftEquivalency({ printed, suggestion }), edgeCredentialId };
 }
 
-async function buildEvaluatedResult(
+export async function buildEvaluatedResult(
   db: Db,
   service: "diploma" | "course_by_course",
   extracted: DiplomaExtract | CourseExtract,
@@ -663,7 +680,7 @@ async function buildEvaluatedResult(
       if (!catalogs.has(slug)) catalogs.set(slug, await edgeCatalog(db, item.country));
       const catalog = catalogs.get(slug) ?? { credentials: [], scales: [] };
       hits.push({
-        credential: matchEdgeCredential(catalog.credentials, { country: item.country, title: item.credential }),
+        credential: matchEitherTitle(catalog.credentials, item),
         scale: matchEdgeGradingScale(catalog.scales, { country: item.country, title: item.credential, grades: [] }),
       });
     }
@@ -703,7 +720,7 @@ async function buildEvaluatedResult(
   const catalog = await edgeCatalog(db, courses.country);
   const grades = courses.years.flatMap((year) => year.courses.map((course) => course.localGrade));
   const hit: EdgeHit = {
-    credential: matchEdgeCredential(catalog.credentials, { country: courses.country, title: courses.credential }),
+    credential: matchEitherTitle(catalog.credentials, courses),
     scale: matchEdgeGradingScale(catalog.scales, { country: courses.country, title: courses.credential, grades }),
   };
   const drafted = await draftForCredential(db, courses.credential, hit, storedCredentialId, true);
@@ -719,6 +736,18 @@ async function buildEvaluatedResult(
       hit.credential && drafted.edgeCredentialId === hit.credential.id ? hit.credential.matchMethod : null,
     route: drafted.draft.route,
   };
+}
+
+/** The printed title first, then the English name the extractor gave for it. */
+export function matchEitherTitle(
+  rows: readonly EdgeCredentialRecord[],
+  item: { country: string; credential: string; englishCredential?: string },
+): EdgeCredentialMatch | null {
+  const printed = matchEdgeCredential(rows, { country: item.country, title: item.credential });
+  if (printed) return printed;
+  const english = item.englishCredential?.trim();
+  if (!english || english === item.credential.trim()) return null;
+  return matchEdgeCredential(rows, { country: item.country, title: english });
 }
 
 function chosenEdgeMatch(

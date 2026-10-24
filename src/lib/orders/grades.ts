@@ -25,11 +25,94 @@ const LETTER_POINTS: Record<string, number> = {
   F: 0,
 };
 
-export type GradeScale = "10" | "20" | "letter";
+export const GRADE_SCALE_100 =
+  "Marks are percentages or out of 100 with 40 as the pass mark. 70–100 is A (4.0), 60–69 is B (3.0), 50–59 is C (2.0), 40–49 is D (1.0), and below 40 is F (0).";
+
+export const GRADE_SCALE_4 =
+  "Grades are grade points on a 4.0 scale and keep their printed value. The letter is the nearest U.S. letter.";
+
+export const GRADE_SCALE_ROMAN =
+  "Grades are Roman-numeral examination grades (CXC). I is A (4.0), II is B (3.0), III is C (2.0), IV is D (1.0), and V or VI is F (0).";
+
+/** Courses marked Pass, Satisfactory, or Credit count toward hours but not toward the GPA. */
+export const UNGRADED_PASS = "P";
+
+/** Printed grade that could not be read on any scale. */
+export const UNMAPPED_GRADE = "NR";
+
+export type GradeScale = "10" | "20" | "100" | "4" | "roman" | "letter";
+
+/** At most this share of courses may have an unreadable grade; they are left out of hours and GPA. */
+export const MAX_UNMAPPED_SHARE = 0.1;
 
 export type MappedGrade = {
   usGrade: string;
   points: number;
+  /** Pass/credit with no grade: counts toward hours, not toward the GPA. */
+  ungraded?: boolean;
+  /** Withdrawn, transferred, or exempt: no hours and no points. */
+  noCredit?: boolean;
+};
+
+const PASS_WORDS =
+  /^(?:p|pass|passed|s|sat|satisfactory|approved|ap|apto|apta|aprobado|aprovado|cumprido|cumpri do|concluido|admis|valide|ok|completed|complete)$/i;
+
+/** Withdrawn, transferred, exempt, audit, or incomplete: shown, but no hours and no points. */
+const NO_CREDIT_WORDS = /^(?:w|wd|withdraw|withdrawn|t|tr|transfer|transferred|ex|exempt|exempted|au|audit|i|inc|incomplete|dispensa|dispensado|dispensada)$/i;
+
+/** Australian and New Zealand bands: High Distinction, Distinction, Credit, Pass. */
+const BAND_WORDS: Record<string, MappedGrade> = {
+  HD: { usGrade: "A", points: 4 },
+  DI: { usGrade: "A", points: 4 },
+  DN: { usGrade: "A", points: 4 },
+  CR: { usGrade: "B", points: 3 },
+  PS: { usGrade: "C", points: 2 },
+};
+
+export const NO_CREDIT_GRADE = "W";
+
+function nearestLetter(points: number): MappedGrade {
+  let usGrade = "F";
+  let gap = Infinity;
+  for (const [token, value] of Object.entries(LETTER_POINTS)) {
+    const next = Math.abs(value - points);
+    if (next < gap) {
+      gap = next;
+      usGrade = token;
+    }
+  }
+  return { usGrade, points: round2(points) };
+}
+
+function percentGrade(grade: number): MappedGrade | null {
+  if (grade < 0 || grade > 100) return null;
+  return band(grade, [
+    [70, "A", 4],
+    [60, "B", 3],
+    [50, "C", 2],
+    [40, "D", 1],
+    [0, "F", 0],
+  ]);
+}
+
+const NUMBER_WORDS: Record<string, string> = { ONE: "I", TWO: "II", THREE: "III", FOUR: "IV", FIVE: "V", SIX: "VI" };
+const ARABIC = ["", "I", "II", "III", "IV", "V", "VI"];
+
+/** CXC certificates print grades as I–VI, ONE–SIX, or 1–6. Digits count only on a known Roman scale. */
+function romanKey(printed: string, romanScale: boolean): string {
+  const token = printed.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (NUMBER_WORDS[token]) return NUMBER_WORDS[token]!;
+  if (romanScale && /^[1-6]$/.test(token)) return ARABIC[Number(token)]!;
+  return token;
+}
+
+const ROMAN: Record<string, MappedGrade> = {
+  I: { usGrade: "A", points: 4 },
+  II: { usGrade: "B", points: 3 },
+  III: { usGrade: "C", points: 2 },
+  IV: { usGrade: "D", points: 1 },
+  V: { usGrade: "F", points: 0 },
+  VI: { usGrade: "F", points: 0 },
 };
 
 export function round2(value: number): number {
@@ -39,13 +122,16 @@ export function round2(value: number): number {
 export function gradeScaleText(scale: GradeScale): string {
   if (scale === "10") return GRADE_SCALE_10;
   if (scale === "20") return GRADE_SCALE_20;
+  if (scale === "100") return GRADE_SCALE_100;
+  if (scale === "4") return GRADE_SCALE_4;
+  if (scale === "roman") return GRADE_SCALE_ROMAN;
   return GRADE_SCALE_LETTER;
 }
 
 export function usEquivalency(credential: string): string | null {
   const value = credential.toLowerCase();
   if (/doctor|doctorado|doctorat|doctoral|\bph\.?\s*d\b/.test(value)) return "Doctoral degree";
-  if (/master|maestr|maîtrise|maitrise|\bm\.?\s*sc\b/.test(value)) return "Master's degree";
+  if (/master|maestr[ií]a|magister|maîtrise|maitrise|\bm\.?\s*sc\b/.test(value)) return "Master's degree";
   if (/bachelor|licenciatura|licence|license|bacharel/.test(value)) return "Bachelor's degree";
   if (/associate/.test(value)) return "Associate degree";
   if (/high school|bachillerato|baccalaur/.test(value)) return "High school diploma";
@@ -107,18 +193,40 @@ export function mapLocalGrade(
   scale: GradeScale,
   options?: GradeMapOptions,
 ): MappedGrade | null {
-  if (scale === "letter") {
-    const token = localGrade.trim().toUpperCase().replace(/\s+/g, "");
-    const points = LETTER_POINTS[token];
-    if (points == null) return null;
-    return { usGrade: token, points };
+  const printed = localGrade.trim();
+  const word = printed.normalize("NFD").replace(/\p{M}/gu, "");
+  if (PASS_WORDS.test(word)) return { usGrade: UNGRADED_PASS, points: 0, ungraded: true };
+  if (NO_CREDIT_WORDS.test(word) && !(scale === "roman" && /^i$/i.test(word))) {
+    return { usGrade: NO_CREDIT_GRADE, points: 0, ungraded: true, noCredit: true };
   }
-  const match = localGrade.trim().replace(",", ".").match(/\d+(?:\.\d+)?/);
+  const bandWord = BAND_WORDS[word.toUpperCase()];
+  if (bandWord) return bandWord;
+  if (scale === "roman" || /^(?:I|II|III|IV|V|VI)$/.test(printed.toUpperCase())) {
+    const roman = ROMAN[romanKey(printed, scale === "roman")];
+    if (roman) return roman;
+    if (scale === "roman") return null;
+  }
+  if (scale === "letter") {
+    const token = printed.toUpperCase().replace(/\s+/g, "");
+    const points = LETTER_POINTS[token];
+    if (points != null) return { usGrade: token, points };
+    // "A (Excellent)" or "B+ / 3.3": take the leading letter.
+    const lead = token.match(/^([A-DF][+-]?)(?![A-Z])/)?.[1];
+    if (lead && LETTER_POINTS[lead] != null) return { usGrade: lead, points: LETTER_POINTS[lead]! };
+    return null;
+  }
+  const match = printed.replace(",", ".").match(/\d+(?:\.\d+)?/);
   if (!match) return null;
   const grade = Number(match[0]);
   if (!Number.isFinite(grade)) return null;
+  if (scale === "100") return percentGrade(grade);
+  if (scale === "4") {
+    if (grade > 4.3) return /%/.test(printed) ? percentGrade(grade) : null;
+    return nearestLetter(Math.min(grade, 4));
+  }
   if (scale === "10") {
-    if (grade > 10) return null;
+    // A percentage mark on a page the extractor called 10-point.
+    if (grade > 10) return /%/.test(printed) ? percentGrade(grade) : null;
     return band(grade, [
       [9, "A", 4],
       [8, "B", 3],
@@ -178,26 +286,38 @@ export function scoreCourses(
   edgeRows?: readonly EdgeGradePoints[],
   options?: GradeMapOptions,
 ): { courses: ScoredCourse[]; totalHours: number; gpa: number; usedEdge: boolean } | null {
+  if (courses.length === 0) return null;
+  // No credits printed at all (CXC, many secondary transcripts): one unit per subject.
+  const noCredits = courses.every((course) => !Number.isFinite(course.localCredits) || course.localCredits <= 0);
   const scored: ScoredCourse[] = [];
   let usedEdge = false;
+  let unmapped = 0;
+  let gradedHours = 0;
+  let points = 0;
   for (const course of courses) {
-    if (!Number.isFinite(course.localCredits) || course.localCredits < 0) return null;
+    const credits = noCredits ? 1 : course.localCredits;
+    if (!Number.isFinite(credits) || credits < 0) return null;
     const fromEdge = edgeRows && edgeRows.length > 0 ? mapEdgeGrade(course.localGrade, edgeRows) : null;
     if (fromEdge) usedEdge = true;
     const mapped = fromEdge ?? mapLocalGrade(course.localGrade, scale, options);
-    if (!mapped) return null;
-    const usSemesterHours = course.localCredits;
-    scored.push({
-      ...course,
-      usSemesterHours,
-      usGrade: mapped.usGrade,
-      gradePoints: round2(usSemesterHours * mapped.points),
-    });
+    if (!mapped) {
+      // Kept in place so year grouping still lines up; no hours, no points.
+      unmapped += 1;
+      scored.push({ ...course, localCredits: credits, usSemesterHours: 0, usGrade: UNMAPPED_GRADE, gradePoints: 0 });
+      continue;
+    }
+    const usSemesterHours = mapped.noCredit ? 0 : credits;
+    const gradePoints = mapped.ungraded ? 0 : round2(usSemesterHours * mapped.points);
+    if (!mapped.ungraded) {
+      gradedHours += usSemesterHours;
+      points += gradePoints;
+    }
+    scored.push({ ...course, localCredits: credits, usSemesterHours, usGrade: mapped.usGrade, gradePoints });
   }
+  if (unmapped > Math.floor(courses.length * MAX_UNMAPPED_SHARE)) return null;
   const totalHours = round2(scored.reduce((sum, course) => sum + course.usSemesterHours, 0));
-  if (totalHours <= 0) return null;
-  const points = scored.reduce((sum, course) => sum + course.gradePoints, 0);
-  return { courses: scored, totalHours, gpa: round2(points / totalHours), usedEdge };
+  if (totalHours <= 0 || gradedHours <= 0) return null;
+  return { courses: scored, totalHours, gpa: round2(points / gradedHours), usedEdge };
 }
 
 function gradeKey(value: string): string {
