@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyDiplomaEquivalency, assembleCourse, assembleDiploma } from "./evaluation";
+import { applyDiplomaEquivalency, assembleCourse, assembleDiploma, normalizeDiplomaExtract } from "./evaluation";
 import {
   EQUIVALENCY_QA_RESEARCH,
   EQUIVALENCY_QA_REVIEW,
@@ -206,12 +206,12 @@ describe("assemble evaluation", () => {
     expect(result).toMatchObject({
       kind: "course_by_course",
       totalHours: 6,
-      gpa: 3,
+      gpa: 3.3,
       gradeScale: GRADE_SCALE_20,
       years: [
         {
           year: "2018–2019",
-          courses: [expect.objectContaining({ usGrade: "B", gradePoints: 18, usSemesterHours: 6 })],
+          courses: [expect.objectContaining({ usGrade: "B+", gradePoints: 19.8, usSemesterHours: 6 })],
         },
       ],
     });
@@ -299,9 +299,9 @@ describe("assemble evaluation", () => {
         },
       ],
     });
-    expect(result).toMatchObject({ kind: "course_by_course", gpa: 1.5, gradeScale: GRADE_SCALE_20 });
+    expect(result).toMatchObject({ kind: "course_by_course", gpa: 2, gradeScale: GRADE_SCALE_20 });
     if (result?.kind !== "course_by_course") return;
-    expect(result.years[0]?.courses.map((course) => course.usGrade)).toEqual(["D", "C"]);
+    expect(result.years[0]?.courses.map((course) => course.usGrade)).toEqual(["D", "B"]);
     expect(result.years[0]?.courses.some((course) => course.usGrade === "F")).toBe(false);
   });
 
@@ -323,9 +323,62 @@ describe("assemble evaluation", () => {
         },
       ],
     });
-    expect(result).toMatchObject({ kind: "course_by_course", gpa: 1 });
+    expect(result).toMatchObject({ kind: "course_by_course", gpa: 1.5 });
     if (result?.kind !== "course_by_course") return;
-    expect(result.years[0]?.courses.map((course) => course.usGrade)).toEqual(["F", "C"]);
+    expect(result.years[0]?.courses.map((course) => course.usGrade)).toEqual(["F", "B"]);
+  });
+
+  it("strips a trailing registration number from the applicant", () => {
+    const name = "KOUAMOU NANA MYRTHE ARISTIDE                         08 / 008 / 4055";
+    expect(normalizeDiplomaExtract({
+      credentials: [
+        {
+          applicant: name,
+          institution: "Office du Baccalauréat du Cameroun",
+          country: "Cameroon",
+          credential: "Baccalauréat",
+          field: "Quantitative Management Techniques",
+          dates: "August 22, 2001",
+        },
+      ],
+    }).credentials[0]?.applicant).toBe("KOUAMOU NANA MYRTHE ARISTIDE");
+    const diploma = assembleDiploma({
+      degreeCount: 1,
+      documentsReviewed: ["releve.pdf"],
+      extracted: {
+        credentials: [
+          {
+            applicant: name,
+            institution: "Office du Baccalauréat du Cameroun",
+            country: "Cameroon",
+            credential: "Baccalauréat",
+            field: "Quantitative Management Techniques",
+            dates: "August 22, 2001",
+          },
+        ],
+      },
+    });
+    expect(diploma?.kind === "diploma" ? diploma.credentials[0]?.applicant : null).toBe(
+      "KOUAMOU NANA MYRTHE ARISTIDE",
+    );
+    const course = assembleCourse({
+      applicant: `M ${name}`,
+      institution: "Office du Baccalauréat du Cameroun",
+      country: "Cameroon",
+      credential: "Baccalauréat",
+      scale: "20",
+      years: [
+        {
+          year: "2001",
+          courses: [
+            { originalName: "Français", englishName: "French", localCredits: 2, localGrade: "12" },
+            { originalName: "Philosophie", englishName: "Philosophy", localCredits: 2, localGrade: "10" },
+            { originalName: "Anglais", englishName: "English", localCredits: 2, localGrade: "11" },
+          ],
+        },
+      ],
+    });
+    expect(course?.kind === "course_by_course" ? course.applicant : null).toBe("M KOUAMOU NANA MYRTHE ARISTIDE");
   });
 
   it("holds a transcript when a grade is off the scale", () => {
