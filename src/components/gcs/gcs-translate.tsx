@@ -2,12 +2,14 @@
 
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { PreviewDocument, PreviewOrder } from "@/components/preview/preview-order";
+import type { GcsHistoryItem } from "@/lib/gcs/history";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "@/lib/orders/constants";
 import { FlowApiError } from "@/lib/flow/api-error";
 import { uploadOrderFiles } from "@/lib/flow/direct-upload";
 import { publishGcsUnlock, useGcsUnlocked } from "@/lib/gcs/pin-client";
+import { GCS_MAX_DOCUMENTS } from "@/lib/orders/gcs";
 import { sourceLanguageChoices, targetLanguageChoices } from "@/lib/orders/languages";
 import { gcsTranslationProgress, gcsUploadProgress, type GcsLiveProgress, type GcsOrderSnapshot } from "./gcs-progress";
 import { GcsPinGate } from "./gcs-pin-gate";
@@ -19,6 +21,8 @@ const SideBySideViewer = dynamic(
 
 const SOURCES = sourceLanguageChoices();
 const TARGETS = targetLanguageChoices();
+const HISTORY_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const TRANSLATING_STATUSES = new Set(["draft", "quoted", "confirmed", "processing"]);
 
 type Frame = {
   number: number;
@@ -43,6 +47,8 @@ type EvaluationPayload = {
 };
 
 type OrderPayload = GcsOrderSnapshot & {
+  id?: string;
+  orderId?: string;
   reviewReason?: string | null;
   sourceLanguage?: string | null;
   targetLanguage?: string | null;
@@ -132,6 +138,29 @@ function useElapsed(active: boolean) {
   return active ? elapsed : 0;
 }
 
+function historyWhen(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${HISTORY_MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}`;
+}
+
+function pageLabel(count: number): string {
+  return `${count} ${count === 1 ? "page" : "pages"}`;
+}
+
+function filenameLabel(filenames: readonly string[]): string {
+  if (filenames.length === 0) return "";
+  if (filenames.length === 1) return filenames[0] ?? "";
+  return `${filenames[0]} + ${filenames.length - 1} more`;
+}
+
+function evaluationBadge(item: GcsHistoryItem): string | null {
+  if (!item.hasEvaluation) return null;
+  if (item.evaluationKind === "diploma") return "Diploma";
+  if (item.evaluationKind === "course_by_course") return "Course-by-course";
+  return "Evaluated";
+}
+
 export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: boolean; token?: string | null }) {
   const router = useRouter();
   const unlocked = useGcsUnlocked(initialUnlocked);
@@ -140,14 +169,48 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
   const [clientName, setClientName] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [pending, setPending] = useState(false);
+  const [uploadCount, setUploadCount] = useState(1);
   const [uploadRatio, setUploadRatio] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [order, setOrder] = useState<OrderPayload | null>(null);
   const [preview, setPreview] = useState<PreviewPayload | null>(null);
   const [evaluation, setEvaluation] = useState<PreviewDocument | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [history, setHistory] = useState<GcsHistoryItem[]>([]);
+  const [historyReady, setHistoryReady] = useState(false);
+  const [historyVersion, setHistoryVersion] = useState(0);
   const waiting = Boolean(token) && unlocked && !error && !preview;
   const elapsed = useElapsed(pending || waiting);
+  const activeHistoryId = order?.id ?? order?.orderId ?? token ?? null;
+
+  useEffect(() => {
+    setOrder(null);
+    setPreview(null);
+    setEvaluation(null);
+    setError(null);
+    setNotice(null);
+  }, [token]);
+
+  useEffect(() => {
+    if (!unlocked) return;
+    let stopped = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/gcs/orders");
+        if (!response.ok || stopped) return;
+        const body = (await response.json()) as { orders?: unknown };
+        if (stopped || !Array.isArray(body.orders)) return;
+        setHistory(body.orders as GcsHistoryItem[]);
+      } catch {
+        // The translation screen still works when the sidebar cannot load.
+      } finally {
+        if (!stopped) setHistoryReady(true);
+      }
+    })();
+    return () => {
+      stopped = true;
+    };
+  }, [unlocked, historyVersion]);
 
   useEffect(() => {
     if (!token || !unlocked) return;
@@ -167,7 +230,7 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
       }
       const next = (await orderResponse.json()) as OrderPayload;
       if (stopped) return;
-      setOrder(next);
+      setOrder({ ...next, id: next.id ?? next.orderId });
       if (next.status === "failed" || next.status === "cancelled" || next.status === "needs_review") {
         setError(next.reviewReason?.trim() || "We could not finish this translation.");
         return;
@@ -176,6 +239,7 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
       if (stopped) return;
       if (previewResponse.ok) {
         setPreview((await previewResponse.json()) as PreviewPayload);
+        setHistoryVersion((version) => version + 1);
         return;
       }
       timer = window.setTimeout(() => void poll(), 2500);
@@ -201,13 +265,32 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
     setError(message);
   }
 
-  async function start(file: File) {
+  function openNewTranslation() {
+    setError(null);
+    setNotice(null);
+    setPending(false);
+    setUploadRatio(null);
+    setUploadCount(1);
+    setOrder(null);
+    setPreview(null);
+    setEvaluation(null);
+    setDragOver(false);
+    if (token) router.push("/gcs-translate");
+  }
+
+  function openHistory(id: string) {
+    if (id === token) return;
+    router.push(`/gcs-translate/${encodeURIComponent(id)}`);
+  }
+
+  async function start(files: File[]) {
     setError(null);
     setUploadRatio(null);
+    setUploadCount(files.length);
     setPending(true);
     try {
       const created = await uploadOrderFiles({
-        files: [file],
+        files,
         choice: { orderType: "translation" },
         brand: "gcs",
         clientName,
@@ -228,10 +311,14 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
     }
   }
 
-  function takeFile(list: FileList | null) {
-    const file = list?.[0];
-    if (!file || pending) return;
-    void start(file);
+  function takeFiles(list: FileList | null) {
+    const files = Array.from(list ?? []);
+    if (files.length === 0 || pending) return;
+    if (files.length > GCS_MAX_DOCUMENTS) {
+      setError(`Upload at most ${GCS_MAX_DOCUMENTS} documents.`);
+      return;
+    }
+    void start(files);
   }
 
   async function downloadCertified() {
@@ -280,36 +367,35 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
       return;
     }
     setEvaluation(evaluationDocument(body.evaluation));
+    setHistoryVersion((version) => version + 1);
   }
 
   if (!unlocked) {
     return <GcsPinGate onUnlock={() => undefined} />;
   }
 
+  let main: ReactNode;
   if (pending) {
     const creating = uploadRatio != null && uploadRatio >= 1;
     const upload = gcsUploadProgress({ ratio: uploadRatio, elapsedMs: elapsed, creating });
-    return (
+    main = (
       <GcsProgress
-        title={creating ? "Starting the translation" : "Uploading your document"}
+        title={creating ? "Starting the translation" : uploadCount > 1 ? "Uploading your documents" : "Uploading your document"}
         progress={upload}
       />
     );
-  }
-
-  if (token) {
+  } else if (token) {
     if (error) {
-      return (
+      main = (
         <div className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-6 py-16">
           <h1 className="text-2xl font-semibold">Translation needs attention</h1>
           <p className="mt-3 text-sm text-[#5b6474]">{error}</p>
         </div>
       );
-    }
-    if (!viewer) {
+    } else if (!viewer) {
       const live = gcsTranslationProgress(order, elapsed);
       const preparing = order?.status === "confirmed" || order?.status === "processing";
-      return (
+      main = (
         <GcsProgress
           title="Translating your document"
           detail={
@@ -320,111 +406,206 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
           progress={live}
         />
       );
+    } else {
+      main = (
+        <div className="min-h-0 flex-1">
+          <SideBySideViewer
+            order={viewer}
+            chrome="gcs"
+            shellLayout="embedded"
+            notice={notice ?? undefined}
+            onDownload={downloadCertified}
+            onEvaluate={evaluateDocument}
+            onDownloadEvaluation={downloadEvaluation}
+            onCorrect={async ({ note }) => {
+              const response = await fetch(`/api/orders/${encodeURIComponent(token)}/correction-request`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ text: note }),
+              });
+              if (!response.ok) throw new Error(await readError(response, "Could not send this correction."));
+            }}
+          />
+        </div>
+      );
     }
-    return (
-      <div className="min-h-0 flex-1">
-        <SideBySideViewer
-          order={viewer}
-          chrome="gcs"
-          shellLayout="embedded"
-          notice={notice ?? undefined}
-          onDownload={downloadCertified}
-          onEvaluate={evaluateDocument}
-          onDownloadEvaluation={downloadEvaluation}
-          onCorrect={async ({ note }) => {
-            const response = await fetch(`/api/orders/${encodeURIComponent(token)}/correction-request`, {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ text: note }),
-            });
-            if (!response.ok) throw new Error(await readError(response, "Could not send this correction."));
+  } else {
+    main = (
+      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-5 py-10 md:px-8">
+        <p className="text-[11px] font-semibold tracking-[0.16em] text-[#1f5eff]">CERTIFIED TRANSLATION</p>
+        <h1 className="mt-3 text-3xl font-semibold tracking-[-0.5px]">Upload documents</h1>
+        <p className="mt-2 max-w-xl text-sm text-[#5b6474]">
+          One or more PDFs or images, up to {GCS_MAX_DOCUMENTS} files, combined into one certified translation with no
+          payment step.
+        </p>
+        <div className="mt-8 grid gap-4 md:grid-cols-3">
+          <label className="block text-sm font-semibold">
+            Source language
+            <select
+              value={sourceLanguage}
+              onChange={(event) => setSourceLanguage(event.target.value)}
+              className="mt-2 h-11 w-full rounded-xl border border-[#d5dbe6] bg-white px-3 font-normal"
+            >
+              <option value="auto">Auto-detect</option>
+              {SOURCES.map((language) => (
+                <option key={language.code} value={language.code}>
+                  {language.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm font-semibold">
+            Target language
+            <select
+              value={targetLanguage}
+              onChange={(event) => setTargetLanguage(event.target.value)}
+              className="mt-2 h-11 w-full rounded-xl border border-[#d5dbe6] bg-white px-3 font-normal"
+            >
+              {TARGETS.map((language) => (
+                <option key={language.code} value={language.code}>
+                  {language.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm font-semibold">
+            Client name
+            <input
+              value={clientName}
+              onChange={(event) => setClientName(event.target.value)}
+              placeholder="Optional"
+              className="mt-2 h-11 w-full rounded-xl border border-[#d5dbe6] px-3 font-normal"
+            />
+          </label>
+        </div>
+        <label
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragOver(true);
           }}
-        />
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragOver(false);
+            takeFiles(event.dataTransfer.files);
+          }}
+          className={`mt-6 flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 text-center ${
+            dragOver ? "border-[#1f5eff] bg-[#eaf0ff]" : "border-[#c9d6ff] bg-[#f7f9ff]"
+          }`}
+        >
+          <input
+            type="file"
+            multiple
+            accept="application/pdf,image/*"
+            className="sr-only"
+            disabled={pending}
+            onChange={(event) => {
+              takeFiles(event.target.files);
+              event.target.value = "";
+            }}
+          />
+          <span className="text-lg font-semibold">Drop documents here</span>
+          <span className="mt-2 text-sm text-[#5b6474]">or click to choose one or more PDFs or images</span>
+        </label>
+        {error ? (
+          <p role="alert" className="mt-4 text-sm font-semibold text-[#b42318]">
+            {error}
+          </p>
+        ) : null}
       </div>
     );
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-5 py-10 md:px-8">
-      <p className="text-[11px] font-semibold tracking-[0.16em] text-[#1f5eff]">CERTIFIED TRANSLATION</p>
-      <h1 className="mt-3 text-3xl font-semibold tracking-[-0.5px]">Upload one document</h1>
-      <p className="mt-2 max-w-xl text-sm text-[#5b6474]">
-        PDF or image. The certified translation starts as soon as the file is in, with no payment step.
-      </p>
-      <div className="mt-8 grid gap-4 md:grid-cols-3">
-        <label className="block text-sm font-semibold">
-          Source language
-          <select
-            value={sourceLanguage}
-            onChange={(event) => setSourceLanguage(event.target.value)}
-            className="mt-2 h-11 w-full rounded-xl border border-[#d5dbe6] bg-white px-3 font-normal"
-          >
-            <option value="auto">Auto-detect</option>
-            {SOURCES.map((language) => (
-              <option key={language.code} value={language.code}>
-                {language.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block text-sm font-semibold">
-          Target language
-          <select
-            value={targetLanguage}
-            onChange={(event) => setTargetLanguage(event.target.value)}
-            className="mt-2 h-11 w-full rounded-xl border border-[#d5dbe6] bg-white px-3 font-normal"
-          >
-            {TARGETS.map((language) => (
-              <option key={language.code} value={language.code}>
-                {language.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block text-sm font-semibold">
-          Client name
-          <input
-            value={clientName}
-            onChange={(event) => setClientName(event.target.value)}
-            placeholder="Optional"
-            className="mt-2 h-11 w-full rounded-xl border border-[#d5dbe6] px-3 font-normal"
-          />
-        </label>
-      </div>
-      <label
-        onDragOver={(event) => {
-          event.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(event) => {
-          event.preventDefault();
-          setDragOver(false);
-          takeFile(event.dataTransfer.files);
-        }}
-        className={`mt-6 flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 text-center ${
-          dragOver ? "border-[#1f5eff] bg-[#eaf0ff]" : "border-[#c9d6ff] bg-[#f7f9ff]"
-        }`}
-      >
-        <input
-          type="file"
-          accept="application/pdf,image/*"
-          className="sr-only"
-          disabled={pending}
-          onChange={(event) => {
-            takeFile(event.target.files);
-            event.target.value = "";
-          }}
-        />
-        <span className="text-lg font-semibold">Drop a document here</span>
-        <span className="mt-2 text-sm text-[#5b6474]">or click to choose a PDF or image</span>
-      </label>
-      {error ? (
-        <p role="alert" className="mt-4 text-sm font-semibold text-[#b42318]">
-          {error}
-        </p>
-      ) : null}
+    <div className="flex min-h-0 flex-1 overflow-hidden">
+      <GcsHistorySidebar
+        items={history}
+        ready={historyReady}
+        activeId={activeHistoryId}
+        onOpen={openHistory}
+        onNew={openNewTranslation}
+      />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">{main}</div>
     </div>
+  );
+}
+
+function GcsHistorySidebar({
+  items,
+  ready,
+  activeId,
+  onOpen,
+  onNew,
+}: {
+  items: GcsHistoryItem[];
+  ready: boolean;
+  activeId: string | null;
+  onOpen: (id: string) => void;
+  onNew: () => void;
+}) {
+  return (
+    <aside
+      data-testid="gcs-history-sidebar"
+      className="flex w-64 shrink-0 flex-col border-r border-[#e4e8f0] bg-[#f8fafc] md:w-72"
+    >
+      <div className="border-b border-[#e4e8f0] p-3">
+        <button
+          type="button"
+          data-testid="gcs-new-translation"
+          onClick={onNew}
+          className="flex h-10 w-full items-center justify-center rounded-xl bg-[#1f5eff] px-3 text-sm font-semibold text-white"
+        >
+          + New Translation
+        </button>
+        <h2 className="mt-4 text-[11px] font-semibold tracking-[0.14em] text-[#5b6474]">Previous translations</h2>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        {items.length === 0 ? (
+          <p className="px-2 py-3 text-sm text-[#5b6474]">{ready ? "No translations yet." : "Loading translations…"}</p>
+        ) : (
+          <ul className="space-y-1">
+            {items.map((item) => {
+              const active = item.id === activeId;
+              const files = filenameLabel(item.filenames);
+              const badge = evaluationBadge(item);
+              const when = historyWhen(item.createdAt);
+              return (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    data-testid="gcs-history-item"
+                    data-active={active ? "true" : "false"}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => onOpen(item.id)}
+                    className={`w-full rounded-xl px-3 py-2.5 text-left ${
+                      active ? "bg-white shadow-sm ring-1 ring-[#1f5eff]" : "hover:bg-white"
+                    }`}
+                  >
+                    <span className="block truncate text-sm font-semibold text-[#0b1220]">{item.title}</span>
+                    {files && files !== item.title ? (
+                      <span className="mt-0.5 block truncate text-xs text-[#5b6474]">{files}</span>
+                    ) : null}
+                    <span className="mt-2 flex flex-wrap gap-1.5">
+                      <span className="rounded-full bg-[#eaf0ff] px-2 py-0.5 text-[10px] font-semibold text-[#1f5eff]">
+                        {TRANSLATING_STATUSES.has(item.status) ? "Translating…" : "Translated"}
+                      </span>
+                      {badge ? (
+                        <span className="rounded-full bg-[#e8f6f0] px-2 py-0.5 text-[10px] font-semibold text-[#067647]">
+                          {badge}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="mt-1.5 block text-xs text-[#5b6474]">
+                      {when ? `${when} · ${pageLabel(item.pageCount)}` : pageLabel(item.pageCount)}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </aside>
   );
 }
 
