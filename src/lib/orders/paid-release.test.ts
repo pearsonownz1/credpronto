@@ -177,7 +177,7 @@ describe("settlePaidOrder", () => {
     expect(certification.stampApprovedCover).not.toHaveBeenCalled();
   });
 
-  it("queues a paid evaluation and emails staff without waiting for a generated file", async () => {
+  it("waits on a paid evaluation until the report file is stored and does not force staff review", async () => {
     vi.spyOn(db, "getOrderById").mockResolvedValue(
       order({
         serviceType: "evaluation",
@@ -199,30 +199,21 @@ describe("settlePaidOrder", () => {
     const result = await settlePaidOrder(dbHandle, orderId, { scheduleUrgent: false });
 
     expect(result.fulfillment).toBe("awaiting_review");
-    expect(email.sendStaffOrderAlert).toHaveBeenCalledTimes(1);
-    expect(email.sendStaffOrderAlert).toHaveBeenCalledWith(
-      expect.any(Array),
-      expect.objectContaining({
-        urgent: false,
-        orderId,
-        serviceType: "evaluation",
-        totalCents: 1995,
-        studioUrl: expect.stringContaining(`/admin/orders/${orderId}`),
-      }),
-    );
-    expect(db.updateOrder).toHaveBeenCalledWith(dbHandle, orderId, {
+    expect(dispatch.ensurePaidEvaluationReports).toHaveBeenCalledWith(dbHandle, orderId);
+    expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
+    expect(db.updateOrder).not.toHaveBeenCalledWith(dbHandle, orderId, {
       review_reason: "Credential evaluation is reviewed by staff.",
     });
-    expect(db.updateOrder).toHaveBeenCalledWith(
+    expect(db.updateOrder).not.toHaveBeenCalledWith(
       dbHandle,
       orderId,
-      expect.objectContaining({ evaluation_status: "under_review", under_review_at: expect.any(String) }),
+      expect.objectContaining({ evaluation_status: "under_review" }),
     );
     expect(certification.stampApprovedCover).not.toHaveBeenCalled();
     expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
   });
 
-  it("puts a multi-service evaluation (service null, services list) under review after payment", async () => {
+  it("waits on a multi-service evaluation until each report pdf is stored", async () => {
     vi.spyOn(db, "getOrderById").mockResolvedValue(
       order({
         serviceType: "evaluation",
@@ -241,8 +232,129 @@ describe("settlePaidOrder", () => {
     const result = await settlePaidOrder(dbHandle, orderId, { scheduleUrgent: schedule });
 
     expect(result.fulfillment).toBe("awaiting_review");
+    expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
+    expect(db.updateOrder).not.toHaveBeenCalledWith(dbHandle, orderId, {
+      review_reason: "Credential evaluation is reviewed by staff.",
+    });
+    expect(schedule).not.toHaveBeenCalled();
+    expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
+    expect(dispatch.ensurePaidEvaluationReports).toHaveBeenCalledWith(dbHandle, orderId);
+  });
+
+  it("releases a clean paid diploma once the evaluation pdf is stored", async () => {
+    const report = `${orderId}/diploma-evaluation.pdf`;
+    vi.spyOn(db, "getOrderById").mockResolvedValue(
+      order({
+        serviceType: "evaluation",
+        orderType: "evaluation",
+        service: "diploma",
+        degreeCount: 1,
+        evaluationCents: 1995,
+        translationCents: 0,
+        unitPriceCents: 1995,
+        totalCents: 1995,
+        billablePages: 1,
+        sourceLanguage: "fr",
+        languageConfirmed: true,
+        finalTranslationPath: null,
+        certificationPath: null,
+        serviceFiles: { diploma: report },
+        reviewReason: null,
+      }),
+    );
+    vi.spyOn(db, "listQaRuns").mockResolvedValue([]);
+
+    const result = await settlePaidOrder(dbHandle, orderId, { scheduleUrgent: false });
+
+    expect(result.fulfillment).toBe("released");
+    expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
+    expect(certification.stampApprovedCover).toHaveBeenCalled();
+    expect(finalEmail.sendFinalCustomerEmail).toHaveBeenCalledWith(
+      dbHandle,
+      expect.objectContaining({ id: orderId, service: "diploma" }),
+    );
+    expect(db.updateDelivery).toHaveBeenCalledWith(
+      dbHandle,
+      orderId,
+      expect.objectContaining({ status: "approved", final_path: report, certification_path: report }),
+    );
+    expect(db.updateDelivery).toHaveBeenCalledWith(
+      dbHandle,
+      orderId,
+      expect.objectContaining({ status: "delivered", final_path: report, certification_path: report }),
+    );
+    expect(db.updateOrder).toHaveBeenCalledWith(
+      dbHandle,
+      orderId,
+      expect.objectContaining({
+        status: "delivered",
+        evaluation_status: "evaluation_complete",
+        review_reason: null,
+        final_translation_path: report,
+        certification_path: report,
+      }),
+    );
+  });
+
+  it("releases a clean bundled evaluation when the translation and both reports are ready", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue(
+      order({
+        serviceType: "evaluation",
+        orderType: "evaluation",
+        service: null,
+        services: ["translation", "diploma", "course_by_course"],
+        degreeCount: 1,
+        includeTranslation: true,
+        evaluationCents: 5990,
+        translationCents: 995,
+        totalCents: 6985,
+        serviceFiles: {
+          diploma: `${orderId}/diploma-evaluation.pdf`,
+          course_by_course: `${orderId}/course_by_course-evaluation.pdf`,
+        },
+        reviewReason: null,
+      } as Partial<OrderRecord>),
+    );
+
+    const result = await settlePaidOrder(dbHandle, orderId, { scheduleUrgent: false });
+
+    expect(result.fulfillment).toBe("released");
+    expect(finalEmail.sendFinalCustomerEmail).toHaveBeenCalled();
+    expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
+    expect(db.updateDelivery).toHaveBeenCalledWith(
+      dbHandle,
+      orderId,
+      expect.objectContaining({
+        status: "delivered",
+        final_path: "order-9/translation.pdf",
+        certification_path: "order-9/certification.pdf",
+      }),
+    );
+  });
+
+  it("holds a paid evaluation for staff when a real review flag is set", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue(
+      order({
+        serviceType: "evaluation",
+        orderType: "evaluation",
+        service: "diploma",
+        degreeCount: 1,
+        evaluationCents: 1995,
+        translationCents: 0,
+        totalCents: 1995,
+        finalTranslationPath: null,
+        certificationPath: null,
+        serviceFiles: { diploma: `${orderId}/diploma-evaluation.pdf` },
+        reviewReason: "equivalency_qa_review",
+      }),
+    );
+    vi.spyOn(db, "listQaRuns").mockResolvedValue([]);
+
+    const result = await settlePaidOrder(dbHandle, orderId, { scheduleUrgent: false });
+
+    expect(result.fulfillment).toBe("awaiting_review");
     expect(email.sendStaffOrderAlert).toHaveBeenCalledTimes(1);
-    expect(db.updateOrder).toHaveBeenCalledWith(dbHandle, orderId, {
+    expect(db.updateOrder).not.toHaveBeenCalledWith(dbHandle, orderId, {
       review_reason: "Credential evaluation is reviewed by staff.",
     });
     expect(db.updateOrder).toHaveBeenCalledWith(
@@ -250,12 +362,10 @@ describe("settlePaidOrder", () => {
       orderId,
       expect.objectContaining({ evaluation_status: "under_review", under_review_at: expect.any(String) }),
     );
-    expect(schedule).not.toHaveBeenCalled();
     expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
-    expect(dispatch.ensurePaidEvaluationReports).toHaveBeenCalledWith(dbHandle, orderId);
   });
 
-  it("emails staff once for a paid evaluation with translation and does not arm the urgent reminder", async () => {
+  it("does not email staff for a paid evaluation that is still waiting on its translation file", async () => {
     vi.spyOn(db, "getOrderById").mockResolvedValue(
       order({
         serviceType: "evaluation",
@@ -281,11 +391,8 @@ describe("settlePaidOrder", () => {
     const result = await settlePaidOrder(dbHandle, orderId, { scheduleUrgent: schedule });
 
     expect(result.fulfillment).toBe("awaiting_review");
-    expect(email.sendStaffOrderAlert).toHaveBeenCalledTimes(1);
-    expect(email.sendStaffOrderAlert).toHaveBeenCalledWith(
-      expect.any(Array),
-      expect.objectContaining({ urgent: false, orderId, serviceType: "evaluation" }),
-    );
+    expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
+    expect(finalEmail.sendFinalCustomerEmail).not.toHaveBeenCalled();
     expect(schedule).not.toHaveBeenCalled();
   });
 

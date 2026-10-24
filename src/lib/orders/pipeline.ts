@@ -1,7 +1,8 @@
 import { analyzeOrder } from "./analysis";
+import { retryEvaluation, shouldPrepareEvaluationReport } from "./evaluation";
 import { ensurePaidEvaluationReports } from "./evaluation-dispatch";
 import { orderIsPaid } from "./evaluation-summary";
-import { orderHasEvaluation } from "./service-selection";
+import { orderHasEvaluation, resolveServices } from "./service-selection";
 import {
   customerEmail,
   earliestReadyPreviewAt,
@@ -79,11 +80,16 @@ export async function processOrder(orderId: string, token: string | null = null)
     }
   }
 
-  // Evaluation-only stays with staff after payment. A translation bundle still builds a preview.
-  if (order.service && !order.includeTranslation) return;
-
   if (order.status === "draft" || (order.status === "failed" && !order.languageConfirmed)) {
     await analyzeOrder(db, order.id, token);
+    return;
+  }
+
+  // Evaluation-only has no translation job. The report is built during analysis.
+  if (orderHasEvaluation(order) && !resolveServices(order).includes("translation")) {
+    if (shouldPrepareEvaluationReport(order) && order.sourceLanguage) {
+      await retryEvaluation(db, order, order.sourceLanguage);
+    }
     return;
   }
 

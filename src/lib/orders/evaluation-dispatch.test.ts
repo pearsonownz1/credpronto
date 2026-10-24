@@ -377,6 +377,10 @@ describe("regeneratePaidEvaluations", () => {
     vi.spyOn(evaluation, "evaluateServiceFromText").mockImplementation(async (_db, _order, service) => ({
       result: service === "diploma" ? diploma() : course(),
       failures: [],
+      edgeCredentialId: null,
+      edgeGradingScaleId: null,
+      edgeMatchMethod: null,
+      route: "qa_research",
     }));
     vi.spyOn(pdf, "renderEvaluationPdfs").mockResolvedValue({
       clean: new Uint8Array([1, 2, 3]),

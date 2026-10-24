@@ -23,9 +23,11 @@ import { paidEvaluationDegreeCount } from "./evaluation-summary";
 import {
   courseExtractFromTranscript,
   recoverCourseExtract,
+  textForPaidEvaluation,
   type TranscriptRowFailure,
 } from "./evaluation-transcript";
-import { orderEvaluationKinds, orderHasEvaluation, selectionPricePatch } from "./service-selection";
+import { evaluationServicePath } from "./evaluation-summary";
+import { orderEvaluationKinds, orderHasEvaluation, resolveServices, selectionPricePatch } from "./service-selection";
 import { concatPdfs } from "./pdf/merge";
 import { etaFromNow } from "./quote";
 import {
@@ -160,6 +162,269 @@ function orPending(value: string, fallback = ""): string {
   return filled(value) ?? filled(fallback) ?? PENDING_EQUIVALENCY;
 }
 
+function foldLabel(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+const FRENCH_MONTHS: Readonly<Record<string, string>> = {
+  janvier: "January",
+  fevrier: "February",
+  mars: "March",
+  avril: "April",
+  mai: "May",
+  juin: "June",
+  juillet: "July",
+  aout: "August",
+  septembre: "September",
+  octobre: "October",
+  novembre: "November",
+  decembre: "December",
+};
+
+const FRENCH_COUNTRIES: Readonly<Record<string, string>> = {
+  cameroun: "Cameroon",
+  cameroon: "Cameroon",
+  france: "France",
+  mexique: "Mexico",
+  mexico: "Mexico",
+  espagne: "Spain",
+  spain: "Spain",
+  italie: "Italy",
+  italy: "Italy",
+  allemagne: "Germany",
+  germany: "Germany",
+  bresil: "Brazil",
+  brazil: "Brazil",
+  belgique: "Belgium",
+  belgium: "Belgium",
+  suisse: "Switzerland",
+  switzerland: "Switzerland",
+  maroc: "Morocco",
+  morocco: "Morocco",
+  tunisie: "Tunisia",
+  tunisia: "Tunisia",
+  algerie: "Algeria",
+  algeria: "Algeria",
+  senegal: "Senegal",
+  haiti: "Haiti",
+  liban: "Lebanon",
+  lebanon: "Lebanon",
+  chine: "China",
+  china: "China",
+  japon: "Japan",
+  japan: "Japan",
+  "republique dominicaine": "Dominican Republic",
+  "dominican republic": "Dominican Republic",
+  "cote d'ivoire": "Côte d'Ivoire",
+  "cote divoire": "Côte d'Ivoire",
+};
+
+/** French field labels that show up in all caps on Cameroonian and French credentials. */
+const FRENCH_FIELDS: Readonly<Record<string, string>> = {
+  "techniques quantitatives de gestion": "Quantitative Management Techniques",
+  "sciences economiques et juridiques": "Economic and Legal Sciences",
+  "mathematiques appliquees": "Applied Mathematics",
+};
+
+const FRENCH_COURSES: Readonly<Record<string, string>> = {
+  "sciences economiques et juridiques": "Economic and Legal Sciences",
+  "mathematiques appliquees": "Applied Mathematics",
+  "techniques quantitatives de gestion": "Quantitative Management Techniques",
+  "pratique professionnelle (pratique ecrite)": "Professional Practice (Written)",
+  "pratique professionnelle (sur materiel)": "Professional Practice (Practical)",
+  francais: "French",
+  philosophie: "Philosophy",
+  anglais: "English",
+  "education civique": "Civics",
+  mathematiques: "Mathematics",
+  "histoire ou geographie": "History or Geography",
+  histoire: "History",
+  chimie: "Chemistry",
+  physique: "Physics",
+  latin: "Latin",
+  algebre: "Algebra",
+  biologie: "Biology",
+  sport: "Sport",
+  "comptabilite analytique": "Cost Accounting",
+};
+
+const FRENCH_COURSE_WORD =
+  /\b(et|ou|de|du|des|la|le|les|aux|sur|appliquee|appliquees|applique|appliques|economique|economiques|juridique|juridiques|mathematique|mathematiques|francais|physique|chimie|histoire|geographie|gestion|quantitatives|pratique|professionnelle|professionnel|civique|algebre|philosophie|anglais|comptabilite|analytique)\b/;
+
+function titleCaseEnglish(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/(^|[\s(/-])([a-z])/g, (_, boundary: string, letter: string) => `${boundary}${letter.toUpperCase()}`);
+}
+
+function presentEnglishTitle(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  if (trimmed === trimmed.toUpperCase() || trimmed === trimmed.toLowerCase()) return titleCaseEnglish(trimmed);
+  return trimmed;
+}
+
+/** A title that is already English, so it does not need another translation pass. */
+export function isEnglishCourseTitle(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (/[\u0300-\u036f]/.test(trimmed.normalize("NFD"))) return false;
+  return !FRENCH_COURSE_WORD.test(foldLabel(trimmed));
+}
+
+/** Country of education in English. `Cameroun` and `République du Cameroun` become `Cameroon`. */
+export function normalizeEvaluationCountry(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  const folded = foldLabel(trimmed).replace(/[^a-z'\s-]/g, " ").replace(/\s+/g, " ").trim();
+  if (FRENCH_COUNTRIES[folded]) return FRENCH_COUNTRIES[folded];
+  if (folded.includes("cameroun") || folded.includes("cameroon")) return "Cameroon";
+  if (folded.includes("republique dominicaine") || folded.includes("dominican republic")) return "Dominican Republic";
+  if (folded.includes("cote d'ivoire") || folded.includes("cote divoire")) return "Côte d'Ivoire";
+  return trimmed;
+}
+
+/**
+ * Conferral and examination dates in English.
+ * `26 Mars 2003` becomes `March 26, 2003`. A date that is already English, or a year range, stays as written.
+ */
+export function normalizeEvaluationDate(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  const folded = foldLabel(trimmed);
+  const match = folded.match(
+    /(?:^|\s)(\d{1,2})\s+(janvier|fevrier|mars|avril|mai|juin|juillet|aout|septembre|octobre|novembre|decembre)\s+(\d{4})(?!\d)/,
+  );
+  if (!match) return trimmed;
+  const day = Number(match[1]);
+  const month = FRENCH_MONTHS[match[2] ?? ""];
+  if (!month || day < 1 || day > 31) return trimmed;
+  return `${month} ${day}, ${match[3]}`;
+}
+
+/** Subject in English Title Case. A known French label is translated; an English label is kept. */
+export function normalizeEvaluationField(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  const known = FRENCH_FIELDS[foldLabel(trimmed)];
+  if (known) return known;
+  if (isEnglishCourseTitle(trimmed) && (trimmed === trimmed.toUpperCase() || trimmed === trimmed.toLowerCase())) {
+    return titleCaseEnglish(trimmed);
+  }
+  return trimmed;
+}
+
+/** English course title. A translation that is already English wins. Otherwise a known French title is translated. */
+export function englishNameForCourse(originalName: string, englishName: string): string {
+  const original = originalName.trim();
+  const english = englishName.trim();
+  if (english && foldLabel(english) !== foldLabel(original) && isEnglishCourseTitle(english)) {
+    return presentEnglishTitle(english);
+  }
+  const known = FRENCH_COURSES[foldLabel(original)];
+  if (known) return known;
+  if (isEnglishCourseTitle(original)) return presentEnglishTitle(original);
+  return english || original;
+}
+
+const courseNameSchema = z.object({
+  names: z.array(
+    z.object({
+      originalName: z.string(),
+      englishName: z.string(),
+    }),
+  ),
+});
+
+const COURSE_NAME_INSTRUCTIONS = `Translate each course title into English.
+Copy originalName exactly from the input.
+englishName is the accurate English course title in Title Case.
+When the title is already English, englishName is that title in Title Case.
+Do not add or drop courses. Do not include grades or credits.`;
+
+type CourseNameSource = {
+  country: string;
+  years: Array<{
+    year: string;
+    courses: Array<{ originalName: string; englishName: string; localCredits: number; localGrade: string }>;
+  }>;
+};
+
+/** Fills `englishName` from a known translation or the model. Grades and the printed `originalName` stay put. */
+export async function withEnglishCourseNames<T extends CourseNameSource>(extracted: T): Promise<T> {
+  const pending: string[] = [];
+  const seen = new Set<string>();
+  for (const year of extracted.years) {
+    for (const course of year.courses) {
+      const original = course.originalName.trim();
+      const key = foldLabel(original);
+      if (!original || seen.has(key)) continue;
+      seen.add(key);
+      const resolved = englishNameForCourse(original, course.englishName);
+      if (foldLabel(resolved) === key && !isEnglishCourseTitle(resolved)) pending.push(original);
+    }
+  }
+  const translated = new Map<string, string>();
+  if (pending.length > 0) {
+    try {
+      const result = await generateObject(
+        courseNameSchema,
+        [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `${COURSE_NAME_INSTRUCTIONS}\n\n${pending.map((name) => `- ${name}`).join("\n")}`,
+              },
+            ],
+          },
+        ],
+        undefined,
+        { lowReasoning: true },
+      );
+      for (const row of result.names) {
+        const key = foldLabel(row.originalName);
+        const value = row.englishName.trim();
+        if (key && value && isEnglishCourseTitle(value)) translated.set(key, presentEnglishTitle(value));
+      }
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : "course name translation failed");
+    }
+  }
+  return {
+    ...extracted,
+    country: normalizeEvaluationCountry(extracted.country),
+    years: extracted.years.map((year) => ({
+      ...year,
+      courses: year.courses.map((course) => {
+        const fromModel = translated.get(foldLabel(course.originalName));
+        return {
+          ...course,
+          englishName: fromModel ?? englishNameForCourse(course.originalName, course.englishName),
+        };
+      }),
+    })),
+  };
+}
+
+export function normalizeDiplomaExtract(extracted: DiplomaExtract): DiplomaExtract {
+  return {
+    credentials: extracted.credentials.map((item) => ({
+      ...item,
+      country: normalizeEvaluationCountry(item.country),
+      field: normalizeEvaluationField(item.field),
+      dates: normalizeEvaluationDate(item.dates),
+    })),
+  };
+}
+
 export function assembleDiploma(input: {
   extracted: DiplomaExtract;
   degreeCount: number;
@@ -178,10 +443,13 @@ export function assembleDiploma(input: {
     credentials.push({
       applicant,
       institution,
-      country: orPending(item.country),
+      country: orPending(normalizeEvaluationCountry(item.country)),
       credential,
-      field: orPending(item.field, subjectFromTitle(credential) ?? ""),
-      dates: orPending(item.dates),
+      field: orPending(
+        normalizeEvaluationField(item.field),
+        normalizeEvaluationField(subjectFromTitle(credential) ?? ""),
+      ),
+      dates: orPending(normalizeEvaluationDate(item.dates)),
       usEquivalency: input.equivalencies?.[index] ?? PENDING_EQUIVALENCY,
       ...(input.bases?.[index]?.trim() ? { equivalencyBasis: input.bases[index]?.trim() } : {}),
       documentsReviewed: input.documentsReviewed,
@@ -299,7 +567,7 @@ export function assembleCourse(
   const applicant = filled(extracted.applicant);
   const institution = filled(extracted.institution);
   // A regional board (CXC, WAEC) often prints no country; staff fill it like a diploma's.
-  const country = orPending(extracted.country);
+  const country = orPending(normalizeEvaluationCountry(extracted.country));
   const credential = filled(extracted.credential);
   if (!applicant || !institution || !credential) return null;
   // Empty year groups are dropped; an unlabeled group keeps its courses under a neutral label.
@@ -310,7 +578,9 @@ export function assembleCourse(
   for (const year of yearGroups) {
     for (const course of year.courses) {
       const originalName = filled(course.originalName) ?? filled(course.englishName);
-      const englishName = filled(course.englishName) ?? originalName;
+      const englishName = originalName
+        ? englishNameForCourse(originalName, filled(course.englishName) ?? originalName)
+        : null;
       if (!originalName || !englishName) return null;
       // A blank grade counts as unreadable; scoreCourses tolerates a few of those.
       flat.push({ originalName, englishName, localCredits: course.localCredits, localGrade: course.localGrade.trim() || "—" });
@@ -349,20 +619,20 @@ export function assembleCourse(
 export const UNLABELED_YEAR = "Year not printed";
 
 const DIPLOMA_EXTRACT_INSTRUCTIONS = `Extract each degree from this credential document.
-Return one credential per degree that is printed. Copy names, institutions, countries, fields, and dates as printed.
-credential is the degree title as printed (for example Licence, Licenciatura, Licenciada, Licenciado, Maîtrise, Bachillerato).
-field is the subject. For "Licenciada en Administración de Empresas", field is "Administración de Empresas".
-country is the country of the institution that awarded the credential, written in English (Dominican Republic, not República Dominicana). If the country is not printed, infer it from the city or state (Guadalajara, Jalisco is Mexico). For a regional examination board such as CXC (Caribbean Examinations Council) or WAEC (West African Examinations Council), country is the candidate's own country, taken from the school, centre, or address. Use an empty string only when no place is printed.
-englishCredential is the usual English name of the credential (for example Higher Secondary Certificate, Bachelor of Medicine). Leave it empty when credential is already in English.
-dates is the examination or conferral date as printed.
+Return one credential per degree that is printed. Copy the applicant, the institution, and the credential title as printed.
+credential is the degree title as printed in the source language (for example Licence, Licenciatura, Licenciada, Licenciado, Maîtrise, Bachillerato, Baccalauréat). Do not translate credential.
+englishCredential is the usual English name of that credential (for example Higher Secondary Certificate, Bachelor of Medicine, Technical Secondary School Baccalaureate). Leave it empty when credential is already in English.
+field is the subject in English Title Case. "TECHNIQUES QUANTITATIVES DE GESTION" is "Quantitative Management Techniques". "Licenciada en Administración de Empresas" has field "Business Administration". Do not leave a field in another language or in all caps.
+country is the country of the institution that awarded the credential, written in English (Cameroon, not Cameroun; Dominican Republic, not República Dominicana). If the country is not printed, infer it from the city or state (Guadalajara, Jalisco is Mexico). For a regional examination board such as CXC (Caribbean Examinations Council) or WAEC (West African Examinations Council), country is the candidate's own country, taken from the school, centre, or address. Use an empty string only when no place is printed.
+dates is the examination or conferral date in English. "26 Mars 2003" is "March 26, 2003". "22 Août 2001" is "August 22, 2001". Keep a printed year range as a range, such as 2016–2019.
 Return the student's granted title even when a field is missing. Do not add degrees for the rector or other signatories. Do not invent a degree.`;
 
 const COURSE_EXTRACT_INSTRUCTIONS = `Extract this academic transcript into a course-by-course table.
 Group courses by the academic year printed on the page. Keep each year label as printed.
 When the page is one examination session and has no academic year, use the session year as the year label.
-credential is the credential title as printed. englishCredential is its usual English name, empty when it is already in English.
-country is the country of the institution that awarded the credential, written in English (Dominican Republic, not República Dominicana). If the country is not printed, infer it from the city or state (Guadalajara, Jalisco is Mexico). For a regional examination board such as CXC (Caribbean Examinations Council) or WAEC (West African Examinations Council), country is the candidate's own country, taken from the school, centre, or address. Use an empty string only when no place is printed.
-originalName is the course title as printed. englishName is the English name.
+credential is the credential title as printed in the source language. Do not translate credential. englishCredential is its usual English name, empty when it is already in English.
+country is the country of the institution that awarded the credential, written in English (Cameroon, not Cameroun; Dominican Republic, not República Dominicana). If the country is not printed, infer it from the city or state (Guadalajara, Jalisco is Mexico). For a regional examination board such as CXC (Caribbean Examinations Council) or WAEC (West African Examinations Council), country is the candidate's own country, taken from the school, centre, or address. Use an empty string only when no place is printed.
+originalName is the course title as printed in the source language. englishName is the accurate English translation in Title Case. "Sciences Economiques et Juridiques" is "Economic and Legal Sciences". "Mathématiques Appliquées" is "Applied Mathematics". When the printed title is already English, englishName is that title and not a copy of a non-English name.
 localCredits and localGrade are the values as printed. localGrade is a string.
 When the columns are Subject, Coefficient, and Note × Coefficient, localCredits is the coefficient and localGrade is the mark out of 20: (Note × Coefficient) / Coefficient. Do not copy the weighted product as the grade.
 Do not include total, average, decision, or bonus rows as courses.
@@ -788,7 +1058,34 @@ function storedEdgeMatch(built: {
 export type ServiceFromText = {
   result: EvaluationResult | null;
   failures: TranscriptRowFailure[];
+  edgeCredentialId: string | null;
+  edgeGradingScaleId: string | null;
+  edgeMatchMethod: CredentialMatchMethod | null;
+  route: EquivalencyRoute;
 };
+
+const EMPTY_SERVICE: ServiceFromText = {
+  result: null,
+  failures: [],
+  edgeCredentialId: null,
+  edgeGradingScaleId: null,
+  edgeMatchMethod: null,
+  route: "qa_research",
+};
+
+function serviceFromBuilt(
+  built: Awaited<ReturnType<typeof buildEvaluatedResult>>,
+  failures: TranscriptRowFailure[],
+): ServiceFromText {
+  return {
+    result: built.result,
+    failures,
+    edgeCredentialId: built.edgeCredentialId,
+    edgeGradingScaleId: built.edgeGradingScaleId,
+    edgeMatchMethod: built.edgeMatchMethod,
+    route: built.route,
+  };
+}
 
 export async function evaluateServiceFromText(
   db: Db,
@@ -798,54 +1095,107 @@ export async function evaluateServiceFromText(
   filenames: string[],
 ): Promise<ServiceFromText> {
   const degreeCount = paidEvaluationDegreeCount(order) ?? (service === "course_by_course" ? 1 : null);
-  if (degreeCount == null) return { result: null, failures: [] };
+  if (degreeCount == null) return EMPTY_SERVICE;
   if (service === "course_by_course") {
     const parsed = courseExtractFromTranscript(pageText);
     if (parsed.extract) {
+      const named = await withEnglishCourseNames(parsed.extract);
       const fromTranscript = await buildEvaluatedResult(
         db,
         service,
-        parsed.extract,
+        named,
         degreeCount,
         filenames,
         order.edgeCredentialId,
       );
-      if (fromTranscript.result) return { result: fromTranscript.result, failures: parsed.failures };
+      if (fromTranscript.result) return serviceFromBuilt(fromTranscript, parsed.failures);
     }
     const recovered = recoverCourseExtract(await extractCourses(pageText));
+    const named = await withEnglishCourseNames(recovered.extract);
     const built = await buildEvaluatedResult(
       db,
       service,
-      recovered.extract,
+      named,
       degreeCount,
       filenames,
       order.edgeCredentialId,
     );
-    return { result: built.result, failures: [...parsed.failures, ...recovered.failures] };
+    return serviceFromBuilt(built, [...parsed.failures, ...recovered.failures]);
   }
   const built = await buildEvaluatedResult(
     db,
     service,
-    await extractDiploma(pageText),
+    normalizeDiplomaExtract(await extractDiploma(pageText)),
     degreeCount,
     filenames,
     order.edgeCredentialId,
   );
-  return { result: built.result, failures: [] };
+  return serviceFromBuilt(built, []);
+}
+
+/** What analysis stores after it builds an evaluation the way it builds a translation preview. */
+export type EvaluationPreparation = {
+  status: "preview_ready" | "needs_review" | "skipped";
+  totalCents: number | null;
+  billablePages: number;
+};
+
+function preparation(
+  status: EvaluationPreparation["status"],
+  billablePages: number,
+  totalCents: number | null = null,
+): EvaluationPreparation {
+  return { status, totalCents, billablePages };
+}
+
+function orderIncludesTranslation(order: Parameters<typeof resolveServices>[0]): boolean {
+  return resolveServices(order).includes("translation");
+}
+
+async function pageTextForService(
+  db: Db,
+  order: OrderRecord,
+  service: EvaluationService,
+  fallback: string,
+): Promise<string> {
+  try {
+    const documents = await listDocuments(db, order.id);
+    if (documents.length === 0) return fallback;
+    const pages = await listPages(
+      db,
+      documents.map((document) => document.id),
+    );
+    const text = textForPaidEvaluation(documents, pages, service);
+    return text.trim() ? text : fallback;
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "evaluation page text failed");
+    return fallback;
+  }
+}
+
+async function storeCleanEvaluation(
+  db: Db,
+  order: OrderRecord,
+  service: EvaluationService,
+  clean: Uint8Array,
+): Promise<string> {
+  const path = evaluationServicePath(order.id, service);
+  const stamped = await stampFinishedPdf(db, clean, { orderId: order.id, documentType: "evaluation" });
+  await uploadObject(db, FINALS_BUCKET, path, stamped, "application/pdf");
+  return path;
 }
 
 export async function completeEvaluation(
   db: Db,
   order: OrderRecord,
   input: EvaluationContext,
-): Promise<void> {
+): Promise<EvaluationPreparation> {
   const kinds = orderEvaluationKinds(order);
   if (kinds.length > 1) {
-    await completeSelectedEvaluations(db, order, input, kinds);
-    return;
+    return completeSelectedEvaluations(db, order, input, kinds);
   }
-  if (!order.service || order.degreeCount == null) return;
-  const service = order.service;
+  const service = order.service ?? kinds[0] ?? null;
+  if (!service || order.degreeCount == null) return preparation("skipped", input.billablePages);
   const degreeCount = order.degreeCount;
   const language = input.languagesDisagree ? null : input.sourceLanguage;
 
@@ -864,7 +1214,7 @@ export async function completeEvaluation(
         })
       : null;
 
-  const hold = async (reason: string, pricedLanguage: string | null) => {
+  const hold = async (reason: string, pricedLanguage: string | null): Promise<EvaluationPreparation> => {
     const quote = quoteFor(pricedLanguage);
     await updateOrder(db, order.id, {
       status: "needs_review",
@@ -881,39 +1231,26 @@ export async function completeEvaluation(
         total_cents: null,
       }),
     });
+    return preparation("needs_review", input.billablePages, quote?.total_cents ?? null);
   };
 
-  if (input.imageQuality) {
-    await hold(IMAGE_QUALITY_REASON, language);
-    return;
-  }
-  if (!languageConfirmed(input, language)) {
-    await hold(LANGUAGE_REASON, language);
-    return;
-  }
+  if (input.imageQuality) return hold(IMAGE_QUALITY_REASON, language);
+  if (!languageConfirmed(input, language)) return hold(LANGUAGE_REASON, language);
 
   const version = await nextPreviewVersion(db, order.id);
   const { reportPath } = evaluationPreviewObjects(order.id, version);
   const inserted = await insertPreview(db, { orderId: order.id, version, previewPath: reportPath });
-  if (inserted === "exists") return;
+  if (inserted === "exists") return preparation("preview_ready", input.billablePages, order.totalCents);
 
   try {
-    const extracted =
-      service === "diploma" ? await extractDiploma(input.pageText) : await extractCourses(input.pageText);
-    const built = await buildEvaluatedResult(
-      db,
-      service,
-      extracted,
-      degreeCount,
-      input.filenames,
-      order.edgeCredentialId,
-    );
+    const text = await pageTextForService(db, order, service, input.pageText);
+    const built = await evaluateServiceFromText(db, order, service, text, input.filenames);
     const result = built.result;
     if (!result) {
       await markPreview(db, order.id, version, "failed");
-      await hold(UNMAPPED_REASON, language);
+      const held = await hold(UNMAPPED_REASON, language);
       await updateOrder(db, order.id, storedEdgeMatch(built));
-      return;
+      return held;
     }
 
     const files = await renderEvaluationPdfs(result, {
@@ -922,9 +1259,11 @@ export async function completeEvaluation(
       degreeCount: order.degreeCount,
       detectedPages: input.billablePages,
     });
+    const cleanPath = await storeCleanEvaluation(db, order, service, files.clean);
     const stored: EvaluationResult = { ...result, pageCount: files.pageCount };
     await uploadObject(db, PREVIEWS_BUCKET, reportPath, files.preview, "application/pdf");
     const quote = quoteFor(language);
+    const serviceFiles = { ...(order.serviceFiles ?? {}), [service]: cleanPath };
     await updateOrder(db, order.id, {
       status: "preview_ready",
       review_reason: built.route === "qa_review" ? EQUIVALENCY_QA_REVIEW : EQUIVALENCY_QA_RESEARCH,
@@ -941,6 +1280,11 @@ export async function completeEvaluation(
         total_cents: null,
       }),
       evaluation_result: stored,
+      evaluation_results: [stored],
+      service_files: serviceFiles,
+      ...(!orderIncludesTranslation(order)
+        ? { final_translation_path: cleanPath, certification_path: cleanPath }
+        : {}),
       ...storedEdgeMatch(built),
     });
     await markPreview(db, order.id, version, "ready");
@@ -961,14 +1305,12 @@ export async function completeEvaluation(
         includesTranslation: (quote?.translation_cents ?? 0) > 0,
       });
     }
+    return preparation("preview_ready", input.billablePages, quote?.total_cents ?? null);
   } catch (error) {
     await markPreview(db, order.id, version, "failed");
-    if (error instanceof AiUnavailableError) {
-      await hold(READ_REASON, language);
-      return;
-    }
+    if (error instanceof AiUnavailableError) return hold(READ_REASON, language);
     const message = error instanceof Error ? error.message : READ_REASON;
-    await hold(message, language);
+    return hold(message, language);
   }
 }
 
@@ -981,8 +1323,8 @@ async function completeSelectedEvaluations(
   order: OrderRecord,
   input: EvaluationContext,
   kinds: Array<"diploma" | "course_by_course">,
-): Promise<void> {
-  if (order.degreeCount == null) return;
+): Promise<EvaluationPreparation> {
+  if (order.degreeCount == null) return preparation("skipped", input.billablePages);
   const degreeCount = order.degreeCount;
   const language = input.languagesDisagree ? null : input.sourceLanguage;
   const quoteFor = (source: string | null) =>
@@ -999,7 +1341,7 @@ async function completeSelectedEvaluations(
           addonCents: order.addonCents,
         })
       : null;
-  const hold = async (reason: string, pricedLanguage: string | null) => {
+  const hold = async (reason: string, pricedLanguage: string | null): Promise<EvaluationPreparation> => {
     const quote = quoteFor(pricedLanguage);
     await updateOrder(db, order.id, {
       status: "needs_review",
@@ -1012,24 +1354,20 @@ async function completeSelectedEvaluations(
       page_order: input.pageOrder,
       ...(quote ?? { evaluation_cents: null, translation_cents: null, total_cents: null }),
     });
+    return preparation("needs_review", input.billablePages, quote?.total_cents ?? null);
   };
-  if (input.imageQuality) {
-    await hold(IMAGE_QUALITY_REASON, language);
-    return;
-  }
-  if (!languageConfirmed(input, language)) {
-    await hold(LANGUAGE_REASON, language);
-    return;
-  }
+  if (input.imageQuality) return hold(IMAGE_QUALITY_REASON, language);
+  if (!languageConfirmed(input, language)) return hold(LANGUAGE_REASON, language);
 
   const version = await nextPreviewVersion(db, order.id);
   const { reportPath } = evaluationPreviewObjects(order.id, version);
   const inserted = await insertPreview(db, { orderId: order.id, version, previewPath: reportPath });
-  if (inserted === "exists") return;
+  if (inserted === "exists") return preparation("preview_ready", input.billablePages, order.totalCents);
 
   try {
     const previews: Uint8Array[] = [];
     const results: EvaluationResult[] = [];
+    const serviceFiles: Partial<Record<EvaluationService, string>> = { ...(order.serviceFiles ?? {}) };
     let route: EquivalencyRoute = "qa_research";
     let edge: ReturnType<typeof storedEdgeMatch> = storedEdgeMatch({
       edgeCredentialId: null,
@@ -1037,23 +1375,15 @@ async function completeSelectedEvaluations(
       edgeMatchMethod: null,
     });
     for (const service of kinds) {
-      const extracted =
-        service === "diploma" ? await extractDiploma(input.pageText) : await extractCourses(input.pageText);
-      const built = await buildEvaluatedResult(
-        db,
-        service,
-        extracted,
-        degreeCount,
-        input.filenames,
-        order.edgeCredentialId,
-      );
+      const text = await pageTextForService(db, order, service, input.pageText);
+      const built = await evaluateServiceFromText(db, order, service, text, input.filenames);
       edge = storedEdgeMatch(built);
       if (built.route === "qa_review") route = "qa_review";
       if (!built.result) {
         await markPreview(db, order.id, version, "failed");
-        await hold(UNMAPPED_REASON, language);
+        const held = await hold(UNMAPPED_REASON, language);
         await updateOrder(db, order.id, edge);
-        return;
+        return held;
       }
       const files = await renderEvaluationPdfs(built.result, {
         reportId: evaluationReportId(order.id),
@@ -1061,6 +1391,7 @@ async function completeSelectedEvaluations(
         degreeCount,
         detectedPages: input.billablePages,
       });
+      serviceFiles[service] = await storeCleanEvaluation(db, order, service, files.clean);
       previews.push(files.preview);
       results.push({ ...built.result, pageCount: files.pageCount });
     }
@@ -1081,6 +1412,7 @@ async function completeSelectedEvaluations(
       ...(quote ?? { evaluation_cents: null, translation_cents: null, total_cents: null }),
       ...(primary ? { evaluation_result: primary } : {}),
       evaluation_results: results,
+      service_files: serviceFiles,
       ...edge,
     });
     await markPreview(db, order.id, version, "ready");
@@ -1101,32 +1433,44 @@ async function completeSelectedEvaluations(
         includesTranslation: (quote?.translation_cents ?? 0) > 0,
       });
     }
+    return preparation("preview_ready", input.billablePages, quote?.total_cents ?? null);
   } catch (error) {
     await markPreview(db, order.id, version, "failed");
-    if (error instanceof AiUnavailableError) {
-      await hold(READ_REASON, language);
-      return;
-    }
+    if (error instanceof AiUnavailableError) return hold(READ_REASON, language);
     const message = error instanceof Error ? error.message : READ_REASON;
-    await hold(message, language);
+    return hold(message, language);
   }
 }
 
 /**
- * Evaluations do not build a preview. A person uploads the finished PDF after payment.
- * The arguments stay so older callers compile; the result is always false.
+ * Build the evaluation during analysis, the same way a translation preview is built on upload.
+ * Draft, quoted, confirmed, and processing orders are prepared. A failed order is prepared
+ * again once the language is confirmed. Orders with no evaluation are not.
  */
 export function shouldPrepareEvaluationReport(order: {
   service: OrderRecord["service"];
+  services?: OrderRecord["services"];
+  includeTranslation?: boolean | null;
+  orderType?: string | null;
+  serviceType?: string | null;
   status: string;
   languageConfirmed: boolean;
 }): boolean {
-  void order;
-  return false;
+  if (!orderHasEvaluation(order)) return false;
+  if (
+    order.status === "draft" ||
+    order.status === "quoted" ||
+    order.status === "confirmed" ||
+    order.status === "processing"
+  ) {
+    return true;
+  }
+  return order.status === "failed" && order.languageConfirmed;
 }
 
 /**
- * Price an evaluation and leave it quoted. The finished PDF is uploaded after payment.
+ * Price an evaluation without building the report.
+ * Analysis uses this only when {@link shouldPrepareEvaluationReport} is false.
  * Translation cents stay 0 unless the customer already opted in.
  */
 export async function startEvaluationQuote(

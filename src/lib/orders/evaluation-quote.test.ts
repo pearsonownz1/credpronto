@@ -78,22 +78,37 @@ describe("evaluation quote", () => {
     vi.restoreAllMocks();
   });
 
-  it("does not prepare a preview for a diploma or course-by-course order", () => {
-    expect(shouldPrepareEvaluationReport({ service: null, status: "confirmed", languageConfirmed: true })).toBe(
-      false,
-    );
-    expect(shouldPrepareEvaluationReport({ service: "diploma", status: "quoted", languageConfirmed: false })).toBe(
-      false,
-    );
+  it("prepares a diploma or course-by-course report during analysis", () => {
+    expect(shouldPrepareEvaluationReport({ service: null, status: "confirmed", languageConfirmed: true })).toBe(false);
+    expect(shouldPrepareEvaluationReport({ service: "diploma", status: "draft", languageConfirmed: false })).toBe(true);
+    expect(shouldPrepareEvaluationReport({ service: "diploma", status: "quoted", languageConfirmed: false })).toBe(true);
     expect(shouldPrepareEvaluationReport({ service: "diploma", status: "confirmed", languageConfirmed: true })).toBe(
-      false,
+      true,
     );
     expect(
       shouldPrepareEvaluationReport({ service: "course_by_course", status: "processing", languageConfirmed: true }),
-    ).toBe(false);
+    ).toBe(true);
+    expect(shouldPrepareEvaluationReport({ service: "diploma", status: "failed", languageConfirmed: true })).toBe(true);
+    expect(shouldPrepareEvaluationReport({ service: "diploma", status: "failed", languageConfirmed: false })).toBe(
+      false,
+    );
     expect(
-      shouldPrepareEvaluationReport({ service: "diploma", status: "failed", languageConfirmed: true }),
-    ).toBe(false);
+      shouldPrepareEvaluationReport({
+        service: null,
+        services: ["diploma", "course_by_course"],
+        status: "draft",
+        languageConfirmed: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldPrepareEvaluationReport({
+        service: null,
+        services: ["translation", "diploma", "course_by_course"],
+        includeTranslation: true,
+        status: "draft",
+        languageConfirmed: false,
+      }),
+    ).toBe(true);
   });
 
   it("quotes a Spanish diploma at $19.95 and leaves the report for after confirm", async () => {

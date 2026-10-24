@@ -41,8 +41,10 @@ export type ReleaseInput = {
   openCorrections: boolean;
   finalsReady: boolean;
   enabled: boolean;
-  /** Paid credential evaluation. Staff uploads the report; nothing is generated automatically. */
-  manualEvaluation?: boolean;
+  /** Paid evaluation. A missing translation QA run does not hold it when nothing else is flagged. */
+  evaluationOrder?: boolean;
+  /** The last evaluation run stored a read or grade failure. */
+  evaluationFailed?: boolean;
 };
 
 const UNAPPROVED = new Set<string>(WAITING_FOR_STAFF_STATUSES);
@@ -87,6 +89,7 @@ export function languageConfidenceHigh(confidence: number | null): boolean {
 
 function flagged(input: ReleaseInput): boolean {
   if (input.reviewReason?.trim()) return true;
+  if (input.evaluationFailed) return true;
   if (input.pageNeedsReview || input.openCorrections) return true;
   if (!languageConfidenceHigh(input.languageConfidence)) return true;
   if (input.qa && !qaHighConfidence(input.qa)) return true;
@@ -101,10 +104,10 @@ function flagged(input: ReleaseInput): boolean {
 export function releaseAction(input: ReleaseInput): ReleaseAction {
   if (input.status === "approved" || input.status === "delivered") return "release";
   if (!UNAPPROVED.has(input.status)) return "wait";
-  if (input.manualEvaluation) return "staff";
   if (!input.enabled) return "staff";
   const held = flagged(input);
-  if (input.status === "paid" && !held && input.finalsReady && qaHighConfidence(input.qa)) return "release";
+  const confident = input.evaluationOrder || qaHighConfidence(input.qa);
+  if (input.status === "paid" && !held && input.finalsReady && confident) return "release";
   if (input.status === "paid" && !held && !input.finalsReady) return "wait";
   return "staff";
 }

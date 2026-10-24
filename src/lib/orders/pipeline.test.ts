@@ -177,7 +177,7 @@ describe("processOrder paid evaluations", () => {
     expect(translation.translateOrder).not.toHaveBeenCalled();
   });
 
-  it("leaves an unpaid diploma-only draft alone", async () => {
+  it("analyzes an unpaid diploma-only draft so the evaluation is built on upload", async () => {
     vi.spyOn(db, "getOrderById").mockResolvedValue(
       order({
         status: "draft",
@@ -195,11 +195,11 @@ describe("processOrder paid evaluations", () => {
     await processOrder("order-1");
 
     expect(dispatch.ensurePaidEvaluationReports).not.toHaveBeenCalled();
-    expect(analysis.analyzeOrder).not.toHaveBeenCalled();
+    expect(analysis.analyzeOrder).toHaveBeenCalledWith(handle, "order-1", null);
     expect(translation.translateOrder).not.toHaveBeenCalled();
   });
 
-  it("analyzes an unpaid translation bundle and does not generate evaluations", async () => {
+  it("analyzes an unpaid translation bundle and does not generate paid evaluation files yet", async () => {
     vi.spyOn(db, "getOrderById").mockResolvedValue(
       order({
         status: "draft",
