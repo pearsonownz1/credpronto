@@ -3,6 +3,9 @@ import { isSupportedSourceLanguage, normalizeLanguage } from "./languages";
 
 export const GCS_BRAND = "gcs" as const;
 
+/** One GCS translation can combine this many PDFs or images. */
+export const GCS_MAX_DOCUMENTS = 10;
+
 export type OrderBrand = "credpronto" | typeof GCS_BRAND;
 
 /** Printed on the certificate when the document has no client name. */
@@ -27,6 +30,16 @@ export function isGcsBrand(value: string | null | undefined): boolean {
 
 export function isGcsOrder(order: { brand?: string | null } | null | undefined): boolean {
   return isGcsBrand(order?.brand);
+}
+
+/** GCS uploads are one certified translation, from a single file up to `GCS_MAX_DOCUMENTS`. */
+export function assertGcsDocumentCount(count: number): void {
+  if (!Number.isInteger(count) || count < 1) {
+    throw new HttpError("Upload at least one document", 400);
+  }
+  if (count > GCS_MAX_DOCUMENTS) {
+    throw new HttpError(`Upload at most ${GCS_MAX_DOCUMENTS} documents`, 400);
+  }
 }
 
 /** Stored price for a free GCS order. Analysis must not leave a CredPronto quote on the row. */

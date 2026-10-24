@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   GCS_CERTIFICATION_STATEMENTS,
   GCS_CLIENT_FALLBACK,
+  GCS_MAX_DOCUMENTS,
+  assertGcsDocumentCount,
   gcsCoverClientName,
   gcsFreePricePatch,
   gcsSummaryLine,
@@ -18,6 +20,10 @@ describe("GCS order brand", () => {
     expect(isGcsOrder({ brand: null })).toBe(false);
     expect(isGcsOrder(undefined)).toBe(false);
     expect(gcsFreePricePatch()).toEqual({ total_cents: 0, translation_cents: 0, unit_price_cents: 0 });
+    expect(() => assertGcsDocumentCount(1)).not.toThrow();
+    expect(() => assertGcsDocumentCount(GCS_MAX_DOCUMENTS)).not.toThrow();
+    expect(() => assertGcsDocumentCount(0)).toThrow(/at least one document/);
+    expect(() => assertGcsDocumentCount(GCS_MAX_DOCUMENTS + 1)).toThrow(/at most 10 documents/);
   });
 
   it("accepts auto-detect and supported source languages", () => {

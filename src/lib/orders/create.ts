@@ -18,7 +18,13 @@ import {
   upsertCustomer,
   type Db,
 } from "./db";
-import { isGcsBrand, readGcsClientName, readGcsSourceLanguage, readGcsTargetLanguage } from "./gcs";
+import {
+  assertGcsDocumentCount,
+  isGcsBrand,
+  readGcsClientName,
+  readGcsSourceLanguage,
+  readGcsTargetLanguage,
+} from "./gcs";
 import { readDirectOrder, referencedOriginals, storeReferencedFiles } from "./direct-upload";
 import { HttpError } from "./errors";
 import { assertEmail, safeFilename } from "./files";
@@ -142,7 +148,7 @@ export async function createOrder(request: Request): Promise<{
     const files = copied ? [copied, ...uploaded] : uploaded;
     if (files.length < 1) throw new HttpError("Upload at least one file", 400);
     await insertEvent(db, order.id, "upload_started", { fileCount: files.length });
-    if (gcs && files.length !== 1) throw new HttpError("Upload one document", 400);
+    if (gcs) assertGcsDocumentCount(files.length);
     await storeReferencedFiles(db, order.id, files);
     if (clientName && files[0]) {
       await confirmFields(db, order.id, [
