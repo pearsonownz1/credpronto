@@ -3,7 +3,7 @@ import { GET } from "@/app/api/integrations/clio/callback/route";
 import type { Db } from "@/lib/orders/storage";
 import type { ClioFetch } from "./api";
 import { createMemoryClioStore } from "./memory-store";
-import { completeClioOAuthCallback, startClioConnect } from "./oauth";
+import { clioWhoAmI, completeClioOAuthCallback, startClioConnect } from "./oauth";
 import { clioStore } from "./store";
 import type { ClioConnectionRecord } from "./types";
 
@@ -181,6 +181,8 @@ describe("completeClioOAuthCallback", () => {
       credentials,
       registerAction: async () => "77",
     });
+    const profile = calls.find((call) => call.url.pathname === "/api/v4/users/who_am_i");
+    expect(profile?.url.searchParams.get("fields")).toBe("id,account{id}");
     const token = calls.find((call) => call.url.pathname === "/oauth/token");
     const params = new URLSearchParams(String(token?.init?.body));
     expect(token?.url.origin).toBe("https://app.clio.com");
@@ -244,6 +246,97 @@ describe("completeClioOAuthCallback", () => {
     expect(result.redirectTo).toContain("clio=connected");
     expect(result.redirectTo).toContain("clio_action=failed");
     expect((await store.connectionForUser(userId))?.customActionId).toBeNull();
+  });
+
+  it("logs the Clio status when who_am_i fails and stores nothing", async () => {
+    const { store, state } = await readyStore();
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = asUrl(input);
+      if (url.pathname === "/oauth/token") {
+        return jsonResponse(200, {
+          access_token: "access-token-value",
+          refresh_token: "refresh-token-value",
+          expires_in: 3600,
+        });
+      }
+      expect(url.searchParams.get("fields")).toBe("id,account{id}");
+      return jsonResponse(403, {
+        error: {
+          type: "ForbiddenError",
+          message: "Missing Users permission access-token-value",
+        },
+        access_token: "access-token-value",
+      });
+    });
+    const result = await completeClioOAuthCallback({
+      requestUrl: `${origin}/api/integrations/clio/callback?code=auth-code&state=${state}`,
+      origin,
+      sessionUserId: userId,
+      store,
+      fetchImpl: fetchImpl as unknown as ClioFetch,
+      credentials,
+      registerAction: async () => "77",
+    });
+    expect(result.exchanged).toBe(false);
+    expect(result.redirectTo).toContain("clio=error");
+    expect(await store.connectionForUser(userId)).toBeNull();
+    const logged = vi.mocked(console.error).mock.calls.flat().join(" ");
+    expect(logged).toContain("Clio profile could not be read (403: ForbiddenError: Missing Users permission [redacted])");
+    expect(logged).not.toContain("access-token-value");
+    expect(logged).not.toContain("refresh-token-value");
+    expect(logged).not.toContain("test-secret");
+  });
+});
+
+describe("clioWhoAmI", () => {
+  it("throws the Clio status and a short snippet without tokens", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = asUrl(input);
+      expect(url.pathname).toBe("/api/v4/users/who_am_i");
+      expect(url.searchParams.get("fields")).toBe("id,account{id}");
+      return jsonResponse(403, {
+        error: {
+          type: "ForbiddenError",
+          message: "Missing Users permission bearer access-token-value",
+        },
+      });
+    });
+    await expect(
+      clioWhoAmI({
+        fetchImpl: fetchImpl as unknown as ClioFetch,
+        region: "us",
+        token: "access-token-value",
+      }),
+    ).rejects.toMatchObject({
+      status: 502,
+      message: "Clio profile could not be read (403: ForbiddenError: Missing Users permission bearer [redacted])",
+    });
+    const logged = vi.mocked(console.error).mock.calls.flat().join(" ");
+    expect(logged).toContain("403");
+    expect(logged).toContain("ForbiddenError");
+    expect(logged).not.toContain("access-token-value");
+  });
+
+  it("includes the status when Clio returns an empty error body", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse(401, null));
+    await expect(
+      clioWhoAmI({
+        fetchImpl: fetchImpl as unknown as ClioFetch,
+        region: "us",
+        token: "access-token-value",
+      }),
+    ).rejects.toThrow("Clio profile could not be read (401)");
+  });
+
+  it("still reads the user id and account id", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse(200, { data: { id: 999, account: { id: 42 } } }));
+    await expect(
+      clioWhoAmI({
+        fetchImpl: fetchImpl as unknown as ClioFetch,
+        region: "us",
+        token: "access-token-value",
+      }),
+    ).resolves.toEqual({ id: "999", accountId: "42" });
   });
 });
 
