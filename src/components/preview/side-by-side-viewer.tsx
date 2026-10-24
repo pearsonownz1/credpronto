@@ -275,6 +275,41 @@ function SideBySideEngine({
   );
 }
 
+/**
+ * Zoom state is created when a document starts loading. The evaluation pane
+ * mounts before that, and `useZoom` throws if its state is still missing.
+ */
+function useSafeZoom(documentId: string) {
+  const { provides } = useZoomCapability();
+  const documentState = useDocumentState(documentId);
+  const [attempt, setAttempt] = useState(0);
+  const ready = zoomStateReady(provides, documentId);
+  const zoom = useZoom(ready ? documentId : ORIGINAL_DOCUMENT_ID);
+
+  useEffect(() => {
+    if (ready || attempt >= 20) return;
+    const timer = window.setTimeout(() => setAttempt((value) => value + 1), 50);
+    return () => window.clearTimeout(timer);
+  }, [attempt, documentId, documentState?.status, ready]);
+
+  if (!ready) {
+    return { state: { currentZoomLevel: 0, zoomLevel: ZoomMode.FitWidth }, provides: null };
+  }
+  return zoom;
+}
+
+function zoomStateReady(provides: unknown, documentId: string): boolean {
+  if (!provides || typeof provides !== "object") return true;
+  const forDocument = (provides as { forDocument?: unknown }).forDocument;
+  if (typeof forDocument !== "function") return true;
+  try {
+    const scope = forDocument.call(provides, documentId) as { getState?: () => unknown };
+    return scope?.getState?.() != null;
+  } catch {
+    return false;
+  }
+}
+
 function usePageCount(documentId: string) {
   const { provides } = useScrollCapability();
   const [currentPage, setCurrentPage] = useState(0);
@@ -367,7 +402,7 @@ function ViewerWorkspace({
   const evaluationScroll = usePageCount(EVALUATION_DOCUMENT_ID);
   const leadScroll =
     lead === "translation" ? translationScroll : lead === "evaluation" ? evaluationScroll : originalScroll;
-  const { state: leadZoom } = useZoom(DOCUMENT_ID[lead]);
+  const { state: leadZoom } = useSafeZoom(DOCUMENT_ID[lead]);
   const snapshot = useRef<Snapshot>({
     pageNumber: 1,
     x: 0,
@@ -1105,7 +1140,7 @@ function DocumentPane({
   const documentId = DOCUMENT_ID[role];
   const documentState = useDocumentState(documentId);
   const { currentPage, totalPages } = usePageCount(documentId);
-  const { state: zoomState } = useZoom(documentId);
+  const { state: zoomState } = useSafeZoom(documentId);
   const { provides: zoomCapability } = useZoomCapability();
   const { provides: viewportCapability } = useViewportCapability();
   const zoom = Math.round((zoomState.currentZoomLevel || 0) * 100);
