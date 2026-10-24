@@ -1,4 +1,13 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Locator, test } from "@playwright/test";
+
+async function expectPaintedPage(pane: Locator) {
+  const image = pane.locator("img").first();
+  await expect(image).toBeVisible({ timeout: 30_000 });
+  const box = await image.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.width).toBeGreaterThan(20);
+  expect(box!.height).toBeGreaterThan(20);
+}
 
 test("side-by-side preview syncs page and zoom", async ({ page }) => {
   const consoleText: string[] = [];
@@ -69,14 +78,46 @@ test("side-by-side preview syncs page and zoom", async ({ page }) => {
 
 test("a 12-page sample renders without moving the shell", async ({ page }) => {
   await page.goto("/preview/demo?sample=long");
-  const shell = await page.getByTestId("preview-shell").boundingBox();
   const original = page.getByTestId("pane-original");
   await expect(original).toHaveAttribute("data-total", "12");
   await expect(page.getByTestId("pane-translation")).toHaveAttribute("data-page", "1");
+  const shell = await page.getByTestId("preview-shell").boundingBox();
+  expect(shell).not.toBeNull();
   for (let pageNumber = 2; pageNumber <= 10; pageNumber += 1) {
     await page.getByTestId("next-page").click();
     await expect(original).toHaveAttribute("data-page", String(pageNumber));
   }
   await expect(page.getByTestId("pane-translation")).toHaveAttribute("data-page", "10");
   expect(await page.getByTestId("preview-shell").boundingBox()).toEqual(shell);
+});
+
+test("adding an evaluation keeps the certified translation painted", async ({ page }) => {
+  await page.goto("/dev/gcs-viewer");
+  const original = page.getByTestId("pane-original");
+  const translation = page.getByTestId("pane-translation");
+  await expectPaintedPage(original);
+  await expectPaintedPage(translation);
+  await expect(page.getByTestId("pane-evaluation")).toHaveCount(0);
+
+  const evaluate = page.getByTestId("evaluate-document");
+  const download = page.getByTestId("download-certified");
+  await expect(evaluate).toHaveText("Evaluate Document");
+  await expect(evaluate).toHaveCSS("background-color", "rgb(31, 94, 255)");
+  await expect(evaluate).toHaveCSS("color", "rgb(255, 255, 255)");
+  await expect(download).toHaveCSS("background-color", "rgb(31, 94, 255)");
+  await expect(download).toHaveCSS("color", "rgb(255, 255, 255)");
+  await evaluate.click();
+
+  const evaluation = page.getByTestId("pane-evaluation");
+  await expect(evaluation).toBeVisible();
+  await expectPaintedPage(original);
+  await expectPaintedPage(translation);
+  await expectPaintedPage(evaluation);
+});
+
+test("a viewer that already has an evaluation paints all three documents", async ({ page }) => {
+  await page.goto("/dev/gcs-viewer?ready=1");
+  await expectPaintedPage(page.getByTestId("pane-original"));
+  await expectPaintedPage(page.getByTestId("pane-translation"));
+  await expectPaintedPage(page.getByTestId("pane-evaluation"));
 });
