@@ -825,7 +825,7 @@ export const PAGE_FRAME_COLUMNS =
 
 /** Order columns the preview response and its auth check actually read. */
 export const PREVIEW_ORDER_COLUMNS =
-  "id, user_id, status, order_type, total_cents, unit_price_cents, billable_pages, combined_original_path, service, degree_count, addon_cents, evaluation_cents, translation_cents, include_translation, evaluation_result";
+  "id, user_id, status, order_type, total_cents, unit_price_cents, billable_pages, combined_original_path, service, degree_count, addon_cents, evaluation_cents, translation_cents, include_translation, evaluation_result, brand, service_files";
 
 /** Documents and their page frames in one query. Nested pages reuse PAGE_FRAME_COLUMNS. */
 export const PREVIEW_DOCUMENT_COLUMNS =
@@ -852,6 +852,9 @@ export type PreviewOrderRow = {
   translationCents: number | null;
   includeTranslation: boolean;
   evaluationPageCount: number | null;
+  /** Absent on rows selected before the GCS evaluation preview. */
+  brand?: "credpronto" | "gcs" | null;
+  serviceFiles?: Partial<Record<"diploma" | "course_by_course", string>> | null;
 };
 
 export type PreviewDocumentFrame = {
@@ -879,6 +882,8 @@ function mapPreviewOrder(row: Row): PreviewOrderRow {
     translationCents: num(row.translation_cents),
     includeTranslation: row.include_translation === true,
     evaluationPageCount: parseEvaluationResult(row.evaluation_result)?.pageCount ?? null,
+    brand: row.brand === "gcs" || row.brand === "credpronto" ? row.brand : null,
+    serviceFiles: storedServiceFiles(row.service_files),
   };
 }
 

@@ -1,6 +1,7 @@
-import { ORIGINALS_BUCKET, PREVIEW_URL_SECONDS, PREVIEWS_BUCKET } from "./constants";
+import { FINALS_BUCKET, ORIGINALS_BUCKET, PREVIEW_URL_SECONDS, PREVIEWS_BUCKET } from "./constants";
 import { UNIT_PRICE_CENTS } from "./constants";
 import { evaluationPrice, isTranslationBundle } from "./evaluation-price";
+import { storedEvaluationFile } from "./evaluation-summary";
 import {
   insertEvent,
   latestReadyPreview,
@@ -13,7 +14,7 @@ import { HttpError } from "./errors";
 import { orderForPreview } from "./order-access";
 import { evaluationPreviewSources } from "./preview-documents";
 import { previewSignedTargets } from "./preview-targets";
-import { signedObjectUrls, type Db } from "./storage";
+import { signedObjectUrl, signedObjectUrls, type Db } from "./storage";
 import { isOrderId } from "./token";
 import { previewPages, type PreviewResponse } from "./view";
 
@@ -110,7 +111,13 @@ export async function getPreview(token: string): Promise<PreviewRead> {
   const signMs = elapsed(signStarted);
   const translationUrl = previews.get(sources.viewerPath);
   if (!translationUrl) throw new HttpError("Preview is not ready", 409);
-  const reportUrl = sources.reportPath ? previews.get(sources.reportPath) ?? null : null;
+  let reportUrl = sources.reportPath ? previews.get(sources.reportPath) ?? null : null;
+  let reportPageCount = order.evaluationPageCount ?? pages.length;
+  const gcsReport = order.brand === "gcs" ? storedEvaluationFile(order.serviceFiles) : null;
+  if (gcsReport) {
+    reportUrl = await signedObjectUrl(db, FINALS_BUCKET, gcsReport.path, PREVIEW_URL_SECONDS);
+    reportPageCount = order.evaluationPageCount ?? 1;
+  }
   const totalMs = elapsed(started);
   const timing = serverTiming({ lookup: lookupMs, reads: readsMs, sign: signMs, total: totalMs });
   console.info(
@@ -144,9 +151,7 @@ export async function getPreview(token: string): Promise<PreviewRead> {
         pages,
         version: preview.version,
       },
-      report: reportUrl
-        ? { url: reportUrl, pageCount: order.evaluationPageCount ?? pages.length }
-        : null,
+      report: reportUrl ? { url: reportUrl, pageCount: reportPageCount } : null,
       corrections: corrections.map((correction) => ({
         id: correction.id,
         documentId: correction.documentId,

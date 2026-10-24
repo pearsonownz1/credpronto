@@ -3,7 +3,8 @@
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import type { PreviewOrder } from "@/components/preview/preview-order";
+import type { PreviewDocument, PreviewOrder } from "@/components/preview/preview-order";
+import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "@/lib/orders/constants";
 import { FlowApiError } from "@/lib/flow/api-error";
 import { uploadOrderFiles } from "@/lib/flow/direct-upload";
 import { publishGcsUnlock, useGcsUnlocked } from "@/lib/gcs/pin-client";
@@ -31,6 +32,14 @@ type PreviewPayload = {
   original: { url: string; pageCount: number; pages: Frame[] };
   translation: { url: string; pageCount: number; pages: Frame[] };
   billablePages: number | null;
+  report?: { url: string; pageCount: number } | null;
+};
+
+type EvaluationPayload = {
+  url: string;
+  pageCount: number;
+  pages?: Array<{ number: number; widthPt: number; heightPt: number }>;
+  kind?: "course_by_course" | "diploma";
 };
 
 type OrderPayload = GcsOrderSnapshot & {
@@ -39,7 +48,39 @@ type OrderPayload = GcsOrderSnapshot & {
   targetLanguage?: string | null;
 };
 
-function viewerOrder(token: string, preview: PreviewPayload, order: OrderPayload | null): PreviewOrder {
+function letterPages(count: number): PreviewDocument["pages"] {
+  const total = Math.max(1, count || 1);
+  return Array.from({ length: total }, (_, index) => ({
+    page: index + 1,
+    widthPt: LETTER_WIDTH_PT,
+    heightPt: LETTER_HEIGHT_PT,
+  }));
+}
+
+function evaluationDocument(body: EvaluationPayload): PreviewDocument {
+  const pages =
+    body.pages && body.pages.length > 0
+      ? body.pages.map((page) => ({
+          page: page.number,
+          widthPt: page.widthPt,
+          heightPt: page.heightPt,
+        }))
+      : letterPages(body.pageCount);
+  const subtitle =
+    body.kind === "diploma"
+      ? "Diploma evaluation"
+      : body.kind === "course_by_course"
+        ? "Course-by-course evaluation"
+        : "Credential evaluation";
+  return { url: body.url, subtitle, pages };
+}
+
+function viewerOrder(
+  token: string,
+  preview: PreviewPayload,
+  order: OrderPayload | null,
+  evaluation: PreviewDocument | null,
+): PreviewOrder {
   const mapPages = (pages: Frame[]) =>
     pages.map((page) => ({
       page: page.number,
@@ -61,6 +102,7 @@ function viewerOrder(token: string, preview: PreviewPayload, order: OrderPayload
       subtitle: "Certified translation",
       pages: mapPages(translationPages),
     },
+    ...(evaluation ? { evaluation } : {}),
     pricing: {
       perPageCents: 0,
       pages: preview.billablePages ?? preview.original.pageCount,
@@ -102,6 +144,7 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
   const [error, setError] = useState<string | null>(null);
   const [order, setOrder] = useState<OrderPayload | null>(null);
   const [preview, setPreview] = useState<PreviewPayload | null>(null);
+  const [evaluation, setEvaluation] = useState<PreviewDocument | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const waiting = Boolean(token) && unlocked && !error && !preview;
   const elapsed = useElapsed(pending || waiting);
@@ -145,10 +188,13 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
     };
   }, [token, unlocked]);
 
-  const viewer = useMemo(
-    () => (token && preview ? viewerOrder(token, preview, order) : null),
-    [token, preview, order],
-  );
+  const viewer = useMemo(() => {
+    if (!token || !preview) return null;
+    const fromReport = preview.report?.url
+      ? evaluationDocument({ url: preview.report.url, pageCount: preview.report.pageCount })
+      : null;
+    return viewerOrder(token, preview, order, evaluation ?? fromReport);
+  }, [token, preview, order, evaluation]);
 
   function lockAgain(message: string) {
     publishGcsUnlock(false);
@@ -204,6 +250,38 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
     window.location.assign(body.url);
   }
 
+  async function downloadEvaluation() {
+    if (!token) return;
+    setNotice(null);
+    const response = await fetch(`/api/orders/${encodeURIComponent(token)}/download?file=evaluation`);
+    if (!response.ok) {
+      setNotice(await readError(response, "The evaluation is not ready yet."));
+      return;
+    }
+    const body = (await response.json()) as { url?: unknown };
+    if (typeof body.url !== "string") {
+      setNotice("The evaluation is not ready yet.");
+      return;
+    }
+    window.location.assign(body.url);
+  }
+
+  async function evaluateDocument() {
+    if (!token) return;
+    setNotice(null);
+    const response = await fetch(`/api/orders/${encodeURIComponent(token)}/evaluate`, { method: "POST" });
+    if (!response.ok) {
+      setNotice(await readError(response, "The document could not be evaluated."));
+      return;
+    }
+    const body = (await response.json()) as { evaluation?: EvaluationPayload };
+    if (!body.evaluation || typeof body.evaluation.url !== "string") {
+      setNotice("The document could not be evaluated.");
+      return;
+    }
+    setEvaluation(evaluationDocument(body.evaluation));
+  }
+
   if (!unlocked) {
     return <GcsPinGate onUnlock={() => undefined} />;
   }
@@ -251,6 +329,8 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
           shellLayout="embedded"
           notice={notice ?? undefined}
           onDownload={downloadCertified}
+          onEvaluate={evaluateDocument}
+          onDownloadEvaluation={downloadEvaluation}
           onCorrect={async ({ note }) => {
             const response = await fetch(`/api/orders/${encodeURIComponent(token)}/correction-request`, {
               method: "POST",
