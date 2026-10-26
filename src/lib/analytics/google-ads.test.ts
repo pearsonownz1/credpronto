@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   CONVERSION_POLL_MS,
+  GA_MEASUREMENT_ID,
   GOOGLE_ADS_ID,
   claimConversion,
   claimOrderEvent,
   decideConversion,
+  gaMeasurementId,
   googleAdsConversionLabel,
   googleAdsId,
   googleAdsInlineSnippet,
@@ -25,28 +27,36 @@ function paid(totalCents: number | null = 1990, paymentStatus: string | null = "
 
 describe("google ads id", () => {
   const previous = process.env.NEXT_PUBLIC_GOOGLE_ADS_ID;
+  const previousMeasurement = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
 
   afterEach(() => {
     if (previous === undefined) delete process.env.NEXT_PUBLIC_GOOGLE_ADS_ID;
     else process.env.NEXT_PUBLIC_GOOGLE_ADS_ID = previous;
+    if (previousMeasurement === undefined) delete process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
+    else process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID = previousMeasurement;
   });
 
-  it("defaults to the CredPronto ads account", () => {
+  it("defaults to the CredPronto ads account and GA4 property", () => {
     delete process.env.NEXT_PUBLIC_GOOGLE_ADS_ID;
+    delete process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
     expect(GOOGLE_ADS_ID).toBe("AW-18508202440");
     expect(googleAdsId()).toBe("AW-18508202440");
+    expect(GA_MEASUREMENT_ID).toBe("G-2EML0MR9XN");
+    expect(gaMeasurementId()).toBe("G-2EML0MR9XN");
     expect(googleAdsScriptSrc()).toBe(
       "https://www.googletagmanager.com/gtag/js?id=AW-18508202440",
     );
     expect(googleAdsInlineSnippet()).toBe(
-      "window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','AW-18508202440');",
+      "window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','AW-18508202440');gtag('config','G-2EML0MR9XN');",
     );
   });
 
   it("uses a valid NEXT_PUBLIC_GOOGLE_ADS_ID override", () => {
+    delete process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
     process.env.NEXT_PUBLIC_GOOGLE_ADS_ID = " AW-999 ";
     expect(googleAdsId()).toBe("AW-999");
     expect(googleAdsInlineSnippet(googleAdsId())).toContain("gtag('config','AW-999')");
+    expect(googleAdsInlineSnippet(googleAdsId())).toContain("gtag('config','G-2EML0MR9XN')");
   });
 
   it("ignores a blank or malformed override", () => {
@@ -54,6 +64,42 @@ describe("google ads id", () => {
     expect(googleAdsId()).toBe(GOOGLE_ADS_ID);
     process.env.NEXT_PUBLIC_GOOGLE_ADS_ID = "G-123";
     expect(googleAdsId()).toBe(GOOGLE_ADS_ID);
+  });
+});
+
+describe("ga measurement id", () => {
+  const previous = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
+  const previousAds = process.env.NEXT_PUBLIC_GOOGLE_ADS_ID;
+
+  afterEach(() => {
+    if (previous === undefined) delete process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
+    else process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID = previous;
+    if (previousAds === undefined) delete process.env.NEXT_PUBLIC_GOOGLE_ADS_ID;
+    else process.env.NEXT_PUBLIC_GOOGLE_ADS_ID = previousAds;
+  });
+
+  it("defaults to the CredPronto GA4 property", () => {
+    delete process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
+    expect(GA_MEASUREMENT_ID).toBe("G-2EML0MR9XN");
+    expect(gaMeasurementId()).toBe("G-2EML0MR9XN");
+  });
+
+  it("uses a valid NEXT_PUBLIC_GA_MEASUREMENT_ID override beside the ads tag", () => {
+    delete process.env.NEXT_PUBLIC_GOOGLE_ADS_ID;
+    process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID = " G-OVERRIDE1 ";
+    expect(gaMeasurementId()).toBe("G-OVERRIDE1");
+    const snippet = googleAdsInlineSnippet(googleAdsId(), gaMeasurementId());
+    expect(snippet).toContain("gtag('config','AW-18508202440')");
+    expect(snippet).toContain("gtag('config','G-OVERRIDE1')");
+  });
+
+  it("ignores a blank or malformed measurement id", () => {
+    process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID = "  ";
+    expect(gaMeasurementId()).toBe(GA_MEASUREMENT_ID);
+    process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID = "AW-18508202440";
+    expect(gaMeasurementId()).toBe(GA_MEASUREMENT_ID);
+    process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID = "G-";
+    expect(gaMeasurementId()).toBe(GA_MEASUREMENT_ID);
   });
 });
 

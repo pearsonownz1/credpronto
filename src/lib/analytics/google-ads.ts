@@ -1,7 +1,11 @@
 /** Google Ads account. Override with NEXT_PUBLIC_GOOGLE_ADS_ID (AW- plus digits). */
 export const GOOGLE_ADS_ID = "AW-18508202440";
 
+/** Google Analytics 4 property. Override with NEXT_PUBLIC_GA_MEASUREMENT_ID (G- plus letters and digits). */
+export const GA_MEASUREMENT_ID = "G-2EML0MR9XN";
+
 const ADS_ID = /^AW-\d+$/;
+const GA_ID = /^G-[A-Z0-9]+$/;
 
 /** How long to wait between unpaid order checks on the Stripe return URL. */
 export const CONVERSION_POLL_MS = 2000;
@@ -38,6 +42,12 @@ export function googleAdsId(): string {
   return GOOGLE_ADS_ID;
 }
 
+export function gaMeasurementId(): string {
+  const override = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim();
+  if (override && GA_ID.test(override)) return override;
+  return GA_MEASUREMENT_ID;
+}
+
 /**
  * Purchase conversion label. `NEXT_PUBLIC_GADS_PURCHASE_LABEL` wins.
  * `NEXT_PUBLIC_GOOGLE_ADS_CONVERSION_LABEL` is the fallback. Empty when both are unset.
@@ -53,8 +63,11 @@ export function googleAdsScriptSrc(id: string = googleAdsId()): string {
   return `https://www.googletagmanager.com/gtag/js?id=${id}`;
 }
 
-export function googleAdsInlineSnippet(id: string = googleAdsId()): string {
-  return `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${id}');`;
+export function googleAdsInlineSnippet(
+  id: string = googleAdsId(),
+  measurementId: string = gaMeasurementId(),
+): string {
+  return `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${id}');gtag('config','${measurementId}');`;
 }
 
 export function eventStorageKey(event: AdsEventName, orderId: string): string {
