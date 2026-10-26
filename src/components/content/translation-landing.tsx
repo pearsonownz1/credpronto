@@ -18,6 +18,7 @@ import {
 } from "@/lib/content/marketing-sections";
 import {
   Band,
+  ClockIcon,
   CtaBand,
   DocIcon,
   EyeIcon,
@@ -31,9 +32,18 @@ import {
 } from "./marketing-ui";
 import { TranslationPreview } from "./translation-preview";
 
-const HERO_HEADING = "Certified translations accepted by USCIS, and you see them first";
+const HERO_HEADING =
+  "USCIS-certified translations ready in 1–3 minutes — preview free before you pay.";
+const HERO_KICKER = "⚡ Ready in 1–3 minutes · USCIS Certified";
+const HERO_CTA = "See your translation in 1–3 minutes";
+const HERO_SPEED = "Ready in 1–3 minutes · $0 until you approve";
 
 const TRUST = [
+  {
+    title: "Ready in 1–3 minutes",
+    detail: "Instant side-by-side preview, not a 2-day wait.",
+    icon: ClockIcon,
+  },
   { title: "USCIS accepted", detail: "Certification included with every order", icon: ShieldIcon },
   { title: "Preview before you pay", detail: "Read the full translation first", icon: EyeIcon },
   { title: "Certified PDF by email", detail: "Unlocked when you pay", icon: MailIcon },
@@ -83,7 +93,9 @@ export function TranslationLanding() {
       <section className="bg-white" aria-labelledby="translation-hero">
         <div className="mx-auto grid w-full max-w-[1280px] items-center gap-10 px-4 py-14 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:gap-14 md:px-16 md:py-20">
           <div>
-            <p className="preview-kicker blue">Certified translation</p>
+            <p className="inline-flex max-w-full items-center rounded-full border border-[#d5e0ff] bg-[#eef3ff] px-3 py-1 text-[13px] leading-snug font-semibold text-primary">
+              {HERO_KICKER}
+            </p>
             <h1
               id="translation-hero"
               className="mt-4 max-w-[640px] text-[34px] leading-[1.08] font-bold tracking-[-0.9px] md:text-[48px] md:tracking-[-1.2px]"
@@ -94,13 +106,22 @@ export function TranslationLanding() {
               <RichText source={intro} />
             </div>
             <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-4">
-              <PrimaryLink href="/translate" testId="home-get-started">
-                Get started
+              <PrimaryLink
+                href="/translate"
+                testId="home-get-started"
+                className="h-auto min-h-12 max-w-full px-5 py-3 text-center text-base leading-snug whitespace-normal sm:px-6"
+              >
+                {HERO_CTA}
               </PrimaryLink>
-              <p>
-                <span className="block text-[13px] font-semibold text-ink-muted">Certified translation</span>
-                <span className="text-[28px] font-bold tracking-[-0.6px] text-ink">{TRANSLATION_PAGE_LABEL}</span>
-              </p>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <p>
+                  <span className="block text-[13px] font-semibold text-ink-muted">Certified translation</span>
+                  <span className="text-[28px] font-bold tracking-[-0.6px] text-ink">{TRANSLATION_PAGE_LABEL}</span>
+                </p>
+                <p className="inline-flex max-w-full items-center rounded-full border border-[#d5e0ff] bg-[#eef3ff] px-3 py-1.5 text-[13px] leading-snug font-semibold text-primary">
+                  {HERO_SPEED}
+                </p>
+              </div>
             </div>
           </div>
           <TranslationPreview />
@@ -108,19 +129,19 @@ export function TranslationLanding() {
       </section>
 
       <section aria-label="Why people use CredPronto" className="border-y border-[#e1e8ff] bg-[#f3f6ff]">
-        <ul className="mx-auto grid w-full max-w-[1280px] gap-6 px-4 py-6 md:grid-cols-3 md:px-16 md:py-7">
+        <dl className="mx-auto grid w-full max-w-[1280px] gap-6 px-4 py-6 sm:grid-cols-2 md:px-16 md:py-7 lg:grid-cols-4">
           {TRUST.map((item) => (
-            <li key={item.title} className="flex items-center gap-3">
+            <div key={item.title} className="flex items-start gap-3">
               <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-[4px] bg-white text-primary">
                 <item.icon />
               </span>
-              <span>
-                <span className="block text-[15px] font-bold">{item.title}</span>
-                <span className="block text-[13px] text-ink-muted">{item.detail}</span>
-              </span>
-            </li>
+              <div>
+                <dt className="text-[15px] font-bold">{item.title}</dt>
+                <dd className="text-[13px] leading-snug text-ink-muted">{item.detail}</dd>
+              </div>
+            </div>
           ))}
-        </ul>
+        </dl>
       </section>
 
       <Band tone="white" labelledBy="how-it-works">

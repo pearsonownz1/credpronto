@@ -6,7 +6,7 @@ describe("marketing sections", () => {
   it("keeps the translation headings, steps, and certification rule", () => {
     const sections = marketingSections(homePage.body);
     expect(sections.map((section) => section.heading)).toEqual([
-      "Certified translations accepted by USCIS, and you see them first",
+      "USCIS-certified translations ready in 1–3 minutes — preview free before you pay.",
       "How it works",
       "Documents we translate",
       "Who uses CredPronto",
@@ -23,7 +23,10 @@ describe("marketing sections", () => {
       "Most previews are ready in 3 minutes.",
     );
     const includes = listOf(
-      sectionByHeading(sections, "Certified translations accepted by USCIS, and you see them first"),
+      sectionByHeading(
+        sections,
+        "USCIS-certified translations ready in 1–3 minutes — preview free before you pay.",
+      ),
       false,
     );
     expect(includes.map((item) => item.text).join(" ")).toContain("8 CFR 103.2(b)(3)");
