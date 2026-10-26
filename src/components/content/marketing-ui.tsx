@@ -161,6 +161,15 @@ export function SignIcon() {
   );
 }
 
+export function ClockIcon() {
+  return (
+    <Icon>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 7.5V12l2.8 1.8" />
+    </Icon>
+  );
+}
+
 export function ShieldIcon() {
   return (
     <Icon>
@@ -294,13 +303,15 @@ export function PrimaryLink({
   href,
   children,
   testId,
+  className = "h-12 px-6 text-base",
 }: {
   href: string;
   children: ReactNode;
   testId?: string;
+  className?: string;
 }) {
   return (
-    <Link href={href} data-testid={testId} className={buttonClasses("primary", "h-12 px-6 text-base")}>
+    <Link href={href} data-testid={testId} className={buttonClasses("primary", className)}>
       {children}
     </Link>
   );

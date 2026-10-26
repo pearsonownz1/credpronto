@@ -18,7 +18,14 @@ describe("translation landing", () => {
   const html = renderToStaticMarkup(createElement(TranslationLanding));
 
   it("renders the headline, price, preview, and certification copy", () => {
-    expect(html).toContain("Certified translations accepted by USCIS, and you see them first");
+    expect(html).toContain("⚡ Ready in 1–3 minutes · USCIS Certified");
+    expect(html).toContain(
+      "USCIS-certified translations ready in 1–3 minutes — preview free before you pay.",
+    );
+    expect(html).toContain("see the full translation in 1–3 minutes");
+    expect(html).not.toContain("see the full translation in 3 minutes");
+    expect(html).toContain("See your translation in 1–3 minutes");
+    expect(html).toContain("Ready in 1–3 minutes · $0 until you approve");
     expect(html).toContain(TRANSLATION_PAGE_LABEL);
     expect(html).toContain(`${formatMoney(UNIT_PRICE_CENTS)} per page`);
     expect(html).toContain("8 CFR 103.2(b)(3)");
@@ -33,6 +40,12 @@ describe("translation landing", () => {
     expect(html).toContain(
       "CredPronto side-by-side preview of a Turkish tax letter and its certified English translation",
     );
+    expect(html).toContain("lg:grid-cols-4");
+    expect(html).toContain("<dt");
+    const speedDetail = html.indexOf("Instant side-by-side preview, not a 2-day wait.");
+    const uscisAccepted = html.indexOf("USCIS accepted");
+    expect(speedDetail).toBeGreaterThan(-1);
+    expect(uscisAccepted).toBeGreaterThan(speedDetail);
     expect(html).toContain("USCIS accepted");
     expect(html).toContain("Preview before you pay");
     expect(html).toContain("Certified PDF by email");

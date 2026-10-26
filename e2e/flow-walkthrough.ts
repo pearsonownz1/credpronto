@@ -24,8 +24,15 @@ export async function walkCustomerFlow(
 
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { level: 1, name: /Certified translations accepted by USCIS/ }),
+    page.getByRole("heading", {
+      level: 1,
+      name: /USCIS-certified translations ready in 1–3 minutes/,
+    }),
   ).toBeVisible();
+  await expect(page.getByText("⚡ Ready in 1–3 minutes · USCIS Certified").filter({ visible: true })).toBeVisible();
+  await expect(page.getByTestId("home-get-started").filter({ visible: true })).toHaveText(
+    "See your translation in 1–3 minutes",
+  );
   await expect(page.getByTestId("upload-drop")).toHaveCount(0);
   await expect(page.getByTestId("nav-log-in").filter({ visible: true })).toBeVisible();
   await expect(page.getByTestId("nav-create-account")).toHaveCount(0);

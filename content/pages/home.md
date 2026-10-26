@@ -5,9 +5,9 @@ description: "Certified translations accepted by USCIS from $9.95 a page. Upload
 canonical: https://www.credpronto.com/
 ---
 
-## Certified translations accepted by USCIS, and you see them first
+## USCIS-certified translations ready in 1–3 minutes — preview free before you pay.
 
-Upload your document and see the full translation in 3 minutes. Pay only when you're happy with it.
+Upload your document and see the full translation in 1–3 minutes. Pay only when you're happy with it.
 
 Every paid order includes:
 - A full English translation of every page, including stamps, seals, handwritten notes and the back side
