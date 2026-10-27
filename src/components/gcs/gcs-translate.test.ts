@@ -165,6 +165,80 @@ describe("GcsTranslate progress", () => {
     expect(host.textContent).toContain("The certified translation is being prepared.");
   });
 
+  it("reprocesses a needs_review order once before showing an error", async () => {
+    let orderReads = 0;
+    const calls: Array<{ url: string; method: string }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        const href = String(url);
+        calls.push({ url: href, method: init?.method ?? "GET" });
+        if (gcsOrdersKind(href) === "detail") return Promise.resolve(json({ pages: [] }));
+        if (gcsOrdersKind(href) === "list") return Promise.resolve(json({ orders: [] }));
+        if (href.includes("/process")) return Promise.resolve(json({ status: "processing", orderId: "tok-1" }));
+        if (href.includes("/preview")) return Promise.resolve(json({ error: "not ready" }, 404));
+        orderReads += 1;
+        if (orderReads === 1) {
+          return Promise.resolve(
+            json({ status: "needs_review", reviewReason: "image_quality", orderId: "tok-1" }),
+          );
+        }
+        return Promise.resolve(
+          json({
+            status: "processing",
+            orderId: "tok-1",
+            sourceLanguage: "ar",
+            targetLanguage: "en",
+            progress: { step: "translating", pagesRead: 2, pagesTotal: 2, pagesDone: 0, pagesTranslateTotal: 2 },
+          }),
+        );
+      }),
+    );
+
+    const host = await renderTranslate({ token: "tok-1" });
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(host.textContent).toContain("The certified translation is being prepared.");
+      });
+    });
+
+    expect(host.textContent).not.toContain("Translation needs attention");
+    const processCalls = calls.filter((call) => call.url.includes("/process") && call.method === "POST");
+    expect(processCalls).toHaveLength(1);
+    expect(processCalls[0]?.url).toBe("/api/orders/tok-1/process");
+  });
+
+  it("shows the review error after one process attempt is still needs_review", async () => {
+    const calls: Array<{ url: string; method: string }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        const href = String(url);
+        calls.push({ url: href, method: init?.method ?? "GET" });
+        if (gcsOrdersKind(href) === "detail") return Promise.resolve(json({ pages: [] }));
+        if (gcsOrdersKind(href) === "list") return Promise.resolve(json({ orders: [] }));
+        if (href.includes("/process")) {
+          return Promise.resolve(json({ status: "needs_review", reviewReason: "image_quality", orderId: "tok-1" }));
+        }
+        if (href.includes("/preview")) return Promise.resolve(json({ error: "not ready" }, 404));
+        return Promise.resolve(
+          json({ status: "needs_review", reviewReason: "image_quality", orderId: "tok-1" }),
+        );
+      }),
+    );
+
+    const host = await renderTranslate({ token: "tok-1" });
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(host.textContent).toContain("Translation needs attention");
+      });
+    });
+
+    expect(host.textContent).toContain("image_quality");
+    const processCalls = calls.filter((call) => call.url.includes("/process") && call.method === "POST");
+    expect(processCalls).toHaveLength(1);
+  });
+
   it("shows the progress bar while the file is uploading", async () => {
     let report: ((ratio: number) => void) | null = null;
     uploadOrderFiles.mockImplementation(

@@ -18,6 +18,7 @@ import {
   listPages,
   listQaRuns,
   listTranslations,
+  unskipBlankPage,
 } from "./db";
 import { recordTranslationFailure, translateOrder } from "./translation";
 import { isGcsOrder } from "./gcs";
@@ -26,6 +27,7 @@ import { withQuotedPages } from "./stored-pages";
 import { toCustomerOrder, type CustomerOrder } from "./view";
 import { serviceDb, type Db } from "./storage";
 import type { OrderRecord } from "./types";
+import { countWords } from "./words";
 
 export async function loadCustomerOrder(db: Db, order: OrderRecord): Promise<CustomerOrder> {
   const priced = await withQuotedPages(db, order);
@@ -88,6 +90,16 @@ export async function processOrder(orderId: string, token: string | null = null)
     return;
   }
 
+  if (
+    isGcsOrder(order) &&
+    order.status === "needs_review" &&
+    order.sourceLanguage &&
+    order.sourceLanguage !== "en"
+  ) {
+    await resumeStuckGcsReview(db, order, token);
+    return;
+  }
+
   // Evaluation-only has no translation job. The report is built during analysis.
   if (orderHasEvaluation(order) && !resolveServices(order).includes("translation")) {
     if (shouldPrepareEvaluationReport(order) && order.sourceLanguage) {
@@ -106,6 +118,30 @@ export async function processOrder(orderId: string, token: string | null = null)
   ) {
     await translateOrder(db, order.id, token);
   }
+}
+
+/**
+ * Orders already held by the old Latin-only blank check, or by a soft photo flag,
+ * never reached translation. Clear those false blank skips and translate.
+ */
+async function resumeStuckGcsReview(db: Db, order: OrderRecord, token: string | null): Promise<void> {
+  const documents = await listDocuments(db, order.id);
+  const pages = await listPages(
+    db,
+    documents.map((document) => document.id),
+  );
+  for (const page of pages) {
+    if (page.skip === true && page.skipReason === "blank" && countWords(page.ocrText ?? "") > 0) {
+      await unskipBlankPage(db, page.id);
+    }
+  }
+  await confirmFreeGcsQuote(db, order.id, {
+    sourceLanguage: order.sourceLanguage,
+    quoted: true,
+    pagesRead: order.progress.pagesRead,
+    pagesTotal: order.progress.pagesTotal,
+  });
+  await translateOrder(db, order.id, token);
 }
 
 /** A quoted GCS order skips payment and keeps translating in this same run. */

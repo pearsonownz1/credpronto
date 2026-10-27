@@ -37,6 +37,22 @@ describe("billable page math", () => {
     expect(blank.skipReason).toBe("blank");
   });
 
+  it("bills an Arabic page with no Latin letters by word count", () => {
+    const text = [
+      "شهادة طلاق",
+      "هذه شهادة طلاق رسمية صادرة عن المحكمة بين الطرفين",
+      "وفق أحكام القانون المدني الساري في البلاد",
+      "وقد تم قيد هذا الحكم في السجل المدني بتاريخ اليوم",
+    ].join("\n");
+    const quote = quotePage({ text, pageIndex: 0, targetLanguage: "en" });
+    expect(quote.skip).toBe(false);
+    expect(quote.skipReason).toBeNull();
+    expect(quote.billingBasis).toBe("words");
+    expect(quote.counted).toBeGreaterThan(0);
+    expect(quote.billableUnits).toBe(Math.max(1, Math.ceil(quote.counted / 250)));
+    expect(/[A-Za-z]/.test(text)).toBe(false);
+  });
+
   it("counts 250 words as one page and 251 words as two", () => {
     expect(billableUnits(1)).toBe(1);
     expect(billableUnits(250)).toBe(1);

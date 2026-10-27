@@ -222,6 +222,7 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
     if (!token || !unlocked) return;
     let stopped = false;
     let timer = 0;
+    let reviewRecovery: "idle" | "running" | "settled" = "idle";
 
     async function poll() {
       const orderResponse = await fetch(`/api/orders/${encodeURIComponent(token!)}`);
@@ -237,6 +238,19 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
       const next = (await orderResponse.json()) as OrderPayload;
       if (stopped) return;
       setOrder({ ...next, id: next.id ?? next.orderId });
+      if (next.status === "needs_review") {
+        if (reviewRecovery === "idle") {
+          reviewRecovery = "running";
+          void fetch(`/api/orders/${encodeURIComponent(token!)}/process`, { method: "POST" }).finally(() => {
+            reviewRecovery = "settled";
+            if (!stopped) void poll();
+          });
+        }
+        if (reviewRecovery !== "settled") {
+          timer = window.setTimeout(() => void poll(), 2500);
+          return;
+        }
+      }
       if (next.status === "failed" || next.status === "cancelled" || next.status === "needs_review") {
         setError(next.reviewReason?.trim() || "We could not finish this translation.");
         return;

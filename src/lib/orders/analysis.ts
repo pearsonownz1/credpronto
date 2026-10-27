@@ -18,7 +18,7 @@ import {
 import { AiUnavailableError } from "./errors";
 import { CONFIRMATION_FIELD_KEYS, blankToNull, type DateFormat } from "./fields";
 import { isQualityFlag, pageQuality, type QualityFlag } from "./image-quality";
-import { normalizeLanguage } from "./languages";
+import { isSupportedSourceLanguage, normalizeLanguage } from "./languages";
 import {
   applyPageOrder,
   filesInAppliedOrder,
@@ -129,8 +129,8 @@ type ModelCue = {
 const CUE_INSTRUCTIONS = `logicalPage: the printed page number when one is visible, including the N in "page N/M", "1/2", or "2 sur 2". Use 0 when there is no printed number and no sequence cue. Do not invent a number from the order the files were uploaded.
 orderHint: the cue itself, such as "page 1/2", "2/2", or "suite". Use an empty string when there is none.
 orderConfidence: a number from 0 to 1. Use 0.8 or higher only when the printed number or a continuation cue (suite, continued, siguiente) is clear. Use a lower score when you are guessing.
-legibility: a number from 0 to 1. 1 is sharp and complete. Score a photo or scan down for blur, crop, glare, darkness, or fields that cannot be read. If you set blurry, too_dark, unreadable_fields, or cropped, the score must be below 0.6. A high score does not cancel those flags.
-flags: any of blurry, cropped, glare, too_dark, unreadable_fields that apply. Set cropped only when the crop cuts off text, not when a margin is missing and every line is still readable. Use an empty array when the page is readable. A blank page is unreadable for transcription but is not an image-quality failure: set legibility to 1, flags to [], and unreadable to true.`;
+legibility: a number from 0 to 1. 1 is sharp and complete. Score a photo or scan down for blur, crop, glare, darkness, or fields that cannot be read only when the page as a whole cannot be read well enough to translate. If you set blurry, too_dark, unreadable_fields, or cropped, the score must be below 0.6. A high score does not cancel those flags. Do not set blurry, too_dark, or unreadable_fields, and do not score legibility below 0.6, merely because a readable document photo has a handwritten signature, a faint stamp or seal, or a few [unclear] handwritten blanks when the rest of the document is legible.
+flags: any of blurry, cropped, glare, too_dark, unreadable_fields that apply. Set blurry, too_dark, and unreadable_fields only when the page as a whole cannot be read well enough to translate. A handwritten signature, a faint stamp or seal, or a few [unclear] handwritten blanks on an otherwise legible page are not those flags. Set cropped only when the crop cuts off text, not when a margin is missing and every line is still readable. Use an empty array when the page is readable. A blank page is unreadable for transcription but is not an image-quality failure: set legibility to 1, flags to [], and unreadable to true.`;
 
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -254,12 +254,23 @@ ${CUE_INSTRUCTIONS}`,
       if (!current) continue;
       const visual = visualPages.has(pageNumber);
       let next = current;
+      let cue: ModelCue = page;
       if (visual) {
         const text = page.text.trim();
         const unreadable = page.unreadable || countWords(text) === 0;
         next = { ...current, text, needsReview: unreadable || clamp01(page.confidence) < 0.5 };
+        // A readable photo with a signature, stamp, or a few unclear blanks is still translatable.
+        if (!unreadable && clamp01(page.confidence) >= 0.7 && countWords(text) >= 15) {
+          cue = {
+            ...page,
+            flags: page.flags.filter(
+              (flag) => flag !== "blurry" && flag !== "unreadable_fields" && flag !== "too_dark",
+            ),
+            legibility: Math.max(clamp01(page.legibility), 0.75),
+          };
+        }
       }
-      reads[index] = applyCue(next, page, visual);
+      reads[index] = applyCue(next, cue, visual);
     }
     for (const pageNumber of sparse) {
       if (!result.pages.some((page) => Math.round(page.pageNumber) === pageNumber)) {
@@ -611,28 +622,42 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
     const detectedSource = distinct.length === 1 ? distinct[0] : null;
     const sourceLanguage = isGcsOrder(order) && order.sourceLanguage ? order.sourceLanguage : detectedSource;
     const free = isGcsOrder(order);
+    const readableGcs =
+      free &&
+      transcripts.some((text) => countWords(text) > 0) &&
+      Boolean(sourceLanguage && sourceLanguage !== "en" && isSupportedSourceLanguage(sourceLanguage));
+    // A readable GCS document should reach the side-by-side editor. Image quality,
+    // a soft page flag, mixed language cues, or a low detection score must not hold it.
+    const quote = readableGcs
+      ? {
+          ...decision,
+          status: "quoted" as const,
+          reviewReason: null,
+          billablePages: Math.max(1, decision.billablePages),
+        }
+      : decision;
     await updateOrder(db, orderId, {
-      status: decision.status,
+      status: quote.status,
       source_language: sourceLanguage,
-      billable_pages: decision.billablePages,
-      total_cents: free ? 0 : decision.totalCents,
+      billable_pages: quote.billablePages,
+      total_cents: free ? 0 : quote.totalCents,
       ...(free ? { translation_cents: 0, unit_price_cents: 0 } : {}),
-      review_reason: decision.reviewReason,
-      eta_at: etaFromNow(decision.etaHours),
+      review_reason: quote.reviewReason,
+      eta_at: etaFromNow(quote.etaHours),
       combined_original_path: combinedPath,
       page_order_basis: applied.basis,
       page_order: applied,
       progress: { step: "done", pagesRead, pagesTotal },
     });
 
-    if (decision.status === "quoted" && !(await hasEvent(db, orderId, "quote_shown"))) {
+    if (quote.status === "quoted" && !(await hasEvent(db, orderId, "quote_shown"))) {
       await insertEvent(db, orderId, "quote_shown", {
-        billablePages: decision.billablePages,
-        totalCents: free ? 0 : decision.totalCents,
+        billablePages: quote.billablePages,
+        totalCents: free ? 0 : quote.totalCents,
       });
     }
-    if (decision.status === "quoted") await notifyOrder(db, orderId, "order.quoted");
-    if (decision.status === "quoted") {
+    if (quote.status === "quoted") await notifyOrder(db, orderId, "order.quoted");
+    if (quote.status === "quoted") {
       try {
         await queueEarlyTranslation(db, orderId, token);
       } catch (error) {

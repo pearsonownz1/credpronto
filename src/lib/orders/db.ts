@@ -812,6 +812,18 @@ export async function setPageSkipped(db: Db, pageId: string, skipped: boolean): 
   fail(error);
 }
 
+/**
+ * Clears a false blank skip. `skip_reason: "blank"` still hides the page from
+ * translation after `skipped` is turned off.
+ */
+export async function unskipBlankPage(db: Db, pageId: string): Promise<void> {
+  const { error } = await db
+    .from("document_pages")
+    .update({ skipped: false, skip_reason: null })
+    .eq("id", pageId);
+  fail(error);
+}
+
 export async function listPages(db: Db, documentIds: string[]): Promise<PageRecord[]> {
   if (documentIds.length === 0) return [];
   const { data, error } = await db.from("document_pages").select("*").in("document_id", documentIds);
