@@ -403,8 +403,9 @@ export function planTable(input: {
   const paintGrid = (grid: Array<{ cells: string[]; bold: boolean }>) => {
     if (clipped || grid.length === 0) return;
     const top = y;
+    // Top rule is drawn for every grid, including tables with header: false.
     rules.push({ x1: input.x, y1: y, x2: right, y2: y, width: 0.6 });
-    for (const row of grid) {
+    for (const [rowIndex, row] of grid.entries()) {
       if (clipped) return;
       const wrapped = row.cells.map((cell, column) => {
         const words = wordsOf(cell).map((word) => ({ ...word, bold: word.bold || row.bold }));
@@ -422,7 +423,8 @@ export function planTable(input: {
         paintLines(lines, y, cellLeft, cellWidth, !row.bold && numeric(row.cells[column] ?? ""));
       });
       y -= height;
-      rules.push({ x1: input.x, y1: y, x2: right, y2: y, width: row.bold ? 0.9 : 0.4 });
+      const last = rowIndex === grid.length - 1;
+      rules.push({ x1: input.x, y1: y, x2: right, y2: y, width: row.bold ? 0.9 : last ? 0.6 : 0.4 });
     }
     for (const [index, left] of [...lefts, right].entries()) {
       rules.push({ x1: left, y1: top, x2: left, y2: y, width: index === 0 || index === lefts.length ? 0.6 : 0.4 });
@@ -718,6 +720,23 @@ function planLetter(input: {
 }
 
 /**
+ * A short translation of a bilingual diploma should not sit in the top of a
+ * full-page border. When the ink uses less than 65% of the frame and nothing
+ * overflowed, pull the bottom up to `contentBottom - 18` so a trailing registry
+ * table stays inside the border instead of floating over an empty half page.
+ */
+function snugCertificateFrame(frame: PlanRect, contentBottom: number, overflow: boolean): PlanRect {
+  if (overflow) return frame;
+  const top = frame.y + frame.h;
+  const available = frame.h;
+  const used = top - contentBottom;
+  if (!(used > 0) || used >= available * 0.65) return frame;
+  const snugY = Math.max(frame.y, contentBottom - 18);
+  if (snugY <= frame.y + 1) return frame;
+  return { ...frame, y: snugY, h: top - snugY };
+}
+
+/**
  * A birth certificate stored as a certificate is a stack of labeled fields.
  * The license planner paints headings and prose only, so those field values
  * never reach the page. This planner keeps each value on the line with its label.
@@ -783,11 +802,71 @@ function planLabeledCertificate(input: {
   const paintPair = (label: string, value: string, bold = false) => {
     const name = label.trim();
     const printed = value.trim();
-    paintLine(printed ? `${name}: ${printed}` : name, size, "left", bold);
+    if (!name && !printed) return;
+    const text = name && printed ? `${name}: ${printed}` : name || printed;
+    paintLine(text, size, "left", bold);
     y -= 1;
   };
 
-  for (const block of input.blocks) {
+  const paintAnchored = (
+    text: string,
+    x: number,
+    width: number,
+    top: number,
+    fontSize: number,
+    align: BlockAlign,
+    bold = false,
+    color: "ink" | "muted" = "ink",
+  ): number => {
+    const words = wordsOf(text).map((word) => ({ ...word, bold: word.bold || bold }));
+    if (words.length === 0) return top;
+    const lines = wrapWords(words, fontSize, Math.max(8, width), input.measure, serif);
+    const space = input.measure(" ", fontSize, { serif, bold });
+    let cursorY = top;
+    for (const line of lines) {
+      if (cursorY < bottom) clipped = true;
+      const natural = lineWidth(line, fontSize, space, input.measure, serif);
+      let cursor = x;
+      if (align === "center") cursor = x + Math.max(0, (width - natural) / 2);
+      if (align === "right") cursor = x + Math.max(0, width - natural);
+      for (const word of line) {
+        texts.push({
+          text: word.text,
+          x: cursor,
+          y: cursorY,
+          size: fontSize,
+          color,
+          bold: word.bold,
+          underline: word.underline,
+          serif,
+        });
+        cursor += input.measure(word.text, fontSize, { bold: word.bold, serif }) + space;
+      }
+      cursorY -= fontSize * 1.22;
+    }
+    return cursorY;
+  };
+
+  const paintSignatureRow = (signs: Array<Extract<RenderBlock, { type: "signature" }>>) => {
+    const gap = 16;
+    const colW = (innerW - gap * (signs.length - 1)) / signs.length;
+    let lowest = y;
+    signs.forEach((sign, offset) => {
+      const x = left + offset * (colW + gap);
+      let cursor = y;
+      const note = bracketNote(sign);
+      if (note) cursor = paintAnchored(note, x, colW, cursor, NOTE_SIZE, "center", false, "muted");
+      for (const line of sign.lines ?? []) {
+        cursor = paintAnchored(line, x, colW, cursor, size - 0.5, "center", true);
+      }
+      lowest = Math.min(lowest, cursor);
+    });
+    y = lowest - 3;
+  };
+
+  for (let index = 0; index < input.blocks.length; index += 1) {
+    const block = input.blocks[index];
+    if (!block) continue;
     if (y < bottom) {
       clipped = true;
       break;
@@ -868,6 +947,18 @@ function planLabeledCertificate(input: {
       continue;
     }
     if (block.type === "signature") {
+      let run = 1;
+      while (run < 3 && input.blocks[index + run]?.type === "signature") run += 1;
+      if (run >= 2) {
+        const signs: Array<Extract<RenderBlock, { type: "signature" }>> = [];
+        for (let offset = 0; offset < run; offset += 1) {
+          const sign = input.blocks[index + offset];
+          if (sign?.type === "signature") signs.push(sign);
+        }
+        paintSignatureRow(signs);
+        index += run - 1;
+        continue;
+      }
       const note = bracketNote(block);
       if (note) paintLine(note, NOTE_SIZE, "right", false, "muted");
       for (const line of block.lines ?? []) paintLine(line, size - 0.5, "right", true);
@@ -882,10 +973,11 @@ function planLabeledCertificate(input: {
   }
 
   const lowest = texts.reduce((min, item) => Math.min(min, item.y), y);
+  const overflow = clipped || lowest < input.footer + 2 || y < frame.y + 8;
   return {
     serif,
-    overflow: clipped || lowest < input.footer + 2 || y < frame.y + 8,
-    frame,
+    overflow,
+    frame: snugCertificateFrame(frame, Math.min(y, lowest), overflow),
     boxes: [],
     texts,
     rules,
@@ -1114,10 +1206,18 @@ function planCertificate(input: {
   }
 
   const lowest = texts.reduce((min, item) => Math.min(min, item.y), y);
+  const ink = Math.min(
+    y,
+    lowest,
+    ...boxes.map((box) => box.y),
+    ...(image ? [image.y] : []),
+    ...seals.map((seal) => seal.cy - seal.outer),
+  );
+  const overflow = lowest < input.footer + 2 || y < frame.y + 8;
   return {
     serif,
-    overflow: lowest < input.footer + 2 || y < frame.y + 8,
-    frame,
+    overflow,
+    frame: snugCertificateFrame(frame, ink, overflow),
     boxes,
     image,
     texts,

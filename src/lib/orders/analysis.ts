@@ -1,3 +1,4 @@
+import { PDFDocument } from "pdf-lib";
 import { z } from "zod";
 import { generateObject } from "./ai";
 import { SPARSE_PAGE_WORDS } from "./constants";
@@ -178,6 +179,35 @@ export async function imageBytesForModel(bytes: Uint8Array, mime: string): Promi
   const sharp = (await import("sharp")).default;
   const png = await sharp(Buffer.from(bytes)).png().toBuffer();
   return { bytes: new Uint8Array(png), mime: "image/png" };
+}
+
+/** One page of an uploaded PDF, in upload order. `pageIndex` is zero-based. */
+export async function extractSinglePdfPage(bytes: Uint8Array, pageIndex: number): Promise<Uint8Array> {
+  const src = await PDFDocument.load(bytes);
+  const count = src.getPageCount();
+  if (!Number.isInteger(pageIndex) || pageIndex < 0 || pageIndex >= count) {
+    throw new Error(`PDF page ${pageIndex + 1} is outside 1–${count}.`);
+  }
+  const dest = await PDFDocument.create();
+  const [page] = await dest.copyPages(src, [pageIndex]);
+  if (!page) throw new Error(`PDF page ${pageIndex + 1} could not be copied.`);
+  dest.addPage(page);
+  return dest.save();
+}
+
+/**
+ * Bytes the translator can see. Images are normalized. A PDF is reduced to the
+ * one source page so a scan's tables stay visible instead of only the flat OCR.
+ */
+export async function modelSourceBytes(
+  bytes: Uint8Array,
+  mime: string,
+  pageIndex = 0,
+): Promise<{ bytes: Uint8Array; mime: string }> {
+  if (mime === "application/pdf") {
+    return { bytes: await extractSinglePdfPage(bytes, pageIndex), mime: "application/pdf" };
+  }
+  return imageBytesForModel(bytes, mime);
 }
 
 async function assessFile(

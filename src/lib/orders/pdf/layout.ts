@@ -114,13 +114,26 @@ export function assertContiguousPages(pages: { combinedPageNumber: number }[]): 
   }
 }
 
+/** Longer than A4 height, or wider than Letter. Scans past this are shrunk. */
+const OVERSIZE_LONG_PT = 842;
+const OVERSIZE_SHORT_PT = LETTER_WIDTH_PT;
+
 export function pageSize(page: { widthPt: number; heightPt: number }): {
   widthPt: number;
   heightPt: number;
 } {
   const widthPt = page.widthPt > 0 ? page.widthPt : LETTER_WIDTH_PT;
   const heightPt = page.heightPt > 0 ? page.heightPt : LETTER_HEIGHT_PT;
-  return { widthPt, heightPt };
+  const longSide = Math.max(widthPt, heightPt);
+  const shortSide = Math.min(widthPt, heightPt);
+  // Letter, A4, and the landscape license stay as stored. An A3 or pixel-sized
+  // scan is scaled into a Letter box (short side 612, long side 792).
+  if (longSide <= OVERSIZE_LONG_PT && shortSide <= OVERSIZE_SHORT_PT) return { widthPt, heightPt };
+  const scale = Math.min(LETTER_WIDTH_PT / shortSide, LETTER_HEIGHT_PT / longSide);
+  return {
+    widthPt: Math.round(widthPt * scale * 100) / 100,
+    heightPt: Math.round(heightPt * scale * 100) / 100,
+  };
 }
 
 function protectedSpans(token: string): Array<[number, number]> {

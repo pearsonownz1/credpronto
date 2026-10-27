@@ -758,9 +758,19 @@ export type PageWork = {
   fields: ConfirmationRecord[];
   corrections: CorrectionRecord[];
   qaIssues: QaIssue[];
-  /** Set for a photo or screenshot so translation can see the page, not only its transcription. */
+  /** Photo, screenshot, or PDF so translation can see the page, not only its transcription. */
   source?: { mime: string; path: string } | null;
 };
+
+function translationSource(document: {
+  mime: string | null;
+  originalPath: string;
+}): { mime: string; path: string } | null {
+  const mime = document.mime;
+  if (!document.originalPath || !mime) return null;
+  if (mime.startsWith("image/") || mime === "application/pdf") return { mime, path: document.originalPath };
+  return null;
+}
 
 /** A page skipped after its job started must not fail the order. The row stays pending and is not dispatched. */
 export async function releaseSkippedPageJob(db: Db, job: PageJobRecord): Promise<boolean> {
@@ -801,10 +811,7 @@ export async function loadPageWork(db: Db, jobId: string): Promise<PageWork | nu
     fields: fields.filter((field) => field.documentId === document.id),
     corrections: corrections.filter((correction) => correction.status === "open"),
     qaIssues: run.qaIssues,
-    source:
-      document.mime?.startsWith("image/") && document.originalPath
-        ? { mime: document.mime, path: document.originalPath }
-        : null,
+    source: translationSource(document),
   };
 }
 
