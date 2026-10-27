@@ -15,15 +15,32 @@ export function staffNeedsReviewBanner(order: {
 }): string | null {
   if (!order.reviewReason) return null;
   if (order.status === "delivered" || order.deliveryStatus === "delivered") return null;
-  return order.reviewReason;
+  return humanReviewReason(order.reviewReason);
 }
 
-/** Staff-facing Review column. Known reasons pass through. Database errors do not. */
+const REVIEW_REASON_COPY: Record<string, string> = {
+  image_quality: "The uploaded photo needs a clearer retake so every line of the document can be read.",
+  translation_timeout: "Translation timed out before it could finish.",
+  low_confidence_language: "The source language could not be confirmed with enough confidence.",
+  unsupported_language: "The detected source language is not supported for automatic translation.",
+  equivalency_qa_review: "Credential evaluation is reviewed by staff.",
+  equivalency_qa_research: "Credential evaluation needs additional research before it can be published.",
+  equivalency_unmapped: "Credential evaluation could not map every entry automatically.",
+};
+
+/** Staff-facing Review column. Snake_case enums become sentences. Database errors do not pass through. */
 export function humanReviewReason(reason: string | null | undefined): string | null {
   if (reason == null) return null;
   const text = reason.trim();
   if (!text) return null;
-  if (text === "translation_timeout") return "Translation timed out before it could finish.";
+  const mapped = REVIEW_REASON_COPY[text];
+  if (mapped) return mapped;
+  if (/^[a-z0-9]+(?:_[a-z0-9]+)+$/.test(text)) {
+    return text
+      .split("_")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
   if (/order_qa_runs_order_attempt_key/i.test(text)) {
     return "Quality check was already recorded for this attempt.";
   }

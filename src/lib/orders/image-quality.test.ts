@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { MIN_LEGIBILITY } from "./constants";
 import { failsImageQuality, pageQuality, replacementAllowed, retakeMessage } from "./image-quality";
 
+const HANDWRITTEN_CERTIFICATE =
+  "Republic of Sudan Divorce Certificate. Husband: Ahmed Hassan. Wife: Fatima Ali. " +
+  "Date of marriage: 12/03/2010. Court stamp affixed. Issued in Khartoum under civil registry seal.";
+
 describe("image quality gate", () => {
   it("holds a blurry photo below the legibility threshold", () => {
     expect(failsImageQuality(0.42, true)).toBe(true);
@@ -21,6 +25,27 @@ describe("image quality gate", () => {
     expect(failsImageQuality(0.85, true, ["unreadable_fields"])).toBe(true);
     expect(failsImageQuality(0.85, true, ["cropped"])).toBe(true);
     expect(failsImageQuality(0.85, false, ["blurry"])).toBe(false);
+  });
+
+  it("does not fail readable handwritten certificate photos for soft quality flags", () => {
+    const readable = pageQuality({
+      score: 0.45,
+      visual: true,
+      flags: ["too_dark", "blurry", "unreadable_fields"],
+      text: HANDWRITTEN_CERTIFICATE,
+    });
+    expect(readable.failed).toBe(false);
+    expect(readable.score).toBe(0.45);
+    expect(failsImageQuality(0.45, true, ["too_dark"], { text: HANDWRITTEN_CERTIFICATE })).toBe(false);
+
+    const cropped = pageQuality({
+      score: 0.5,
+      visual: true,
+      flags: ["cropped", "too_dark"],
+      text: HANDWRITTEN_CERTIFICATE,
+    });
+    expect(cropped.failed).toBe(true);
+    expect(cropped.message).toContain("crop");
   });
 
   it("writes retake instructions for every flagged page", () => {

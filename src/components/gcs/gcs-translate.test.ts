@@ -281,6 +281,63 @@ describe("GcsTranslate documents", () => {
   });
 });
 
+describe("GcsTranslate needs_review recovery", () => {
+  it("posts /process once for a stuck needs_review order and formats image_quality", async () => {
+    let orderCalls = 0;
+    let processCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        const href = String(url);
+        if (gcsOrdersKind(href) === "detail") return Promise.resolve(json({ pages: [] }));
+        if (gcsOrdersKind(href) === "list") return Promise.resolve(json({ orders: [] }));
+        if (href.endsWith("/process") && init?.method === "POST") {
+          processCalls += 1;
+          return Promise.resolve(json({ ok: true }));
+        }
+        if (href.includes("/preview")) return Promise.resolve(json({ error: "not ready" }, 404));
+        orderCalls += 1;
+        if (orderCalls === 1) {
+          return Promise.resolve(
+            json({
+              status: "needs_review",
+              reviewReason: "image_quality",
+              sourceLanguage: "ar",
+              orderId: "tok-nadine",
+            }),
+          );
+        }
+        return Promise.resolve(
+          json({
+            status: "needs_review",
+            reviewReason: "image_quality",
+            sourceLanguage: "ar",
+            orderId: "tok-nadine",
+          }),
+        );
+      }),
+    );
+
+    vi.useFakeTimers();
+    const host = await renderTranslate({ token: "tok-nadine" });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(processCalls).toBe(1);
+    expect(host.textContent).not.toContain("image_quality");
+    expect(host.querySelector("h1")?.textContent).not.toBe("Translation needs attention");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2600);
+    });
+    expect(processCalls).toBe(1);
+    expect(host.textContent).toContain("Translation needs attention");
+    expect(host.textContent).toContain("clearer retake");
+    expect(host.textContent).not.toContain("image_quality");
+    vi.useRealTimers();
+  });
+});
+
 describe("GcsTranslate history sidebar", () => {
   const current = historyItem();
   const running = historyItem({

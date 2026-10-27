@@ -129,8 +129,8 @@ type ModelCue = {
 const CUE_INSTRUCTIONS = `logicalPage: the printed page number when one is visible, including the N in "page N/M", "1/2", or "2 sur 2". Use 0 when there is no printed number and no sequence cue. Do not invent a number from the order the files were uploaded.
 orderHint: the cue itself, such as "page 1/2", "2/2", or "suite". Use an empty string when there is none.
 orderConfidence: a number from 0 to 1. Use 0.8 or higher only when the printed number or a continuation cue (suite, continued, siguiente) is clear. Use a lower score when you are guessing.
-legibility: a number from 0 to 1. 1 is sharp and complete. Score a photo or scan down for blur, crop, glare, darkness, or fields that cannot be read. If you set blurry, too_dark, unreadable_fields, or cropped, the score must be below 0.6. A high score does not cancel those flags.
-flags: any of blurry, cropped, glare, too_dark, unreadable_fields that apply. Set cropped only when the crop cuts off text, not when a margin is missing and every line is still readable. Use an empty array when the page is readable. A blank page is unreadable for transcription but is not an image-quality failure: set legibility to 1, flags to [], and unreadable to true.`;
+legibility: a number from 0 to 1. 1 is sharp and complete. Score a photo or scan down only when the core printed or handwritten document text cannot be read. Handwritten fill-in-the-blank entries, stamps, creases, or normal indoor shadows on an otherwise readable certificate photo are still high-legibility (0.7+) when the wording can be read. If you set blurry, too_dark, unreadable_fields, or cropped, the score must be below 0.6. A high score does not cancel those flags.
+flags: any of blurry, cropped, glare, too_dark, unreadable_fields that apply. Set blurry, too_dark, or unreadable_fields only when the core document text cannot be read at all — not for handwritten blanks, stamps, creases, or normal indoor lighting on a readable phone photo. Set cropped only when the crop cuts off text, not when a margin is missing and every line is still readable. Use an empty array when the page is readable. A blank page is unreadable for transcription but is not an image-quality failure: set legibility to 1, flags to [], and unreadable to true.`;
 
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -347,6 +347,20 @@ export function orderAwaitingAnalysis(order: { languageConfirmed: boolean; statu
   return order.status === "draft" || order.status === "failed";
 }
 
+/**
+ * GCS staff edit uncertain handwritten fields in the translation drawer, so
+ * image-quality and language-confidence holds must not block translation when
+ * a source language is already known or detected.
+ */
+export function releaseGcsAnalysisHold<T extends { status: "quoted" | "needs_review"; reviewReason: string | null; etaHours: number }>(
+  decision: T,
+  sourceLanguage: string | null | undefined,
+): T {
+  if (!sourceLanguage?.trim()) return decision;
+  if (decision.status === "quoted") return decision;
+  return { ...decision, status: "quoted", reviewReason: null, etaHours: 1 };
+}
+
 export async function analyzeOrder(db: Db, orderId: string, token: string | null = null): Promise<void> {
   const order = await getOrderById(db, orderId);
   if (!order || !orderAwaitingAnalysis(order)) return;
@@ -513,6 +527,8 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
             score: read.legibility,
             visual: read.visual,
             flags: read.flags,
+            text: read.text,
+            words: countWords(read.text),
           });
           if (quality.failed) imageQuality = true;
           const quoted = quotePage({
@@ -611,28 +627,29 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
     const detectedSource = distinct.length === 1 ? distinct[0] : null;
     const sourceLanguage = isGcsOrder(order) && order.sourceLanguage ? order.sourceLanguage : detectedSource;
     const free = isGcsOrder(order);
+    const settled = free ? releaseGcsAnalysisHold(decision, sourceLanguage) : decision;
     await updateOrder(db, orderId, {
-      status: decision.status,
+      status: settled.status,
       source_language: sourceLanguage,
-      billable_pages: decision.billablePages,
-      total_cents: free ? 0 : decision.totalCents,
+      billable_pages: settled.billablePages,
+      total_cents: free ? 0 : settled.totalCents,
       ...(free ? { translation_cents: 0, unit_price_cents: 0 } : {}),
-      review_reason: decision.reviewReason,
-      eta_at: etaFromNow(decision.etaHours),
+      review_reason: settled.reviewReason,
+      eta_at: etaFromNow(settled.etaHours),
       combined_original_path: combinedPath,
       page_order_basis: applied.basis,
       page_order: applied,
       progress: { step: "done", pagesRead, pagesTotal },
     });
 
-    if (decision.status === "quoted" && !(await hasEvent(db, orderId, "quote_shown"))) {
+    if (settled.status === "quoted" && !(await hasEvent(db, orderId, "quote_shown"))) {
       await insertEvent(db, orderId, "quote_shown", {
-        billablePages: decision.billablePages,
-        totalCents: free ? 0 : decision.totalCents,
+        billablePages: settled.billablePages,
+        totalCents: free ? 0 : settled.totalCents,
       });
     }
-    if (decision.status === "quoted") await notifyOrder(db, orderId, "order.quoted");
-    if (decision.status === "quoted") {
+    if (settled.status === "quoted") await notifyOrder(db, orderId, "order.quoted");
+    if (settled.status === "quoted") {
       try {
         await queueEarlyTranslation(db, orderId, token);
       } catch (error) {

@@ -21,6 +21,7 @@ export async function confirmFreeGcsQuote(
     patch.source_language = input.sourceLanguage;
     patch.language_confirmed = true;
     patch.status = "confirmed";
+    patch.review_reason = null;
     patch.progress = {
       step: "translating",
       pagesRead: input.pagesRead,

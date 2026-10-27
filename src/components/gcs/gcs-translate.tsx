@@ -12,6 +12,7 @@ import { uploadOrderFiles } from "@/lib/flow/direct-upload";
 import { publishGcsUnlock, useGcsUnlocked } from "@/lib/gcs/pin-client";
 import { GCS_MAX_DOCUMENTS } from "@/lib/orders/gcs";
 import { sourceLanguageChoices, targetLanguageChoices } from "@/lib/orders/languages";
+import { humanReviewReason } from "@/lib/orders/review-reason";
 import { gcsTranslationProgress, gcsUploadProgress, type GcsLiveProgress, type GcsOrderSnapshot } from "./gcs-progress";
 import { GcsPinGate } from "./gcs-pin-gate";
 
@@ -222,6 +223,7 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
     if (!token || !unlocked) return;
     let stopped = false;
     let timer = 0;
+    let processRetried = false;
 
     async function poll() {
       const orderResponse = await fetch(`/api/orders/${encodeURIComponent(token!)}`);
@@ -237,8 +239,23 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
       const next = (await orderResponse.json()) as OrderPayload;
       if (stopped) return;
       setOrder({ ...next, id: next.id ?? next.orderId });
-      if (next.status === "failed" || next.status === "cancelled" || next.status === "needs_review") {
-        setError(next.reviewReason?.trim() || "We could not finish this translation.");
+      if (next.status === "needs_review") {
+        if (!processRetried) {
+          processRetried = true;
+          try {
+            await fetch(`/api/orders/${encodeURIComponent(token!)}/process`, { method: "POST" });
+          } catch {
+            // Polling continues; a failed kick still surfaces a readable error below.
+          }
+          if (stopped) return;
+          timer = window.setTimeout(() => void poll(), 2500);
+          return;
+        }
+        setError(humanReviewReason(next.reviewReason) || "We could not finish this translation.");
+        return;
+      }
+      if (next.status === "failed" || next.status === "cancelled") {
+        setError(humanReviewReason(next.reviewReason) || "We could not finish this translation.");
         return;
       }
       const previewResponse = await fetch(`/api/orders/${encodeURIComponent(token!)}/preview`);

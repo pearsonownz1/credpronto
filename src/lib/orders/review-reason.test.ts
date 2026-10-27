@@ -19,12 +19,15 @@ describe("humanReviewReason", () => {
     );
   });
 
-  it("keeps known review reasons and drops blanks", () => {
+  it("turns snake_case enums into sentences and drops blanks", () => {
     expect(humanReviewReason("translation_timeout")).toBe("Translation timed out before it could finish.");
     expect(humanReviewReason("QA found issues that were not fixed after 2 retranslations.")).toBe(
       "QA found issues that were not fixed after 2 retranslations.",
     );
-    expect(humanReviewReason("image_quality")).toBe("image_quality");
+    expect(humanReviewReason("image_quality")).toBe(
+      "The uploaded photo needs a clearer retake so every line of the document can be read.",
+    );
+    expect(humanReviewReason("low_confidence_language")).toContain("source language");
     expect(humanReviewReason("  ")).toBeNull();
     expect(humanReviewReason(null)).toBeNull();
   });
@@ -39,6 +42,7 @@ describe("staffNeedsReviewBanner", () => {
       reason,
     );
     expect(staffNeedsReviewBanner({ status: "paid", reviewReason: null })).toBeNull();
+    expect(staffNeedsReviewBanner({ status: "needs_review", reviewReason: "image_quality" })).toContain("clearer retake");
   });
 
   it("hides a leftover review reason once the order or its delivery is delivered", () => {

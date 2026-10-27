@@ -88,6 +88,12 @@ export async function processOrder(orderId: string, token: string | null = null)
     return;
   }
 
+  // Stuck GCS uploads held for image quality still translate once a language is known.
+  if (isGcsOrder(order) && order.status === "needs_review") {
+    await continueFreeGcsOrder(db, order.id, token);
+    return;
+  }
+
   // Evaluation-only has no translation job. The report is built during analysis.
   if (orderHasEvaluation(order) && !resolveServices(order).includes("translation")) {
     if (shouldPrepareEvaluationReport(order) && order.sourceLanguage) {
@@ -108,11 +114,12 @@ export async function processOrder(orderId: string, token: string | null = null)
   }
 }
 
-/** A quoted GCS order skips payment and keeps translating in this same run. */
-async function continueFreeGcsOrder(db: Db, orderId: string, token: string | null): Promise<void> {
+/** A quoted (or recoverable needs_review) GCS order skips payment and keeps translating. */
+export async function continueFreeGcsOrder(db: Db, orderId: string, token: string | null): Promise<void> {
   const fresh = await getOrderById(db, orderId);
   if (!fresh || !isGcsOrder(fresh)) return;
-  const ready = fresh.status === "quoted" && Boolean(fresh.sourceLanguage);
+  const ready =
+    (fresh.status === "quoted" || fresh.status === "needs_review") && Boolean(fresh.sourceLanguage);
   await confirmFreeGcsQuote(db, orderId, {
     sourceLanguage: fresh.sourceLanguage,
     quoted: ready,
