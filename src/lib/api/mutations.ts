@@ -1,7 +1,15 @@
 import { browserForm, browserJson, publicMockMode } from "@/lib/api/browser";
 import { type ApiResult, type StaffNote } from "@/lib/api/types";
+import type { PageKind, RenderBlock } from "@/lib/orders/pdf/layout";
 
-export type PageEdit = { documentId: string; pageNumber: number; paragraphs: string[] };
+export type PageEdit = {
+  documentId: string;
+  pageNumber: number;
+  paragraphs: string[];
+  /** Structured layout. Omitted by the line editor so stored blocks on other pages stay put. */
+  blocks?: RenderBlock[];
+  kind?: PageKind | null;
+};
 
 export async function patchOrderTranslation(id: string, pages: PageEdit[]): Promise<ApiResult<unknown>> {
   if (publicMockMode()) return { ok: true, status: 200, data: { status: "saved" } };

@@ -1,3 +1,5 @@
+import { sanitizeEditorBlock } from "@/lib/gcs/editor-pages";
+import { blocksToParagraphs } from "@/lib/orders/pdf/structure";
 import { requireStaff } from "./staff";
 import { approverDisplayName } from "./certification";
 import {
@@ -23,10 +25,26 @@ import { HttpError } from "./errors";
 import { storeCertifiedTranslation } from "./final-file";
 import { renderOrderPdfs } from "./pdf/render";
 import { uploadObject } from "./storage";
+import { pageKind, type PageKind, type RenderBlock, type RenderPage } from "./pdf/layout";
 import { segmentsInSourceOrder } from "./segment-source";
-import { mergeEditedPages, paragraphsForPage, type PageEdit, type PageTranslation } from "./translation-edit";
+import { mergeEditedPages, paragraphsForPage, storedPageLayout, type PageEdit, type PageTranslation } from "./translation-edit";
 
 const EDITABLE = new Set(["preview_ready", "correction_requested", "paid", "approved", "delivered"]);
+
+function editedBlocks(value: unknown): RenderBlock[] {
+  if (!Array.isArray(value)) throw new HttpError("blocks must be an array", 400);
+  return value.flatMap((block) => {
+    const sanitized = sanitizeEditorBlock(block);
+    return sanitized ? [sanitized] : [];
+  });
+}
+
+function editedKind(value: unknown): PageKind | null {
+  if (value == null) return null;
+  const kind = pageKind(value);
+  if (!kind) throw new HttpError("kind must be letter, certificate, or form", 400);
+  return kind;
+}
 
 export function parseTranslationEdits(body: unknown): PageEdit[] {
   if (!body || typeof body !== "object") throw new HttpError("Expected a JSON body", 400);
@@ -35,7 +53,7 @@ export function parseTranslationEdits(body: unknown): PageEdit[] {
 
   return pages.map((entry) => {
     if (!entry || typeof entry !== "object") throw new HttpError("Invalid page edit", 400);
-    const page = entry as { documentId?: unknown; pageNumber?: unknown; paragraphs?: unknown };
+    const page = entry as { documentId?: unknown; pageNumber?: unknown; paragraphs?: unknown; blocks?: unknown; kind?: unknown };
     if (typeof page.documentId !== "string" || page.documentId.length === 0) {
       throw new HttpError("documentId is required", 400);
     }
@@ -45,10 +63,19 @@ export function parseTranslationEdits(body: unknown): PageEdit[] {
     if (!Array.isArray(page.paragraphs) || page.paragraphs.some((paragraph) => typeof paragraph !== "string")) {
       throw new HttpError("paragraphs must be an array of strings", 400);
     }
+    const record = page as Record<string, unknown>;
+    const blocks = "blocks" in record ? editedBlocks(record.blocks) : undefined;
+    const kind = "kind" in record ? editedKind(record.kind) : undefined;
+    const paragraphs =
+      blocks && blocks.length > 0 && page.paragraphs.every((paragraph) => paragraph.trim() === "")
+        ? blocksToParagraphs(blocks)
+        : page.paragraphs;
     return {
       documentId: page.documentId,
       pageNumber: page.pageNumber,
-      paragraphs: page.paragraphs,
+      paragraphs,
+      ...(blocks && blocks.length > 0 ? { blocks } : {}),
+      ...(kind !== undefined ? { kind } : {}),
     };
   });
 }
@@ -78,6 +105,9 @@ export async function editOrderTranslation(orderId: string, body: unknown) {
 
   const current: PageTranslation[] = pages.map((page) => {
     const translation = latest.get(page.documentId);
+    const layout = translation
+      ? storedPageLayout(translation.output, { pageNumber: page.pageNumber, combinedPageNumber: page.number })
+      : { kind: null };
     return {
       documentId: page.documentId,
       pageNumber: page.pageNumber,
@@ -85,6 +115,8 @@ export async function editOrderTranslation(orderId: string, body: unknown) {
       widthPt: page.widthPt,
       heightPt: page.heightPt,
       paragraphs: translation ? paragraphsForPage(translation.output, page) ?? [] : [],
+      ...(layout.blocks ? { blocks: layout.blocks } : {}),
+      kind: layout.kind,
     };
   });
 
@@ -115,6 +147,8 @@ export async function editOrderTranslation(orderId: string, body: unknown) {
               pageNumber: page.pageNumber,
               combinedPageNumber: page.number,
               paragraphs: segmentsInSourceOrder(page.ocrText, rendered?.paragraphs ?? []),
+              ...(rendered?.blocks?.length ? { blocks: rendered.blocks } : {}),
+              ...(rendered?.kind ? { kind: rendered.kind } : {}),
             };
           }),
         },
@@ -133,7 +167,14 @@ export async function editOrderTranslation(orderId: string, body: unknown) {
       sourceLanguage: order.sourceLanguage,
       targetLanguage: order.targetLanguage,
       date: new Date().toISOString().slice(0, 10),
-      pages: merged.pages,
+      pages: merged.pages.map((page): RenderPage => ({
+        combinedPageNumber: page.combinedPageNumber,
+        widthPt: page.widthPt,
+        heightPt: page.heightPt,
+        paragraphs: page.paragraphs,
+        ...(page.blocks?.length ? { blocks: page.blocks } : {}),
+        ...(page.kind ? { kind: page.kind } : {}),
+      })),
       clientName: coverClientName(await listConfirmations(db, order.id), await customerEmail(db, order.customerId)),
       documents: coverDocuments(documents, pages, translatedCounts),
       translatorName: coverTranslatorName(approver),
