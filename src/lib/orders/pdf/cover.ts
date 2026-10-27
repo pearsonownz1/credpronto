@@ -4,12 +4,15 @@ import { PDFDocument, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf
 import { BRAND_ADDRESS, BRAND_FOOTER, BRAND_LOCALITY, BRAND_SIGNER, BRAND_STREET } from "../brand";
 import { languageLabel } from "../languages";
 import { faceForCodePoint, fontFace, stableFontkit, type FontFace, type FontFaceId } from "./font";
+import { gcsLetterheadRuleY } from "./letterhead-geometry";
 import { wrapLines, type CoverDocument, type RenderInput } from "./layout";
 import { loadTintedOwnerSignature, ownerSignatureBlockHeight, SIGN_ROLE_TRANSLATOR, signOffLayout } from "./signature";
 
 export const COVER_ADDRESS_LINES = [BRAND_STREET, BRAND_LOCALITY] as const;
 export const COVER_ADDRESS = BRAND_ADDRESS;
 export const COVER_FOOTER = BRAND_FOOTER;
+/** Centered on translated body pages, above the letterhead rule. */
+export const CREDPRONTO_LETTERHEAD_CONTACT = "support@credpronto.com | www.credpronto.com";
 const ATA_LOGO_PATH = path.join(process.cwd(), "src/lib/orders/pdf/ata-logo.png");
 const BRAND_LOGO_PATH = path.join(process.cwd(), "src/lib/orders/pdf/credpronto-logo.png");
 
@@ -99,6 +102,76 @@ export function loadAtaLogo(): Uint8Array {
 
 export function loadBrandLogo(): Uint8Array {
   return new Uint8Array(readFileSync(BRAND_LOGO_PATH));
+}
+
+export type CredProntoLetterhead = { logo: PDFImage; ata: PDFImage };
+
+/** CredPronto mark and the ATA corporate-member logo, shared by translated body pages. */
+export async function embedCredProntoLetterhead(doc: PDFDocument): Promise<CredProntoLetterhead> {
+  const logo = await embedSignature(doc, loadBrandLogo());
+  const ata = await embedSignature(doc, loadAtaLogo());
+  if (!logo || !ata) throw new Error("CredPronto letterhead did not embed");
+  return { logo, ata };
+}
+
+/**
+ * Letterhead for CredPronto translated pages. The rule sits on `gcsLetterheadRuleY`
+ * so the 72pt body inset clears it. The mark, member line, and contact are CredPronto only.
+ */
+export function drawCredProntoLetterhead(page: PDFPage, font: PDFFont, images: CredProntoLetterhead): void {
+  const { width, height } = page.getSize();
+  const margin = Math.min(MARGIN_X, width * 0.08);
+  const top = height - 36;
+  const logoHeight = 28;
+  const logoWidth = logoHeight * (images.logo.width / images.logo.height);
+  page.drawImage(images.logo, { x: margin, y: top - logoHeight, width: logoWidth, height: logoHeight });
+
+  const ataHeight = 24;
+  const ataWidth = ataHeight * (images.ata.width / images.ata.height);
+  const right = width - margin;
+  page.drawImage(images.ata, { x: right - ataWidth, y: top - ataHeight, width: ataWidth, height: ataHeight });
+
+  const member = "CORPORATE MEMBER OF";
+  const memberSize = 7;
+  const memberWidth = font.widthOfTextAtSize(member, memberSize);
+  const dividerX = right - ataWidth - 8;
+  page.drawLine({
+    start: { x: dividerX, y: top - ataHeight },
+    end: { x: dividerX, y: top },
+    thickness: 0.6,
+    color: LINE,
+  });
+  page.drawText(member, {
+    x: dividerX - 8 - memberWidth,
+    y: top - ataHeight + 8,
+    size: memberSize,
+    font,
+    color: MUTED,
+  });
+
+  const contact = CREDPRONTO_LETTERHEAD_CONTACT;
+  let contactSize = 8.5;
+  let contactWidth = font.widthOfTextAtSize(contact, contactSize);
+  const limit = Math.max(40, width - margin * 2);
+  while (contactWidth > limit && contactSize > 6) {
+    contactSize -= 0.25;
+    contactWidth = font.widthOfTextAtSize(contact, contactSize);
+  }
+  const ruleY = gcsLetterheadRuleY(height);
+  const contactY = ruleY + 8;
+  page.drawText(contact, {
+    x: Math.max(margin, (width - contactWidth) / 2),
+    y: contactY,
+    size: contactSize,
+    font,
+    color: MUTED,
+  });
+  page.drawLine({
+    start: { x: margin, y: ruleY },
+    end: { x: right, y: ruleY },
+    thickness: 1.5,
+    color: INK,
+  });
 }
 
 export function loadTranslatorSignature(value = process.env.CREDPRONTO_TRANSLATOR_SIGNATURE): Uint8Array | null {

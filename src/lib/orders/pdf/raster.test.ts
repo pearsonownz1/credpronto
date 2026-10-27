@@ -54,7 +54,9 @@ async function blueTint(png: Uint8Array): Promise<number> {
   const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   let tinted = 0;
   const footer = Math.floor(info.height * 0.9);
-  for (let y = 0; y < footer; y += 1) {
+  // CredPronto body pages carry a blue logo in the top 88pt letterhead. The watermark sits below that band.
+  const letterhead = Math.ceil(info.height * (88 / 792));
+  for (let y = letterhead; y < footer; y += 1) {
     for (let x = 0; x < info.width; x += 1) {
       const i = (y * info.width + x) * info.channels;
       const red = data[i] ?? 0;
