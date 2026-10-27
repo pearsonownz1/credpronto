@@ -24,6 +24,13 @@ export type FieldRow = {
 
 export type BlockAlign = "left" | "center" | "right" | "justify";
 export type BlockColumn = "left" | "right" | "full";
+export type SealAlign = "left" | "center" | "right";
+
+export function sealAlign(value: unknown): SealAlign | undefined {
+  if (value === "left" || value === "center" || value === "right") return value;
+  if (value === "full") return "center";
+  return undefined;
+}
 /** letter and certificate keep the source arrangement. form is the labeled-field layout. */
 export type PageKind = "letter" | "certificate" | "form";
 
@@ -47,7 +54,7 @@ export type RenderBlock =
   | { type: "address"; lines: string[]; align?: BlockAlign; bold?: boolean }
   | { type: "table"; rows: string[][]; header?: boolean }
   | { type: "signature"; electronic: boolean; column?: BlockColumn; lines?: string[] }
-  | { type: "seal"; text: string; column?: BlockColumn }
+  | { type: "seal"; text: string; column?: SealAlign }
   | { type: "stamp"; text: string; column?: BlockColumn }
   | { type: "logo"; text: string }
   | { type: "photo"; caption?: string }

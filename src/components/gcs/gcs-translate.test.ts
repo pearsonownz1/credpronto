@@ -75,6 +75,14 @@ function json(body: unknown, status = 200) {
   });
 }
 
+/** The history list is exactly `/api/gcs/orders`. Editor pages use `/api/gcs/orders/:id`. */
+function gcsOrdersKind(url: string): "list" | "detail" | null {
+  const path = String(url).split("?")[0] ?? "";
+  if (path.endsWith("/api/gcs/orders")) return "list";
+  if (path.includes("/api/gcs/orders/")) return "detail";
+  return null;
+}
+
 async function renderTranslate(props: { unlocked?: boolean; token?: string } = {}) {
   const host = document.createElement("div");
   document.body.appendChild(host);
@@ -91,7 +99,8 @@ describe("GcsTranslate progress", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
-        if (String(url).includes("/api/gcs/orders")) return json({ orders: [] });
+        if (gcsOrdersKind(String(url)) === "detail") return json({ pages: [] });
+        if (gcsOrdersKind(String(url)) === "list") return json({ orders: [] });
         return json({ error: "not found" }, 404);
       }),
     );
@@ -106,7 +115,8 @@ describe("GcsTranslate progress", () => {
       "fetch",
       vi.fn((url: string) => {
         const href = String(url);
-        if (href.includes("/api/gcs/orders")) return Promise.resolve(json({ orders: [] }));
+        if (gcsOrdersKind(href) === "detail") return Promise.resolve(json({ pages: [] }));
+        if (gcsOrdersKind(href) === "list") return Promise.resolve(json({ orders: [] }));
         if (href.includes("/preview")) return Promise.resolve(json({ error: "not ready" }, 404));
         return orderPending;
       }),
@@ -192,7 +202,8 @@ describe("GcsTranslate documents", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
-        if (String(url).includes("/api/gcs/orders")) return json({ orders: [] });
+        if (gcsOrdersKind(String(url)) === "detail") return json({ pages: [] });
+        if (gcsOrdersKind(String(url)) === "list") return json({ orders: [] });
         return json({ error: "not found" }, 404);
       }),
     );
@@ -289,7 +300,8 @@ describe("GcsTranslate history sidebar", () => {
       "fetch",
       vi.fn((url: string) => {
         const href = String(url);
-        if (href.includes("/api/gcs/orders")) return Promise.resolve(json({ orders: [current, running] }));
+        if (gcsOrdersKind(href) === "detail") return Promise.resolve(json({ pages: [] }));
+        if (gcsOrdersKind(href) === "list") return Promise.resolve(json({ orders: [current, running] }));
         if (href.includes("/preview")) return Promise.resolve(json({ error: "not ready" }, 404));
         return Promise.resolve(json({ status: "processing", orderId: current.id }));
       }),
@@ -342,7 +354,8 @@ describe("GcsTranslate history sidebar", () => {
       "fetch",
       vi.fn((url: string, init?: RequestInit) => {
         const href = String(url);
-        if (href.includes("/api/gcs/orders")) {
+        if (gcsOrdersKind(href) === "detail") return Promise.resolve(json({ pages: [] }));
+        if (gcsOrdersKind(href) === "list") {
           historyCalls += 1;
           const orders =
             historyCalls >= 3

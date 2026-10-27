@@ -1,4 +1,4 @@
-import type { BlockAlign, BlockColumn, RenderBlock, RenderPage } from "./layout";
+import { sealAlign, type BlockAlign, type BlockColumn, type RenderBlock, type RenderPage } from "./layout";
 
 export type PlanStyle = {
   bold?: boolean;
@@ -30,10 +30,16 @@ export type PlanRect = {
 
 export type PlanRule = { x1: number; y1: number; x2: number; y2: number; width: number };
 
+/** Double-ring circular seal. Text sits in `texts`, centered on this badge. */
+export type PlanSeal = { cx: number; cy: number; outer: number; inner: number };
+
 export type DocumentPlan = {
   serif: boolean;
   /** Table grid lines. */
   rules?: PlanRule[];
+  /** Full-width summary bands drawn behind table text. */
+  bands?: PlanRect[];
+  seals?: PlanSeal[];
   overflow: boolean;
   frame?: PlanRect;
   boxes: PlanRect[];
@@ -138,9 +144,30 @@ function wrapWords(words: Word[], size: number, maxWidth: number, measure: Measu
   return lines;
 }
 
-const TABLE_PAD = 3;
+const TABLE_PAD = 5;
+const TABLE_ASCENT = 0.92;
+const TABLE_DESCENT = 0.24;
+const SEAL_OUTER = 32;
+const SEAL_INNER = 28;
 
-/** Column widths that fit the available width. Each column gets its natural width when it fits, otherwise wide columns shrink. */
+function tableRowHeight(lineCount: number, size: number, leading: number): number {
+  return TABLE_PAD + size * TABLE_ASCENT + Math.max(0, lineCount - 1) * leading + size * TABLE_DESCENT + TABLE_PAD;
+}
+
+/** Session totals and similar rows span the table instead of using course columns. */
+export function isTableSummaryRow(row: readonly string[]): boolean {
+  const cells = row.map((cell) => cell.trim());
+  const first = cells.find((cell) => cell.length > 0) ?? "";
+  if (!first) return false;
+  if (/^(session total|semester total|trimestre|total)\b/i.test(first)) return true;
+  return cells.slice(1).some((cell) => cell.includes(":"));
+}
+
+/**
+ * Column widths that fit the available width. Narrow columns keep their natural
+ * width. Leftover space goes to the widest column (the transcript Title) so
+ * Cycle and Grade stay compact.
+ */
 export function tableColumnWidths(natural: number[], maxWidth: number, minWidth = 24): number[] {
   const count = natural.length;
   if (count === 0) return [];
@@ -148,8 +175,21 @@ export function tableColumnWidths(natural: number[], maxWidth: number, minWidth 
   const wants = natural.map((width) => Math.max(floor, width));
   const total = wants.reduce((sum, width) => sum + width, 0);
   if (total <= maxWidth) {
-    const extra = (maxWidth - total) / count;
-    return wants.map((width) => width + extra);
+    const extra = maxWidth - total;
+    let widest = 0;
+    for (let index = 1; index < wants.length; index += 1) {
+      if ((wants[index] ?? 0) > (wants[widest] ?? 0)) widest = index;
+    }
+    const widestWidth = wants[widest] ?? 0;
+    const ties = wants
+      .map((width, index) => ({ width, index }))
+      .filter((item) => item.width === widestWidth);
+    if (ties.length > 1) {
+      const middle = (wants.length - 1) / 2;
+      ties.sort((a, b) => Math.abs(a.index - middle) - Math.abs(b.index - middle));
+      widest = ties[0]?.index ?? widest;
+    }
+    return wants.map((width, index) => width + (index === widest ? extra : 0));
   }
   let budget = maxWidth;
   let open = wants.map((_, index) => index);
@@ -171,10 +211,111 @@ export function tableColumnWidths(natural: number[], maxWidth: number, minWidth 
   return out;
 }
 
-export type TableLayout = { texts: PlanText[]; rules: PlanRule[]; bottom: number; clipped: boolean };
+export type TableLayout = {
+  texts: PlanText[];
+  rules: PlanRule[];
+  bands: PlanRect[];
+  bottom: number;
+  clipped: boolean;
+};
+
+/**
+ * One width list per column count, measured from headers and course rows on the
+ * page. Summary rows are left out so a session total cannot stretch Cycle.
+ */
+export function sharedTableColumnWidths(input: {
+  tables: Array<{ rows: string[][]; header?: boolean }>;
+  width: number;
+  size: number;
+  measure: (text: string, size: number, bold: boolean) => number;
+}): Map<number, number[]> {
+  const groups = new Map<number, Array<{ text: string; bold: boolean }[]>>();
+  for (const table of input.tables) {
+    const columns = Math.max(0, ...table.rows.map((row) => row.length));
+    if (columns === 0) continue;
+    const bucket = groups.get(columns) ?? [];
+    table.rows.forEach((row, rowIndex) => {
+      if (isTableSummaryRow(row)) return;
+      const bold = (table.header ?? true) && rowIndex === 0;
+      bucket.push(
+        Array.from({ length: columns }, (_, index) => ({
+          text: (row[index] ?? "").trim(),
+          bold,
+        })),
+      );
+    });
+    groups.set(columns, bucket);
+  }
+  const widths = new Map<number, number[]>();
+  for (const [columns, rows] of groups) {
+    const natural =
+      rows.length === 0
+        ? Array.from({ length: columns }, () => 24)
+        : Array.from({ length: columns }, (_, column) => {
+            const measured = rows.map((row) => input.measure(row[column]?.text ?? "", input.size, Boolean(row[column]?.bold)));
+            return Math.max(0, ...measured) + TABLE_PAD * 2;
+          });
+    widths.set(columns, tableColumnWidths(natural, input.width));
+  }
+  return widths;
+}
+
+/** Circular [SEAL] badge. Long wording sits just under the rings as one line. */
+export function layoutSealBadge(input: {
+  text: string;
+  column?: string | null;
+  left: number;
+  right: number;
+  top: number;
+  measure: (text: string, size: number, bold?: boolean) => number;
+  serif?: boolean;
+}): { seal: PlanSeal; texts: PlanText[]; bottom: number } {
+  const align = sealAlign(input.column) ?? "right";
+  const outer = SEAL_OUTER;
+  const inner = SEAL_INNER;
+  const span = Math.max(outer * 2, input.right - input.left);
+  const cx =
+    align === "left" ? input.left + outer : align === "center" ? input.left + span / 2 : input.right - outer;
+  const cy = input.top - outer;
+  const seal: PlanSeal = { cx, cy, outer, inner };
+  const texts: PlanText[] = [];
+  const label = "[SEAL]";
+  const labelSize = 8;
+  const labelWidth = input.measure(label, labelSize, true);
+  texts.push({
+    text: label,
+    x: cx - labelWidth / 2,
+    y: cy + 7,
+    size: labelSize,
+    color: "ink",
+    bold: true,
+    serif: input.serif,
+  });
+  const note = input.text.trim() ? `[Seal: ${input.text.trim()}]` : "[Seal]";
+  const contentWidth = Math.max(48, input.right - input.left);
+  let noteSize = 7.5;
+  let noteWidth = input.measure(note, noteSize, false);
+  while (noteWidth > contentWidth && noteSize > 6) {
+    noteSize -= 0.25;
+    noteWidth = input.measure(note, noteSize, false);
+  }
+  const inside = noteWidth <= inner * 1.55;
+  const noteY = inside ? cy - 10 : cy - outer - noteSize - 3;
+  texts.push({
+    text: note,
+    x: Math.max(input.left, cx - noteWidth / 2),
+    y: noteY,
+    size: noteSize,
+    color: "ink",
+    serif: input.serif,
+  });
+  const bottom = Math.min(cy - outer, noteY - noteSize * 0.35);
+  return { seal, texts, bottom };
+}
 
 /**
  * A grid with a bold header row, wrapped cells, and ruled borders.
+ * Summary rows are a full-width band so they do not follow the course columns.
  * Rows that would cross `bottom` are left off and the layout reports clipped.
  */
 export function planTable(input: {
@@ -187,17 +328,32 @@ export function planTable(input: {
   bottom: number;
   serif: boolean;
   measure: Measure;
+  /** Shared with every other table of this column count on the page. */
+  columnWidths?: number[];
 }): TableLayout {
   const { size, serif, measure } = input;
   const columns = Math.max(0, ...input.rows.map((row) => row.length));
   const rows = input.rows.map((row) => Array.from({ length: columns }, (_, index) => (row[index] ?? "").trim()));
   const texts: PlanText[] = [];
   const rules: PlanRule[] = [];
-  if (columns === 0 || rows.length === 0) return { texts, rules, bottom: input.y, clipped: false };
-  const natural = Array.from({ length: columns }, (_, column) =>
-    Math.max(...rows.map((row, rowIndex) => measure(row[column] ?? "", size, { serif, bold: input.header && rowIndex === 0 }))) + TABLE_PAD * 2,
-  );
-  const widths = tableColumnWidths(natural, input.width);
+  const bands: PlanRect[] = [];
+  if (columns === 0 || rows.length === 0) return { texts, rules, bands, bottom: input.y, clipped: false };
+  const content = rows.filter((row) => !isTableSummaryRow(row));
+  const natural = Array.from({ length: columns }, (_, column) => {
+    const source = content.length > 0 ? content : rows;
+    return (
+      Math.max(
+        ...source.map((row, rowIndex) =>
+          measure(row[column] ?? "", size, { serif, bold: input.header && content.length > 0 && rowIndex === 0 }),
+        ),
+      ) +
+      TABLE_PAD * 2
+    );
+  });
+  const widths =
+    input.columnWidths && input.columnWidths.length === columns
+      ? input.columnWidths
+      : tableColumnWidths(natural, input.width);
   const lefts: number[] = [];
   let cursor = input.x;
   for (const width of widths) {
@@ -209,43 +365,92 @@ export function planTable(input: {
   let y = input.y;
   let clipped = false;
   const numeric = (text: string) => /^[\d\s.,/:%+-]+$/.test(text) && /\d/.test(text);
-  rules.push({ x1: input.x, y1: y, x2: right, y2: y, width: 0.6 });
-  rows.forEach((row, rowIndex) => {
+  const spaceOf = () => measure(" ", size, { serif });
+
+  const paintLines = (
+    lines: Word[][],
+    lineTop: number,
+    cellLeft: number,
+    cellWidth: number,
+    alignRight: boolean,
+  ) => {
+    const space = spaceOf();
+    lines.forEach((line, lineIndex) => {
+      const lineY = lineTop - TABLE_PAD - size * TABLE_ASCENT - lineIndex * leading;
+      const naturalWidth = lineWidth(line, size, space, measure, serif);
+      let wordX = alignRight ? cellLeft + cellWidth - TABLE_PAD - naturalWidth : cellLeft + TABLE_PAD;
+      for (const word of line) {
+        texts.push({ text: word.text, x: wordX, y: lineY, size, color: "ink", bold: word.bold, serif });
+        wordX += measure(word.text, size, { bold: word.bold, serif }) + space;
+      }
+    });
+  };
+
+  const paintGrid = (grid: Array<{ cells: string[]; bold: boolean }>) => {
+    if (clipped || grid.length === 0) return;
+    const top = y;
+    rules.push({ x1: input.x, y1: y, x2: right, y2: y, width: 0.6 });
+    for (const row of grid) {
+      if (clipped) return;
+      const wrapped = row.cells.map((cell, column) => {
+        const words = wordsOf(cell).map((word) => ({ ...word, bold: word.bold || row.bold }));
+        return wrapWords(words, size, Math.max(4, (widths[column] ?? 0) - TABLE_PAD * 2), measure, serif);
+      });
+      const lineCount = Math.max(1, ...wrapped.map((lines) => lines.length));
+      const height = tableRowHeight(lineCount, size, leading);
+      if (y - height < input.bottom) {
+        clipped = true;
+        return;
+      }
+      wrapped.forEach((lines, column) => {
+        const cellLeft = lefts[column] ?? input.x;
+        const cellWidth = widths[column] ?? 0;
+        paintLines(lines, y, cellLeft, cellWidth, !row.bold && numeric(row.cells[column] ?? ""));
+      });
+      y -= height;
+      rules.push({ x1: input.x, y1: y, x2: right, y2: y, width: row.bold ? 0.9 : 0.4 });
+    }
+    for (const [index, left] of [...lefts, right].entries()) {
+      rules.push({ x1: left, y1: top, x2: left, y2: y, width: index === 0 || index === lefts.length ? 0.6 : 0.4 });
+    }
+  };
+
+  const paintSummary = (cells: string[]) => {
     if (clipped) return;
-    const bold = input.header && rowIndex === 0;
-    const wrapped = row.map((cell, column) => {
-      const words = wordsOf(cell).map((word) => ({ ...word, bold: word.bold || bold }));
-      return wrapWords(words, size, Math.max(4, (widths[column] ?? 0) - TABLE_PAD * 2), measure, serif);
+    const visible = cells.map((cell) => cell.trim()).filter(Boolean);
+    const shown = visible.length > 0 ? visible : [" "];
+    const slot = input.width / shown.length;
+    const wrapped = shown.map((cell) => {
+      const words = wordsOf(cell);
+      return wrapWords(words, size, Math.max(4, slot - TABLE_PAD * 2), measure, serif);
     });
     const lineCount = Math.max(1, ...wrapped.map((lines) => lines.length));
-    const height = lineCount * leading + TABLE_PAD * 2 - (leading - size);
+    const height = tableRowHeight(lineCount, size, leading);
     if (y - height < input.bottom) {
       clipped = true;
       return;
     }
-    const space = measure(" ", size, { serif });
-    wrapped.forEach((lines, column) => {
-      const cellLeft = lefts[column] ?? input.x;
-      const cellWidth = widths[column] ?? 0;
-      const alignRight = !bold && numeric(row[column] ?? "");
-      lines.forEach((line, lineIndex) => {
-        const lineY = y - TABLE_PAD - size * 0.82 - lineIndex * leading;
-        const natural = lineWidth(line, size, space, measure, serif);
-        let wordX = alignRight ? cellLeft + cellWidth - TABLE_PAD - natural : cellLeft + TABLE_PAD;
-        for (const word of line) {
-          texts.push({ text: word.text, x: wordX, y: lineY, size, color: "ink", bold: word.bold, serif });
-          wordX += measure(word.text, size, { bold: word.bold, serif }) + space;
-        }
-      });
+    bands.push({ x: input.x, y: y - height, w: input.width, h: height, radius: 0, stroke: 0 });
+    rules.push({ x1: input.x, y1: y, x2: right, y2: y, width: 0.6 });
+    wrapped.forEach((lines, index) => {
+      paintLines(lines, y, input.x + slot * index, slot, false);
     });
     y -= height;
-    rules.push({ x1: input.x, y1: y, x2: right, y2: y, width: bold ? 0.9 : 0.4 });
+    rules.push({ x1: input.x, y1: y, x2: right, y2: y, width: 0.6 });
+  };
+
+  let grid: Array<{ cells: string[]; bold: boolean }> = [];
+  rows.forEach((row, rowIndex) => {
+    if (isTableSummaryRow(row)) {
+      paintGrid(grid);
+      grid = [];
+      paintSummary(row);
+      return;
+    }
+    grid.push({ cells: row, bold: input.header && rowIndex === 0 });
   });
-  const top = input.y;
-  for (const [index, left] of [...lefts, right].entries()) {
-    rules.push({ x1: left, y1: top, x2: left, y2: y, width: index === 0 || index === lefts.length ? 0.6 : 0.4 });
-  }
-  return { texts, rules, bottom: y, clipped };
+  paintGrid(grid);
+  return { texts, rules, bands, bottom: y, clipped };
 }
 
 /** Words placed on the page. Text that falls below the page is left out. */
@@ -285,6 +490,8 @@ function planLetter(input: {
   const maxWidth = input.width - margin * 2;
   const texts: PlanText[] = [];
   const rules: PlanRule[] = [];
+  const bands: PlanRect[] = [];
+  const seals: PlanSeal[] = [];
   let y = input.height - margin - (input.topInset ?? 0);
   const serif = false;
   const size = input.size;
@@ -371,7 +578,22 @@ function planLetter(input: {
       continue;
     }
 
-    if (block.type === "logo" || block.type === "seal" || block.type === "stamp" || block.type === "handwritten" || block.type === "illegible" || block.type === "note") {
+    if (block.type === "seal") {
+      const placed = layoutSealBadge({
+        text: block.text,
+        column: block.column,
+        left: margin,
+        right: margin + maxWidth,
+        top: y + size * 0.85,
+        measure: (text, fontSize, bold) => input.measure(text, fontSize, { serif, bold }),
+        serif,
+      });
+      seals.push(placed.seal);
+      texts.push(...placed.texts);
+      y = placed.bottom - size - 6;
+      continue;
+    }
+    if (block.type === "logo" || block.type === "stamp" || block.type === "handwritten" || block.type === "illegible" || block.type === "note") {
       paintNote(bracketNote(block) ?? "");
       continue;
     }
@@ -473,12 +695,12 @@ function planLetter(input: {
       });
       texts.push(...table.texts);
       rules.push(...table.rules);
-      y = table.bottom - 8;
-      if (table.clipped) y = Math.min(y, input.footer - 1);
+      bands.push(...table.bands);
+      y = table.clipped ? Math.min(table.bottom, input.footer - 1) : table.bottom - (size + 1) - 10;
     }
   }
 
-  return { serif, overflow: y < input.footer, boxes: [], texts, rules };
+  return { serif, overflow: y < input.footer, boxes: [], texts, rules, bands, seals };
 }
 
 /**
@@ -497,6 +719,8 @@ function planLabeledCertificate(input: {
 }): DocumentPlan {
   const texts: PlanText[] = [];
   const rules: PlanRule[] = [];
+  const bands: PlanRect[] = [];
+  const seals: PlanSeal[] = [];
   const serif = true;
   const size = input.size;
   const inset = 26;
@@ -609,8 +833,24 @@ function planLabeledCertificate(input: {
       });
       texts.push(...table.texts);
       rules.push(...table.rules);
+      bands.push(...table.bands);
       if (table.clipped) clipped = true;
-      y = table.bottom - size - 4;
+      y = table.bottom - (size + 1.5) - 10;
+      continue;
+    }
+    if (block.type === "seal") {
+      const placed = layoutSealBadge({
+        text: block.text,
+        column: block.column,
+        left,
+        right: left + innerW,
+        top: y + size * 0.85,
+        measure: (text, fontSize, bold) => input.measure(text, fontSize, { serif, bold }),
+        serif,
+      });
+      seals.push(placed.seal);
+      texts.push(...placed.texts);
+      y = placed.bottom - size - 6;
       continue;
     }
     if (block.type === "signature") {
@@ -635,6 +875,8 @@ function planLabeledCertificate(input: {
     boxes: [],
     texts,
     rules,
+    bands,
+    seals,
   };
 }
 
@@ -653,6 +895,7 @@ function planCertificate(input: {
   }
   const texts: PlanText[] = [];
   const boxes: PlanRect[] = [];
+  const seals: PlanSeal[] = [];
   const serif = true;
   const size = input.size;
   const inset = 26;
@@ -707,9 +950,10 @@ function planCertificate(input: {
   const boxBlocks = input.blocks.filter((block) => block.type === "box");
   const leftBox = boxBlocks.find((block) => block.type === "box" && columnOf(block) === "left") ?? boxBlocks[0];
   const rightBox = boxBlocks.find((block) => block.type === "box" && columnOf(block) === "right") ?? boxBlocks[1];
-  const seals = input.blocks.filter((block) => block.type === "seal");
-  const leftSeal = seals.find((block) => columnOf(block) === "left") ?? seals[0];
-  const rightSeal = seals.find((block) => columnOf(block) === "right") ?? seals[1];
+  const sealBlocks = input.blocks.filter((block) => block.type === "seal");
+  const sideSeals = sealBlocks.filter((block) => block.column !== "center");
+  const leftSeal = sideSeals.find((block) => block.column === "left") ?? sideSeals[0];
+  const rightSeal = sideSeals.find((block) => block.column === "right") ?? sideSeals[1];
   const photo = input.blocks.find((block) => block.type === "photo");
   const photoW = 92;
   const photoH = input.hasPhoto ? 122 : 0;
@@ -739,14 +983,35 @@ function planCertificate(input: {
   placeBox(rightBox, "right");
 
   const placeSeal = (block: RenderBlock | undefined, side: "left" | "right") => {
-    if (!block) return;
-    const note = bracketNote(block) ?? "[Seal]";
-    const width = input.measure(note, NOTE_SIZE, { serif });
-    const x = side === "left" ? left : right - width;
-    texts.push({ text: note, x, y: rowTop - 18, size: NOTE_SIZE, color: "muted", serif });
+    if (!block || block.type !== "seal") return;
+    const placed = layoutSealBadge({
+      text: block.text,
+      column: side,
+      left,
+      right,
+      top: rowTop,
+      measure: (text, fontSize, bold) => input.measure(text, fontSize, { serif, bold }),
+      serif,
+    });
+    seals.push(placed.seal);
+    texts.push(...placed.texts);
   };
   placeSeal(leftSeal, "left");
   placeSeal(rightSeal, "right");
+  for (const block of sealBlocks) {
+    if (block.column !== "center") continue;
+    const placed = layoutSealBadge({
+      text: block.text,
+      column: "center",
+      left,
+      right,
+      top: rowTop,
+      measure: (text, fontSize, bold) => input.measure(text, fontSize, { serif, bold }),
+      serif,
+    });
+    seals.push(placed.seal);
+    texts.push(...placed.texts);
+  }
 
   let image: DocumentPlan["image"];
   if (photo) {
@@ -842,5 +1107,6 @@ function planCertificate(input: {
     boxes,
     image,
     texts,
+    seals,
   };
 }

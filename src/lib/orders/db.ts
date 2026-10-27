@@ -1328,6 +1328,11 @@ export async function nextTranslationVersion(db: Db, documentIds: string[]): Pro
   return (num(row?.version) ?? 0) + 1;
 }
 
+export async function updateTranslationOutput(db: Db, translationId: string, output: unknown): Promise<void> {
+  const { error } = await db.from("translations").update({ output }).eq("id", translationId);
+  fail(error);
+}
+
 export async function insertTranslation(
   db: Db,
   input: {

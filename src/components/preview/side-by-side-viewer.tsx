@@ -43,6 +43,8 @@ import { PdfiumEngineGate } from "./pdfium-engine-gate";
 import { usePdfiumBlobUrl } from "./pdfium-url";
 import { delayBeforePreviewAttempt, fetchPreviewFile, sleep } from "./preview-retry";
 import { TranslationWatermark } from "./translation-watermark";
+import { TranslationEditor } from "@/components/gcs/translation-editor";
+import type { GcsEditorPage } from "@/lib/gcs/editor-pages";
 
 export const ORIGINAL_DOCUMENT_ID = "original";
 export const TRANSLATION_DOCUMENT_ID = "translation";
@@ -119,6 +121,11 @@ type ViewerProps = {
   engine?: PdfEngine<Blob> | null;
   /** `fill` keeps the preview header inside a parent that already owns the viewport. */
   shellLayout?: "page" | "embedded" | "fill";
+  /** GCS translation blocks shown in the right-hand editor. */
+  initialPages?: GcsEditorPage[] | null;
+  onSaveTranslation?: (
+    pages: GcsEditorPage[],
+  ) => Promise<{ translatedPdfUrl?: string; pages?: GcsEditorPage[] } | void>;
 };
 
 export function SideBySideViewer(props: ViewerProps) {
@@ -167,6 +174,8 @@ function SideBySideEngine({
   notice,
   noticeTestId,
   shellLayout,
+  initialPages = null,
+  onSaveTranslation,
   engine,
   isLoading,
   error,
@@ -269,6 +278,8 @@ function SideBySideEngine({
         onDownloadEvaluation={onDownloadEvaluation}
         notice={notice}
         noticeTestId={noticeTestId}
+        initialPages={initialPages}
+        onSaveTranslation={onSaveTranslation}
         onDocumentError={files.recover}
       />
     </EmbedPDF>
@@ -366,6 +377,8 @@ function ViewerWorkspace({
   onDownloadEvaluation,
   notice,
   noticeTestId,
+  initialPages,
+  onSaveTranslation,
   onDocumentError,
 }: {
   order: PreviewOrder;
@@ -380,6 +393,10 @@ function ViewerWorkspace({
   onDownloadEvaluation?: () => void | Promise<void>;
   notice?: string;
   noticeTestId?: string;
+  initialPages: GcsEditorPage[] | null;
+  onSaveTranslation?: (
+    pages: GcsEditorPage[],
+  ) => Promise<{ translatedPdfUrl?: string; pages?: GcsEditorPage[] } | void>;
   onDocumentError: () => void;
 }) {
   const isMobile = useIsMobile();
@@ -424,6 +441,29 @@ function ViewerWorkspace({
   const seenEvaluationUrl = useRef<string | null>(null);
   const openedEvaluationUrl = useRef<string | null>(null);
   const [evaluating, setEvaluating] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<GcsEditorPage[] | null>(initialPages);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDraft(initialPages);
+  }, [initialPages]);
+
+  async function saveTranslation() {
+    if (!draft || !onSaveTranslation) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const saved = await onSaveTranslation(draft);
+      if (saved?.pages) setDraft(saved.pages);
+      setEditing(false);
+    } catch (cause) {
+      setSaveError(cause instanceof Error ? cause.message : "The translation could not be saved.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   useEffect(() => {
     if (!documentManager || !sourceEvaluation) return;
@@ -915,6 +955,20 @@ function ViewerWorkspace({
             <div className="relative flex shrink-0 items-center gap-2">
               <button
                 type="button"
+                data-testid="edit-translation"
+                aria-pressed={editing}
+                className={`inline-flex h-[34px] items-center rounded-[var(--cp-radius)] border px-3 text-[13px] font-semibold ${
+                  editing ? "border-primary bg-[#eaf0ff] text-primary" : "border-line bg-bg text-ink"
+                }`}
+                onClick={() => {
+                  setEditing((value) => !value);
+                  showRole("translation");
+                }}
+              >
+                Edit Translation
+              </button>
+              <button
+                type="button"
                 data-testid="flag-correction"
                 className="inline-flex h-[34px] items-center rounded-[var(--cp-radius)] border border-line bg-bg px-3 text-[13px] font-semibold text-ink"
                 onClick={openCorrection}
@@ -955,6 +1009,25 @@ function ViewerWorkspace({
       {visibleRoles.map((visible) => {
         const document = paneDocument(visible);
         if (!document) return null;
+        if (visible === "translation" && chrome === "gcs" && editing) {
+          return (
+            <section
+              key="translation-editor"
+              data-testid="pane-translation"
+              aria-label={paneLabel(visible)}
+              className="flex min-h-0 min-w-0 flex-1 flex-col border-line md:border-l"
+            >
+              <TranslationEditor
+                pages={draft}
+                saving={saving}
+                error={saveError}
+                onChange={setDraft}
+                onSave={() => void saveTranslation()}
+                onClose={() => setEditing(false)}
+              />
+            </section>
+          );
+        }
         return (
           <DocumentPane
             key={visible}

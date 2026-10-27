@@ -87,6 +87,12 @@ describe("attached document layout", () => {
     const kazan = plan.texts.find((item) => item.text.includes("KAZAN"));
     expect(kazan && kazan.x).toBeGreaterThan(width / 2);
     expect(plan.texts.filter((item) => item.text === "[Seal]")).toHaveLength(2);
+    expect(plan.texts.filter((item) => item.text === "[SEAL]")).toHaveLength(2);
+    expect(plan.seals).toHaveLength(2);
+    const sealCenters = [...(plan.seals ?? [])].sort((a, b) => a.cx - b.cx);
+    expect(sealCenters[0]?.outer).toBeGreaterThan(sealCenters[0]?.inner ?? 0);
+    expect(sealCenters[0]?.cx).toBeLessThan(width / 2);
+    expect(sealCenters[1]?.cx).toBeGreaterThan(width / 2);
     expect(plan.texts.some((item) => item.text === "[Holder's photo]")).toBe(true);
     expect(plan.image).toBeTruthy();
     expect(plan.overflow).toBe(false);

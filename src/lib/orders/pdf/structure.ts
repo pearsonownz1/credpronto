@@ -1,4 +1,4 @@
-import { blockAlign, blockColumn, type FieldRow, type RenderBlock } from "./layout";
+import { blockAlign, blockColumn, sealAlign, type FieldRow, type RenderBlock } from "./layout";
 import { joinedLetterParagraph } from "./source-mirror";
 
 export type TextItem = {
@@ -875,7 +875,10 @@ function layoutBlock(block: ModelBlock): RenderBlock[] | null {
       ...(lines.length > 0 ? { lines } : {}),
     }];
   }
-  if (type === "seal" && column) return [{ type: "seal", text: cleanSealText(block.text ?? ""), column }];
+  if (type === "seal") {
+    const align = sealAlign(block.column);
+    return [{ type: "seal", text: cleanSealText(block.text ?? ""), ...(align ? { column: align } : {}) }];
+  }
   return null;
 }
 

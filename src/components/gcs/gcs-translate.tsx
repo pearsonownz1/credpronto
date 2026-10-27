@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { PreviewDocument, PreviewOrder } from "@/components/preview/preview-order";
+import type { GcsEditorPage } from "@/lib/gcs/editor-pages";
 import type { GcsHistoryItem } from "@/lib/gcs/history";
 import { LETTER_HEIGHT_PT, LETTER_WIDTH_PT } from "@/lib/orders/constants";
 import { FlowApiError } from "@/lib/flow/api-error";
@@ -86,6 +87,7 @@ function viewerOrder(
   preview: PreviewPayload,
   order: OrderPayload | null,
   evaluation: PreviewDocument | null,
+  translationUrl?: string | null,
 ): PreviewOrder {
   const mapPages = (pages: Frame[]) =>
     pages.map((page) => ({
@@ -104,7 +106,7 @@ function viewerOrder(
     pageCount: preview.original.pageCount,
     original: { url: preview.original.url, subtitle: "Original", pages: mapPages(preview.original.pages) },
     translation: {
-      url: preview.translation.url,
+      url: translationUrl || preview.translation.url,
       subtitle: "Certified translation",
       pages: mapPages(translationPages),
     },
@@ -179,6 +181,8 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
   const [history, setHistory] = useState<GcsHistoryItem[]>([]);
   const [historyReady, setHistoryReady] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
+  const [editorPages, setEditorPages] = useState<GcsEditorPage[] | null>(null);
+  const [translationUrl, setTranslationUrl] = useState<string | null>(null);
   const waiting = Boolean(token) && unlocked && !error && !preview;
   const elapsed = useElapsed(pending || waiting);
   const activeHistoryId = order?.id ?? order?.orderId ?? token ?? null;
@@ -189,6 +193,8 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
     setEvaluation(null);
     setError(null);
     setNotice(null);
+    setEditorPages(null);
+    setTranslationUrl(null);
   }, [token]);
 
   useEffect(() => {
@@ -252,13 +258,34 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
     };
   }, [token, unlocked]);
 
+  const orderKey = order?.id ?? order?.orderId ?? token ?? null;
+
+  useEffect(() => {
+    if (!unlocked || !preview || !orderKey) return;
+    let stopped = false;
+    void (async () => {
+      try {
+        const response = await fetch(`/api/gcs/orders/${encodeURIComponent(orderKey)}`);
+        if (!response.ok || stopped) return;
+        const body = (await response.json()) as { pages?: unknown };
+        if (stopped || !Array.isArray(body.pages)) return;
+        setEditorPages(body.pages as GcsEditorPage[]);
+      } catch {
+        // The PDF preview still opens when the editor pages cannot be loaded.
+      }
+    })();
+    return () => {
+      stopped = true;
+    };
+  }, [unlocked, preview, orderKey]);
+
   const viewer = useMemo(() => {
     if (!token || !preview) return null;
     const fromReport = preview.report?.url
       ? evaluationDocument({ url: preview.report.url, pageCount: preview.report.pageCount })
       : null;
-    return viewerOrder(token, preview, order, evaluation ?? fromReport);
-  }, [token, preview, order, evaluation]);
+    return viewerOrder(token, preview, order, evaluation ?? fromReport, translationUrl);
+  }, [token, preview, order, evaluation, translationUrl]);
 
   function lockAgain(message: string) {
     publishGcsUnlock(false);
@@ -319,6 +346,29 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
       return;
     }
     void start(files);
+  }
+
+  async function saveTranslation(pages: GcsEditorPage[]) {
+    if (!token) throw new Error("This translation could not be saved.");
+    const key = order?.id ?? order?.orderId ?? token;
+    const response = await fetch(`/api/gcs/orders/${encodeURIComponent(key)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pages }),
+    });
+    if (response.status === 401) {
+      lockAgain("Enter the PIN to save this translation.");
+      throw new Error("Enter the PIN to save this translation.");
+    }
+    if (!response.ok) throw new Error(await readError(response, "The translation could not be saved."));
+    const body = (await response.json()) as { translatedPdfUrl?: unknown; pages?: unknown };
+    if (typeof body.translatedPdfUrl === "string") setTranslationUrl(body.translatedPdfUrl);
+    const savedPages = Array.isArray(body.pages) ? (body.pages as GcsEditorPage[]) : pages;
+    setEditorPages(savedPages);
+    return {
+      translatedPdfUrl: typeof body.translatedPdfUrl === "string" ? body.translatedPdfUrl : undefined,
+      pages: savedPages,
+    };
   }
 
   async function downloadCertified() {
@@ -417,6 +467,8 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
             onDownload={downloadCertified}
             onEvaluate={evaluateDocument}
             onDownloadEvaluation={downloadEvaluation}
+            initialPages={editorPages}
+            onSaveTranslation={saveTranslation}
             onCorrect={async ({ note }) => {
               const response = await fetch(`/api/orders/${encodeURIComponent(token)}/correction-request`, {
                 method: "POST",
