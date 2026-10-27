@@ -1,6 +1,8 @@
+import { editorPagesFromTranslations, sanitizeEditorBlock } from "@/lib/gcs/editor-pages";
 import { adminOrderFields } from "@/lib/orders/admin-order-fields";
 import { parseEvaluationResult } from "@/lib/orders/evaluation-price";
 import { collectedEvaluationResults, evaluationSummaries, type EvaluationSummary } from "@/lib/orders/evaluation-summary";
+import { pageKind, type RenderBlock } from "@/lib/orders/pdf/layout";
 import { fulfillmentState } from "@/lib/orders/release-decision";
 import { sourceTextForDisplay } from "@/lib/orders/source-text";
 import type {
@@ -29,6 +31,48 @@ function amount(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) return Number(value);
   return null;
+}
+
+function positiveDimension(value: unknown, fallback: number): number {
+  const parsed = amount(value);
+  return parsed != null && parsed > 0 ? parsed : fallback;
+}
+
+/** Prefer stored blocks. Paragraph-only rows become paragraph blocks the table editor can open. */
+function structuredBlocks(
+  item: Record<string, unknown>,
+  paragraphs: string[],
+  documentId: string,
+  pageNumber: number,
+): RenderBlock[] {
+  if (Array.isArray(item.blocks)) {
+    const blocks = item.blocks.flatMap((block) => {
+      const sanitized = sanitizeEditorBlock(block);
+      return sanitized ? [sanitized] : [];
+    });
+    if (blocks.length > 0) return blocks;
+  }
+  if (paragraphs.length === 0) return [];
+  const [page] = editorPagesFromTranslations({
+    translations: [
+      {
+        id: `${documentId}-${pageNumber}`,
+        documentId,
+        version: 1,
+        output: { pages: [{ pageNumber, paragraphs }] },
+      },
+    ],
+    sourcePages: [
+      {
+        documentId,
+        pageNumber,
+        widthPt: null,
+        heightPt: null,
+        combinedPageNumber: amount(item.combinedPageNumber) ?? pageNumber,
+      },
+    ],
+  });
+  return page?.blocks ?? [];
 }
 
 function flag(value: unknown): boolean {
@@ -305,6 +349,11 @@ export function parseStaffDetail(body: unknown): StaffDetail | null {
         sourceText: sourceTextForDisplay(item.sourceText ?? item.ocrText),
         paragraphs,
         ...(sourceIndexes ? { sourceIndexes } : {}),
+        combinedPageNumber: amount(item.combinedPageNumber) ?? amount(item.number) ?? pageNumber,
+        widthPt: positiveDimension(item.widthPt, 612),
+        heightPt: positiveDimension(item.heightPt, 792),
+        kind: pageKind(item.kind) ?? null,
+        blocks: structuredBlocks(item, paragraphs, documentId, pageNumber),
       });
     }
   });

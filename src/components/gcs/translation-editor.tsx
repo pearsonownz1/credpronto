@@ -58,6 +58,9 @@ export function TranslationEditor({
   onChange,
   onSave,
   onClose,
+  brand = "gcs",
+  closeLabel = "View PDF",
+  disabled = false,
 }: {
   pages: GcsEditorPage[] | null;
   saving: boolean;
@@ -65,7 +68,12 @@ export function TranslationEditor({
   onChange: (pages: GcsEditorPage[]) => void;
   onSave: () => void;
   onClose: () => void;
+  /** CredPronto admin must not show the GCS translation labels. */
+  brand?: "gcs" | "credpronto";
+  closeLabel?: string;
+  disabled?: boolean;
 }) {
+  const credpronto = brand === "credpronto";
   function updatePage(index: number, next: GcsEditorPage) {
     if (!pages) return;
     onChange(pages.map((page, pageIndex) => (pageIndex === index ? next : page)));
@@ -84,7 +92,9 @@ export function TranslationEditor({
     <div data-testid="translation-editor" className="flex min-h-0 flex-1 flex-col bg-[#f6f7f9]">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-line bg-bg px-4 py-2">
         <div>
-          <p className="text-[11px] font-semibold tracking-[0.14em] text-[#1f5eff]">GCS TRANSLATION</p>
+          <p className="text-[11px] font-semibold tracking-[0.14em] text-[#1f5eff]">
+            {credpronto ? "CREDPRONTO TRANSLATION" : "GCS TRANSLATION"}
+          </p>
           <h2 className="text-sm font-semibold text-ink">Edit translation</h2>
         </div>
         <div className="flex items-center gap-2">
@@ -93,13 +103,13 @@ export function TranslationEditor({
             className="inline-flex h-[34px] items-center rounded-[var(--cp-radius)] border border-line bg-bg px-3 text-[13px] font-semibold text-ink"
             onClick={onClose}
           >
-            View PDF
+            {closeLabel}
           </button>
           <button
             type="button"
             data-testid="save-translation"
             className="inline-flex h-[34px] items-center rounded-[var(--cp-radius)] bg-primary px-3 text-[13px] font-semibold text-primary-ink disabled:opacity-60"
-            disabled={saving || !pages || pages.length === 0}
+            disabled={disabled || saving || !pages || pages.length === 0}
             onClick={onSave}
           >
             {saving ? "Saving…" : "Save & Regenerate PDF"}
@@ -117,7 +127,9 @@ export function TranslationEditor({
             <section key={`${page.documentId}-${page.pageNumber}`} className="rounded-2xl border border-line bg-white shadow-sm">
               <div className="flex items-center justify-between gap-3 border-b border-[#e6ebf2] bg-[#fbfcfe] px-4 py-3">
                 <div>
-                  <p className="text-[11px] font-semibold tracking-[0.12em] text-[#5b6474]">GCS HEADER</p>
+                  <p className="text-[11px] font-semibold tracking-[0.12em] text-[#5b6474]">
+                    {credpronto ? "PAGE HEADER" : "GCS HEADER"}
+                  </p>
                   <h3 className="text-sm font-semibold">Page {page.combinedPageNumber}</h3>
                 </div>
                 <label className="text-[12px] font-semibold text-ink-muted">

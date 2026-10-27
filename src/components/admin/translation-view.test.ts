@@ -61,6 +61,11 @@ function page(patch: Partial<StaffPage> & Pick<StaffPage, "id" | "sourceText" | 
   return {
     documentId: "doc-1",
     pageNumber: 1,
+    combinedPageNumber: 1,
+    widthPt: 612,
+    heightPt: 792,
+    kind: null,
+    blocks: [],
     ...patch,
   };
 }
@@ -647,5 +652,44 @@ describe("order studio translation save", () => {
     expect(patchOrderTranslation).not.toHaveBeenCalled();
     expect(host.textContent).toContain("Birth certificate of María Ruiz.");
     expect(host.textContent).not.toContain("Changed");
+  });
+
+  it("saves structured blocks from the CredPronto table editor", async () => {
+    const detail = mockStaffDetail("CP-24790");
+    if (!detail) throw new Error("missing fixture");
+    const host = await renderStudio(detail);
+    const tab = host.querySelector('[data-testid="block-editor"]');
+    if (!(tab instanceof HTMLButtonElement)) throw new Error("missing block editor");
+    await act(async () => {
+      tab.click();
+    });
+    const editor = host.querySelector('[data-testid="translation-editor"]');
+    if (!(editor instanceof HTMLElement)) throw new Error("missing translation editor");
+    expect(editor.textContent).toContain("CREDPRONTO TRANSLATION");
+    expect(editor.textContent).toContain("PAGE HEADER");
+    expect(editor.textContent).not.toMatch(/\bGuy\b|Pearson|\bGCS\b|gcs\.org|GEO Credential Services|Boca Raton/);
+    const heading = editor.querySelector("textarea");
+    if (!(heading instanceof HTMLTextAreaElement)) throw new Error("missing block text");
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+      setter?.call(heading, "Birth certificate of Maria Ruiz.");
+      heading.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const save = editor.querySelector('[data-testid="save-translation"]');
+    if (!(save instanceof HTMLButtonElement)) throw new Error("missing save");
+    await act(async () => {
+      save.click();
+    });
+    expect(patchOrderTranslation).toHaveBeenCalledWith(
+      "CP-24790",
+      expect.arrayContaining([
+        expect.objectContaining({
+          documentId: "CP-24790-doc",
+          pageNumber: 1,
+          paragraphs: ["Birth certificate of Maria Ruiz."],
+          blocks: [expect.objectContaining({ type: "paragraph", text: "Birth certificate of Maria Ruiz." })],
+        }),
+      ]),
+    );
   });
 });

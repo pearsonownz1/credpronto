@@ -153,6 +153,52 @@ describe("staffOrder", () => {
     ]);
     expect(storage.signedObjectUrls).not.toHaveBeenCalled();
   });
+
+  it("returns structured blocks and page geometry for the studio editor", async () => {
+    vi.spyOn(db, "listDocuments").mockResolvedValue([
+      { id: "doc-1", position: 1, appliedPosition: null, filename: "diploma.pdf" } as Awaited<
+        ReturnType<typeof db.listDocuments>
+      >[number],
+    ]);
+    vi.spyOn(db, "listPages").mockResolvedValue([
+      {
+        id: "page-1",
+        documentId: "doc-1",
+        pageNumber: 1,
+        ocrText: "Curso de Derecho",
+        widthPt: 595,
+        heightPt: 842,
+      } as Awaited<ReturnType<typeof db.listPages>>[number],
+    ]);
+    vi.spyOn(db, "listTranslations").mockResolvedValue([
+      {
+        id: "tr-1",
+        documentId: "doc-1",
+        version: 2,
+        model: "test",
+        status: "ready",
+        output: {
+          pages: [
+            {
+              pageNumber: 1,
+              kind: "certificate",
+              paragraphs: ["Law A"],
+              blocks: [{ type: "table", header: true, rows: [["Course", "Grade"], ["Law", "A"]] }],
+            },
+          ],
+        },
+      },
+    ]);
+
+    const detail = await staffOrder(orderId);
+    expect(detail.documents[0]?.pages[0]).toMatchObject({
+      combinedPageNumber: 1,
+      widthPt: 595,
+      heightPt: 842,
+      kind: "certificate",
+      blocks: [{ type: "table", header: true, rows: [["Course", "Grade"], ["Law", "A"]] }],
+    });
+  });
 });
 
 describe("parseStaffDetail services", () => {
@@ -212,6 +258,56 @@ describe("parseStaffDetail services", () => {
     ]);
     expect(detail?.pages[0]?.sourceIndexes).toEqual([0, 0]);
     expect(detail?.pages[0]?.paragraphs).toEqual(["Session: 2001", "Sub-center: BAFOUSSAM"]);
+    expect(detail?.pages[0]?.blocks).toEqual([
+      { type: "paragraph", text: "Session: 2001" },
+      { type: "paragraph", text: "Sub-center: BAFOUSSAM" },
+    ]);
+    expect(detail?.pages[0]?.kind).toBeNull();
+    expect(detail?.pages[0]?.combinedPageNumber).toBe(1);
+    expect(detail?.pages[0]?.widthPt).toBe(612);
+    expect(detail?.pages[0]?.heightPt).toBe(792);
+  });
+
+  it("keeps a stored table, seal, and certificate kind", () => {
+    const detail = parseStaffDetail({
+      id: orderId,
+      status: "paid",
+      createdAt: "2026-10-12T00:00:00.000Z",
+      documents: [
+        {
+          id: "doc-1",
+          filename: "diploma.pdf",
+          pages: [
+            {
+              id: "page-1",
+              pageNumber: 1,
+              combinedPageNumber: 3,
+              widthPt: 595,
+              heightPt: 842,
+              kind: "certificate",
+              sourceText: "Derecho",
+              blocks: [
+                { type: "table", header: true, rows: [["Course", "Grade"], ["Law", "A"]] },
+                { type: "seal", text: "Registrar", column: "right" },
+                { type: "not-a-block", text: "drop me" },
+              ],
+              translation: { paragraphs: ["Law A"] },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(detail?.pages[0]).toMatchObject({
+      combinedPageNumber: 3,
+      widthPt: 595,
+      heightPt: 842,
+      kind: "certificate",
+      blocks: [
+        { type: "table", header: true, rows: [["Course", "Grade"], ["Law", "A"]] },
+        { type: "seal", text: "Registrar", column: "right" },
+      ],
+    });
   });
 
   it("keeps short-lived links for the stored evaluation PDFs", () => {

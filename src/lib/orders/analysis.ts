@@ -652,12 +652,19 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
     const detectedSource = distinct.length === 1 ? distinct[0] : null;
     const sourceLanguage = isGcsOrder(order) && order.sourceLanguage ? order.sourceLanguage : detectedSource;
     const free = isGcsOrder(order);
-    const readableGcs =
-      free &&
-      transcripts.some((text) => countWords(text) > 0) &&
-      Boolean(sourceLanguage && sourceLanguage !== "en" && isSupportedSourceLanguage(sourceLanguage));
-    // A readable GCS document should reach the side-by-side editor. Image quality,
-    // a soft page flag, mixed language cues, or a low detection score must not hold it.
+    const supportedSource = Boolean(
+      sourceLanguage && sourceLanguage !== "en" && isSupportedSourceLanguage(sourceLanguage),
+    );
+    const readableGcs = free && transcripts.some((text) => countWords(text) > 0) && supportedSource;
+    // A readable scan with one supported language should quote in the automatic window.
+    // GCS ignores every soft hold. CredPronto still stops on image_quality, and a short
+    // page that could not be read stays in review.
+    const readableCredPronto =
+      !free &&
+      !imageQuality &&
+      countWords(transcripts.join("\n")) >= 15 &&
+      distinct.length === 1 &&
+      supportedSource;
     const quote = readableGcs
       ? {
           ...decision,
@@ -665,7 +672,14 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
           reviewReason: null,
           billablePages: Math.max(1, decision.billablePages),
         }
-      : decision;
+      : readableCredPronto
+        ? {
+            ...decision,
+            status: "quoted" as const,
+            reviewReason: null,
+            etaHours: 1,
+          }
+        : decision;
     await updateOrder(db, orderId, {
       status: quote.status,
       source_language: sourceLanguage,

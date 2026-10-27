@@ -1,5 +1,6 @@
 import { after } from "next/server";
 import { uploadApprovedClioTranslationById } from "@/lib/clio/upload-back";
+import { editorPagesFromTranslations } from "@/lib/gcs/editor-pages";
 import { deliveredEvaluationPatch } from "./evaluation-delivered";
 import { adminOrderFields, type AdminOrderFields } from "./admin-order-fields";
 import { collectedEvaluationResults, evaluationSummaries } from "./evaluation-summary";
@@ -45,7 +46,7 @@ import { signedObjectUrl, signedObjectUrls } from "./storage";
 import { ensureStaffRow, requireStaff } from "./staff";
 import { alignTranslation } from "./segment-source";
 import { EMPTY_TRANSLATION_MESSAGE, emptyTranslationMessage, paragraphsForPage, storedParagraphsForPage } from "./translation-edit";
-import { ORDER_STATUSES, type OrderRecord, type OrderStatus } from "./types";
+import { ORDER_STATUSES, type OrderRecord, type OrderStatus, type TranslationRecord } from "./types";
 import { translateOrder } from "./translation";
 
 export { requireStaff } from "./staff";
@@ -85,6 +86,28 @@ export async function staffOrder(orderId: string) {
     listQaRuns(db, order.id),
   ]);
   const latestQa = qaRuns[qaRuns.length - 1] ?? null;
+  const latestReady = new Map<string, TranslationRecord>();
+  for (const translation of translations) {
+    if (translation.status !== "ready") continue;
+    const current = latestReady.get(translation.documentId);
+    if (!current || translation.version > current.version) latestReady.set(translation.documentId, translation);
+  }
+  const editorPages = editorPagesFromTranslations({
+    translations: [...latestReady.values()].map((translation) => ({
+      id: translation.id,
+      documentId: translation.documentId,
+      version: translation.version,
+      output: translation.output,
+    })),
+    sourcePages: pages.map((page) => ({
+      documentId: page.documentId,
+      pageNumber: page.pageNumber,
+      widthPt: page.widthPt,
+      heightPt: page.heightPt,
+      combinedPageNumber: page.number,
+    })),
+  });
+  const editorByKey = new Map(editorPages.map((page) => [`${page.documentId}:${page.pageNumber}`, page]));
   const fields = adminOrderFields(order, delivery?.finalPath);
   const originals = order.service ? await signedOriginals(db, documents) : [];
   const [edgeCredential, edgeScale] = await Promise.all([
@@ -100,10 +123,7 @@ export async function staffOrder(orderId: string) {
     evaluationStatusAt: evaluationStatusAt(order),
     email,
     documents: documents.map((document) => {
-      const ready = translations.filter(
-        (translation) => translation.documentId === document.id && translation.status === "ready",
-      );
-      const translation = ready.sort((a, b) => b.version - a.version)[0] ?? null;
+      const translation = latestReady.get(document.id) ?? null;
       return {
         ...document,
         translation: translation
@@ -119,8 +139,14 @@ export async function staffOrder(orderId: string) {
                 })
               : [];
             const aligned = alignTranslation(sourceTextForDisplay(page.ocrText), stored);
+            const structured = editorByKey.get(`${page.documentId}:${page.pageNumber}`);
             return {
               ...page,
+              combinedPageNumber: page.number,
+              widthPt: page.widthPt && page.widthPt > 0 ? page.widthPt : structured?.widthPt ?? 612,
+              heightPt: page.heightPt && page.heightPt > 0 ? page.heightPt : structured?.heightPt ?? 792,
+              kind: structured?.kind ?? null,
+              blocks: structured?.blocks ?? [],
               sourceText: sourceTextForDisplay(page.ocrText),
               translation:
                 translation && aligned.length > 0

@@ -20,7 +20,7 @@ import {
   resolveReview,
   shipOrder,
 } from "@/lib/api/mutations";
-import type { StaffDetail, StaffNote } from "@/lib/api/types";
+import type { StaffDetail, StaffNote, StaffPage } from "@/lib/api/types";
 import { EQUIVALENCY_QA_REVIEW, PENDING_EQUIVALENCY, awaitingEquivalencyPublish } from "@/lib/orders/equivalency";
 import { languageLabel } from "@/lib/orders/languages";
 import type { PreviewOrder, PreviewPageSize } from "@/components/preview/preview-order";
@@ -40,6 +40,9 @@ import {
 import { EvaluationReportBoxes, MissingEvaluationReports } from "@/components/admin/evaluation-reports";
 import { EvaluationSummaries } from "@/components/admin/evaluation-summaries";
 import { TranslationView } from "@/components/admin/translation-view";
+import { TranslationEditor } from "@/components/gcs/translation-editor";
+import type { GcsEditorPage } from "@/lib/gcs/editor-pages";
+import { blocksToParagraphs } from "@/lib/orders/pdf/structure";
 import { emptyTranslationMessage } from "@/lib/orders/translation-edit";
 import type { ViewerFocus } from "@/components/preview/side-by-side-viewer";
 
@@ -49,6 +52,32 @@ const SideBySideViewer = dynamic(
 );
 
 const EDITABLE = new Set(["preview_ready", "correction_requested", "paid", "approved", "delivered"]);
+
+function staffEditorPages(pages: StaffPage[]): GcsEditorPage[] {
+  return pages.map((page, index) => {
+    const stored = page.blocks.length > 0 ? page.blocks : [];
+    const fromLines = page.paragraphs
+      .map((text) => text.trim())
+      .filter(Boolean)
+      .map((text) => ({ type: "paragraph" as const, text }));
+    const blocks = stored.length > 0 ? stored : fromLines;
+    return {
+      documentId: page.documentId,
+      pageNumber: page.pageNumber,
+      combinedPageNumber: page.combinedPageNumber > 0 ? page.combinedPageNumber : index + 1,
+      widthPt: page.widthPt > 0 ? page.widthPt : 612,
+      heightPt: page.heightPt > 0 ? page.heightPt : 792,
+      kind: page.kind,
+      blocks: blocks.length > 0 ? blocks : [{ type: "paragraph", text: "" }],
+      paragraphs: page.paragraphs,
+    };
+  });
+}
+
+function sameEditorPage(left: GcsEditorPage, right: GcsEditorPage | undefined): boolean {
+  if (!right) return false;
+  return JSON.stringify(left.blocks) === JSON.stringify(right.blocks) && (left.kind ?? null) === (right.kind ?? null);
+}
 
 function evaluationProblemsFrom(value: unknown): Array<{ service: "diploma" | "course_by_course"; reason: string }> {
   if (!Array.isArray(value)) return [];
@@ -136,6 +165,19 @@ export function OrderStudio({
   const preview = useMemo(() => staffPreview(detail), [detail]);
   const activity = activityFor(detail, thread);
   const canEdit = EDITABLE.has(detail.status);
+  const pageStamp = detail.pages
+    .map((page) => `${page.id}:${page.kind ?? ""}:${page.paragraphs.join("\u0001")}:${JSON.stringify(page.blocks)}`)
+    .join("\u0002");
+  const blockBaseline = useMemo(() => staffEditorPages(detail.pages), [pageStamp, detail.pages]);
+  const [editorMode, setEditorMode] = useState<"lines" | "blocks">("lines");
+  const [blockPages, setBlockPages] = useState(blockBaseline);
+  const [seenPageStamp, setSeenPageStamp] = useState(pageStamp);
+  if (seenPageStamp !== pageStamp) {
+    setSeenPageStamp(pageStamp);
+    setBlockPages(blockBaseline);
+  }
+  const blockPagesRef = useRef(blockPages);
+  blockPagesRef.current = blockPages;
   const [reportOverrides, setReportOverrides] = useState<Record<string, ReportOverride>>({});
   const [evaluationProblems, setEvaluationProblems] = useState(() =>
     evaluationProblemsFrom(detail.evaluationFailures),
@@ -169,6 +211,47 @@ export function OrderStudio({
       const previous = page.paragraphs.map((paragraph) => paragraph.trim()).filter(Boolean);
       if (JSON.stringify(next) === JSON.stringify(previous)) return [];
       return [{ documentId: page.documentId, pageNumber: page.pageNumber, paragraphs: next }];
+    });
+    if (pages.length === 0) {
+      setError("Change a page before saving.");
+      return;
+    }
+    if (pages.some((page) => page.paragraphs.length === 0)) {
+      setError("Keep at least one paragraph on each edited page.");
+      return;
+    }
+    savingRef.current = true;
+    try {
+      await run("save", async () => {
+        const result = await patchOrderTranslation(detail.id, pages);
+        return result.ok
+          ? { ok: true, message: "Translation saved. The preview, clean PDF, and certification were regenerated." }
+          : { ok: false, error: result.error };
+      });
+    } finally {
+      savingRef.current = false;
+    }
+  }
+
+  async function saveBlocks() {
+    if (!canEdit || savingRef.current) return;
+    const pages = blockPagesRef.current.flatMap((page) => {
+      const previous = blockBaseline.find(
+        (item) => item.documentId === page.documentId && item.pageNumber === page.pageNumber,
+      );
+      if (sameEditorPage(page, previous)) return [];
+      const paragraphs = blocksToParagraphs(page.blocks)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+      return [
+        {
+          documentId: page.documentId,
+          pageNumber: page.pageNumber,
+          paragraphs,
+          blocks: page.blocks,
+          kind: page.kind,
+        },
+      ];
     });
     if (pages.length === 0) {
       setError("Change a page before saving.");
@@ -244,7 +327,7 @@ export function OrderStudio({
                 type="button"
                 data-testid="save-translation"
                 disabled={pending !== null}
-                onClick={() => void save()}
+                onClick={() => void (editorMode === "blocks" ? saveBlocks() : save())}
                 className="inline-flex h-9 items-center rounded-[var(--cp-radius)] bg-primary px-3 text-sm font-semibold text-white disabled:opacity-60"
               >
                 {pending === "save" ? "Saving…" : "Save translation"}
@@ -381,7 +464,7 @@ export function OrderStudio({
       />
 
       <FulfillmentTasks
-        key={detail.id}
+        key={`${detail.id}-tasks`}
         orderId={detail.id}
         fulfillment={detail.fulfillment}
         onMessage={setMessage}
@@ -390,7 +473,7 @@ export function OrderStudio({
         setPending={setPending}
       />
 
-      <OrderFulfillment key={detail.id} orderId={detail.id} />
+      <OrderFulfillment key={`${detail.id}-fulfillment`} orderId={detail.id} />
 
       {awaitingEquivalencyPublish(detail.reviewReason) ? (
         <form
@@ -545,11 +628,51 @@ export function OrderStudio({
       />
 
       <section data-testid="page-editor" className="grid gap-4">
-        <h2 className="text-lg font-semibold">Translation text</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold">Translation text</h2>
+          {detail.pages.length > 0 ? (
+            <div className="flex rounded-[var(--cp-radius)] border border-line bg-white p-0.5" role="tablist" aria-label="Translation editor">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={editorMode === "lines"}
+                data-testid="line-view"
+                onClick={() => setEditorMode("lines")}
+                className={`h-8 rounded-[calc(var(--cp-radius)-2px)] px-3 text-sm font-semibold ${editorMode === "lines" ? "bg-primary text-white" : "text-ink"}`}
+              >
+                Line view
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={editorMode === "blocks"}
+                data-testid="block-editor"
+                onClick={() => setEditorMode("blocks")}
+                className={`h-8 rounded-[calc(var(--cp-radius)-2px)] px-3 text-sm font-semibold ${editorMode === "blocks" ? "bg-primary text-white" : "text-ink"}`}
+              >
+                Block & table editor
+              </button>
+            </div>
+          ) : null}
+        </div>
         {detail.pages.length === 0 ? (
           <p className="text-sm text-ink-muted">This order has no page text yet.</p>
-        ) : (
+        ) : editorMode === "lines" ? (
           <TranslationView pages={detail.pages} drafts={drafts} canEdit={canEdit} onCommit={commitLine} />
+        ) : (
+          <div className="flex min-h-[32rem] flex-col overflow-hidden rounded-[var(--cp-radius)] border border-line">
+            <TranslationEditor
+              brand="credpronto"
+              closeLabel="Line view"
+              pages={blockPages}
+              saving={pending === "save"}
+              disabled={!canEdit}
+              error={null}
+              onChange={setBlockPages}
+              onSave={() => void saveBlocks()}
+              onClose={() => setEditorMode("lines")}
+            />
+          </div>
         )}
       </section>
 

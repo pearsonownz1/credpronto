@@ -1,3 +1,5 @@
+import type { PageKind, RenderBlock } from "@/lib/orders/pdf/layout";
+
 export type CustomerOrderDocument = {
   detectedLanguage?: string | null;
   sourceLanguage?: string | null;
@@ -70,6 +72,14 @@ export type StaffPage = {
   paragraphs: string[];
   /** Source line index for each paragraph, when the translation stores or derives one. */
   sourceIndexes?: number[];
+  /** Position in the combined original, starting at 1. */
+  combinedPageNumber: number;
+  widthPt: number;
+  heightPt: number;
+  /** Stored page layout. Null when the translation has no certificate or letter kind. */
+  kind: PageKind | null;
+  /** Structured blocks for the table editor. Empty when the page has no translation yet. */
+  blocks: RenderBlock[];
 };
 
 export type StaffCorrection = {

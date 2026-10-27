@@ -224,4 +224,169 @@ describe("API quote for a Brazilian licenciatura diploma", () => {
       }),
     ).toBe("unavailable");
   });
+
+  it("quotes a readable diploma when language confidence is low", async () => {
+    const bytes = await diplomaPdf();
+    installOrder(bytes);
+    vi.spyOn(ai, "generateObject").mockImplementation(async (_schema, messages) => {
+      const prompt = JSON.stringify(messages);
+      if (prompt.includes("unreadable") || prompt.includes("logicalPage")) {
+        return {
+          pages: [
+            {
+              pageNumber: 1,
+              text: DIPLOMA,
+              unreadable: false,
+              confidence: 0.95,
+              logicalPage: 1,
+              orderHint: "",
+              orderConfidence: 0,
+              legibility: 1,
+              flags: [],
+            },
+            {
+              pageNumber: 2,
+              text: "",
+              unreadable: true,
+              confidence: 1,
+              logicalPage: 0,
+              orderHint: "",
+              orderConfidence: 0,
+              legibility: 1,
+              flags: [],
+            },
+          ],
+        };
+      }
+      return {
+        language: "pt",
+        confidence: 0.4,
+        full_name: "Maria Aparecida dos Santos",
+        date_of_birth: "",
+        parent_names: "",
+        place_of_birth: "",
+        date_format: "",
+      };
+    });
+
+    await analyzeOrder(dbHandle, orderId);
+    const patch = vi.mocked(db.updateOrder).mock.calls.at(-1)?.[2] as {
+      status: string;
+      review_reason: string | null;
+      billable_pages: number;
+    };
+    expect(patch.status).toBe("quoted");
+    expect(patch.review_reason).toBeNull();
+    expect(patch.billable_pages).toBe(1);
+  });
+
+  it("holds a short unreadable page and a blurry photo", async () => {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const short = "Licenciatura em Pedagogia. Universidade Federal confere o titulo a Maria dos Santos.";
+    doc.addPage([612, 792]).drawText(short, { x: 48, y: 700, size: 12, font, maxWidth: 516 });
+    installOrder(await doc.save());
+    vi.spyOn(ai, "generateObject").mockImplementation(async (_schema, messages) => {
+      const prompt = JSON.stringify(messages);
+      if (prompt.includes("unreadable") || prompt.includes("logicalPage")) {
+        return {
+          pages: [
+            {
+              pageNumber: 1,
+              text: short,
+              unreadable: false,
+              confidence: 0.9,
+              logicalPage: 0,
+              orderHint: "",
+              orderConfidence: 0,
+              legibility: 1,
+              flags: [],
+            },
+          ],
+        };
+      }
+      return {
+        language: "pt",
+        confidence: 0.4,
+        full_name: "",
+        date_of_birth: "",
+        parent_names: "",
+        place_of_birth: "",
+        date_format: "",
+      };
+    });
+
+    await analyzeOrder(dbHandle, orderId);
+    const shortPatch = vi.mocked(db.updateOrder).mock.calls.at(-1)?.[2] as {
+      status: string;
+      review_reason: string | null;
+    };
+    expect(shortPatch.status).toBe("needs_review");
+    expect(shortPatch.review_reason).toContain("confidence is low");
+
+    vi.mocked(db.updateOrder).mockClear();
+    const png = Uint8Array.from(
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        "base64",
+      ),
+    );
+    vi.mocked(storage.downloadObject).mockResolvedValue(png);
+    vi.mocked(db.getOrderById).mockResolvedValue({
+      id: orderId,
+      status: "draft",
+      languageConfirmed: false,
+      service: null,
+      degreeCount: null,
+      targetLanguage: "en",
+      sourceLanguage: "pt",
+    } as OrderRecord);
+    vi.mocked(db.claimDocuments).mockResolvedValue([
+      {
+        id: "doc-1",
+        orderId,
+        originalPath: `${orderId}/scan.jpg`,
+        filename: "scan.png",
+        mime: "image/png",
+        position: 1,
+      } as DocumentRecord,
+    ]);
+    vi.spyOn(ai, "generateObject").mockImplementation(async (_schema, messages) => {
+      const prompt = JSON.stringify(messages);
+      if (prompt.includes("Read this uploaded file") || prompt.includes("unreadable")) {
+        return {
+          pages: [
+            {
+              pageNumber: 1,
+              text: DIPLOMA,
+              unreadable: false,
+              confidence: 0.65,
+              logicalPage: 0,
+              orderHint: "",
+              orderConfidence: 0,
+              legibility: 0.9,
+              flags: ["blurry"],
+            },
+          ],
+        };
+      }
+      return {
+        language: "pt",
+        confidence: 0.96,
+        full_name: "Maria Aparecida dos Santos",
+        date_of_birth: "",
+        parent_names: "",
+        place_of_birth: "",
+        date_format: "",
+      };
+    });
+
+    await analyzeOrder(dbHandle, orderId);
+    const blurry = vi.mocked(db.updateOrder).mock.calls.at(-1)?.[2] as {
+      status: string;
+      review_reason: string | null;
+    };
+    expect(blurry.status).toBe("needs_review");
+    expect(blurry.review_reason).toBe("image_quality");
+  });
 });
