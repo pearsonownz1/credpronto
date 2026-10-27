@@ -531,7 +531,12 @@ function drawBody(
     const measure = (text: string, size: number, style: PlanStyle) =>
       widthPlanned(text, size, style, options.serif, faces.upright, faces.italic);
     const hasPhoto = Boolean(options.image);
-    let size = 12;
+    const labeledCertificate =
+      kind === "certificate" &&
+      blocks.some((block) => block.type === "kv" || block.type === "fields" || block.type === "table");
+    // A one-language diploma is shorter than the bilingual scan. Start larger
+    // and step down to 8 only when the page would overflow.
+    let size = labeledCertificate ? 13.5 : 12;
     let plan = planDocument({ kind, blocks, width: widthPt, height: heightPt, footer, size, measure, hasPhoto, topInset });
     while (plan.overflow && size > 8) {
       size -= 0.5;

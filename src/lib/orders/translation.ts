@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ModelMessage } from "ai";
 import { generateObject, translationModelId } from "./ai";
-import { imageBytesForModel } from "./analysis";
+import { modelSourceBytes } from "./analysis";
 import { ORIGINALS_BUCKET } from "./constants";
 import { inReadingOrder } from "./page-order";
 import { CONFIRMATION_FIELD_KEYS } from "./fields";
@@ -121,7 +121,7 @@ const repairSchema = z.object({
 });
 
 const IMAGE_LAYOUT_NOTE =
-  "The attached image is the source page. Mirror its arrangement: letterhead, date, address, each reference line, the body, each signature, and the enclosure list. Do not join those regions into one paragraph.";
+  "The attached file is the source page, either an image or a one-page PDF. Mirror its arrangement: letterhead, date, address, each reference line, horizontal boxed strips, registry tables, the body, each signature, and the enclosure list. Do not join those regions into one paragraph. A row of two or more boxed or side-by-side labeled cells is one table, with the columns kept horizontal.";
 
 type ModelPage = {
   pageNumber: number;
@@ -132,23 +132,23 @@ type ModelPage = {
 };
 
 const LAYOUT_INSTRUCTIONS = `Also set kind to "letter", "certificate", or "form".
-A letter has a letterhead, an address, a subject line, prose, and a sign-off. A certificate or license has a centered title, boxed numbers, a portrait, seals, and a signature. A form is a list of labeled fields. Keep a form on type "fields". Do not turn a form into a letter or a certificate.
+A letter has a letterhead, an address, a subject line, prose, and a sign-off. A certificate or license has a centered title, boxed numbers, registry tables, a portrait, seals, and signatures side by side. A form is a vertical list of labeled fields. Keep a form on type "fields". Do not turn a form into a letter or a certificate. A horizontal strip of boxed fields is a table, even on a certificate. Do not turn that strip into fields or kv.
 
 For a letter or a certificate, return blocks in reading order. One source page is one translated page.
 - heading: a title. align center on a certificate. bold true on the main title. caps true when the source title is in capitals.
 - paragraph: prose. align justify for a letter body. Wrap source bold in **double asterisks** and source underline in __double underscores__. caps true when the source paragraph is in capitals.
 - address: the postal lines.
-- kv: one label and one value, such as Document No. and 74. These are not a table.
+- kv: a standalone single-column line with one label and one value, such as Document No. and 74. Always print the translated label. Never leave the label empty before ": value". A kv is not a table and is not one cell of a horizontal strip.
 - box: a bordered number. label, value, and column left or right.
 - list: attachments. ordered true. items are the lines. label is the heading, such as Attachment.
 - logo: the letterhead name only, such as OYAK BANK. Do not transcribe the artwork.
 - photo: the holder's portrait. caption is Holder's photo. Do not describe the face.
-- signature: a handwritten signature. electronic false. column left or right when two signatures sit side by side. lines are the printed name and title under the ink, with ** around a bold name. Do not copy the ink.
+- signature: a handwritten signature. electronic false. On a certificate, two or three signatories across one row (The holder, The Rector, The Head of the Academic Affairs Department) are consecutive signature blocks in left-to-right order so the row stays horizontal. column left or right when two signatures sit on opposite sides of a letter. lines are the printed name and title under the ink, with ** around a bold name. Do not copy the ink.
 - seal: a round seal. text is a short place name, or empty when the place cannot be read. column left or right when two seals sit on opposite sides.
 - stamp: a rectangular stamp. text is the short wording, or empty.
 - handwritten: a handwritten note that is not a signature.
 - illegible: a mark that cannot be read.
-- table: a real grid. cells are rows of strings.
+- table: a real grid, a multi-column table, or a horizontal strip of 2 or more boxed, bordered, or side-by-side labeled cells. Example: [Alphanumeric Code | National Register of Degrees | Center Code | University Register of Degrees | University File No.]. cells are rows of strings and keep those horizontal columns, either as [labelsRow, valuesRow] or as one row of "Label: Value" cells. Set header true when the first row is labels. Never flatten that strip into vertical kv or fields lines.
 
 Copy every number and ID exactly. Keep diacritics in names. Turkish, Spanish, French, German, and Portuguese dates are day/month/year on the source. Print every date as MM/DD/YYYY, so 31/1/2006 is 01/31/2006 and 7. 9. 1989 is 09/07/1989.`;
 
@@ -320,7 +320,8 @@ async function restoreCollapsedLayout(input: {
 }): Promise<{ blocks: RenderBlock[]; kind?: PageKind; layoutFallback?: LayoutFallback }> {
   const detected = segmentSource(input.sourceText);
   let portrait = false;
-  if (detected?.kind === "certificate" && input.image) {
+  // A PDF page is not a raster. Portrait cropping runs on image bytes only.
+  if (detected?.kind === "certificate" && input.image?.mime.startsWith("image/")) {
     try {
       portrait = (await cropHolderPhoto(input.image.bytes)) != null;
     } catch {
@@ -603,7 +604,8 @@ export async function runTranslationPage(
     if (work.source) {
       try {
         const raw = await downloadObject(db, ORIGINALS_BUCKET, work.source.path);
-        image = await imageBytesForModel(raw, work.source.mime);
+        const pageIndex = (work.page.uploadPage ?? work.page.pageNumber) - 1;
+        image = await modelSourceBytes(raw, work.source.mime, pageIndex);
       } catch (error) {
         console.warn("layout fallback: source image was not attached", {
           filename: work.filename,

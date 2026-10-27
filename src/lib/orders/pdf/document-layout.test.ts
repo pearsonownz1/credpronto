@@ -12,7 +12,7 @@ import {
   oyakLetterBlocks,
 } from "./attached-documents";
 import { buildCombinedOriginal } from "./combine";
-import { planDocument, type PlanStyle } from "./document-layout";
+import { planDocument, planTable, type PlanStyle } from "./document-layout";
 import { fontFace, serifFace, stableFontkit } from "./font";
 import { applyGroundedFixes, reconcileIdentifiers, verifyIdentifiers } from "./identifiers";
 import { cropHolderPhoto } from "./photo";
@@ -289,5 +289,136 @@ describe("page job blocks", () => {
     });
     expect(parsed?.layoutFallback).toBe("flat");
     expect(parsed?.kind).toBe("letter");
+  });
+});
+
+const charMeasure = (text: string) => text.length * 5;
+
+describe("diploma certificate layout", () => {
+  it("lays signatories across the page and keeps a registry strip inside a snug frame", async () => {
+    const width = 842;
+    const height = 1190;
+    const footer = 48;
+    const plan = planDocument({
+      kind: "certificate",
+      blocks: [
+        { type: "heading", text: "Graduate in Biotechnology", align: "center", bold: true },
+        { type: "kv", label: "", value: "022A-084542" },
+        { type: "kv", label: "Alphanumeric code", value: "" },
+        {
+          type: "table",
+          header: false,
+          rows: [[
+            "Alphanumeric code: 022A-084542",
+            "National Register of Degrees: 2020/217459",
+            "Center code: 08071020",
+            "University Register of Degrees: 227295",
+            "University file No.: 14655910H5051",
+          ]],
+        },
+        { type: "signature", electronic: false, lines: ["Judit Giménez Roig", "The holder"] },
+        { type: "signature", electronic: false, lines: ["Margarita Arboix Arzo", "The Rector"] },
+        { type: "signature", electronic: false, lines: ["Joaquín Bernabé Ródenas", "Head of Academic Affairs"] },
+      ],
+      width,
+      height,
+      footer,
+      size: 12,
+      measure: await measure(),
+      hasPhoto: false,
+    });
+
+    expect(plan.texts.some((item) => item.text === ":")).toBe(false);
+    expect(plan.texts.some((item) => item.text === "022A-084542")).toBe(true);
+    expect(plan.texts.some((item) => item.text === "Alphanumeric")).toBe(true);
+
+    const judit = plan.texts.find((item) => item.text === "Judit");
+    const margarita = plan.texts.find((item) => item.text === "Margarita");
+    const joaquin = plan.texts.find((item) => item.text === "Joaquín");
+    expect(judit && margarita && joaquin).toBeTruthy();
+    expect(judit!.x).toBeLessThan(margarita!.x);
+    expect(margarita!.x).toBeLessThan(joaquin!.x);
+    expect(judit!.y).toBeCloseTo(margarita!.y, 0);
+    expect(margarita!.y).toBeCloseTo(joaquin!.y, 0);
+    const span = joaquin!.x - judit!.x;
+    expect(span).toBeGreaterThan(width * 0.35);
+
+    const fullFrame = height - footer - 6 - 22;
+    expect(plan.frame).toBeTruthy();
+    expect(plan.frame!.h).toBeLessThan(fullFrame * 0.65);
+    expect(plan.frame!.y).toBeGreaterThan(footer + 6);
+    const tableInk = plan.texts.filter((item) => item.text.includes("08071020") || item.text === "08071020");
+    expect(tableInk.length).toBeGreaterThan(0);
+    for (const item of tableInk) expect(item.y).toBeGreaterThan(plan.frame!.y);
+
+    const horizontals = (plan.rules ?? []).filter((rule) => rule.y1 === rule.y2);
+    const verticals = (plan.rules ?? []).filter((rule) => rule.x1 === rule.x2);
+    expect(horizontals.length).toBeGreaterThanOrEqual(2);
+    expect(verticals.length).toBeGreaterThanOrEqual(6);
+    const top = Math.max(...horizontals.map((rule) => rule.y1));
+    const bottom = Math.min(...horizontals.map((rule) => rule.y1));
+    expect(bottom).toBeLessThan(top);
+    expect(bottom).toBeGreaterThan(plan.frame!.y);
+  });
+
+  it("keeps one signature on the right and a full certificate frame when the page is filled", async () => {
+    const rows = Array.from({ length: 32 }, (_, index) => ({
+      type: "kv" as const,
+      label: `Field ${index + 1}`,
+      value: `Value ${index + 1}`,
+    }));
+    const plan = planDocument({
+      kind: "certificate",
+      blocks: [
+        ...rows,
+        { type: "signature", electronic: false, lines: ["Margarita Arboix Arzo", "The Rector"] },
+      ],
+      width: 612,
+      height: 792,
+      footer: 48,
+      size: 11,
+      measure: await measure(),
+      hasPhoto: false,
+    });
+    const label = plan.texts.find((item) => item.text === "Field");
+    const rector = plan.texts.find((item) => item.text === "Margarita");
+    if (!label || !rector) throw new Error("missing signature placement");
+    expect(rector.x).toBeGreaterThan(label.x);
+    expect(rector.x).toBeGreaterThan(612 / 2);
+    const fullFrame = 792 - 48 - 6 - 22;
+    expect(plan.frame!.h).toBeGreaterThan(fullFrame * 0.9);
+  });
+
+  it("draws a full grid on a headerless registry table", () => {
+    const rows = [
+      ["Alphanumeric code", "National register", "Center code", "University register", "File no."],
+      ["022A-084542", "2020/217459", "08071020", "227295", "14655910H5051"],
+    ];
+    const plan = planTable({
+      rows,
+      header: false,
+      x: 40,
+      y: 700,
+      width: 500,
+      size: 10,
+      bottom: 40,
+      serif: false,
+      measure: charMeasure,
+    });
+    const horizontals = plan.rules.filter((rule) => rule.y1 === rule.y2).sort((a, b) => b.y1 - a.y1);
+    const verticals = plan.rules.filter((rule) => rule.x1 === rule.x2);
+    expect(horizontals).toHaveLength(3);
+    expect(horizontals[0]?.y1).toBe(700);
+    expect(horizontals[0]?.width).toBeGreaterThan(0);
+    expect(horizontals[2]?.y1).toBeLessThan(700);
+    expect(horizontals[2]?.width).toBeGreaterThanOrEqual(0.6);
+    expect(verticals).toHaveLength(6);
+    const xs = [...verticals.map((rule) => rule.x1)].sort((a, b) => a - b);
+    expect(xs[0]).toBeCloseTo(40);
+    expect(xs[5]).toBeCloseTo(540);
+    for (const rule of verticals) {
+      expect(Math.max(rule.y1, rule.y2)).toBe(horizontals[0]!.y1);
+      expect(Math.min(rule.y1, rule.y2)).toBe(horizontals[2]!.y1);
+    }
   });
 });

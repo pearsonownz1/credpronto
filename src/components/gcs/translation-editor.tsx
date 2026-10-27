@@ -19,6 +19,38 @@ function fieldClass() {
   return "w-full rounded-lg border border-[#d5dbe6] bg-white px-2 py-1.5 text-[13px] text-ink";
 }
 
+function linkButtonClass() {
+  return "text-[13px] font-semibold text-primary disabled:text-ink-muted";
+}
+
+function emptyTable(rows: number, columns: number, header = false): RenderBlock {
+  return {
+    type: "table",
+    header,
+    rows: Array.from({ length: rows }, () => Array.from({ length: columns }, () => "")),
+  };
+}
+
+function columnCount(rows: string[][]): number {
+  return Math.max(1, ...rows.map((row) => row.length));
+}
+
+function withWidth(rows: string[][], width: number): string[][] {
+  return rows.map((row) => Array.from({ length: width }, (_, index) => row[index] ?? ""));
+}
+
+function fieldsToHorizontalTable(rows: Array<{ label: string; value: string }>): RenderBlock {
+  const width = Math.max(1, rows.length);
+  const labels = Array.from({ length: width }, (_, index) => rows[index]?.label ?? "");
+  const values = Array.from({ length: width }, (_, index) => rows[index]?.value ?? "");
+  return { type: "table", header: true, rows: [labels, values] };
+}
+
+function fieldsToTwoColumnTable(rows: Array<{ label: string; value: string }>): RenderBlock {
+  const body = rows.length > 0 ? rows.map((row) => [row.label, row.value]) : [["", ""]];
+  return { type: "table", header: false, rows: body };
+}
+
 export function TranslationEditor({
   pages,
   saving,
@@ -114,18 +146,56 @@ export function TranslationEditor({
                     onChange={(next) => updateBlock(pageIndex, blockIndex, next)}
                   />
                 ))}
-                <button
-                  type="button"
-                  className="self-start text-[13px] font-semibold text-primary"
-                  onClick={() =>
-                    updatePage(pageIndex, {
-                      ...page,
-                      blocks: [...page.blocks, { type: "seal", text: "", column: "right" }],
-                    })
-                  }
-                >
-                  Add [SEAL]
-                </button>
+                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                  <button
+                    type="button"
+                    className={linkButtonClass()}
+                    onClick={() =>
+                      updatePage(pageIndex, {
+                        ...page,
+                        blocks: [...page.blocks, { type: "paragraph", text: "" }],
+                      })
+                    }
+                  >
+                    Add Paragraph
+                  </button>
+                  <button
+                    type="button"
+                    className={linkButtonClass()}
+                    onClick={() =>
+                      updatePage(pageIndex, {
+                        ...page,
+                        blocks: [...page.blocks, { type: "fields", rows: [{ label: "", value: "" }] }],
+                      })
+                    }
+                  >
+                    Add Fields
+                  </button>
+                  <button
+                    type="button"
+                    className={linkButtonClass()}
+                    onClick={() =>
+                      updatePage(pageIndex, {
+                        ...page,
+                        blocks: [...page.blocks, emptyTable(2, 3, true)],
+                      })
+                    }
+                  >
+                    Add Table
+                  </button>
+                  <button
+                    type="button"
+                    className={linkButtonClass()}
+                    onClick={() =>
+                      updatePage(pageIndex, {
+                        ...page,
+                        blocks: [...page.blocks, { type: "seal", text: "", column: "right" }],
+                      })
+                    }
+                  >
+                    Add [SEAL]
+                  </button>
+                </div>
               </div>
             </section>
           ))}
@@ -186,14 +256,59 @@ function BlockEditor({ block, onChange }: { block: RenderBlock; onChange: (block
               </button>
             </div>
           ))}
-          <button
-            type="button"
-            className="self-start text-[13px] font-semibold text-primary"
-            onClick={() => onChange({ ...block, rows: [...block.rows, { label: "", value: "" }] })}
-          >
-            Add field
-          </button>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            <button
+              type="button"
+              className={linkButtonClass()}
+              onClick={() => onChange({ ...block, rows: [...block.rows, { label: "", value: "" }] })}
+            >
+              Add field
+            </button>
+            <button type="button" className={linkButtonClass()} onClick={() => onChange(fieldsToHorizontalTable(block.rows))}>
+              Convert to horizontal table
+            </button>
+            <button type="button" className={linkButtonClass()} onClick={() => onChange(fieldsToTwoColumnTable(block.rows))}>
+              Convert to 2-col table
+            </button>
+          </div>
         </div>
+      </fieldset>
+    );
+  }
+  if (block.type === "kv") {
+    return (
+      <fieldset className="rounded-xl border border-[#e6ebf2] p-3">
+        <legend className="px-1 text-[12px] font-semibold text-ink-muted">Label and value</legend>
+        <div className="grid grid-cols-2 gap-2">
+          <input
+            aria-label="KV label"
+            className={fieldClass()}
+            value={block.label}
+            onChange={(event) => onChange({ ...block, label: event.target.value })}
+          />
+          <input
+            aria-label="KV value"
+            className={fieldClass()}
+            value={block.value}
+            onChange={(event) => onChange({ ...block, value: event.target.value })}
+          />
+        </div>
+      </fieldset>
+    );
+  }
+  if (block.type === "signature") {
+    return (
+      <fieldset className="rounded-xl border border-[#e6ebf2] p-3">
+        <legend className="px-1 text-[12px] font-semibold text-ink-muted">Signature</legend>
+        <label className="block text-[12px] font-semibold text-ink-muted">
+          Name and title
+          <textarea
+            aria-label="Signature lines"
+            className={`${fieldClass()} mt-1 min-h-16 font-normal`}
+            value={(block.lines ?? []).join("\n")}
+            onChange={(event) => onChange({ ...block, lines: event.target.value.split("\n") })}
+          />
+        </label>
       </fieldset>
     );
   }
@@ -231,16 +346,37 @@ function BlockEditor({ block, onChange }: { block: RenderBlock; onChange: (block
               </button>
             </div>
           ))}
-          <button
-            type="button"
-            className="self-start text-[13px] font-semibold text-primary"
-            onClick={() => {
-              const width = Math.max(1, ...block.rows.map((row) => row.length));
-              onChange({ ...block, rows: [...block.rows, Array.from({ length: width }, () => "")] });
-            }}
-          >
-            Add row
-          </button>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            <button
+              type="button"
+              className={linkButtonClass()}
+              onClick={() => {
+                const width = columnCount(block.rows);
+                onChange({ ...block, rows: [...withWidth(block.rows, width), Array.from({ length: width }, () => "")] });
+              }}
+            >
+              Add row
+            </button>
+            <button
+              type="button"
+              className={linkButtonClass()}
+              onClick={() => onChange({ ...block, rows: withWidth(block.rows, columnCount(block.rows) + 1) })}
+            >
+              Add column
+            </button>
+            <button
+              type="button"
+              className={linkButtonClass()}
+              disabled={columnCount(block.rows) <= 1}
+              onClick={() => {
+                const width = columnCount(block.rows);
+                if (width <= 1) return;
+                onChange({ ...block, rows: withWidth(block.rows, width - 1) });
+              }}
+            >
+              Remove column
+            </button>
+          </div>
         </div>
       </fieldset>
     );
