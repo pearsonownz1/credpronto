@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { MIN_LEGIBILITY } from "./constants";
-import { failsImageQuality, pageQuality, replacementAllowed, retakeMessage } from "./image-quality";
+import { failsImageQuality, pageQuality, READABLE_PAGE_WORDS, replacementAllowed, retakeMessage } from "./image-quality";
+
+const certificate = Array.from({ length: READABLE_PAGE_WORDS }, () => "وثيقة").join(" ");
 
 describe("image quality gate", () => {
   it("holds a blurry photo below the legibility threshold", () => {
@@ -41,6 +43,55 @@ describe("image quality gate", () => {
     expect(message).toContain("Glare");
     expect(message).toContain("upload a replacement");
     expect(message).not.toContain("not-a-flag");
+  });
+
+  it("keeps a readable certificate photo when only handwriting flags are set", () => {
+    const readable = pageQuality({
+      score: 0.42,
+      visual: true,
+      flags: ["too_dark", "unreadable_fields"],
+      text: certificate,
+      needsReview: false,
+    });
+    expect(readable.failed).toBe(false);
+    expect(readable.score).toBeGreaterThanOrEqual(MIN_LEGIBILITY);
+    expect(readable.message).toBeNull();
+
+    const fourteen = pageQuality({
+      score: 0.42,
+      visual: true,
+      flags: ["too_dark"],
+      text: Array.from({ length: READABLE_PAGE_WORDS - 1 }, () => "وثيقة").join(" "),
+      needsReview: false,
+    });
+    expect(fourteen.failed).toBe(true);
+
+    const stillBlurry = pageQuality({
+      score: 0.85,
+      visual: true,
+      flags: ["blurry", "too_dark"],
+      text: certificate,
+      needsReview: false,
+    });
+    expect(stillBlurry.failed).toBe(true);
+
+    const cropped = pageQuality({
+      score: 0.9,
+      visual: true,
+      flags: ["cropped", "unreadable_fields"],
+      text: certificate,
+      needsReview: false,
+    });
+    expect(cropped.failed).toBe(true);
+
+    const readerUnsure = pageQuality({
+      score: 0.9,
+      visual: true,
+      flags: ["too_dark"],
+      text: certificate,
+      needsReview: true,
+    });
+    expect(readerUnsure.failed).toBe(true);
   });
 
   it("allows a replacement only while the order is held for image quality", () => {

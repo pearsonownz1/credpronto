@@ -21,7 +21,7 @@ import {
 } from "./db";
 import { recordTranslationFailure, translateOrder } from "./translation";
 import { isGcsOrder } from "./gcs";
-import { confirmFreeGcsQuote } from "./gcs-release";
+import { confirmFreeGcsQuote, gcsTranslationContinue } from "./gcs-release";
 import { withQuotedPages } from "./stored-pages";
 import { toCustomerOrder, type CustomerOrder } from "./view";
 import { serviceDb, type Db } from "./storage";
@@ -108,18 +108,22 @@ export async function processOrder(orderId: string, token: string | null = null)
   }
 }
 
-/** A quoted GCS order skips payment and keeps translating in this same run. */
+/**
+ * A GCS order skips payment and keeps translating in this same run.
+ * `needs_review` / `image_quality` with a saved page still continues: staff
+ * correct faint or handwritten fields in the editor instead of re-uploading.
+ */
 async function continueFreeGcsOrder(db: Db, orderId: string, token: string | null): Promise<void> {
   const fresh = await getOrderById(db, orderId);
   if (!fresh || !isGcsOrder(fresh)) return;
-  const ready = fresh.status === "quoted" && Boolean(fresh.sourceLanguage);
+  const next = gcsTranslationContinue(fresh);
   await confirmFreeGcsQuote(db, orderId, {
-    sourceLanguage: fresh.sourceLanguage,
-    quoted: ready,
+    sourceLanguage: next.ready ? next.sourceLanguage : fresh.sourceLanguage,
+    quoted: next.ready,
     pagesRead: fresh.progress.pagesRead,
     pagesTotal: fresh.progress.pagesTotal,
   });
-  if (!ready) return;
+  if (!next.ready) return;
   await translateOrder(db, orderId, token);
 }
 

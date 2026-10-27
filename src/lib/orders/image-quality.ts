@@ -1,4 +1,5 @@
 import { IMAGE_QUALITY_REASON, MIN_LEGIBILITY } from "./constants";
+import { countWords } from "./words";
 
 export { IMAGE_QUALITY_REASON, MIN_LEGIBILITY };
 
@@ -54,16 +55,57 @@ export function trustedLegibility(score: number | null, flags: readonly string[]
   return Math.min(score, cap);
 }
 
+/**
+ * A transcribed page this long is legible. A few dark or handwritten words
+ * must not fail the photo when the rest of the document was read.
+ */
+export const READABLE_PAGE_WORDS = 15;
+
+/** Soft flags a readable transcription can outvote. Blur and a real crop still fail. */
+const HANDWRITING_FLAGS = new Set<QualityFlag>(["too_dark", "unreadable_fields"]);
+
+/**
+ * Phone photos of stamped or handwritten certificates often pick up `too_dark`
+ * or `unreadable_fields` on a seal or a signature. When the page was actually
+ * transcribed, those flags (and the low score the model is told to attach to
+ * them) are not an image-quality failure. Severe blur or a crop that cuts off
+ * text still fails.
+ */
+function judgedPhoto(input: {
+  score: number | null;
+  visual: boolean;
+  flags: readonly string[];
+  text?: string;
+  needsReview?: boolean;
+}): { score: number | null; flags: readonly string[] } {
+  const transcribed =
+    input.visual && countWords(input.text ?? "") >= READABLE_PAGE_WORDS && input.needsReview !== true;
+  if (!transcribed) return { score: input.score, flags: input.flags };
+  const flags = input.flags.filter((flag) => !(isQualityFlag(flag) && HANDWRITING_FLAGS.has(flag)));
+  const dropped = flags.length !== input.flags.length;
+  if (!dropped || flags.some(isSevereQualityFlag)) return { score: input.score, flags };
+  const score =
+    input.score == null || !Number.isFinite(input.score) || input.score < MIN_LEGIBILITY
+      ? MIN_LEGIBILITY
+      : input.score;
+  return { score, flags };
+}
+
 /** Retake copy for a flagged page. A failing score with no flags still gets instructions. */
 export function pageQuality(input: {
   score: number | null;
   visual: boolean;
   flags: readonly string[];
+  /** Transcribed page text. A readable transcription outvotes soft quality flags. */
+  text?: string;
+  /** Reader already marked the page unreadable. Soft flags still fail in that case. */
+  needsReview?: boolean;
 }): { failed: boolean; score: number | null; message: string | null } {
-  const flags = input.flags.filter(isQualityFlag);
-  const failed = failsImageQuality(input.score, input.visual, flags);
+  const judged = judgedPhoto(input);
+  const flags = judged.flags.filter(isQualityFlag);
+  const failed = failsImageQuality(judged.score, input.visual, flags);
   const message = flags.length > 0 || failed ? retakeMessage(flags) : null;
-  return { failed, score: trustedLegibility(input.score, flags), message };
+  return { failed, score: trustedLegibility(judged.score, flags), message };
 }
 
 export function retakeMessage(flags: readonly string[]): string {

@@ -1,8 +1,14 @@
+import { IMAGE_QUALITY_REASON } from "./constants";
+
 /**
  * `orders.review_reason` is the yellow "Needs review" banner on the admin order page.
  * Delivery finishes that review, so every delivery write clears the column.
  */
 export const DELIVERED_REVIEW_CLEAR = { review_reason: null } as const;
+
+/** Shown wherever `image_quality` would otherwise reach a person as a raw slug. */
+export const IMAGE_QUALITY_MESSAGE =
+  "This photo looks blurry, dark, or cropped. Please upload a clearer photo or scan.";
 
 /**
  * Banner text for the admin order page.
@@ -15,7 +21,7 @@ export function staffNeedsReviewBanner(order: {
 }): string | null {
   if (!order.reviewReason) return null;
   if (order.status === "delivered" || order.deliveryStatus === "delivered") return null;
-  return order.reviewReason;
+  return humanReviewReason(order.reviewReason);
 }
 
 /** Staff-facing Review column. Known reasons pass through. Database errors do not. */
@@ -24,6 +30,7 @@ export function humanReviewReason(reason: string | null | undefined): string | n
   const text = reason.trim();
   if (!text) return null;
   if (text === "translation_timeout") return "Translation timed out before it could finish.";
+  if (text === IMAGE_QUALITY_REASON) return IMAGE_QUALITY_MESSAGE;
   if (/order_qa_runs_order_attempt_key/i.test(text)) {
     return "Quality check was already recorded for this attempt.";
   }

@@ -9,6 +9,7 @@ import {
   gcsSummaryLine,
   isGcsOrder,
   readGcsClientName,
+  resolveGcsAnalysisLanguage,
   readGcsSourceLanguage,
   readGcsTargetLanguage,
 } from "./gcs";
@@ -19,6 +20,11 @@ describe("GCS order brand", () => {
     expect(isGcsOrder({ brand: "credpronto" })).toBe(false);
     expect(isGcsOrder({ brand: null })).toBe(false);
     expect(isGcsOrder(undefined)).toBe(false);
+    expect(resolveGcsAnalysisLanguage("ar", "fr", ["es"])).toBe("ar");
+    expect(resolveGcsAnalysisLanguage("auto", "ar", ["fr"])).toBe("ar");
+    expect(resolveGcsAnalysisLanguage(null, null, ["ar"])).toBe("ar");
+    expect(resolveGcsAnalysisLanguage("  ", null, [])).toBe("auto");
+    expect(resolveGcsAnalysisLanguage("auto", null, [])).toBe("auto");
     expect(gcsFreePricePatch()).toEqual({ total_cents: 0, translation_cents: 0, unit_price_cents: 0 });
     expect(() => assertGcsDocumentCount(1)).not.toThrow();
     expect(() => assertGcsDocumentCount(GCS_MAX_DOCUMENTS)).not.toThrow();

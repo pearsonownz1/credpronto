@@ -7,8 +7,49 @@ import {
   updateOrder,
   type Db,
 } from "./db";
-import { gcsFreePricePatch } from "./gcs";
+import { gcsFreePricePatch, resolveGcsAnalysisLanguage } from "./gcs";
 import type { OrderProgress } from "./reading-progress";
+import type { QuoteDecision } from "./quote";
+
+/**
+ * GCS staff edit faint and handwritten fields themselves. One saved page is
+ * enough to quote: image quality, a page-level review flag, and a weak
+ * language guess must not leave the order in `needs_review`.
+ */
+export function settleGcsAnalysis(input: {
+  pageCount: number;
+  decision: Pick<QuoteDecision, "status" | "reviewReason">;
+  sourceLanguage: string | null;
+  detectedSource: string | null;
+  languages: readonly string[];
+}): { status: "quoted" | "needs_review"; reviewReason: string | null; sourceLanguage: string } {
+  const sourceLanguage = resolveGcsAnalysisLanguage(input.sourceLanguage, input.detectedSource, input.languages);
+  if (input.pageCount >= 1) {
+    return { status: "quoted", reviewReason: null, sourceLanguage };
+  }
+  return {
+    status: input.decision.status,
+    reviewReason: input.decision.reviewReason,
+    sourceLanguage,
+  };
+}
+
+/**
+ * After analysis, keep a GCS order moving into translation.
+ * A quoted order always continues. A review hold continues once a page exists,
+ * including `image_quality`, so staff are not stopped on the upload.
+ */
+export function gcsTranslationContinue(order: {
+  status: string;
+  sourceLanguage: string | null;
+  billablePages: number | null;
+  progress: { pagesRead: number; pagesTotal: number };
+}): { ready: boolean; sourceLanguage: string } {
+  const pages = Math.max(order.progress.pagesTotal, order.progress.pagesRead, order.billablePages ?? 0);
+  const sourceLanguage = resolveGcsAnalysisLanguage(order.sourceLanguage, null, []);
+  const ready = order.status === "quoted" || (order.status === "needs_review" && pages >= 1);
+  return { ready, sourceLanguage };
+}
 
 /** After the quote is saved, a GCS order skips the paywall and keeps translating. */
 export async function confirmFreeGcsQuote(
@@ -21,6 +62,7 @@ export async function confirmFreeGcsQuote(
     patch.source_language = input.sourceLanguage;
     patch.language_confirmed = true;
     patch.status = "confirmed";
+    patch.review_reason = null;
     patch.progress = {
       step: "translating",
       pagesRead: input.pagesRead,

@@ -29,6 +29,7 @@ import { quoteReadFinished } from "@/lib/flow/quote-poll";
 import { rememberDocument } from "@/lib/flow/upload-blobs";
 import { sumQuotedBillable } from "@/lib/orders/skip-pages";
 import { IMAGE_QUALITY_REASON } from "@/lib/orders/image-quality";
+import { humanReviewReason } from "@/lib/orders/review-reason";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FilePreview, inlineSourceUrl, type ViewerPage } from "./file-preview";
 import { FlowHeader } from "./flow-header";
@@ -114,7 +115,7 @@ export function QuoteView({
         ) : order.status === "failed" ? (
           <FlowStatus
             title="We couldn't read these files"
-            body={order.reviewReason ?? "Try the upload again."}
+            body={humanReviewReason(order.reviewReason) ?? "Try the upload again."}
             action={
               <Link href="/translate" className={buttonClasses("primary", "h-11 px-5")}>
                 Upload again
@@ -300,7 +301,7 @@ export function QuoteBody({
         </div>
         {live.status === "needs_review" ? (
           <p data-testid="review-note" className="mt-3 text-[13px] text-ink-muted">
-            {live.reviewReason ??
+            {humanReviewReason(live.reviewReason) ??
               "A reviewer will confirm the language before this price is final."}
           </p>
         ) : null}

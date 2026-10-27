@@ -39,6 +39,7 @@ import { downloadObject, uploadObject } from "./storage";
 import { quotePage, storedDensity } from "./billing";
 import { queueEarlyTranslation } from "./translation-jobs";
 import { isGcsOrder } from "./gcs";
+import { settleGcsAnalysis } from "./gcs-release";
 import type { ReadingStep } from "./reading-progress";
 import { countWords } from "./words";
 import type { DocumentRecord } from "./types";
@@ -126,11 +127,11 @@ type ModelCue = {
   flags: readonly string[];
 };
 
-const CUE_INSTRUCTIONS = `logicalPage: the printed page number when one is visible, including the N in "page N/M", "1/2", or "2 sur 2". Use 0 when there is no printed number and no sequence cue. Do not invent a number from the order the files were uploaded.
+export const CUE_INSTRUCTIONS = `logicalPage: the printed page number when one is visible, including the N in "page N/M", "1/2", or "2 sur 2". Use 0 when there is no printed number and no sequence cue. Do not invent a number from the order the files were uploaded.
 orderHint: the cue itself, such as "page 1/2", "2/2", or "suite". Use an empty string when there is none.
 orderConfidence: a number from 0 to 1. Use 0.8 or higher only when the printed number or a continuation cue (suite, continued, siguiente) is clear. Use a lower score when you are guessing.
 legibility: a number from 0 to 1. 1 is sharp and complete. Score a photo or scan down for blur, crop, glare, darkness, or fields that cannot be read. If you set blurry, too_dark, unreadable_fields, or cropped, the score must be below 0.6. A high score does not cancel those flags.
-flags: any of blurry, cropped, glare, too_dark, unreadable_fields that apply. Set cropped only when the crop cuts off text, not when a margin is missing and every line is still readable. Use an empty array when the page is readable. A blank page is unreadable for transcription but is not an image-quality failure: set legibility to 1, flags to [], and unreadable to true.`;
+flags: any of blurry, cropped, glare, too_dark, unreadable_fields that apply. Set cropped only when the crop cuts off text, not when a margin is missing and every line is still readable. A phone photo of a stamped or handwritten certificate in normal indoor lighting is acceptable: do not set too_dark, blurry, cropped, or unreadable_fields when the document text is legible and the transcription (text) contains words. A seal, stamp, or a few faint handwritten words does not make the page unreadable. Only set those flags when the page is genuinely unreadable, such as severe blur, darkness, or a crop that prevents reading the core document. Use an empty array when the page is readable. A blank page is unreadable for transcription but is not an image-quality failure: set legibility to 1, flags to [], and unreadable to true.`;
 
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -513,6 +514,8 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
             score: read.legibility,
             visual: read.visual,
             flags: read.flags,
+            text: read.text,
+            needsReview: read.needsReview,
           });
           if (quality.failed) imageQuality = true;
           const quoted = quotePage({
@@ -609,15 +612,29 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
     }
 
     const detectedSource = distinct.length === 1 ? distinct[0] : null;
-    const sourceLanguage = isGcsOrder(order) && order.sourceLanguage ? order.sourceLanguage : detectedSource;
     const free = isGcsOrder(order);
+    // Staff on translate.gcs.org correct faint and handwritten fields in the
+    // editor. A saved page is quoted and translated; image quality and a weak
+    // language guess must not stop the desk on needs_review.
+    const settlement = free
+      ? settleGcsAnalysis({
+          pageCount: pageBillable.length,
+          decision,
+          sourceLanguage: order.sourceLanguage,
+          detectedSource,
+          languages,
+        })
+      : null;
+    const status = settlement?.status ?? decision.status;
+    const sourceLanguage = settlement ? settlement.sourceLanguage : detectedSource;
+    const reviewReason = settlement ? settlement.reviewReason : decision.reviewReason;
     await updateOrder(db, orderId, {
-      status: decision.status,
+      status,
       source_language: sourceLanguage,
       billable_pages: decision.billablePages,
       total_cents: free ? 0 : decision.totalCents,
       ...(free ? { translation_cents: 0, unit_price_cents: 0 } : {}),
-      review_reason: decision.reviewReason,
+      review_reason: reviewReason,
       eta_at: etaFromNow(decision.etaHours),
       combined_original_path: combinedPath,
       page_order_basis: applied.basis,
@@ -625,14 +642,14 @@ export async function analyzeOrder(db: Db, orderId: string, token: string | null
       progress: { step: "done", pagesRead, pagesTotal },
     });
 
-    if (decision.status === "quoted" && !(await hasEvent(db, orderId, "quote_shown"))) {
+    if (status === "quoted" && !(await hasEvent(db, orderId, "quote_shown"))) {
       await insertEvent(db, orderId, "quote_shown", {
         billablePages: decision.billablePages,
         totalCents: free ? 0 : decision.totalCents,
       });
     }
-    if (decision.status === "quoted") await notifyOrder(db, orderId, "order.quoted");
-    if (decision.status === "quoted") {
+    if (status === "quoted") await notifyOrder(db, orderId, "order.quoted");
+    if (status === "quoted") {
       try {
         await queueEarlyTranslation(db, orderId, token);
       } catch (error) {

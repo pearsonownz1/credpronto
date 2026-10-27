@@ -221,4 +221,75 @@ describe("processOrder paid evaluations", () => {
     expect(analysis.analyzeOrder).toHaveBeenCalledWith(handle, "order-1", "token-1");
     expect(translation.translateOrder).not.toHaveBeenCalled();
   });
+
+  it("translates a GCS order that analysis held for image_quality", async () => {
+    vi.spyOn(db, "getOrderById")
+      .mockResolvedValueOnce(
+        order({
+          status: "draft",
+          brand: "gcs",
+          paidAt: null,
+          languageConfirmed: false,
+          sourceLanguage: null,
+        }),
+      )
+      .mockResolvedValueOnce(
+        order({
+          status: "needs_review",
+          brand: "gcs",
+          paidAt: null,
+          languageConfirmed: false,
+          sourceLanguage: null,
+          reviewReason: "image_quality",
+          billablePages: 1,
+          progress: { step: "done", pagesRead: 1, pagesTotal: 1 },
+        }),
+      );
+    vi.spyOn(db, "updateOrder").mockResolvedValue(true);
+
+    await processOrder("order-1", "token-1");
+
+    expect(analysis.analyzeOrder).toHaveBeenCalledWith(handle, "order-1", "token-1");
+    expect(db.updateOrder).toHaveBeenCalledWith(
+      handle,
+      "order-1",
+      expect.objectContaining({
+        status: "confirmed",
+        source_language: "auto",
+        language_confirmed: true,
+        review_reason: null,
+        total_cents: 0,
+      }),
+    );
+    expect(translation.translateOrder).toHaveBeenCalledWith(handle, "order-1", "token-1");
+  });
+
+  it("does not translate a GCS image_quality hold that saved no pages", async () => {
+    vi.spyOn(db, "getOrderById")
+      .mockResolvedValueOnce(
+        order({
+          status: "draft",
+          brand: "gcs",
+          paidAt: null,
+          languageConfirmed: false,
+        }),
+      )
+      .mockResolvedValueOnce(
+        order({
+          status: "needs_review",
+          brand: "gcs",
+          paidAt: null,
+          languageConfirmed: false,
+          sourceLanguage: null,
+          reviewReason: "image_quality",
+          billablePages: null,
+          progress: { step: "done", pagesRead: 0, pagesTotal: 0 },
+        }),
+      );
+    vi.spyOn(db, "updateOrder").mockResolvedValue(true);
+
+    await processOrder("order-1", "token-1");
+
+    expect(translation.translateOrder).not.toHaveBeenCalled();
+  });
 });

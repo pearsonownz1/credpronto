@@ -12,6 +12,7 @@ import { uploadOrderFiles } from "@/lib/flow/direct-upload";
 import { publishGcsUnlock, useGcsUnlocked } from "@/lib/gcs/pin-client";
 import { GCS_MAX_DOCUMENTS } from "@/lib/orders/gcs";
 import { sourceLanguageChoices, targetLanguageChoices } from "@/lib/orders/languages";
+import { humanReviewReason } from "@/lib/orders/review-reason";
 import { gcsTranslationProgress, gcsUploadProgress, type GcsLiveProgress, type GcsOrderSnapshot } from "./gcs-progress";
 import { GcsPinGate } from "./gcs-pin-gate";
 
@@ -238,7 +239,7 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
       if (stopped) return;
       setOrder({ ...next, id: next.id ?? next.orderId });
       if (next.status === "failed" || next.status === "cancelled" || next.status === "needs_review") {
-        setError(next.reviewReason?.trim() || "We could not finish this translation.");
+        setError(humanReviewReason(next.reviewReason) || "We could not finish this translation.");
         return;
       }
       const previewResponse = await fetch(`/api/orders/${encodeURIComponent(token!)}/preview`);
@@ -331,7 +332,8 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
         lockAgain("Enter the PIN to start a translation.");
         return;
       }
-      setError(cause instanceof Error && cause.message.trim() ? cause.message : "We couldn't upload that file.");
+      const raw = cause instanceof Error && cause.message.trim() ? cause.message : "We couldn't upload that file.";
+      setError(humanReviewReason(raw) || "We couldn't upload that file.");
     } finally {
       setPending(false);
       setUploadRatio(null);
@@ -437,9 +439,20 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
   } else if (token) {
     if (error) {
       main = (
-        <div className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-6 py-16">
+        <div
+          className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-6 py-16"
+          data-testid="gcs-translation-error"
+        >
           <h1 className="text-2xl font-semibold">Translation needs attention</h1>
-          <p className="mt-3 text-sm text-[#5b6474]">{error}</p>
+          <p className="mt-3 text-sm text-[#5b6474]">{humanReviewReason(error) ?? error}</p>
+          <button
+            type="button"
+            data-testid="gcs-error-new-translation"
+            onClick={openNewTranslation}
+            className="mt-6 flex h-10 w-fit items-center justify-center rounded-xl bg-[#1f5eff] px-4 text-sm font-semibold text-white"
+          >
+            + New Translation
+          </button>
         </div>
       );
     } else if (!viewer) {
@@ -561,7 +574,7 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
         </label>
         {error ? (
           <p role="alert" className="mt-4 text-sm font-semibold text-[#b42318]">
-            {error}
+            {humanReviewReason(error) ?? error}
           </p>
         ) : null}
       </div>

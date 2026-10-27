@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { humanReviewReason, staffNeedsReviewBanner } from "./review-reason";
+import { humanReviewReason, IMAGE_QUALITY_MESSAGE, staffNeedsReviewBanner } from "./review-reason";
 
 describe("humanReviewReason", () => {
   it("turns database errors into staff-facing sentences", () => {
@@ -24,7 +24,10 @@ describe("humanReviewReason", () => {
     expect(humanReviewReason("QA found issues that were not fixed after 2 retranslations.")).toBe(
       "QA found issues that were not fixed after 2 retranslations.",
     );
-    expect(humanReviewReason("image_quality")).toBe("image_quality");
+    expect(humanReviewReason("image_quality")).toBe(IMAGE_QUALITY_MESSAGE);
+    expect(humanReviewReason("image_quality")).toBe(
+      "This photo looks blurry, dark, or cropped. Please upload a clearer photo or scan.",
+    );
     expect(humanReviewReason("  ")).toBeNull();
     expect(humanReviewReason(null)).toBeNull();
   });
@@ -39,6 +42,12 @@ describe("staffNeedsReviewBanner", () => {
       reason,
     );
     expect(staffNeedsReviewBanner({ status: "paid", reviewReason: null })).toBeNull();
+  });
+
+  it("explains an image quality hold instead of showing the slug", () => {
+    expect(staffNeedsReviewBanner({ status: "needs_review", reviewReason: "image_quality" })).toBe(
+      IMAGE_QUALITY_MESSAGE,
+    );
   });
 
   it("hides a leftover review reason once the order or its delivery is delivered", () => {

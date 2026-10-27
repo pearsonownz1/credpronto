@@ -281,6 +281,44 @@ describe("GcsTranslate documents", () => {
   });
 });
 
+describe("GcsTranslate review errors", () => {
+  it("explains image_quality and offers a new translation", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const href = String(url);
+        if (gcsOrdersKind(href) === "detail") return Promise.resolve(json({ pages: [] }));
+        if (gcsOrdersKind(href) === "list") return Promise.resolve(json({ orders: [] }));
+        if (href.includes("/preview")) return Promise.resolve(json({ error: "not ready" }, 404));
+        return Promise.resolve(
+          json({ status: "needs_review", reviewReason: "image_quality", orderId: "tok-1" }),
+        );
+      }),
+    );
+
+    const host = await renderTranslate({ token: "tok-1" });
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(host.querySelector('[data-testid="gcs-translation-error"]')).toBeTruthy();
+      });
+    });
+
+    const error = host.querySelector('[data-testid="gcs-translation-error"]');
+    expect(error?.textContent).toContain("Translation needs attention");
+    expect(error?.textContent).toContain(
+      "This photo looks blurry, dark, or cropped. Please upload a clearer photo or scan.",
+    );
+    expect(error?.textContent).not.toContain("image_quality");
+    const again = error?.querySelector('[data-testid="gcs-error-new-translation"]');
+    expect(again?.textContent).toContain("+ New Translation");
+    if (!(again instanceof HTMLButtonElement)) throw new Error("missing new translation");
+    await act(async () => {
+      again.click();
+    });
+    expect(push).toHaveBeenCalledWith("/gcs-translate");
+  });
+});
+
 describe("GcsTranslate history sidebar", () => {
   const current = historyItem();
   const running = historyItem({

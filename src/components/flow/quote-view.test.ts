@@ -46,6 +46,18 @@ function htmlFor(order: CustomerOrder) {
 }
 
 describe("quote step actions", () => {
+  it("explains an image_quality hold without showing the slug", () => {
+    const html = htmlFor(
+      englishReview({
+        sourceLanguage: "ar",
+        targetLanguage: "en",
+        reviewReason: "image_quality",
+      }),
+    );
+    expect(html).toContain("This photo looks blurry, dark, or cropped. Please upload a clearer photo or scan.");
+    expect(html).not.toContain("image_quality");
+  });
+
   it("hides Continue for an English needs_review order with no line items", () => {
     const html = htmlFor(englishReview());
     expect(html).not.toContain('data-testid="continue"');

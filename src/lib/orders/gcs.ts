@@ -32,6 +32,26 @@ export function isGcsOrder(order: { brand?: string | null } | null | undefined):
   return isGcsBrand(order?.brand);
 }
 
+/**
+ * Language a GCS order can translate with. A chosen language wins, then the
+ * detected language, then the first detected file language. `"auto"` is not a
+ * choice — it means detection should fill in, and `"auto"` is the last resort
+ * so a free order still continues when detection is unsure.
+ */
+export function resolveGcsAnalysisLanguage(
+  ordered: string | null | undefined,
+  detected: string | null | undefined,
+  languages: readonly string[] = [],
+): string {
+  const chosen = ordered?.trim() ?? "";
+  if (chosen && chosen.toLowerCase() !== "auto") return chosen;
+  const detectedSource = detected?.trim() ?? "";
+  if (detectedSource && detectedSource.toLowerCase() !== "auto") return detectedSource;
+  const first = languages[0]?.trim() ?? "";
+  if (first && first.toLowerCase() !== "auto") return first;
+  return "auto";
+}
+
 /** GCS uploads are one certified translation, from a single file up to `GCS_MAX_DOCUMENTS`. */
 export function assertGcsDocumentCount(count: number): void {
   if (!Number.isInteger(count) || count < 1) {
