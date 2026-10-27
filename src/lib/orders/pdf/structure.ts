@@ -928,13 +928,87 @@ function fromModelBlock(block: ModelBlock): RenderBlock[] {
   return [];
 }
 
+const REGISTRATION =
+  /regist|c[oó]dig|clave|expedient|serial|\bfile\b|alfanum|alphanum|t[ií]tul|centro|cent(?:er|re)|degree|institution|university|n[ºo°]\b/i;
+const CODE = /^[A-Z0-9][A-Z0-9./-]{2,22}$/i;
+const DATEISH = /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/;
+
+function registrationPair(label: string, value: string): boolean {
+  const name = label.trim();
+  const printed = value.trim();
+  if (printed.length < 3 || printed.length > 32 || name.length > 80) return false;
+  if (/\s/.test(printed) || DATEISH.test(printed)) return false;
+  return CODE.test(printed);
+}
+
+function isRegistrationStrip(pairs: Array<{ label: string; value: string }>): boolean {
+  if (pairs.length < 3 || pairs.length > 6) return false;
+  if (!pairs.every((pair) => registrationPair(pair.label, pair.value))) return false;
+  return REGISTRATION.test(pairs.map((pair) => `${pair.label} ${pair.value}`).join(" "));
+}
+
+function registrationTable(pairs: Array<{ label: string; value: string }>): RenderBlock {
+  return {
+    type: "table",
+    header: true,
+    rows: [pairs.map((pair) => pair.label.trim()), pairs.map((pair) => pair.value.trim())],
+  };
+}
+
+/** A horizontal registration strip stored as fields or stacked kv/box blocks becomes one table. */
+export function promoteRegistrationStrips(blocks: RenderBlock[]): RenderBlock[] {
+  const out: RenderBlock[] = [];
+  for (let index = 0; index < blocks.length; ) {
+    const block = blocks[index];
+    if (!block) break;
+    if (block.type === "fields") {
+      const pairs = block.rows.map((row) => ({ label: row.label, value: row.value }));
+      out.push(isRegistrationStrip(pairs) ? registrationTable(pairs) : block);
+      index += 1;
+      continue;
+    }
+    if (block.type === "kv" || block.type === "box") {
+      let end = index;
+      while (end < blocks.length && (blocks[end]?.type === "kv" || blocks[end]?.type === "box")) end += 1;
+      const run = blocks.slice(index, end);
+      let cursor = 0;
+      while (cursor < run.length) {
+        let taken = 0;
+        for (let length = Math.min(6, run.length - cursor); length >= 3; length -= 1) {
+          const slice = run.slice(cursor, cursor + length);
+          const pairs = slice.flatMap((item) =>
+            item.type === "kv" || item.type === "box" ? [{ label: item.label, value: item.value }] : [],
+          );
+          if (isRegistrationStrip(pairs)) {
+            out.push(registrationTable(pairs));
+            taken = length;
+            break;
+          }
+        }
+        if (taken === 0) {
+          const current = run[cursor];
+          if (current) out.push(current);
+          cursor += 1;
+        } else {
+          cursor += taken;
+        }
+      }
+      index = end;
+      continue;
+    }
+    out.push(block);
+    index += 1;
+  }
+  return out;
+}
+
 export function blocksFromModel(input: {
   blocks?: ModelBlock[];
   lines?: string[];
   paragraphs?: string[];
 }): RenderBlock[] {
   if (input.blocks?.length) {
-    return refineSeal(coalesce(input.blocks.flatMap(fromModelBlock)));
+    return promoteRegistrationStrips(refineSeal(coalesce(input.blocks.flatMap(fromModelBlock))));
   }
   if (input.lines?.length) return structurePage(input.lines.join("\n"));
   if (input.paragraphs?.length) return structurePage(input.paragraphs.join("\n"));
@@ -958,6 +1032,15 @@ export function formBlocksWhenCollapsed(sourceText: string, modelBlocks: RenderB
   return structured;
 }
 
+function labeledLine(label: string, value: string): string | null {
+  const name = label.trim();
+  const printed = value.trim();
+  if (!name && !printed) return null;
+  if (!name) return printed;
+  if (!printed) return name;
+  return `${name}: ${printed}`;
+}
+
 export function blocksToParagraphs(blocks: RenderBlock[]): string[] {
   const lines: string[] = [];
   for (const block of blocks) {
@@ -965,9 +1048,13 @@ export function blocksToParagraphs(blocks: RenderBlock[]): string[] {
       const text = block.text.replace(/\*\*/g, "").replace(/__/g, "").trim();
       if (text) lines.push(block.type === "logo" ? `[Logo: ${text}]` : block.type === "stamp" ? (text ? `[Stamp: ${text}]` : "[Stamp]") : block.type === "handwritten" ? (text ? `[Handwritten: ${text}]` : "[Handwritten]") : text);
     } else if (block.type === "fields") {
-      for (const row of block.rows) lines.push(`${row.label}: ${row.value}`);
+      for (const row of block.rows) {
+        const line = labeledLine(row.label, row.value);
+        if (line) lines.push(line);
+      }
     } else if (block.type === "kv" || block.type === "box") {
-      lines.push(`${block.label}: ${block.value}`);
+      const line = labeledLine(block.label, block.value);
+      if (line) lines.push(line);
     } else if (block.type === "address") {
       lines.push(...block.lines);
     } else if (block.type === "list") {

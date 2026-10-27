@@ -717,10 +717,41 @@ function planLetter(input: {
   return { serif, overflow: y < input.footer, boxes: [], texts, rules, bands, seals };
 }
 
+const CERTIFICATE_FRAME_PAD = 26;
+
+/** Lowest painted edge: text descenders, table rules, seal rings, and boxes. */
+function lowestInk(
+  texts: PlanText[],
+  rules: PlanRule[] | undefined,
+  seals: PlanSeal[] | undefined,
+  boxes: PlanRect[] | undefined,
+): number {
+  let low = Number.POSITIVE_INFINITY;
+  for (const item of texts) low = Math.min(low, item.y - Math.min(4, item.size * 0.25));
+  for (const rule of rules ?? []) low = Math.min(low, rule.y1, rule.y2);
+  for (const seal of seals ?? []) low = Math.min(low, seal.cy - seal.outer);
+  for (const box of boxes ?? []) low = Math.min(low, box.y);
+  return low;
+}
+
+/**
+ * Pull the certificate border up under the last line. A short landscape diploma
+ * keeps its padding inside the frame instead of an empty box down to the footer.
+ */
+function fitCertificateFrame(frame: PlanRect, floor: number, pageBottom: number): void {
+  if (!Number.isFinite(floor)) return;
+  const top = frame.y + frame.h;
+  const fitted = Math.max(pageBottom, Math.min(floor - CERTIFICATE_FRAME_PAD, top - 48));
+  if (fitted <= frame.y + 0.5) return;
+  frame.y = fitted;
+  frame.h = top - fitted;
+}
+
 /**
  * A birth certificate stored as a certificate is a stack of labeled fields.
  * The license planner paints headings and prose only, so those field values
  * never reach the page. This planner keeps each value on the line with its label.
+ * A short diploma uses ceremonial type and a frame that ends under the content.
  */
 function planLabeledCertificate(input: {
   blocks: RenderBlock[];
@@ -731,166 +762,257 @@ function planLabeledCertificate(input: {
   measure: Measure;
   topInset?: number;
 }): DocumentPlan {
-  const texts: PlanText[] = [];
-  const rules: PlanRule[] = [];
-  const bands: PlanRect[] = [];
-  const seals: PlanSeal[] = [];
   const serif = true;
   const size = input.size;
   const inset = 26;
+  const pageBottom = input.footer + 6;
+  const frameTop = input.height - 22 - (input.topInset ?? 0);
   const frame: PlanRect = {
     x: inset,
-    y: input.footer + 6,
+    y: pageBottom,
     w: input.width - inset * 2,
-    h: input.height - input.footer - 6 - 22 - (input.topInset ?? 0),
+    h: frameTop - pageBottom,
     radius: 18,
     stroke: 1.6,
   };
   const left = frame.x + 22;
   const innerW = frame.w - 44;
-  let y = frame.y + frame.h - 22;
-  const bottom = frame.y + 12;
-  let clipped = false;
+  const bottom = pageBottom + 12;
 
-  const paintLine = (text: string, fontSize: number, align: BlockAlign, bold = false, color: "ink" | "muted" = "ink") => {
-    const words = wordsOf(text).map((word) => ({ ...word, bold: word.bold || bold }));
-    if (words.length === 0) return;
-    const lines = wrapWords(words, fontSize, innerW, input.measure, serif);
-    const space = input.measure(" ", fontSize, { serif, bold });
-    for (const line of lines) {
-      if (y < bottom) clipped = true;
-      const natural = lineWidth(line, fontSize, space, input.measure, serif);
-      let cursor = left;
-      if (align === "center") cursor = left + Math.max(0, (innerW - natural) / 2);
-      if (align === "right") cursor = left + Math.max(0, innerW - natural);
-      for (const word of line) {
-        texts.push({
-          text: word.text,
-          x: cursor,
-          y,
-          size: fontSize,
-          color,
-          bold: word.bold,
-          underline: word.underline,
+  const lay = (mode: "ceremonial" | "compact"): {
+    texts: PlanText[];
+    rules: PlanRule[];
+    bands: PlanRect[];
+    seals: PlanSeal[];
+    clipped: boolean;
+    y: number;
+  } => {
+    const texts: PlanText[] = [];
+    const rules: PlanRule[] = [];
+    const bands: PlanRect[] = [];
+    const seals: PlanSeal[] = [];
+    let y = frameTop - 22;
+    let clipped = false;
+    const leading = mode === "ceremonial" ? 1.32 : 1.22;
+    const headingSize = (prominent: boolean) => {
+      if (mode === "compact") return prominent ? size + 1.5 : size;
+      if (prominent) return size >= 11 ? 16 : size + 2;
+      return size >= 11 ? 13 : size + 1;
+    };
+    const proseSize = (bold: boolean) => (mode === "ceremonial" && bold && size >= 11 ? 14 : size);
+
+    const paintLine = (
+      text: string,
+      fontSize: number,
+      align: BlockAlign,
+      bold = false,
+      color: "ink" | "muted" = "ink",
+      bandLeft = left,
+      bandWidth = innerW,
+    ) => {
+      const words = wordsOf(text).map((word) => ({ ...word, bold: word.bold || bold }));
+      if (words.length === 0) return;
+      const lines = wrapWords(words, fontSize, bandWidth, input.measure, serif);
+      const space = input.measure(" ", fontSize, { serif, bold });
+      for (const line of lines) {
+        if (y < bottom) clipped = true;
+        const natural = lineWidth(line, fontSize, space, input.measure, serif);
+        let cursor = bandLeft;
+        if (align === "center") cursor = bandLeft + Math.max(0, (bandWidth - natural) / 2);
+        if (align === "right") cursor = bandLeft + Math.max(0, bandWidth - natural);
+        for (const word of line) {
+          texts.push({
+            text: word.text,
+            x: cursor,
+            y,
+            size: fontSize,
+            color,
+            bold: word.bold,
+            underline: word.underline,
+            serif,
+          });
+          cursor += input.measure(word.text, fontSize, { bold: word.bold, serif }) + space;
+        }
+        y -= fontSize * leading;
+      }
+    };
+
+    const paintPair = (label: string, value: string, bold = false) => {
+      const name = label.trim();
+      const printed = value.trim();
+      const text = name && printed ? `${name}: ${printed}` : printed || name;
+      if (!text) return;
+      paintLine(text, proseSize(bold), "left", bold);
+      y -= 1;
+    };
+
+    const paintSignatureColumns = (start: number, count: number) => {
+      const gap = 12;
+      const colW = (innerW - gap * (count - 1)) / count;
+      const top = y;
+      let lowest = y;
+      for (let column = 0; column < count; column += 1) {
+        const block = input.blocks[start + column];
+        if (!block || block.type !== "signature") continue;
+        let cursor = top;
+        const x = left + column * (colW + gap);
+        const paintAt = (text: string, fontSize: number, bold: boolean, color: "ink" | "muted") => {
+          const words = wordsOf(text).map((word) => ({ ...word, bold: word.bold || bold }));
+          if (words.length === 0) return;
+          const lines = wrapWords(words, fontSize, colW, input.measure, serif);
+          const space = input.measure(" ", fontSize, { serif, bold });
+          for (const line of lines) {
+            const natural = lineWidth(line, fontSize, space, input.measure, serif);
+            let wordX = x + Math.max(0, (colW - natural) / 2);
+            for (const word of line) {
+              texts.push({
+                text: word.text,
+                x: wordX,
+                y: cursor,
+                size: fontSize,
+                color,
+                bold: word.bold,
+                underline: word.underline,
+                serif,
+              });
+              wordX += input.measure(word.text, fontSize, { bold: word.bold, serif }) + space;
+            }
+            cursor -= fontSize * leading;
+          }
+        };
+        const note = bracketNote(block);
+        if (note) paintAt(note, NOTE_SIZE, false, "muted");
+        for (const line of block.lines ?? []) paintAt(line, Math.max(size - 0.5, 10), true, "ink");
+        lowest = Math.min(lowest, cursor);
+      }
+      y = lowest - (mode === "ceremonial" ? 8 : 3);
+    };
+
+    for (let index = 0; index < input.blocks.length; index += 1) {
+      const block = input.blocks[index];
+      if (!block) break;
+      if (y < bottom) {
+        clipped = true;
+        break;
+      }
+      const next = input.blocks[index + 1];
+      if (block.type === "heading") {
+        const prominent = Boolean(block.bold) || block.level === 1;
+        paintLine(block.text, headingSize(prominent), "center", prominent);
+        y -= mode === "ceremonial" ? 10 : 2;
+        continue;
+      }
+      if (block.type === "kv") {
+        paintPair(block.label, block.value, Boolean(block.bold));
+        continue;
+      }
+      if (block.type === "box") {
+        paintPair(block.label, block.value, true);
+        continue;
+      }
+      if (block.type === "fields") {
+        for (const row of block.rows) {
+          if (y < bottom) clipped = true;
+          paintPair(row.label, row.value);
+        }
+        y -= mode === "ceremonial" ? 8 : 2;
+        continue;
+      }
+      if (block.type === "paragraph") {
+        const bold = Boolean(block.bold);
+        paintLine(block.text, proseSize(bold), block.align === "center" || block.caps ? "center" : "left", bold);
+        const section = next?.type === "table" || next?.type === "signature";
+        y -= mode === "ceremonial" && section ? 20 : mode === "ceremonial" ? 8 : 3;
+        continue;
+      }
+      if (block.type === "address") {
+        for (const line of block.lines) paintLine(line, size, block.align ?? "left", Boolean(block.bold));
+        y -= 2;
+        continue;
+      }
+      if (block.type === "list") {
+        if (block.label) paintLine(block.label, size, "left", true);
+        block.items.forEach((item, itemIndex) => {
+          const prefix = block.ordered === false ? "•" : `${itemIndex + 1})`;
+          paintLine(`${prefix} ${item}`, size, "left");
+        });
+        y -= 2;
+        continue;
+      }
+      if (block.type === "table") {
+        if (mode === "ceremonial" && index > 0) y -= 4;
+        const table = planTable({
+          rows: block.rows,
+          header: block.header ?? true,
+          x: left,
+          y: y + size * 0.6,
+          width: innerW,
+          size: mode === "ceremonial" ? Math.max(size - 0.5, 10) : size - 1,
+          bottom,
+          serif,
+          measure: input.measure,
+        });
+        texts.push(...table.texts);
+        rules.push(...table.rules);
+        bands.push(...table.bands);
+        if (table.clipped) clipped = true;
+        const followed = next?.type === "table" || next?.type === "signature" || next?.type === "paragraph";
+        y = table.bottom - (mode === "ceremonial" && followed ? 22 : size + 1.5 + 10);
+        continue;
+      }
+      if (block.type === "seal") {
+        const placed = layoutSealBadge({
+          text: block.text,
+          column: block.column,
+          left,
+          right: left + innerW,
+          top: y + size * 0.85,
+          measure: (text, fontSize, bold) => input.measure(text, fontSize, { serif, bold }),
           serif,
         });
-        cursor += input.measure(word.text, fontSize, { bold: word.bold, serif }) + space;
+        seals.push(placed.seal);
+        texts.push(...placed.texts);
+        y = placed.bottom - size - 6;
+        continue;
       }
-      y -= fontSize * 1.22;
-    }
-  };
-
-  const paintPair = (label: string, value: string, bold = false) => {
-    const name = label.trim();
-    const printed = value.trim();
-    paintLine(printed ? `${name}: ${printed}` : name, size, "left", bold);
-    y -= 1;
-  };
-
-  for (const block of input.blocks) {
-    if (y < bottom) {
-      clipped = true;
-      break;
-    }
-    if (block.type === "heading") {
-      const prominent = Boolean(block.bold) || block.level === 1;
-      paintLine(block.text, prominent ? size + 1.5 : size, "center", prominent);
-      y -= 2;
-      continue;
-    }
-    if (block.type === "kv") {
-      paintPair(block.label, block.value, Boolean(block.bold));
-      continue;
-    }
-    if (block.type === "box") {
-      paintPair(block.label, block.value, true);
-      continue;
-    }
-    if (block.type === "fields") {
-      for (const row of block.rows) {
-        if (y < bottom) clipped = true;
-        paintPair(row.label, row.value);
+      if (block.type === "signature") {
+        let count = 1;
+        while (count < 3 && input.blocks[index + count]?.type === "signature") count += 1;
+        if (count >= 2) {
+          if (mode === "ceremonial") y -= 4;
+          paintSignatureColumns(index, count);
+          index += count - 1;
+          continue;
+        }
+        const note = bracketNote(block);
+        if (note) paintLine(note, NOTE_SIZE, "right", false, "muted");
+        for (const line of block.lines ?? []) paintLine(line, size - 0.5, "right", true);
+        y -= 3;
+        continue;
       }
-      y -= 2;
-      continue;
-    }
-    if (block.type === "paragraph") {
-      paintLine(block.text, size, block.align === "center" || block.caps ? "center" : "left", Boolean(block.bold));
-      y -= 3;
-      continue;
-    }
-    if (block.type === "address") {
-      for (const line of block.lines) paintLine(line, size, block.align ?? "left", Boolean(block.bold));
-      y -= 2;
-      continue;
-    }
-    if (block.type === "list") {
-      if (block.label) paintLine(block.label, size, "left", true);
-      block.items.forEach((item, index) => {
-        const prefix = block.ordered === false ? "•" : `${index + 1})`;
-        paintLine(`${prefix} ${item}`, size, "left");
-      });
-      y -= 2;
-      continue;
-    }
-    if (block.type === "table") {
-      const table = planTable({
-        rows: block.rows,
-        header: block.header ?? true,
-        x: left,
-        y: y + size * 0.6,
-        width: innerW,
-        size: size - 1,
-        bottom,
-        serif,
-        measure: input.measure,
-      });
-      texts.push(...table.texts);
-      rules.push(...table.rules);
-      bands.push(...table.bands);
-      if (table.clipped) clipped = true;
-      y = table.bottom - (size + 1.5) - 10;
-      continue;
-    }
-    if (block.type === "seal") {
-      const placed = layoutSealBadge({
-        text: block.text,
-        column: block.column,
-        left,
-        right: left + innerW,
-        top: y + size * 0.85,
-        measure: (text, fontSize, bold) => input.measure(text, fontSize, { serif, bold }),
-        serif,
-      });
-      seals.push(placed.seal);
-      texts.push(...placed.texts);
-      y = placed.bottom - size - 6;
-      continue;
-    }
-    if (block.type === "signature") {
       const note = bracketNote(block);
-      if (note) paintLine(note, NOTE_SIZE, "right", false, "muted");
-      for (const line of block.lines ?? []) paintLine(line, size - 0.5, "right", true);
-      y -= 3;
-      continue;
+      if (note) {
+        paintLine(note, NOTE_SIZE, "left", false, "muted");
+        y -= 1;
+      }
     }
-    const note = bracketNote(block);
-    if (note) {
-      paintLine(note, NOTE_SIZE, "left", false, "muted");
-      y -= 1;
-    }
-  }
 
-  const lowest = texts.reduce((min, item) => Math.min(min, item.y), y);
+    return { texts, rules, bands, seals, clipped, y };
+  };
+
+  const ceremonial = lay("ceremonial");
+  const laid = ceremonial.clipped ? lay("compact") : ceremonial;
+  const floor = lowestInk(laid.texts, laid.rules, laid.seals, []);
+  fitCertificateFrame(frame, floor, pageBottom);
   return {
     serif,
-    overflow: clipped || lowest < input.footer + 2 || y < frame.y + 8,
+    overflow: laid.clipped || floor < input.footer + 2 || laid.y < input.footer + 14,
     frame,
     boxes: [],
-    texts,
-    rules,
-    bands,
-    seals,
+    texts: laid.texts,
+    rules: laid.rules,
+    bands: laid.bands,
+    seals: laid.seals,
   };
 }
 
@@ -1088,7 +1210,46 @@ function planCertificate(input: {
     }
   }
 
-  if (signature && signature.type === "signature") {
+  const signGroup = signatures.filter((block) => block.type === "signature");
+  const sideBySide = signGroup.length === 2 || signGroup.length === 3;
+  const sparse = !input.hasPhoto && y > signTop + 160;
+  if ((sideBySide || sparse) && signGroup.length > 0) {
+    const chosen = sideBySide ? signGroup : signature && signature.type === "signature" ? [signature] : [];
+    const gap = 12;
+    const colW = chosen.length === 1 ? signWidth : (innerW - gap * (chosen.length - 1)) / chosen.length;
+    const top = sparse ? y - 20 : frame.y + 24 + signHeight;
+    chosen.forEach((sig, column) => {
+      if (sig.type !== "signature") return;
+      const width = colW;
+      const x = chosen.length === 1 ? signX : left + column * (colW + gap);
+      let signY = top;
+      const note = bracketNote(sig) ?? "[Signature]";
+      const lines = sig.lines ?? [];
+      if (note) {
+        const noteW = input.measure(note, NOTE_SIZE, { serif });
+        const noteX = chosen.length === 1 ? x + width - noteW : x + Math.max(0, (width - noteW) / 2);
+        texts.push({ text: note, x: noteX, y: signY, size: NOTE_SIZE, color: "muted", serif });
+        signY -= 14;
+      }
+      for (const line of lines) {
+        const words = wordsOf(line);
+        const bold = words.some((word) => word.bold) || line === lines[0];
+        const plain = words.map((word) => word.text).join(" ");
+        const textW = input.measure(plain, size - 0.5, { serif, bold });
+        const textX = chosen.length === 1 ? x + width - textW : x + Math.max(0, (width - textW) / 2);
+        texts.push({
+          text: plain,
+          x: textX,
+          y: signY,
+          size: size - 0.5,
+          color: "ink",
+          bold,
+          serif,
+        });
+        signY -= size * 1.25;
+      }
+    });
+  } else if (signature && signature.type === "signature") {
     let signY = frame.y + 24 + signLines.length * size * 1.28 + (signNote ? 14 : 0);
     if (signNote) {
       const noteW = input.measure(signNote, NOTE_SIZE, { serif });
@@ -1114,9 +1275,11 @@ function planCertificate(input: {
   }
 
   const lowest = texts.reduce((min, item) => Math.min(min, item.y), y);
+  const overflow = lowest < input.footer + 2 || y < input.footer + 14;
+  fitCertificateFrame(frame, lowestInk(texts, [], seals, boxes), input.footer + 6);
   return {
     serif,
-    overflow: lowest < input.footer + 2 || y < frame.y + 8,
+    overflow,
     frame,
     boxes,
     image,

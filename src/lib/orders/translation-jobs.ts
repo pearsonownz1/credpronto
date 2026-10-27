@@ -1,3 +1,5 @@
+import { PDFDocument } from "pdf-lib";
+import { ORIGINALS_BUCKET } from "./constants";
 import {
   getOrderById,
   insertPreview,
@@ -35,6 +37,7 @@ import {
   translationPagePlan,
 } from "./translation-pages";
 import { OPEN_TRANSLATION_STATUSES, checkedProgress } from "./translation-watch";
+import { downloadObject } from "./storage";
 
 type Row = Record<string, unknown>;
 
@@ -760,6 +763,8 @@ export type PageWork = {
   qaIssues: QaIssue[];
   /** Set for a photo or screenshot so translation can see the page, not only its transcription. */
   source?: { mime: string; path: string } | null;
+  /** One page sliced from an uploaded PDF so the model can see that page's layout. */
+  pageFile?: { bytes: Uint8Array; mime: string } | null;
 };
 
 /** A page skipped after its job started must not fail the order. The row stays pending and is not dispatched. */
@@ -774,6 +779,20 @@ export async function releaseSkippedPageJob(db: Db, job: PageJobRecord): Promise
     .eq("status", "running");
   fail(error);
   return true;
+}
+
+/** One page of an uploaded PDF, so the model sees that page's table layout. */
+export async function singlePagePdf(bytes: Uint8Array, pageNumber: number): Promise<Uint8Array> {
+  const source = await PDFDocument.load(bytes);
+  const index = pageNumber - 1;
+  if (index < 0 || index >= source.getPageCount()) {
+    throw new Error("That page is not in the PDF.");
+  }
+  const out = await PDFDocument.create();
+  const [page] = await out.copyPages(source, [index]);
+  if (!page) throw new Error("That page is not in the PDF.");
+  out.addPage(page);
+  return out.save();
 }
 
 export async function loadPageWork(db: Db, jobId: string): Promise<PageWork | null> {
@@ -792,6 +811,18 @@ export async function loadPageWork(db: Db, jobId: string): Promise<PageWork | nu
     listConfirmations(db, job.orderId),
     listCorrections(db, job.orderId),
   ]);
+  let pageFile: PageWork["pageFile"] = null;
+  if (document.mime === "application/pdf" && document.originalPath) {
+    try {
+      const raw = await downloadObject(db, ORIGINALS_BUCKET, document.originalPath);
+      pageFile = { bytes: await singlePagePdf(raw, page.pageNumber), mime: "application/pdf" };
+    } catch (error) {
+      console.warn("layout fallback: source pdf page was not attached", {
+        filename: document.filename,
+        message: error instanceof Error ? error.message : "download failed",
+      });
+    }
+  }
   return {
     job,
     run,
@@ -805,6 +836,7 @@ export async function loadPageWork(db: Db, jobId: string): Promise<PageWork | nu
       document.mime?.startsWith("image/") && document.originalPath
         ? { mime: document.mime, path: document.originalPath }
         : null,
+    pageFile,
   };
 }
 

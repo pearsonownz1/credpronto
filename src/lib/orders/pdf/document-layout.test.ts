@@ -291,3 +291,80 @@ describe("page job blocks", () => {
     expect(parsed?.kind).toBe("letter");
   });
 });
+
+describe("diploma certificate frame", () => {
+  it("wraps a short diploma border around the content and leaves room between sections", async () => {
+    const plan = planDocument({
+      kind: "certificate",
+      blocks: [
+        { type: "heading", text: "Universitat Autònoma de Barcelona", align: "center", bold: true },
+        { type: "paragraph", text: "Judit Giménez Roig completed the official university studies leading to the degree.", align: "center" },
+        {
+          type: "table",
+          header: true,
+          rows: [
+            ["The Holder", "The Rector", "The Head of the Academic Affairs Department"],
+            ["Judit Giménez Roig", "Margarita Arboix Arzo", "Joaquín Bernabé Ródenas"],
+          ],
+        },
+        {
+          type: "table",
+          header: true,
+          rows: [
+            ["Alphanumeric Code", "National Register of Degrees", "Center Code", "University Register of Degrees"],
+            ["022A-084542", "2020/217459", "08071020", "227295"],
+          ],
+        },
+      ],
+      width: 612,
+      height: 792,
+      footer: 48,
+      size: 12,
+      measure: await measure(),
+      hasPhoto: false,
+      topInset: 72,
+    });
+    const frame = plan.frame;
+    expect(frame).toBeTruthy();
+    expect(frame && frame.y).toBeGreaterThan(48 + 6 + 80);
+    const ink = Math.min(
+      ...plan.texts.map((item) => item.y),
+      ...(plan.rules ?? []).flatMap((rule) => [rule.y1, rule.y2]),
+    );
+    expect(frame && ink - frame.y).toBeGreaterThanOrEqual(24);
+    expect(frame && ink - frame.y).toBeLessThanOrEqual(34);
+    const title = plan.texts.find((item) => item.text === "Universitat");
+    expect(title && title.size).toBeGreaterThanOrEqual(15);
+    const holder = plan.texts.find((item) => item.text === "Holder");
+    const code = plan.texts.find((item) => item.text === "Alphanumeric");
+    expect(holder && code && holder.y - code.y).toBeGreaterThan(16);
+    expect(plan.overflow).toBe(false);
+  });
+
+  it("lays three certificate signatures in one horizontal row", async () => {
+    const plan = planDocument({
+      kind: "certificate",
+      blocks: [
+        { type: "heading", text: "DEGREE", align: "center", bold: true },
+        { type: "kv", label: "Center Code", value: "08071020" },
+        { type: "signature", electronic: false, lines: ["Judit Giménez Roig", "Holder"] },
+        { type: "signature", electronic: false, lines: ["Margarita Arboix Arzo", "Rector"] },
+        { type: "signature", electronic: false, lines: ["Joaquín Bernabé Ródenas", "Head of Academic Affairs"] },
+      ],
+      width: 612,
+      height: 792,
+      footer: 48,
+      size: 11,
+      measure: await measure(),
+      hasPhoto: false,
+    });
+    const judit = plan.texts.find((item) => item.text === "Judit");
+    const margarita = plan.texts.find((item) => item.text === "Margarita");
+    const joaquin = plan.texts.find((item) => item.text.startsWith("Joaqu"));
+    if (!judit || !margarita || !joaquin) throw new Error("missing signature");
+    expect(judit.x).toBeLessThan(margarita.x);
+    expect(margarita.x).toBeLessThan(joaquin.x);
+    expect(Math.abs(judit.y - margarita.y)).toBeLessThan(2);
+    expect(Math.abs(margarita.y - joaquin.y)).toBeLessThan(2);
+  });
+});

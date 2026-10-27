@@ -101,6 +101,7 @@ const modelBlockSchema = z.object({
   items: z.array(z.string()).nullish(),
   ordered: z.boolean().nullish(),
   cells: z.array(z.array(z.string())).nullish(),
+  header: z.boolean().nullish(),
   caption: z.string().nullish(),
 });
 
@@ -121,7 +122,7 @@ const repairSchema = z.object({
 });
 
 const IMAGE_LAYOUT_NOTE =
-  "The attached image is the source page. Mirror its arrangement: letterhead, date, address, each reference line, the body, each signature, and the enclosure list. Do not join those regions into one paragraph.";
+  "The attached image is the source page. Mirror its arrangement: letterhead, date, address, each reference line, the body, each signature, and the enclosure list. Do not join those regions into one paragraph. A horizontal row of labeled boxes or a bordered multi-column grid is a table, not a vertical list of fields.";
 
 type ModelPage = {
   pageNumber: number;
@@ -132,23 +133,23 @@ type ModelPage = {
 };
 
 const LAYOUT_INSTRUCTIONS = `Also set kind to "letter", "certificate", or "form".
-A letter has a letterhead, an address, a subject line, prose, and a sign-off. A certificate or license has a centered title, boxed numbers, a portrait, seals, and a signature. A form is a list of labeled fields. Keep a form on type "fields". Do not turn a form into a letter or a certificate.
+A letter has a letterhead, an address, a subject line, prose, and a sign-off. A certificate or license has a centered title, boxed numbers, a portrait, seals, and a signature. A form is a vertical list of labeled fields. Keep that list on type "fields". A horizontal row of boxes is a table, not fields. Do not turn a form into a letter or a certificate.
 
 For a letter or a certificate, return blocks in reading order. One source page is one translated page.
 - heading: a title. align center on a certificate. bold true on the main title. caps true when the source title is in capitals.
 - paragraph: prose. align justify for a letter body. Wrap source bold in **double asterisks** and source underline in __double underscores__. caps true when the source paragraph is in capitals.
 - address: the postal lines.
-- kv: one label and one value, such as Document No. and 74. These are not a table.
+- kv: one standalone label and one value, such as Document No. and 74. A single pair is not a table.
 - box: a bordered number. label, value, and column left or right.
 - list: attachments. ordered true. items are the lines. label is the heading, such as Attachment.
 - logo: the letterhead name only, such as OYAK BANK. Do not transcribe the artwork.
 - photo: the holder's portrait. caption is Holder's photo. Do not describe the face.
-- signature: a handwritten signature. electronic false. column left or right when two signatures sit side by side. lines are the printed name and title under the ink, with ** around a bold name. Do not copy the ink.
+- signature: a handwritten signature. electronic false. column left or right when two signatures sit side by side. When two or three signatures sit side by side, return them as consecutive signature blocks in left-to-right order. lines are the printed name and title under the ink, with ** around a bold name. Do not copy the ink.
 - seal: a round seal. text is a short place name, or empty when the place cannot be read. column left or right when two seals sit on opposite sides.
 - stamp: a rectangular stamp. text is the short wording, or empty.
 - handwritten: a handwritten note that is not a signature.
 - illegible: a mark that cannot be read.
-- table: a real grid. cells are rows of strings.
+- table: a bordered grid or a horizontal row of side-by-side labeled cells. header true. cells is [[header1, header2, ...], [value1, value2, ...]]. Examples: Registro Nacional de Títulos | Código de Centro | Registro Universitario de Títulos, and Clave Alfanumérica | Nº Registro Nal. de Títulos | Código de Centro | Registro Univ. de Títulos | Nro. Exp. Univ. Do not turn that row into separate kv blocks or a vertical fields list.
 
 Copy every number and ID exactly. Keep diacritics in names. Turkish, Spanish, French, German, and Portuguese dates are day/month/year on the source. Print every date as MM/DD/YYYY, so 31/1/2006 is 01/31/2006 and 7. 9. 1989 is 09/07/1989.`;
 
@@ -259,7 +260,7 @@ ${qaNotes ? `A previous translation failed QA. Fix every item and keep confirmed
 Return one object per page number, with blocks in the original top-to-bottom order.
 Keep names, CURPs, and place spellings exactly as printed or confirmed. Do not join a label and its value into a paragraph.
 
-For a form, use type "fields" and rows of {label, value}. Translate labels into English. One row per field, in the original order. A line-broken reading (type "lines", one label or value per line) is acceptable when you cannot split a row.
+For a vertical form, use type "fields" and rows of {label, value}. Translate labels into English. One row per field, in the original order. A horizontal row of labeled boxes is a table with header true and cells, not fields. A line-broken reading (type "lines", one label or value per line) is acceptable when you cannot split a row.
 
 For prose, use type "paragraph" and preserve paragraph breaks.
 
@@ -461,7 +462,7 @@ ${qaNotes ? `A previous translation failed QA. Fix every item and keep confirmed
 Return one page object for page ${input.page.number}, with blocks in the original top-to-bottom order.
 Keep names, CURPs, and place spellings exactly as printed or confirmed. Do not join a label and its value into a paragraph.
 
-For a form, use type "fields" and rows of {label, value}. ${phrases.labels} One row per field, in the original order. A line-broken reading (type "lines", one label or value per line) is acceptable when you cannot split a row.
+For a vertical form, use type "fields" and rows of {label, value}. ${phrases.labels} One row per field, in the original order. A horizontal row of labeled boxes is a table with header true and cells, not fields. A line-broken reading (type "lines", one label or value per line) is acceptable when you cannot split a row.
 
 For prose, use type "paragraph" and preserve paragraph breaks.
 
@@ -600,7 +601,9 @@ export async function runTranslationPage(
       throw new HttpError("The page is not ready to translate.", 409);
     }
     let image: { bytes: Uint8Array; mime: string } | undefined;
-    if (work.source) {
+    if (work.pageFile) {
+      image = { bytes: work.pageFile.bytes, mime: work.pageFile.mime };
+    } else if (work.source) {
       try {
         const raw = await downloadObject(db, ORIGINALS_BUCKET, work.source.path);
         image = await imageBytesForModel(raw, work.source.mime);
