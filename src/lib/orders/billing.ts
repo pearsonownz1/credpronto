@@ -151,7 +151,8 @@ function withoutPageMarks(text: string): string {
 function isBlankPage(text: string): boolean {
   const body = withoutPageMarks(text);
   if (!LETTER_OR_NUMBER.test(body)) return true;
-  const tokens = body.match(/[A-Za-z]{2,}/g)?.length ?? 0;
+  // Any script counts. ASCII-only words treated an Arabic or Cyrillic page as blank.
+  const tokens = body.match(/\p{L}{2,}/gu)?.length ?? 0;
   return countCjkChars(body) < 8 && tokens < 3;
 }
 

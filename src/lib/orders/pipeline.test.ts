@@ -2,11 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as analysis from "./analysis";
 import * as db from "./db";
 import * as dispatch from "./evaluation-dispatch";
+import * as gcsRelease from "./gcs-release";
 import { loadCustomerOrder, processOrder } from "./pipeline";
 import * as storage from "./storage";
 import type { Db } from "./storage";
 import * as translation from "./translation";
-import type { FinalCorrectionRecord, OrderRecord } from "./types";
+import type { DocumentRecord, FinalCorrectionRecord, OrderRecord, PageRecord } from "./types";
 
 const handle = {} as Db;
 
@@ -219,6 +220,102 @@ describe("processOrder paid evaluations", () => {
 
     expect(dispatch.ensurePaidEvaluationReports).not.toHaveBeenCalled();
     expect(analysis.analyzeOrder).toHaveBeenCalledWith(handle, "order-1", "token-1");
+    expect(translation.translateOrder).not.toHaveBeenCalled();
+  });
+});
+
+function storedPage(patch: Partial<PageRecord> = {}): PageRecord {
+  return {
+    id: "page-1",
+    documentId: "doc-1",
+    pageNumber: 1,
+    wordCount: 0,
+    billableUnits: 0,
+    billingBasis: "words",
+    ocrText: "",
+    needsReview: false,
+    widthPt: 612,
+    heightPt: 792,
+    uploadPage: 1,
+    logicalPage: 1,
+    orderHint: null,
+    qualityScore: null,
+    qualityFlags: [],
+    qualityMessage: null,
+    ...patch,
+  };
+}
+
+describe("processOrder stuck GCS review", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(storage, "serviceDb").mockReturnValue(handle);
+    vi.spyOn(dispatch, "ensurePaidEvaluationReports").mockResolvedValue({
+      status: "unchanged",
+      generated: [],
+      pending: [],
+      failures: [],
+    });
+    vi.spyOn(translation, "translateOrder").mockResolvedValue(undefined);
+    vi.spyOn(analysis, "analyzeOrder").mockResolvedValue(undefined);
+    vi.spyOn(gcsRelease, "confirmFreeGcsQuote").mockResolvedValue(undefined);
+    vi.spyOn(db, "unskipBlankPage").mockResolvedValue(undefined);
+    vi.spyOn(db, "listDocuments").mockResolvedValue([{ id: "doc-1" } as DocumentRecord]);
+  });
+
+  it("unskips a readable Arabic blank page, confirms the quote, and translates", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue(
+      order({
+        brand: "gcs",
+        status: "needs_review",
+        sourceLanguage: "ar",
+        reviewReason: "image_quality",
+        paidAt: null,
+        totalCents: 0,
+        finalTranslationPath: null,
+      }),
+    );
+    vi.spyOn(db, "listPages").mockResolvedValue([
+      storedPage({
+        id: "arabic",
+        skip: true,
+        skipReason: "blank",
+        ocrText: "شهادة طلاق رسمية بين الطرفين وفق أحكام القانون",
+      }),
+      storedPage({ id: "empty", pageNumber: 2, skip: true, skipReason: "blank", ocrText: " \n" }),
+      storedPage({
+        id: "english",
+        pageNumber: 3,
+        skip: true,
+        skipReason: "english",
+        ocrText: "This page is already written in English.",
+      }),
+    ]);
+
+    await processOrder("order-1", "token-1");
+
+    expect(db.unskipBlankPage).toHaveBeenCalledTimes(1);
+    expect(db.unskipBlankPage).toHaveBeenCalledWith(handle, "arabic");
+    expect(gcsRelease.confirmFreeGcsQuote).toHaveBeenCalledWith(handle, "order-1", {
+      sourceLanguage: "ar",
+      quoted: true,
+      pagesRead: 1,
+      pagesTotal: 1,
+    });
+    expect(translation.translateOrder).toHaveBeenCalledWith(handle, "order-1", "token-1");
+    expect(analysis.analyzeOrder).not.toHaveBeenCalled();
+  });
+
+  it("leaves a non-GCS needs_review order on the review queue", async () => {
+    vi.spyOn(db, "getOrderById").mockResolvedValue(
+      order({ status: "needs_review", sourceLanguage: "ar", reviewReason: "image_quality", paidAt: null }),
+    );
+
+    await processOrder("order-1", "token-1");
+
+    expect(db.unskipBlankPage).not.toHaveBeenCalled();
+    expect(gcsRelease.confirmFreeGcsQuote).not.toHaveBeenCalled();
     expect(translation.translateOrder).not.toHaveBeenCalled();
   });
 });

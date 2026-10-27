@@ -827,33 +827,39 @@ export async function runTranslationAssemble(
         const current = await getOrderById(db, input.orderId);
         const keepPaid = current?.status === "paid";
         if (!assessment.pass) {
-          await markPreview(db, input.orderId, input.version, "failed");
-          await markRunFailed(db, input.orderId, input.version);
-          if (jobs.length > 0 && qaWillRetry({ pass: false, attempt })) {
+          const retrying = jobs.length > 0 && qaWillRetry({ pass: false, attempt });
+          // A free GCS order still opens in the editor after QA retries, so the translator can fix wording.
+          if (retrying || !gcs) {
+            await markPreview(db, input.orderId, input.version, "failed");
+            await markRunFailed(db, input.orderId, input.version);
+          }
+          if (retrying) {
             if (deadline.aborted) throw new AiUnavailableError("translation_timeout");
             const fresh = await getOrderById(db, input.orderId);
             if (!fresh) return;
             await beginTranslation(db, fresh, run.token, { round: run.round + 1, qaIssues: assessment.issues });
             return;
           }
-          if (deadline.aborted) throw new AiUnavailableError("translation_timeout");
-          const wrote = await updateOrder(
-            db,
-            input.orderId,
-            {
-              status: "needs_review",
-              review_reason: QA_REVIEW_REASON,
-              progress: checkedProgress(order.progress, { step: "done" }),
-            },
-            { statuses: OPEN_TRANSLATION_STATUSES },
-          );
-          if (wrote === false && !keepPaid) return;
-          if (wrote) await alertStaffForHeldTranslation(db, input.orderId, QA_REVIEW_REASON);
-          if (keepPaid || current?.paidAt) {
-            const { settlePaidOrder } = await import("./paid-release");
-            await settlePaidOrder(db, input.orderId);
+          if (!gcs) {
+            if (deadline.aborted) throw new AiUnavailableError("translation_timeout");
+            const wrote = await updateOrder(
+              db,
+              input.orderId,
+              {
+                status: "needs_review",
+                review_reason: QA_REVIEW_REASON,
+                progress: checkedProgress(order.progress, { step: "done" }),
+              },
+              { statuses: OPEN_TRANSLATION_STATUSES },
+            );
+            if (wrote === false && !keepPaid) return;
+            if (wrote) await alertStaffForHeldTranslation(db, input.orderId, QA_REVIEW_REASON);
+            if (keepPaid || current?.paidAt) {
+              const { settlePaidOrder } = await import("./paid-release");
+              await settlePaidOrder(db, input.orderId);
+            }
+            return;
           }
-          return;
         }
 
         await markPreview(db, input.orderId, input.version, "ready");
