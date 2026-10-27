@@ -24,7 +24,13 @@ import {
   type RenderInput,
   type RenderPage,
 } from "./layout";
-import { drawCertificationPage, drawFinalFooter } from "./cover";
+import {
+  drawCertificationPage,
+  drawCredProntoLetterhead,
+  drawFinalFooter,
+  embedCredProntoLetterhead,
+  type CredProntoLetterhead,
+} from "./cover";
 import {
   GCS_LETTERHEAD_BODY_CLEARANCE,
   drawGcsLetterhead,
@@ -516,6 +522,7 @@ function drawBody(
     image: PDFImage | null;
     topInset?: number;
     letterhead?: GcsLetterhead | null;
+    credProntoLetterhead?: CredProntoLetterhead | null;
   },
 ): string {
   const { widthPt, heightPt } = pageSize(pageSpec);
@@ -525,7 +532,9 @@ function drawBody(
   const footer = options.certified || options.letterhead ? 48 : Math.max(28, margin * 0.7);
   const kind = documentKind({ ...pageSpec, blocks });
   const topInset = options.topInset ?? 0;
+  const clearsLetterhead = Boolean(options.letterhead || options.credProntoLetterhead);
   if (options.letterhead) drawGcsLetterhead(page, faces.regular, options.letterhead);
+  else if (options.credProntoLetterhead) drawCredProntoLetterhead(page, faces.regular, options.credProntoLetterhead);
   let painted = "";
   if (kind) {
     const measure = (text: string, size: number, style: PlanStyle) =>
@@ -537,10 +546,42 @@ function drawBody(
     // A one-language diploma is shorter than the bilingual scan. Start larger
     // and step down to 8 only when the page would overflow.
     let size = labeledCertificate ? 13.5 : 12;
-    let plan = planDocument({ kind, blocks, width: widthPt, height: heightPt, footer, size, measure, hasPhoto, topInset });
+    let inset = topInset;
+    const planAt = (nextSize: number, nextInset: number) =>
+      planDocument({
+        kind,
+        blocks,
+        width: widthPt,
+        height: heightPt,
+        footer,
+        size: nextSize,
+        measure,
+        hasPhoto,
+        topInset: nextInset,
+      });
+    let plan = planAt(size, inset);
     while (plan.overflow && size > 8) {
       size -= 0.5;
-      plan = planDocument({ kind, blocks, width: widthPt, height: heightPt, footer, size, measure, hasPhoto, topInset });
+      plan = planAt(size, inset);
+    }
+    if (options.credProntoLetterhead) {
+      const textLimit = gcsLetterheadRuleY(heightPt) - GCS_LETTERHEAD_BODY_CLEARANCE;
+      const borderLimit = gcsLetterheadRuleY(heightPt);
+      for (let guard = 0; guard < 4; guard += 1) {
+        let highestText = 0;
+        let highestBorder = 0;
+        for (const item of plan.texts) highestText = Math.max(highestText, item.y + item.size);
+        if (plan.frame) highestBorder = Math.max(highestBorder, plan.frame.y + plan.frame.h + plan.frame.stroke / 2);
+        for (const box of plan.boxes) highestBorder = Math.max(highestBorder, box.y + box.h + box.stroke / 2);
+        const overflow = Math.max(0, highestText - textLimit, highestBorder - borderLimit);
+        if (overflow <= 0.2) break;
+        inset += overflow;
+        plan = planAt(size, inset);
+        while (plan.overflow && size > 8) {
+          size -= 0.5;
+          plan = planAt(size, inset);
+        }
+      }
     }
     drawBands(page, plan.bands);
     if (plan.frame) drawRounded(page, plan.frame);
@@ -569,7 +610,7 @@ function drawBody(
     const minSize = 6.5;
     for (;;) {
       let top = heightPt - margin - size - topInset;
-      if (options.letterhead) {
+      if (clearsLetterhead) {
         const headingSize = size + 2.5;
         const limit = gcsLetterheadRuleY(heightPt) - GCS_LETTERHEAD_BODY_CLEARANCE;
         const ascender = top + headingSize;
@@ -632,6 +673,7 @@ async function renderTranslationPdf(
   const pageBlocks = ordered.map((page) => blocksFor(page));
   const faces = await embedFaces(doc, pageBlocks.flat());
   const letterhead = gcs ? await embedGcsLetterhead(doc) : null;
+  const credProntoLetterhead = gcs ? null : await embedCredProntoLetterhead(doc);
   const needsSerif = ordered.some((page, index) => documentKind({ ...page, blocks: pageBlocks[index] }) === "certificate");
   const serif = needsSerif ? await embedSerif(doc) : null;
   const images = new Map<number, PDFImage>();
@@ -658,8 +700,9 @@ async function renderTranslationPdf(
       certified: !watermark || gcs,
       serif,
       image: images.get(index) ?? null,
-      topInset: gcs ? gcsBodyTopInset(kind) : 0,
+      topInset: gcsBodyTopInset(kind),
       letterhead,
+      credProntoLetterhead,
     });
     pageTexts.push({ number: pageSpec.combinedPageNumber, text });
     if (watermark && !gcs) drawWatermark(page, faces.regular, widthPt, heightPt);
