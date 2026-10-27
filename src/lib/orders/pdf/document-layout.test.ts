@@ -12,12 +12,13 @@ import {
   oyakLetterBlocks,
 } from "./attached-documents";
 import { buildCombinedOriginal } from "./combine";
-import { planDocument, type PlanStyle } from "./document-layout";
+import { paintedPlanText, planDocument, type PlanStyle } from "./document-layout";
+import { normalizedPageSize, type RenderBlock } from "./layout";
 import { fontFace, serifFace, stableFontkit } from "./font";
 import { applyGroundedFixes, reconcileIdentifiers, verifyIdentifiers } from "./identifiers";
 import { cropHolderPhoto } from "./photo";
 import { renderOrderPdfs } from "./render";
-import { finalizeBlocks } from "./structure";
+import { blocksToParagraphs, finalizeBlocks } from "./structure";
 import { parsePageJobOutput } from "../translation-jobs";
 
 const ORIGINALS = path.join(process.cwd(), "src/lib/orders/pdf/fixtures/originals");
@@ -289,5 +290,124 @@ describe("page job blocks", () => {
     });
     expect(parsed?.layoutFallback).toBe("flat");
     expect(parsed?.kind).toBe("letter");
+  });
+});
+
+const DIPLOMA_FRONT: RenderBlock[] = [
+  { type: "heading", text: "Felipe VI, King of Spain", align: "center", bold: true },
+  { type: "paragraph", text: "and on his behalf, the Rector of the Universitat Autònoma de Barcelona", align: "center" },
+  { type: "paragraph", text: "Judit Giménez Roig", align: "center", bold: true },
+  { type: "paragraph", text: "born on 08/15/1997 in Premià de Mar (Maresme), of Spanish nationality, completed in July 2020 the official university studies leading to the official university degree of" },
+  { type: "heading", text: "Graduate in Biotechnology from the Universitat Autònoma de Barcelona", align: "center", bold: true },
+  { type: "paragraph", text: "Bellaterra (Cerdanyola del Vallès), 10/01/2020", align: "center" },
+  { type: "signature", electronic: false, lines: ["The holder", "Judit Giménez Roig"] },
+  { type: "signature", electronic: false, lines: ["The Rector", "Margarita Arboix Arzo"] },
+  { type: "signature", electronic: false, lines: ["The Head of the Academic Affairs Department", "Joaquín Bernabé Ródenas"] },
+  { type: "box", label: "", value: "022A-084542" },
+  { type: "kv", label: "National Register of Degrees", value: "2020/217459" },
+  { type: "kv", label: "Center Code", value: "08071020" },
+  { type: "kv", label: "University Register of Degrees", value: "227295" },
+];
+
+const DIPLOMA_BACK: RenderBlock[] = [
+  {
+    type: "fields",
+    rows: [
+      { label: "Alphanumeric code", value: "022A-084542" },
+      { label: "National Degree Registry No.", value: "2020/217459" },
+      { label: "Institution code", value: "08071020" },
+      { label: "University Degree Registry No.", value: "227295" },
+      { label: "University file No.", value: "14655910H5051" },
+    ],
+  },
+  { type: "paragraph", text: "Reverse of the official Bachelor's Degree in Biotechnology, issued in Bellaterra (Cerdanyola del Vallès) on 10/01/2020 to Judit Giménez Roig, who completed the studies leading to this degree in July 2020." },
+  { type: "signature", electronic: false, lines: ["Head of the Academic Affairs Department", "Joaquín Bernabé Ródenas"] },
+  { type: "paragraph", text: "Mark M-02/2020" },
+];
+
+describe("Spanish diploma registry tables", () => {
+  it("borders the registration strip, keeps an empty label free of a colon, and lines up three signatures", async () => {
+    const measureText = await measure();
+    const front = planDocument({
+      kind: "certificate",
+      blocks: DIPLOMA_FRONT,
+      width: 612,
+      height: 792,
+      footer: 48,
+      size: 11,
+      measure: measureText,
+      hasPhoto: false,
+    });
+    const frontText = paintedPlanText(front);
+    expect(front.rules?.length ?? 0).toBeGreaterThan(0);
+    expect(frontText).toContain("022A-084542");
+    expect(frontText).toContain("2020/217459");
+    expect(frontText).toContain("08071020");
+    expect(frontText).toContain("227295");
+    expect(frontText).not.toContain(": 022A-084542");
+    const notes = front.texts.filter((item) => item.text === "[Signature]");
+    expect(notes).toHaveLength(3);
+    const ys = notes.map((item) => item.y);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(1);
+    const xs = [...notes].sort((a, b) => a.x - b.x).map((item) => item.x);
+    expect(xs[0]).toBeLessThan(xs[1] ?? 0);
+    expect(xs[1]).toBeLessThan(xs[2] ?? 0);
+    expect((xs[2] ?? 0) - (xs[0] ?? 0)).toBeGreaterThan(140);
+    const frontLow = Math.min(...front.texts.map((item) => item.y), ...(front.rules ?? []).map((rule) => Math.min(rule.y1, rule.y2)));
+    expect(front.frame?.y).toBeGreaterThan(48 + 6);
+    expect(frontLow - (front.frame?.y ?? 0)).toBeGreaterThan(8);
+    expect(frontLow - (front.frame?.y ?? 0)).toBeLessThan(72);
+    expect(blocksToParagraphs([{ type: "box", label: "", value: "022A-084542" }])).toEqual(["022A-084542"]);
+
+    const back = planDocument({
+      kind: "certificate",
+      blocks: DIPLOMA_BACK,
+      width: 612,
+      height: 792,
+      footer: 48,
+      size: 11,
+      measure: measureText,
+      hasPhoto: false,
+    });
+    const backText = paintedPlanText(back);
+    expect(back.rules?.length ?? 0).toBeGreaterThan(0);
+    expect(backText).toContain("Alphanumeric");
+    expect(backText).toContain("14655910H5051");
+    expect(backText).not.toContain(": 022A-084542");
+    const backLow = Math.min(...back.texts.map((item) => item.y), ...(back.rules ?? []).map((rule) => Math.min(rule.y1, rule.y2)));
+    expect(back.frame?.y).toBeGreaterThan(48 + 30);
+    expect(backLow - (back.frame?.y ?? 0)).toBeLessThan(72);
+  });
+
+  it("hugs a short certificate frame instead of boxing the empty page", async () => {
+    const plan = planDocument({
+      kind: "certificate",
+      blocks: [
+        { type: "heading", text: "Graduate in Biotechnology", align: "center", bold: true },
+        { type: "paragraph", text: "Judit Giménez Roig", align: "center" },
+        { type: "signature", electronic: false, lines: ["The holder", "Judit Giménez Roig"] },
+        { type: "signature", electronic: false, lines: ["The Rector", "Margarita Arboix Arzo"] },
+        { type: "signature", electronic: false, lines: ["The Head of the Academic Affairs Department", "Joaquín Bernabé Ródenas"] },
+      ],
+      width: 612,
+      height: 792,
+      footer: 48,
+      size: 12,
+      measure: await measure(),
+      hasPhoto: false,
+    });
+    const notes = plan.texts.filter((item) => item.text === "[Signature]");
+    expect(notes).toHaveLength(3);
+    const ys = notes.map((item) => item.y);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(1);
+    expect(plan.frame?.y).toBeGreaterThan(120);
+    expect(plan.overflow).toBe(false);
+  });
+
+  it("maps an A3 scan onto Letter and keeps Letter landscape", () => {
+    expect(normalizedPageSize(841.68, 1190.4)).toEqual({ widthPt: 612, heightPt: 792 });
+    expect(normalizedPageSize(1190.4, 841.68)).toEqual({ widthPt: 612, heightPt: 792 });
+    expect(normalizedPageSize(792, 612)).toEqual({ widthPt: 792, heightPt: 612 });
+    expect(normalizedPageSize(595, 842)).toEqual({ widthPt: 595, heightPt: 842 });
   });
 });

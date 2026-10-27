@@ -56,4 +56,41 @@ describe("GCS editor pages", () => {
     expect(sanitizeEditorPages([])).toBeNull();
     expect(sanitizeEditorPages([{ pageNumber: 1 }])).toBeNull();
   });
+
+  it("draws an A3 scan on a Letter page and keeps a saved registry table", () => {
+    const pages = editorPagesFromTranslations({
+      translations: [
+        {
+          id: "tr-1",
+          documentId: "doc-1",
+          version: 1,
+          output: {
+            pages: [
+              {
+                pageNumber: 1,
+                kind: "certificate",
+                blocks: [
+                  { type: "box", label: "", value: "022A-084542" },
+                  { type: "table", header: true, rows: [["Center Code", "University file No."], ["08071020", "14655910H5051"]] },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+      sourcePages: [{ documentId: "doc-1", pageNumber: 1, widthPt: 841.68, heightPt: 1190.4, combinedPageNumber: 1 }],
+    });
+    expect(pages[0]).toMatchObject({ widthPt: 612, heightPt: 792 });
+    const saved = sanitizeEditorPages(pages);
+    expect(saved?.[0]?.widthPt).toBe(612);
+    expect(saved?.[0]?.heightPt).toBe(792);
+    const table = saved?.[0]?.blocks.find((block) => block.type === "table");
+    expect(table).toMatchObject({
+      type: "table",
+      header: true,
+      rows: [["Center Code", "University file No."], ["08071020", "14655910H5051"]],
+    });
+    expect(saved?.[0]?.paragraphs.join("\n")).not.toContain(": 022A-084542");
+    expect(saved?.[0]?.paragraphs.join("\n")).toContain("022A-084542");
+  });
 });

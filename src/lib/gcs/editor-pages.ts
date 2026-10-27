@@ -1,4 +1,4 @@
-import { pageKind, sealAlign, type PageKind, type RenderBlock } from "@/lib/orders/pdf/layout";
+import { normalizedPageSize, pageKind, sealAlign, type PageKind, type RenderBlock } from "@/lib/orders/pdf/layout";
 import { blocksToParagraphs } from "@/lib/orders/pdf/structure";
 
 export type GcsEditorPage = {
@@ -154,12 +154,16 @@ export function sanitizeEditorPages(value: unknown): GcsEditorPage[] | null {
     }) : [];
     const kept = blocks.length > 0 ? blocks : ([{ type: "paragraph", text: " " }] as RenderBlock[]);
     const kind = pageKind(page.kind) ?? null;
+    const size = normalizedPageSize(
+      typeof page.widthPt === "number" ? page.widthPt : 0,
+      typeof page.heightPt === "number" ? page.heightPt : 0,
+    );
     pages.push({
       documentId,
       pageNumber,
       combinedPageNumber,
-      widthPt: typeof page.widthPt === "number" && page.widthPt > 0 ? page.widthPt : 612,
-      heightPt: typeof page.heightPt === "number" && page.heightPt > 0 ? page.heightPt : 792,
+      widthPt: size.widthPt,
+      heightPt: size.heightPt,
       kind,
       blocks: kept,
       paragraphs: blocksToParagraphs(kept),
@@ -229,13 +233,14 @@ export function editorPagesFromTranslations(input: {
         (item) => item.documentId === translation.documentId && item.pageNumber === pageNumber,
       );
       const blocks = blocksFromStored(page);
+      const size = normalizedPageSize(source?.widthPt ?? 0, source?.heightPt ?? 0);
       pages.push({
         documentId: translation.documentId,
         pageNumber,
         combinedPageNumber:
           typeof page.combinedPageNumber === "number" ? page.combinedPageNumber : source?.combinedPageNumber ?? pages.length + 1,
-        widthPt: source?.widthPt && source.widthPt > 0 ? source.widthPt : 612,
-        heightPt: source?.heightPt && source.heightPt > 0 ? source.heightPt : 792,
+        widthPt: size.widthPt,
+        heightPt: size.heightPt,
         kind: pageKind(page.kind) ?? null,
         blocks,
         paragraphs: blocksToParagraphs(blocks),

@@ -1,6 +1,7 @@
 "use client";
 
 import type { GcsEditorPage } from "@/lib/gcs/editor-pages";
+import { borderedTableBlock, type LabeledPair } from "@/lib/orders/pdf/field-grid";
 import type { PageKind, RenderBlock, SealAlign } from "@/lib/orders/pdf/layout";
 
 const KINDS: Array<{ value: PageKind; label: string }> = [
@@ -46,6 +47,32 @@ export function TranslationEditor({
       ...page,
       blocks: page.blocks.map((current, index) => (index === blockIndex ? block : current)),
     });
+  }
+
+  function convertToTable(pageIndex: number, blockIndex: number) {
+    const page = pages?.[pageIndex];
+    const block = page?.blocks[blockIndex];
+    if (!page || !block) return;
+    if (block.type === "fields") {
+      const table = borderedTableBlock(block.rows, "fields");
+      if (!table) return;
+      updateBlock(pageIndex, blockIndex, table);
+      return;
+    }
+    if (block.type !== "kv" && block.type !== "box") return;
+    const pairs: LabeledPair[] = [];
+    let end = blockIndex;
+    while (end < page.blocks.length) {
+      const item = page.blocks[end];
+      if (!item || (item.type !== "kv" && item.type !== "box")) break;
+      pairs.push({ label: item.label, value: item.value });
+      end += 1;
+    }
+    const table = borderedTableBlock(pairs, "run");
+    if (!table) return;
+    const blocks = [...page.blocks];
+    blocks.splice(blockIndex, end - blockIndex, table);
+    updatePage(pageIndex, { ...page, blocks });
   }
 
   return (
@@ -112,20 +139,39 @@ export function TranslationEditor({
                     key={`${page.pageNumber}-${blockIndex}`}
                     block={block}
                     onChange={(next) => updateBlock(pageIndex, blockIndex, next)}
+                    onConvertToTable={
+                      block.type === "fields" || block.type === "kv" || block.type === "box"
+                        ? () => convertToTable(pageIndex, blockIndex)
+                        : undefined
+                    }
                   />
                 ))}
-                <button
-                  type="button"
-                  className="self-start text-[13px] font-semibold text-primary"
-                  onClick={() =>
-                    updatePage(pageIndex, {
-                      ...page,
-                      blocks: [...page.blocks, { type: "seal", text: "", column: "right" }],
-                    })
-                  }
-                >
-                  Add [SEAL]
-                </button>
+                <div className="flex flex-wrap gap-4">
+                  <button
+                    type="button"
+                    className="self-start text-[13px] font-semibold text-primary"
+                    onClick={() =>
+                      updatePage(pageIndex, {
+                        ...page,
+                        blocks: [...page.blocks, { type: "table", header: true, rows: [["", ""], ["", ""]] }],
+                      })
+                    }
+                  >
+                    Add table
+                  </button>
+                  <button
+                    type="button"
+                    className="self-start text-[13px] font-semibold text-primary"
+                    onClick={() =>
+                      updatePage(pageIndex, {
+                        ...page,
+                        blocks: [...page.blocks, { type: "seal", text: "", column: "right" }],
+                      })
+                    }
+                  >
+                    Add [SEAL]
+                  </button>
+                </div>
               </div>
             </section>
           ))}
@@ -135,7 +181,15 @@ export function TranslationEditor({
   );
 }
 
-function BlockEditor({ block, onChange }: { block: RenderBlock; onChange: (block: RenderBlock) => void }) {
+function BlockEditor({
+  block,
+  onChange,
+  onConvertToTable,
+}: {
+  block: RenderBlock;
+  onChange: (block: RenderBlock) => void;
+  onConvertToTable?: () => void;
+}) {
   if (block.type === "heading" || block.type === "paragraph") {
     return (
       <label className="block text-[12px] font-semibold text-ink-muted">
@@ -193,8 +247,52 @@ function BlockEditor({ block, onChange }: { block: RenderBlock; onChange: (block
           >
             Add field
           </button>
+          {onConvertToTable ? (
+            <button type="button" className="self-start text-[13px] font-semibold text-primary" onClick={onConvertToTable}>
+              Convert to bordered table
+            </button>
+          ) : null}
         </div>
       </fieldset>
+    );
+  }
+  if (block.type === "kv" || block.type === "box") {
+    return (
+      <fieldset className="rounded-xl border border-[#e6ebf2] p-3">
+        <legend className="px-1 text-[12px] font-semibold text-ink-muted">{block.type === "box" ? "Box" : "Label"}</legend>
+        <div className="grid grid-cols-[1fr_1fr] gap-2">
+          <input
+            aria-label={block.type === "box" ? "Box label" : "Label"}
+            className={fieldClass()}
+            value={block.label}
+            onChange={(event) => onChange({ ...block, label: event.target.value })}
+          />
+          <input
+            aria-label={block.type === "box" ? "Box value" : "Value"}
+            className={fieldClass()}
+            value={block.value}
+            onChange={(event) => onChange({ ...block, value: event.target.value })}
+          />
+        </div>
+        {onConvertToTable ? (
+          <button type="button" className="mt-2 text-[13px] font-semibold text-primary" onClick={onConvertToTable}>
+            Convert to bordered table
+          </button>
+        ) : null}
+      </fieldset>
+    );
+  }
+  if (block.type === "signature") {
+    return (
+      <label className="block text-[12px] font-semibold text-ink-muted">
+        Signature
+        <textarea
+          aria-label="Signature lines"
+          className={`${fieldClass()} mt-1 min-h-16 font-normal`}
+          value={(block.lines ?? []).join("\n")}
+          onChange={(event) => onChange({ ...block, lines: event.target.value.split("\n") })}
+        />
+      </label>
     );
   }
   if (block.type === "table") {
@@ -231,16 +329,25 @@ function BlockEditor({ block, onChange }: { block: RenderBlock; onChange: (block
               </button>
             </div>
           ))}
-          <button
-            type="button"
-            className="self-start text-[13px] font-semibold text-primary"
-            onClick={() => {
-              const width = Math.max(1, ...block.rows.map((row) => row.length));
-              onChange({ ...block, rows: [...block.rows, Array.from({ length: width }, () => "")] });
-            }}
-          >
-            Add row
-          </button>
+          <div className="flex flex-wrap gap-4">
+            <button
+              type="button"
+              className="self-start text-[13px] font-semibold text-primary"
+              onClick={() => {
+                const width = Math.max(1, ...block.rows.map((row) => row.length));
+                onChange({ ...block, rows: [...block.rows, Array.from({ length: width }, () => "")] });
+              }}
+            >
+              Add row
+            </button>
+            <button
+              type="button"
+              className="self-start text-[13px] font-semibold text-primary"
+              onClick={() => onChange({ ...block, rows: block.rows.map((row) => [...row, ""]) })}
+            >
+              Add column
+            </button>
+          </div>
         </div>
       </fieldset>
     );

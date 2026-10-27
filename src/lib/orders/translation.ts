@@ -138,17 +138,17 @@ For a letter or a certificate, return blocks in reading order. One source page i
 - heading: a title. align center on a certificate. bold true on the main title. caps true when the source title is in capitals.
 - paragraph: prose. align justify for a letter body. Wrap source bold in **double asterisks** and source underline in __double underscores__. caps true when the source paragraph is in capitals.
 - address: the postal lines.
-- kv: one label and one value, such as Document No. and 74. These are not a table.
-- box: a bordered number. label, value, and column left or right.
+- kv: one label and one value that is not inside a bordered grid, such as Document No. and 74 on a letter. These are not a table.
+- box: one bordered number sitting alone, such as a union number beside a portrait. label, value, and column left or right.
 - list: attachments. ordered true. items are the lines. label is the heading, such as Attachment.
 - logo: the letterhead name only, such as OYAK BANK. Do not transcribe the artwork.
 - photo: the holder's portrait. caption is Holder's photo. Do not describe the face.
-- signature: a handwritten signature. electronic false. column left or right when two signatures sit side by side. lines are the printed name and title under the ink, with ** around a bold name. Do not copy the ink.
+- signature: a handwritten signature. electronic false. column left or right when two signatures sit side by side. lines are the printed name and title under the ink, with ** around a bold name. Do not copy the ink. When two or three signatures share one horizontal row, emit them as consecutive signature blocks.
 - seal: a round seal. text is a short place name, or empty when the place cannot be read. column left or right when two seals sit on opposite sides.
 - stamp: a rectangular stamp. text is the short wording, or empty.
 - handwritten: a handwritten note that is not a signature.
 - illegible: a mark that cannot be read.
-- table: a real grid. cells are rows of strings.
+- table: a bordered table, grid, or horizontal row of boxed cells. cells are rows of strings. Whenever the source page shows a bordered table, a grid, or a horizontal strip of boxed registration fields (a row of 3 to 5 registration-number boxes at the top or bottom of a diploma or certificate, or any ruled key-value table), preserve that grid as a table. Do not flatten those cells into kv, box, or fields. Use a header row of the field labels and a second row of the values when the labels sit above the numbers. Use one row of cells written as "Label: Value" when the label and value share one box. An empty label is an empty cell, never a leading colon.
 
 Copy every number and ID exactly. Keep diacritics in names. Turkish, Spanish, French, German, and Portuguese dates are day/month/year on the source. Print every date as MM/DD/YYYY, so 31/1/2006 is 01/31/2006 and 7. 9. 1989 is 09/07/1989.`;
 

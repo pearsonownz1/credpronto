@@ -14,6 +14,7 @@ import {
   type PlanStyle,
   type PlanText,
 } from "./document-layout";
+import { isHorizontalRegistryStrip, tableForPairs, type LabeledPair } from "./field-grid";
 import { faceForCodePoint, fontFace, serifFace, stableFontkit, type FontFace, type FontFaceId } from "./font";
 import {
   assertContiguousPages,
@@ -246,7 +247,63 @@ function layoutBlocks(
     y = placed.bottom - size - 6;
   };
 
-  for (const block of blocks) {
+  const paintPairTable = (rows: string[][], header: boolean) => {
+    const table = planTable({
+      rows,
+      header,
+      x: margin,
+      y: y + size * 0.8,
+      width: maxWidth,
+      size: tableSize,
+      bottom: floor,
+      serif: false,
+      measure: (text, fontSize) => measure(text, fontSize, false),
+    });
+    for (const item of table.texts) {
+      paints.push({ text: item.text, x: item.x, y: item.y, size: item.size, color: INK, italic: false, bold: item.bold });
+    }
+    rules.push(...table.rules);
+    bands.push(...table.bands);
+    const afterTable = size <= 8.5 ? size + 4 : size + 2.5 + 10;
+    y = table.clipped ? Math.min(table.bottom, floor - 1) : table.bottom - afterTable;
+  };
+
+  const paintLoosePairs = (rows: LabeledPair[]) => {
+    const labelSize = Math.max(7.5, size - 1);
+    const valueSize = size;
+    const lineHeight = Math.max(labelSize, valueSize) * 1.28;
+    const top = y + Math.max(labelSize, valueSize) * 0.92;
+    const rowMarks: number[] = [top];
+    for (const row of rows) {
+      const labels = wrapLines(row.label, (line) => measure(line, labelSize, false), labelWidth);
+      const values = wrapLines(row.value || " ", (line) => measure(line, valueSize, false), valueWidth);
+      const count = Math.max(labels.length, values.length, 1);
+      for (let line = 0; line < count; line += 1) {
+        const label = labels[line];
+        const value = row.value ? values[line] : undefined;
+        if (label) paints.push({ text: label, x: margin + 4, y, size: labelSize, color: MUTED, italic: false });
+        if (value) paints.push({ text: value, x: margin + labelWidth + columnGap, y, size: valueSize, color: INK, italic: false });
+        y -= lineHeight;
+      }
+      rowMarks.push(y + 2);
+      y -= 1;
+    }
+    const gridBottom = rowMarks[rowMarks.length - 1] ?? top;
+    const gridRight = margin + maxWidth;
+    const mid = margin + labelWidth + columnGap / 2;
+    rowMarks.forEach((mark, markIndex) => {
+      const outer = markIndex === 0 || markIndex === rowMarks.length - 1;
+      rules.push({ x1: margin, y1: mark, x2: gridRight, y2: mark, width: outer ? 0.6 : 0.4 });
+    });
+    for (const ruleX of [margin, mid, gridRight]) {
+      rules.push({ x1: ruleX, y1: top, x2: ruleX, y2: gridBottom, width: ruleX === mid ? 0.4 : 0.6 });
+    }
+    y -= 3;
+  };
+
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (!block) continue;
     const noted = noteText(block);
     if (block.type === "seal") {
       paintSeal(block);
@@ -257,28 +314,27 @@ function layoutBlocks(
     } else if (block.type === "paragraph") {
       paintLines(block.text, margin, size, INK, false, maxWidth);
       y -= 5;
+    } else if (block.type === "fields" || block.type === "kv" || block.type === "box") {
+      if (block.type === "fields") {
+        const table = tableForPairs(block.rows, "fields");
+        if (table && isHorizontalRegistryStrip(block.rows)) paintPairTable(table.rows, table.header);
+        else if (block.rows.length > 0) paintLoosePairs(block.rows);
+        continue;
+      }
+      const pairs: LabeledPair[] = [];
+      while (index < blocks.length) {
+        const item = blocks[index];
+        if (!item || (item.type !== "kv" && item.type !== "box")) break;
+        pairs.push({ label: item.label, value: item.value });
+        index += 1;
+      }
+      index -= 1;
+      const table = tableForPairs(pairs, "run");
+      if (table) paintPairTable(table.rows, table.header);
+      else paintLoosePairs(pairs);
     } else if (noted) {
       paintLines(noted, margin, Math.max(8, size - 0.5), MUTED, true, maxWidth);
       y -= 5;
-    } else if (block.type === "fields" || block.type === "kv") {
-      const rows = block.type === "fields" ? block.rows : [{ label: block.label, value: block.value }];
-      const labelSize = Math.max(7.5, size - 1);
-      const valueSize = size;
-      const lineHeight = Math.max(labelSize, valueSize) * 1.28;
-      for (const row of rows) {
-        const labels = wrapLines(row.label, (line) => measure(line, labelSize, false), labelWidth);
-        const values = wrapLines(row.value || " ", (line) => measure(line, valueSize, false), valueWidth);
-        const count = Math.max(labels.length, values.length, 1);
-        for (let index = 0; index < count; index += 1) {
-          const label = labels[index];
-          const value = row.value ? values[index] : undefined;
-          if (label) paints.push({ text: label, x: margin, y, size: labelSize, color: MUTED, italic: false });
-          if (value) paints.push({ text: value, x: margin + labelWidth + columnGap, y, size: valueSize, color: INK, italic: false });
-          y -= lineHeight;
-        }
-        y -= 1;
-      }
-      y -= 3;
     } else if (block.type === "table") {
       const columns = Math.max(0, ...block.rows.map((row) => row.length));
       const table = planTable({

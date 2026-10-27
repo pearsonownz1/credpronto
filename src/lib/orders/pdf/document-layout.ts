@@ -1,3 +1,4 @@
+import { labeledLine, tableForPairs, type LabeledPair } from "./field-grid";
 import { sealAlign, type BlockAlign, type BlockColumn, type RenderBlock, type RenderPage } from "./layout";
 
 export type PlanStyle = {
@@ -684,13 +685,15 @@ function planLetter(input: {
       continue;
     }
     if (block.type === "box") {
-      paintText(`${block.label} ${block.value}`, margin, maxWidth, size, "left", "ink", true);
+      const line = labeledLine(block.label, block.value);
+      if (line) paintText(line, margin, maxWidth, size, "left", "ink", true);
       y -= 4;
       continue;
     }
     if (block.type === "fields") {
       for (const row of block.rows) {
-        paintText(`${row.label}: ${row.value}`, margin, maxWidth, size, "left", "ink");
+        const line = labeledLine(row.label, row.value);
+        if (line) paintText(line, margin, maxWidth, size, "left", "ink");
       }
       y -= 4;
       continue;
@@ -715,6 +718,40 @@ function planLetter(input: {
   }
 
   return { serif, overflow: y < input.footer, boxes: [], texts, rules, bands, seals };
+}
+
+/** Lowest painted point, in PDF coordinates (smaller is lower on the page). */
+function lowestPaintedY(parts: {
+  texts: PlanText[];
+  seals?: PlanSeal[];
+  boxes?: PlanRect[];
+  rules?: PlanRule[];
+  bands?: PlanRect[];
+  image?: { y: number } | undefined;
+  cursor: number;
+}): number {
+  let lowest = parts.cursor;
+  for (const item of parts.texts) lowest = Math.min(lowest, item.y - item.size * 0.35);
+  for (const seal of parts.seals ?? []) lowest = Math.min(lowest, seal.cy - seal.outer);
+  for (const box of parts.boxes ?? []) lowest = Math.min(lowest, box.y);
+  for (const rule of parts.rules ?? []) lowest = Math.min(lowest, rule.y1, rule.y2);
+  for (const band of parts.bands ?? []) lowest = Math.min(lowest, band.y);
+  if (parts.image) lowest = Math.min(lowest, parts.image.y);
+  return lowest;
+}
+
+/**
+ * Pull the certificate border up under the last line, table, or seal.
+ * A short diploma must not frame a blank box down to the page footer.
+ */
+function hugCertificateFrame(frame: PlanRect, lowestContent: number, footer: number): void {
+  const frameTop = frame.y + frame.h;
+  const pad = 26;
+  const minHeight = 64;
+  const raised = Math.max(footer + 6, lowestContent - pad);
+  const bottom = Math.max(frame.y, Math.min(frameTop - minHeight, raised));
+  frame.y = bottom;
+  frame.h = Math.max(minHeight, frameTop - bottom);
 }
 
 /**
@@ -781,75 +818,155 @@ function planLabeledCertificate(input: {
   };
 
   const paintPair = (label: string, value: string, bold = false) => {
-    const name = label.trim();
-    const printed = value.trim();
-    paintLine(printed ? `${name}: ${printed}` : name, size, "left", bold);
+    const line = labeledLine(label, value);
+    if (!line) return;
+    paintLine(line, size, "left", bold);
     y -= 1;
   };
 
-  for (const block of input.blocks) {
+  const paintFitted = (
+    text: string,
+    fontSize: number,
+    align: BlockAlign,
+    bold: boolean,
+    color: "ink" | "muted",
+    x: number,
+    width: number,
+    startY: number,
+  ) => {
+    const words = wordsOf(text).map((word) => ({ ...word, bold: word.bold || bold }));
+    if (words.length === 0) return startY;
+    const lines = wrapWords(words, fontSize, width, input.measure, serif);
+    const space = input.measure(" ", fontSize, { serif, bold });
+    let cursorY = startY;
+    for (const line of lines) {
+      if (cursorY < bottom) clipped = true;
+      const natural = lineWidth(line, fontSize, space, input.measure, serif);
+      let cursor = x;
+      if (align === "center") cursor = x + Math.max(0, (width - natural) / 2);
+      if (align === "right") cursor = x + Math.max(0, width - natural);
+      for (const word of line) {
+        texts.push({
+          text: word.text,
+          x: cursor,
+          y: cursorY,
+          size: fontSize,
+          color,
+          bold: word.bold,
+          underline: word.underline,
+          serif,
+        });
+        cursor += input.measure(word.text, fontSize, { bold: word.bold, serif }) + space;
+      }
+      cursorY -= fontSize * 1.22;
+    }
+    return cursorY;
+  };
+
+  const paintGrid = (rows: string[][], header: boolean) => {
+    if (rows.length === 0) return;
+    y -= 8;
+    const table = planTable({
+      rows,
+      header,
+      x: left,
+      y: y + size * 0.6,
+      width: innerW,
+      size: Math.max(7.5, size - 1),
+      bottom,
+      serif,
+      measure: input.measure,
+    });
+    texts.push(...table.texts);
+    rules.push(...table.rules);
+    bands.push(...table.bands);
+    if (table.clipped) clipped = true;
+    y = table.bottom - size - 8;
+  };
+
+  const paintSignatureRow = (group: Array<Extract<RenderBlock, { type: "signature" }>>, startY: number) => {
+    const count = group.length;
+    const gutter = 12;
+    const colW = (innerW - gutter * (count - 1)) / count;
+    let lowest = startY;
+    group.forEach((signature, column) => {
+      const x = left + column * (colW + gutter);
+      let cursor = startY;
+      const note = bracketNote(signature);
+      if (note) cursor = paintFitted(note, NOTE_SIZE, "center", false, "muted", x, colW, cursor);
+      for (const line of signature.lines ?? []) {
+        cursor = paintFitted(line, size - 0.5, "center", true, "ink", x, colW, cursor);
+      }
+      lowest = Math.min(lowest, cursor);
+    });
+    return lowest;
+  };
+
+  const blocks = input.blocks;
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (!block) continue;
     if (y < bottom) {
       clipped = true;
       break;
     }
     if (block.type === "heading") {
       const prominent = Boolean(block.bold) || block.level === 1;
-      paintLine(block.text, prominent ? size + 1.5 : size, "center", prominent);
-      y -= 2;
+      paintLine(block.text, prominent ? size + 2 : size, "center", prominent);
+      y -= prominent ? 8 : 4;
       continue;
     }
-    if (block.type === "kv") {
-      paintPair(block.label, block.value, Boolean(block.bold));
-      continue;
-    }
-    if (block.type === "box") {
-      paintPair(block.label, block.value, true);
+    if (block.type === "kv" || block.type === "box") {
+      const pairs: LabeledPair[] = [];
+      let cursor = index;
+      while (cursor < blocks.length) {
+        const item = blocks[cursor];
+        if (!item || (item.type !== "kv" && item.type !== "box")) break;
+        pairs.push({ label: item.label, value: item.value });
+        cursor += 1;
+      }
+      const table = tableForPairs(pairs, "run");
+      if (table) {
+        index = cursor - 1;
+        paintGrid(table.rows, table.header);
+        continue;
+      }
+      paintPair(block.label, block.value, block.type === "box" || Boolean(block.type === "kv" && block.bold));
       continue;
     }
     if (block.type === "fields") {
-      for (const row of block.rows) {
-        if (y < bottom) clipped = true;
-        paintPair(row.label, row.value);
+      const table = tableForPairs(block.rows, "fields");
+      if (table) paintGrid(table.rows, table.header);
+      else {
+        for (const row of block.rows) {
+          if (y < bottom) clipped = true;
+          paintPair(row.label, row.value);
+        }
+        y -= 2;
       }
-      y -= 2;
       continue;
     }
     if (block.type === "paragraph") {
       paintLine(block.text, size, block.align === "center" || block.caps ? "center" : "left", Boolean(block.bold));
-      y -= 3;
+      y -= 6;
       continue;
     }
     if (block.type === "address") {
       for (const line of block.lines) paintLine(line, size, block.align ?? "left", Boolean(block.bold));
-      y -= 2;
+      y -= 4;
       continue;
     }
     if (block.type === "list") {
       if (block.label) paintLine(block.label, size, "left", true);
-      block.items.forEach((item, index) => {
-        const prefix = block.ordered === false ? "•" : `${index + 1})`;
+      block.items.forEach((item, itemIndex) => {
+        const prefix = block.ordered === false ? "•" : `${itemIndex + 1})`;
         paintLine(`${prefix} ${item}`, size, "left");
       });
-      y -= 2;
+      y -= 4;
       continue;
     }
     if (block.type === "table") {
-      const table = planTable({
-        rows: block.rows,
-        header: block.header ?? true,
-        x: left,
-        y: y + size * 0.6,
-        width: innerW,
-        size: size - 1,
-        bottom,
-        serif,
-        measure: input.measure,
-      });
-      texts.push(...table.texts);
-      rules.push(...table.rules);
-      bands.push(...table.bands);
-      if (table.clipped) clipped = true;
-      y = table.bottom - (size + 1.5) - 10;
+      paintGrid(block.rows, block.header ?? true);
       continue;
     }
     if (block.type === "seal") {
@@ -868,10 +985,22 @@ function planLabeledCertificate(input: {
       continue;
     }
     if (block.type === "signature") {
-      const note = bracketNote(block);
-      if (note) paintLine(note, NOTE_SIZE, "right", false, "muted");
-      for (const line of block.lines ?? []) paintLine(line, size - 0.5, "right", true);
-      y -= 3;
+      const group: Array<Extract<RenderBlock, { type: "signature" }>> = [block];
+      while (group.length < 3 && blocks[index + 1]?.type === "signature") {
+        const follow = blocks[index + 1];
+        if (follow?.type === "signature") group.push(follow);
+        index += 1;
+      }
+      if (group.length >= 2) {
+        y -= 12;
+        y = paintSignatureRow(group, y);
+        y -= 8;
+      } else {
+        const note = bracketNote(block);
+        if (note) paintLine(note, NOTE_SIZE, "right", false, "muted");
+        for (const line of block.lines ?? []) paintLine(line, size - 0.5, "right", true);
+        y -= 6;
+      }
       continue;
     }
     const note = bracketNote(block);
@@ -881,10 +1010,13 @@ function planLabeledCertificate(input: {
     }
   }
 
-  const lowest = texts.reduce((min, item) => Math.min(min, item.y), y);
+  const lowestText = texts.reduce((min, item) => Math.min(min, item.y), y);
+  const frameFloor = frame.y;
+  const overflow = clipped || lowestText < input.footer + 2 || y < frameFloor + 8;
+  hugCertificateFrame(frame, lowestPaintedY({ texts, seals, rules, bands, cursor: y }), input.footer);
   return {
     serif,
-    overflow: clipped || lowest < input.footer + 2 || y < frame.y + 8,
+    overflow,
     frame,
     boxes: [],
     texts,
@@ -1044,18 +1176,27 @@ function planCertificate(input: {
   }
   y = rowTop - rowH - 16;
 
-  const signatures = input.blocks.filter((block) => block.type === "signature");
+  const signatures = input.blocks.flatMap((block) => (block.type === "signature" ? [block] : []));
+  const sideBySide = signatures.length === 2 || signatures.length === 3;
   const signature = signatures.find((block) => columnOf(block) === "right") ?? signatures[0];
   const signWidth = Math.min(240, innerW * 0.42);
   const signX = right - signWidth;
-  const signLines = signature && signature.type === "signature" ? signature.lines ?? [] : [];
+  const signLines = signature?.lines ?? [];
   const signNote = signature ? bracketNote(signature) ?? "[Signature]" : "";
-  const signHeight =
-    (signNote ? NOTE_SIZE * 1.4 : 0) +
-    signLines.length * size * 1.3 +
-    8;
-  const signTop = frame.y + 22 + signHeight;
-  const bodyBottom = signTop + 12;
+  const columnHeight = (block: Extract<RenderBlock, { type: "signature" }>, width: number) => {
+    let height = (bracketNote(block) ? NOTE_SIZE * 1.4 : 0) + 8;
+    for (const line of block.lines ?? []) {
+      const words = wordsOf(line);
+      const wrapped = wrapWords(words, size - 0.5, width, input.measure, serif);
+      height += Math.max(1, wrapped.length) * (size - 0.5) * 1.28;
+    }
+    return height;
+  };
+  const signHeight = sideBySide
+    ? Math.max(...signatures.map((block) => columnHeight(block, (innerW - 12 * (signatures.length - 1)) / signatures.length)))
+    : (signNote ? NOTE_SIZE * 1.4 : 0) + signLines.length * size * 1.3 + 8;
+  const signTop = frame.y + 22 + (signatures.length > 0 ? signHeight : 0);
+  const bodyBottom = signatures.length > 0 ? signTop + 12 : frame.y + 28;
 
   const body = input.blocks.filter(
     (block) => block.type === "paragraph" || block.type === "list" || block.type === "address" || block.type === "kv",
@@ -1088,35 +1229,61 @@ function planCertificate(input: {
     }
   }
 
-  if (signature && signature.type === "signature") {
-    let signY = frame.y + 24 + signLines.length * size * 1.28 + (signNote ? 14 : 0);
+  const paintJoined = (text: string, fontSize: number, bold: boolean, color: "ink" | "muted", x: number, width: number, align: BlockAlign, lineY: number) => {
+    const words = wordsOf(text).map((word) => ({ ...word, bold: word.bold || bold }));
+    if (words.length === 0) return lineY;
+    const lines = wrapWords(words, fontSize, width, input.measure, serif);
+    const space = input.measure(" ", fontSize, { serif, bold });
+    let cursorY = lineY;
+    for (const line of lines) {
+      const natural = lineWidth(line, fontSize, space, input.measure, serif);
+      const plain = line.map((word) => word.text).join(" ");
+      const lineBold = line.some((word) => word.bold);
+      let cursor = x;
+      if (align === "center") cursor = x + Math.max(0, (width - natural) / 2);
+      if (align === "right") cursor = x + Math.max(0, width - natural);
+      texts.push({ text: plain, x: cursor, y: cursorY, size: fontSize, color, bold: lineBold, serif });
+      cursorY -= fontSize * 1.25;
+    }
+    return cursorY;
+  };
+
+  if (sideBySide) {
+    const anchorTop = frame.y + 24 + signHeight;
+    const startY = Math.max(anchorTop, y - 18);
+    const gutter = 12;
+    const colW = (innerW - gutter * (signatures.length - 1)) / signatures.length;
+    let lowestSign = startY;
+    signatures.forEach((block, column) => {
+      const x = left + column * (colW + gutter);
+      let signY = startY;
+      const note = bracketNote(block) ?? "[Signature]";
+      signY = paintJoined(note, NOTE_SIZE, false, "muted", x, colW, "center", signY);
+      for (const line of block.lines ?? []) {
+        signY = paintJoined(line, size - 0.5, true, "ink", x, colW, "center", signY);
+      }
+      lowestSign = Math.min(lowestSign, signY);
+    });
+    y = Math.min(y, lowestSign);
+  } else if (signature) {
+    const anchorTop = frame.y + 24 + signLines.length * size * 1.28 + (signNote ? 14 : 0);
+    let signY = Math.max(anchorTop, y - 18);
     if (signNote) {
-      const noteW = input.measure(signNote, NOTE_SIZE, { serif });
-      texts.push({ text: signNote, x: signX + signWidth - noteW, y: signY, size: NOTE_SIZE, color: "muted", serif });
-      signY -= 14;
+      signY = paintJoined(signNote, NOTE_SIZE, false, "muted", signX, signWidth, "right", signY);
     }
     for (const line of signLines) {
-      const words = wordsOf(line);
-      const bold = words.some((word) => word.bold) || line === signLines[0];
-      const plain = words.map((word) => word.text).join(" ");
-      const width = input.measure(plain, size - 0.5, { serif, bold });
-      texts.push({
-        text: plain,
-        x: signX + signWidth - width,
-        y: signY,
-        size: size - 0.5,
-        color: "ink",
-        bold,
-        serif,
-      });
-      signY -= size * 1.25;
+      signY = paintJoined(line, size - 0.5, line === signLines[0], "ink", signX, signWidth, "right", signY);
     }
+    y = Math.min(y, signY);
   }
 
-  const lowest = texts.reduce((min, item) => Math.min(min, item.y), y);
+  const lowestText = texts.reduce((min, item) => Math.min(min, item.y), y);
+  const frameFloor = frame.y;
+  const overflow = lowestText < input.footer + 2 || y < frameFloor + 8;
+  hugCertificateFrame(frame, lowestPaintedY({ texts, seals, boxes, image, cursor: y }), input.footer);
   return {
     serif,
-    overflow: lowest < input.footer + 2 || y < frame.y + 8,
+    overflow,
     frame,
     boxes,
     image,

@@ -1,3 +1,4 @@
+import { labeledLine } from "./field-grid";
 import { blockAlign, blockColumn, sealAlign, type FieldRow, type RenderBlock } from "./layout";
 import { joinedLetterParagraph } from "./source-mirror";
 
@@ -965,9 +966,13 @@ export function blocksToParagraphs(blocks: RenderBlock[]): string[] {
       const text = block.text.replace(/\*\*/g, "").replace(/__/g, "").trim();
       if (text) lines.push(block.type === "logo" ? `[Logo: ${text}]` : block.type === "stamp" ? (text ? `[Stamp: ${text}]` : "[Stamp]") : block.type === "handwritten" ? (text ? `[Handwritten: ${text}]` : "[Handwritten]") : text);
     } else if (block.type === "fields") {
-      for (const row of block.rows) lines.push(`${row.label}: ${row.value}`);
+      for (const row of block.rows) {
+        const line = labeledLine(row.label, row.value);
+        if (line) lines.push(line);
+      }
     } else if (block.type === "kv" || block.type === "box") {
-      lines.push(`${block.label}: ${block.value}`);
+      const line = labeledLine(block.label, block.value);
+      if (line) lines.push(line);
     } else if (block.type === "address") {
       lines.push(...block.lines);
     } else if (block.type === "list") {

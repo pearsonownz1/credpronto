@@ -114,13 +114,22 @@ export function assertContiguousPages(pages: { combinedPageNumber: number }[]): 
   }
 }
 
+/**
+ * Scanner pages larger than tabloid (A3 is about 842×1190) are drawn on Letter.
+ * Letter and A4 stay as stored so a landscape license is not forced upright.
+ */
+export function normalizedPageSize(widthPt: number, heightPt: number): { widthPt: number; heightPt: number } {
+  const width = widthPt > 0 ? widthPt : LETTER_WIDTH_PT;
+  const height = heightPt > 0 ? heightPt : LETTER_HEIGHT_PT;
+  if (Math.max(width, height) > 1000) return { widthPt: LETTER_WIDTH_PT, heightPt: LETTER_HEIGHT_PT };
+  return { widthPt: width, heightPt: height };
+}
+
 export function pageSize(page: { widthPt: number; heightPt: number }): {
   widthPt: number;
   heightPt: number;
 } {
-  const widthPt = page.widthPt > 0 ? page.widthPt : LETTER_WIDTH_PT;
-  const heightPt = page.heightPt > 0 ? page.heightPt : LETTER_HEIGHT_PT;
-  return { widthPt, heightPt };
+  return normalizedPageSize(page.widthPt, page.heightPt);
 }
 
 function protectedSpans(token: string): Array<[number, number]> {
