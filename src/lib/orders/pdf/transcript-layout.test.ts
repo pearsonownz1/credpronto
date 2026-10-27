@@ -35,6 +35,41 @@ describe("transcript tables", () => {
     expect(isTableSummaryRow(["Totally unrelated", "A"])).toBe(false);
   });
 
+  it("keeps a course title that contains a colon in the shared course columns", () => {
+    const course = ["ETH-7900", "3", "Responsible conduct of research: regulatory frameworks", "A", "1"];
+    const summary = ["Session total", "Credits admitted: 12", "Credits enrolled: 12", "Term GPA: 4.11", "Cumulative GPA: 4.11"];
+    expect(isTableSummaryRow(course)).toBe(false);
+    expect(isTableSummaryRow(summary)).toBe(true);
+
+    const widths = sharedTableColumnWidths({
+      tables: [{ rows: [HEADER, course, COURSE, summary], header: true }],
+      width: 500,
+      size: 10,
+      measure: (text) => measure(text),
+    });
+    const columns = widths.get(5);
+    expect(columns).toHaveLength(5);
+    expect(columns?.[2]).toBeGreaterThan(columns?.[1] ?? 0);
+    const plan = planTable({
+      rows: [HEADER, course, summary],
+      header: true,
+      x: 48,
+      y: 640,
+      width: 500,
+      size: 10,
+      bottom: 40,
+      serif: false,
+      measure: (text) => measure(text),
+      columnWidths: columns,
+    });
+    const at = (label: string) => plan.texts.find((item) => item.text === label)?.x;
+    expect(at("ETH-7900")).toBe(at("Course"));
+    expect(at("A")).toBe(at("Grade"));
+    expect(plan.bands.length).toBeGreaterThan(0);
+    const equalFifth = 48 + 500 / 5;
+    expect(Math.abs((at("3") ?? 0) - equalFifth)).toBeGreaterThan(8);
+  });
+
   it("shares one set of column widths across every table with the same column count", () => {
     const widths = sharedTableColumnWidths({
       tables: [
@@ -173,5 +208,72 @@ describe("circular seals", () => {
     }
     const drawing = decoded.find((stream) => stream.includes("1.35") && stream.includes("0.7"));
     expect(drawing, "double-ring seal strokes").toBeTruthy();
+  });
+});
+
+describe("dense GCS transcript pages", () => {
+  it("keeps a six-semester page, including the issue line, above the footer", async () => {
+    const header = ["Course", "Cycle", "Title", "Grade", "Credits"];
+    const summary = ["Session total", "Credits admitted: 12", "Credits enrolled: 12", "Term GPA: 4.11", "Cumulative GPA: 4.11"];
+    const tables = Array.from({ length: 6 }, (_, semester) => ({
+      type: "table" as const,
+      header: true,
+      rows: [
+        header,
+        ["ETH-7900", "3", "Responsible conduct of research: regulatory frameworks", "A", "1"],
+        ["MCB-8853", "3", `Thesis research activity ${semester + 1}`, "T", "12"],
+        ["BIO-2001", "1", `Laboratory ${semester + 1}`, "A+", "3"],
+        ["PHY-1100", "2", `Mechanics ${semester + 1}`, "B", "3"],
+        summary,
+      ],
+    }));
+    const rendered = await renderOrderPdfs({
+      brand: "gcs",
+      orderId: "00000000-0000-4000-8000-000000000000",
+      sourceLanguage: "fr",
+      targetLanguage: "en",
+      date: "2026-10-23",
+      clientName: "Jane Example",
+      documents: [{ name: "Transcript", sourcePages: 1, translatedPages: 1 }],
+      pricedPages: 1,
+      pages: [
+        {
+          combinedPageNumber: 1,
+          widthPt: 612,
+          heightPt: 792,
+          kind: "form",
+          paragraphs: ["UNIVERSITÉ LAVAL"],
+          blocks: [
+            { type: "heading", text: "UNIVERSITÉ LAVAL", level: 1 },
+            ...tables,
+            { type: "paragraph", text: "Page 2 of 3" },
+            { type: "paragraph", text: "Date of issue: 07/25/2019" },
+          ],
+        },
+      ],
+    });
+    const extracted = await extractTextItems(new Uint8Array(rendered.cleanTranslation));
+    const page = extracted.items[1] ?? [];
+    const heading = page.find((item) => item.str.includes("UNIVERSIT"));
+    const contact = page.find((item) => item.str.includes("support@gcs.org"));
+    expect(heading).toBeTruthy();
+    expect(contact).toBeTruthy();
+    if (!heading || !contact) return;
+    const fromBottom = contact.y > heading.y;
+    const baseline = (item: { y: number; fontSize: number }) => (fromBottom ? item.y : 792 - item.y - item.fontSize);
+    const body = page.filter((item) => {
+      const y = baseline(item);
+      return y > 48;
+    });
+    expect(body.some((item) => item.str.includes("ETH-7900") || item.str.includes("ETH"))).toBe(true);
+    expect(body.some((item) => item.str.includes("07/25/2019"))).toBe(true);
+    expect(body.some((item) => item.str.includes("Page 2 of 3"))).toBe(true);
+    const issue = page.filter((item) => item.str.includes("07/25/2019") || item.str.includes("Date of issue"));
+    expect(issue.length).toBeGreaterThan(0);
+    for (const item of issue) expect(baseline(item)).toBeGreaterThan(48);
+    const lowBody = page.filter((item) => baseline(item) <= 48);
+    for (const item of lowBody) {
+      expect(item.str.includes("ETH") || item.str.includes("Session") || item.str.includes("07/25")).toBe(false);
+    }
   });
 });
