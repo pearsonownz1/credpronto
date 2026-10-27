@@ -1,7 +1,19 @@
 import { PDFDocument, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import { degrees } from "pdf-lib";
 import { PREVIEW_WATERMARK, PREVIEW_WATERMARK_OPACITY, previewWatermarkRgb } from "../constants";
-import { documentKind, paintedPlanText, planDocument, planTable, type PlanRect, type PlanRule, type PlanStyle, type PlanText } from "./document-layout";
+import {
+  documentKind,
+  layoutSealBadge,
+  paintedPlanText,
+  planDocument,
+  planTable,
+  sharedTableColumnWidths,
+  type PlanRect,
+  type PlanRule,
+  type PlanSeal,
+  type PlanStyle,
+  type PlanText,
+} from "./document-layout";
 import { faceForCodePoint, fontFace, serifFace, stableFontkit, type FontFace, type FontFaceId } from "./font";
 import {
   assertContiguousPages,
@@ -13,7 +25,15 @@ import {
   type RenderPage,
 } from "./layout";
 import { drawCertificationPage, drawFinalFooter } from "./cover";
-import { drawGcsLetterhead, drawGcsPageFooter, embedGcsLetterhead, gcsBodyTopInset, type GcsLetterhead } from "./gcs-cover";
+import {
+  GCS_LETTERHEAD_BODY_CLEARANCE,
+  drawGcsLetterhead,
+  drawGcsPageFooter,
+  embedGcsLetterhead,
+  gcsBodyTopInset,
+  gcsLetterheadRuleY,
+  type GcsLetterhead,
+} from "./gcs-cover";
 import { applyCredProntoPdfMetadata, applyPdfMetadata } from "./metadata";
 import { blocksToParagraphs, finalizeBlocks, structurePage } from "./structure";
 
@@ -59,7 +79,6 @@ function blocksFor(page: RenderPage): RenderBlock[] {
 }
 
 function noteText(block: RenderBlock): string | null {
-  if (block.type === "seal") return `[Seal: ${block.text}]`;
   if (block.type === "signature") return block.electronic ? "[Electronic signature]" : "[Signature]";
   if (block.type === "note") return block.text;
   return null;
@@ -174,13 +193,22 @@ function layoutBlocks(
   margin: number,
   maxWidth: number,
   top: number,
-): { paints: Paint[]; rules: PlanRule[]; bottom: number } {
+): { paints: Paint[]; rules: PlanRule[]; bands: PlanRect[]; seals: PlanSeal[]; bottom: number } {
   const labelWidth = Math.min(220, maxWidth * 0.44);
   const columnGap = 14;
   const valueWidth = Math.max(40, maxWidth - labelWidth - columnGap);
   const measure = (text: string, fontSize: number, italic: boolean) => widthOf(text, fontSize, italic, upright, italicFace);
   const paints: Paint[] = [];
   const rules: PlanRule[] = [];
+  const bands: PlanRect[] = [];
+  const seals: PlanSeal[] = [];
+  const tableSize = Math.max(7.5, size - 1);
+  const tableWidths = sharedTableColumnWidths({
+    tables: blocks.flatMap((block) => (block.type === "table" ? [{ rows: block.rows, header: block.header ?? true }] : [])),
+    width: maxWidth,
+    size: tableSize,
+    measure: (text, fontSize) => measure(text, fontSize, false),
+  });
   let y = top;
 
   const paintLines = (text: string, x: number, fontSize: number, color: ReturnType<typeof rgb>, italic: boolean, width: number) => {
@@ -193,9 +221,35 @@ function layoutBlocks(
     return lineHeight;
   };
 
+  const paintSeal = (block: Extract<RenderBlock, { type: "seal" }>) => {
+    const placed = layoutSealBadge({
+      text: block.text,
+      column: block.column,
+      left: margin,
+      right: margin + maxWidth,
+      top: y + size * 0.85,
+      measure: (text, fontSize) => measure(text, fontSize, false),
+    });
+    seals.push(placed.seal);
+    for (const item of placed.texts) {
+      paints.push({
+        text: item.text,
+        x: item.x,
+        y: item.y,
+        size: item.size,
+        color: item.color === "muted" ? MUTED : INK,
+        italic: false,
+        bold: item.bold,
+      });
+    }
+    y = placed.bottom - size - 6;
+  };
+
   for (const block of blocks) {
     const noted = noteText(block);
-    if (block.type === "heading") {
+    if (block.type === "seal") {
+      paintSeal(block);
+    } else if (block.type === "heading") {
       const fontSize = block.level === 2 ? size + 0.5 : size + 2.5;
       paintLines(block.text, margin, fontSize, INK, false, maxWidth);
       y -= 3;
@@ -225,26 +279,29 @@ function layoutBlocks(
       }
       y -= 3;
     } else if (block.type === "table") {
+      const columns = Math.max(0, ...block.rows.map((row) => row.length));
       const table = planTable({
         rows: block.rows,
         header: block.header ?? true,
         x: margin,
         y: y + size * 0.8,
         width: maxWidth,
-        size: Math.max(7.5, size - 1),
+        size: tableSize,
         bottom: 12,
         serif: false,
         measure: (text, fontSize) => measure(text, fontSize, false),
+        columnWidths: tableWidths.get(columns),
       });
       for (const item of table.texts) {
         paints.push({ text: item.text, x: item.x, y: item.y, size: item.size, color: INK, italic: false, bold: item.bold });
       }
       rules.push(...table.rules);
-      y = table.clipped ? Math.min(table.bottom, 11) : table.bottom - size - 4;
+      bands.push(...table.bands);
+      y = table.clipped ? Math.min(table.bottom, 11) : table.bottom - (size + 2.5) - 10;
     }
   }
 
-  return { paints, rules, bottom: y };
+  return { paints, rules, bands, seals, bottom: y };
 }
 
 type SerifFaces = {
@@ -397,6 +454,36 @@ function drawRules(page: PDFPage, rules: PlanRule[] | undefined): void {
   }
 }
 
+const SEAL_INK = rgb(30 / 255, 41 / 255, 59 / 255);
+const BAND = rgb(246 / 255, 247 / 255, 249 / 255);
+
+function drawBands(page: PDFPage, bands: PlanRect[] | undefined): void {
+  for (const band of bands ?? []) {
+    if (band.y + band.h < 12) continue;
+    page.drawRectangle({ x: band.x, y: band.y, width: band.w, height: band.h, color: BAND });
+  }
+}
+
+function drawSealRings(page: PDFPage, seal: PlanSeal): void {
+  if (seal.cy - seal.outer < 8) return;
+  page.drawCircle({
+    x: seal.cx,
+    y: seal.cy,
+    size: seal.outer,
+    color: rgb(1, 1, 1),
+    borderColor: SEAL_INK,
+    borderWidth: 1.35,
+  });
+  page.drawCircle({
+    x: seal.cx,
+    y: seal.cy,
+    size: seal.inner,
+    color: rgb(1, 1, 1),
+    borderColor: SEAL_INK,
+    borderWidth: 0.7,
+  });
+}
+
 function drawWatermark(page: PDFPage, font: PDFFont, width: number, height: number): void {
   const size = 18;
   const color = previewWatermarkRgb();
@@ -448,6 +535,7 @@ function drawBody(
       size -= 0.5;
       plan = planDocument({ kind, blocks, width: widthPt, height: heightPt, footer, size, measure, hasPhoto, topInset });
     }
+    drawBands(page, plan.bands);
     if (plan.frame) drawRounded(page, plan.frame);
     for (const box of plan.boxes) drawRounded(page, box);
     drawRules(page, plan.rules);
@@ -459,6 +547,7 @@ function drawBody(
         height: plan.image.h,
       });
     }
+    for (const seal of plan.seals ?? []) drawSealRings(page, seal);
     for (const item of plan.texts) {
       if (item.y < 12) continue;
       drawPlannedText(page, item, options.serif, faces.upright, faces.italic);
@@ -467,21 +556,33 @@ function drawBody(
   } else {
     let chosen: Paint[] = [];
     let chosenRules: PlanRule[] = [];
+    let chosenBands: PlanRect[] = [];
+    let chosenSeals: PlanSeal[] = [];
     let size = 11;
     while (size >= 8) {
-      const top = heightPt - margin - size - topInset;
+      let top = heightPt - margin - size - topInset;
+      if (options.letterhead) {
+        const headingSize = size + 2.5;
+        const limit = gcsLetterheadRuleY(heightPt) - GCS_LETTERHEAD_BODY_CLEARANCE;
+        const ascender = top + headingSize;
+        if (ascender > limit) top -= ascender - limit;
+      }
       const laid = layoutBlocks(blocks, faces.upright, faces.italic, size, margin, maxWidth, top);
       chosen = laid.paints;
       chosenRules = laid.rules;
+      chosenBands = laid.bands;
+      chosenSeals = laid.seals;
       if (laid.bottom >= footer || size === 8) break;
       size -= 0.5;
     }
+    drawBands(page, chosenBands);
+    drawRules(page, chosenRules);
+    for (const seal of chosenSeals) drawSealRings(page, seal);
     const visible = chosen.filter((paint) => paint.y >= 12);
     for (const paint of visible) {
       drawStyled(page, paint.text, paint.x, paint.y, paint.size, paint.color, paint.italic, faces.upright, faces.italic);
       if (paint.bold) drawStyled(page, paint.text, paint.x + 0.28, paint.y, paint.size, paint.color, paint.italic, faces.upright, faces.italic);
     }
-    drawRules(page, chosenRules);
     painted = visible.map((paint) => paint.text).join(" ");
   }
 
@@ -627,4 +728,13 @@ export async function renderOrderPdfs(input: RenderInput): Promise<RenderedFiles
     certification,
     pageTexts: cleanBody.pageTexts,
   };
+}
+
+/** Certified translation PDF. GCS letterhead is the unwatermarked certificate plus body. */
+export async function renderCertifiedTranslationPdf(
+  input: RenderInput & { letterhead?: "gcs" | null; watermark?: boolean },
+): Promise<Uint8Array> {
+  const brand = input.letterhead === "gcs" ? "gcs" : input.brand;
+  const files = await renderOrderPdfs({ ...input, brand });
+  return input.watermark ? files.watermarkedPreview : files.cleanTranslation;
 }

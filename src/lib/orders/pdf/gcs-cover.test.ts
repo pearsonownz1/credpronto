@@ -1,10 +1,10 @@
 import { inflateSync } from "node:zlib";
-import { extractText, getDocumentProxy } from "unpdf";
+import { extractText, extractTextItems, getDocumentProxy } from "unpdf";
 import { PDFDict, PDFDocument, PDFName, PDFRawStream } from "pdf-lib";
 import { describe, expect, it } from "vitest";
-import { GCS_CERTIFICATION_STATEMENTS, GCS_FOOTER, GCS_SIGNER } from "../gcs";
+import { GCS_CERTIFICATION_STATEMENTS, GCS_CONTACT, GCS_FOOTER, GCS_SIGNER } from "../gcs";
 import { PREVIEW_WATERMARK } from "../constants";
-import { loadGcsSignature } from "./gcs-cover";
+import { GCS_LETTERHEAD_BODY_CLEARANCE, gcsBodyTopInset, gcsLetterheadRuleY, loadGcsSignature } from "./gcs-cover";
 import { renderCertificationPdf, renderOrderPdfs } from "./render";
 
 async function visibleText(bytes: Uint8Array): Promise<string> {
@@ -94,6 +94,64 @@ describe("GCS certificate", () => {
     expect(text).not.toContain("TRANSLATED PAGES");
     expect(text).not.toContain(PREVIEW_WATERMARK);
     expect(text).not.toContain("CredPronto");
+  });
+
+  it("keeps a transcript heading below the letterhead rule on short pages too", async () => {
+    expect(gcsBodyTopInset(null)).toBe(72);
+    expect(gcsBodyTopInset("letter")).toBe(72);
+    expect(gcsBodyTopInset("certificate")).toBe(72);
+    expect(gcsBodyTopInset("form")).toBe(72);
+
+    const course = ["MCB-8853", "3", "Thesis research activity 3", "T", "12"];
+    const summary = [
+      "Session total (Third cycle)",
+      "Credits registered: 12",
+      "Credits earned: 12",
+      "Credits used in average: 0",
+      "Average: N/A",
+    ];
+    const header = ["Course", "Cycle", "Title", "Grade", "Credits / (CEU)"];
+    for (const heightPt of [792, 400]) {
+      const rendered = await renderOrderPdfs({
+        brand: "gcs",
+        orderId: ORDER_ID,
+        sourceLanguage: "fr",
+        targetLanguage: "en",
+        date: "2026-10-23",
+        clientName: "Jane Example",
+        documents: [{ name: "Transcript", sourcePages: 1, translatedPages: 1 }],
+        pricedPages: 1,
+        pages: [
+          {
+            combinedPageNumber: 1,
+            widthPt: 612,
+            heightPt,
+            kind: "form",
+            paragraphs: ["UNIVERSITÉ LAVAL"],
+            blocks: [
+              { type: "heading", text: "UNIVERSITÉ LAVAL", level: 1 },
+              { type: "fields", rows: [{ label: "Student", value: "Ada Lovelace" }] },
+              { type: "table", header: true, rows: [header, course, summary] },
+              { type: "table", header: false, rows: [course, summary] },
+            ],
+          },
+        ],
+      });
+      const extracted = await extractTextItems(rendered.cleanTranslation);
+      const page = extracted.items[1] ?? [];
+      const contact = page.find((item) => item.str.includes("support@gcs.org"));
+      const heading = page.find((item) => item.str.includes("UNIVERSIT"));
+      expect(contact, `contact on ${heightPt}`).toBeTruthy();
+      expect(heading, `heading on ${heightPt}`).toBeTruthy();
+      if (!contact || !heading) continue;
+      const fromBottom = contact.y > heading.y;
+      const baseline = fromBottom ? heading.y : heightPt - heading.y - heading.fontSize;
+      const ascender = baseline + heading.fontSize;
+      const ruleY = gcsLetterheadRuleY(heightPt);
+      expect(ascender, `ascender on ${heightPt}`).toBeLessThan(ruleY);
+      expect(ruleY - ascender, `clearance on ${heightPt}`).toBeGreaterThanOrEqual(GCS_LETTERHEAD_BODY_CLEARANCE);
+      expect(page.some((item) => item.str.includes(GCS_CONTACT) || item.str.includes("www.gcs.org"))).toBe(true);
+    }
   });
 
   it("embeds the flattened signature instead of a solid rectangle", async () => {

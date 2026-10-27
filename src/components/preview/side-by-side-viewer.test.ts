@@ -4,6 +4,7 @@
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { GcsEditorPage } from "@/lib/gcs/editor-pages";
 import { CERTIFICATE_PREVIEW, type PreviewOrder } from "./preview-order";
 
 const scrollToPage = vi.hoisted(() => vi.fn());
@@ -200,7 +201,12 @@ const evaluationDocument: NonNullable<PreviewOrder["evaluation"]> = {
 
 async function renderViewer(
   order: PreviewOrder,
-  props: { onEvaluate?: () => void | Promise<void>; onDownloadEvaluation?: () => void } = {},
+  props: {
+    onEvaluate?: () => void | Promise<void>;
+    onDownloadEvaluation?: () => void;
+    initialPages?: GcsEditorPage[] | null;
+    onSaveTranslation?: (pages: GcsEditorPage[]) => Promise<void>;
+  } = {},
 ) {
   const host = document.createElement("div");
   document.body.appendChild(host);
@@ -214,6 +220,8 @@ async function renderViewer(
         engine: {} as never,
         onEvaluate: props.onEvaluate,
         onDownloadEvaluation: props.onDownloadEvaluation,
+        initialPages: props.initialPages,
+        onSaveTranslation: props.onSaveTranslation,
       }),
     );
   });
@@ -264,6 +272,54 @@ describe("GCS side-by-side viewer", () => {
       await pending;
     });
     expect(host.querySelector('[data-testid="evaluate-document"]')?.textContent).toBe("Evaluate Document");
+  });
+
+  it("edits the translation beside the original and saves the pages", async () => {
+    installMatchMedia(false);
+    const pages = [
+      {
+        documentId: "doc-1",
+        pageNumber: 1,
+        combinedPageNumber: 1,
+        widthPt: 612,
+        heightPt: 792,
+        kind: "form" as const,
+        blocks: [
+          { type: "heading" as const, text: "UNIVERSITÉ LAVAL", level: 1 as const },
+          { type: "seal" as const, text: "Registrar", column: "right" as const },
+        ],
+        paragraphs: ["UNIVERSITÉ LAVAL"],
+      },
+    ];
+    const onSaveTranslation = vi.fn(async (_pages: GcsEditorPage[]) => undefined);
+    const host = await renderViewer(gcsOrder(), { initialPages: pages, onSaveTranslation });
+    const edit = host.querySelector('[data-testid="edit-translation"]');
+    expect(edit?.textContent).toBe("Edit Translation");
+    expect(host.querySelector('[data-testid="pane-original"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="translation-editor"]')).toBeNull();
+
+    await act(async () => {
+      (edit as HTMLButtonElement).click();
+    });
+
+    expect(host.querySelector('[data-testid="pane-original"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="translation-editor"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="save-translation"]')?.textContent).toBe("Save & Regenerate PDF");
+    expect(host.querySelector('[data-testid="seal-preview"]')?.textContent).toContain("[SEAL]");
+    const heading = host.querySelector("textarea");
+    if (!(heading instanceof HTMLTextAreaElement)) throw new Error("missing heading");
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+    await act(async () => {
+      setValue?.call(heading, "LAVAL UNIVERSITY");
+      heading.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      (host.querySelector('[data-testid="save-translation"]') as HTMLButtonElement).click();
+    });
+    expect(onSaveTranslation).toHaveBeenCalledTimes(1);
+    expect(onSaveTranslation.mock.calls[0]?.[0]?.[0]?.blocks[0]).toMatchObject({ text: "LAVAL UNIVERSITY" });
+    expect(host.querySelector('[data-testid="translation-editor"]')).toBeNull();
+    expect(host.querySelector('[data-testid="pane-translation"]')).not.toBeNull();
   });
 
   it("adds the evaluation pane and clamps scroll sync to that document", async () => {
