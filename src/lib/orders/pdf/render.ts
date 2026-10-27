@@ -193,6 +193,7 @@ function layoutBlocks(
   margin: number,
   maxWidth: number,
   top: number,
+  floor = 12,
 ): { paints: Paint[]; rules: PlanRule[]; bands: PlanRect[]; seals: PlanSeal[]; bottom: number } {
   const labelWidth = Math.min(220, maxWidth * 0.44);
   const columnGap = 14;
@@ -202,7 +203,7 @@ function layoutBlocks(
   const rules: PlanRule[] = [];
   const bands: PlanRect[] = [];
   const seals: PlanSeal[] = [];
-  const tableSize = Math.max(7.5, size - 1);
+  const tableSize = Math.max(6, size - 1);
   const tableWidths = sharedTableColumnWidths({
     tables: blocks.flatMap((block) => (block.type === "table" ? [{ rows: block.rows, header: block.header ?? true }] : [])),
     width: maxWidth,
@@ -287,7 +288,7 @@ function layoutBlocks(
         y: y + size * 0.8,
         width: maxWidth,
         size: tableSize,
-        bottom: 12,
+        bottom: floor,
         serif: false,
         measure: (text, fontSize) => measure(text, fontSize, false),
         columnWidths: tableWidths.get(columns),
@@ -297,7 +298,8 @@ function layoutBlocks(
       }
       rules.push(...table.rules);
       bands.push(...table.bands);
-      y = table.clipped ? Math.min(table.bottom, 11) : table.bottom - (size + 2.5) - 10;
+      const afterTable = size <= 8.5 ? size + 4 : size + 2.5 + 10;
+      y = table.clipped ? Math.min(table.bottom, floor - 1) : table.bottom - afterTable;
     }
   }
 
@@ -559,7 +561,8 @@ function drawBody(
     let chosenBands: PlanRect[] = [];
     let chosenSeals: PlanSeal[] = [];
     let size = 11;
-    while (size >= 8) {
+    const minSize = 6.5;
+    for (;;) {
       let top = heightPt - margin - size - topInset;
       if (options.letterhead) {
         const headingSize = size + 2.5;
@@ -567,13 +570,13 @@ function drawBody(
         const ascender = top + headingSize;
         if (ascender > limit) top -= ascender - limit;
       }
-      const laid = layoutBlocks(blocks, faces.upright, faces.italic, size, margin, maxWidth, top);
+      const laid = layoutBlocks(blocks, faces.upright, faces.italic, size, margin, maxWidth, top, footer);
       chosen = laid.paints;
       chosenRules = laid.rules;
       chosenBands = laid.bands;
       chosenSeals = laid.seals;
-      if (laid.bottom >= footer || size === 8) break;
-      size -= 0.5;
+      if (laid.bottom >= footer || size <= minSize + 0.001) break;
+      size = Math.round((size - 0.5) * 2) / 2;
     }
     drawBands(page, chosenBands);
     drawRules(page, chosenRules);

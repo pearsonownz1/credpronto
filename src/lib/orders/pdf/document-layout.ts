@@ -150,17 +150,30 @@ const TABLE_DESCENT = 0.24;
 const SEAL_OUTER = 32;
 const SEAL_INNER = 28;
 
-function tableRowHeight(lineCount: number, size: number, leading: number): number {
-  return TABLE_PAD + size * TABLE_ASCENT + Math.max(0, lineCount - 1) * leading + size * TABLE_DESCENT + TABLE_PAD;
+function tableCellPad(size: number): number {
+  if (size >= 8.5) return TABLE_PAD;
+  return Math.max(3, (TABLE_PAD * size) / 8.5);
 }
 
-/** Session totals and similar rows span the table instead of using course columns. */
+function tableRowHeight(lineCount: number, size: number, leading: number, pad: number): number {
+  return pad + size * TABLE_ASCENT + Math.max(0, lineCount - 1) * leading + size * TABLE_DESCENT + pad;
+}
+
+const SUMMARY_LEAD = /^(?:session\s+total|semester\s+total|trimestre|total|cumulative|moyenne|cr[eé]dits?|gpa)\b/i;
+const SUMMARY_LABEL = /\b(credits?|gpa|average|moyenne|total|enrolled|earned|admitted|cumulative)\s*:/i;
+const COURSE_CODE = /^[A-Z]{2,5}[-\s]?\d{3,5}/;
+
+/**
+ * Session totals span the table. A course code in the first cell is always a
+ * course row, even when the title contains a colon.
+ */
 export function isTableSummaryRow(row: readonly string[]): boolean {
   const cells = row.map((cell) => cell.trim());
   const first = cells.find((cell) => cell.length > 0) ?? "";
   if (!first) return false;
-  if (/^(session total|semester total|trimestre|total)\b/i.test(first)) return true;
-  return cells.slice(1).some((cell) => cell.includes(":"));
+  if (COURSE_CODE.test(first)) return false;
+  if (SUMMARY_LEAD.test(first)) return true;
+  return cells.some((cell) => SUMMARY_LABEL.test(cell));
 }
 
 /**
@@ -253,7 +266,7 @@ export function sharedTableColumnWidths(input: {
         ? Array.from({ length: columns }, () => 24)
         : Array.from({ length: columns }, (_, column) => {
             const measured = rows.map((row) => input.measure(row[column]?.text ?? "", input.size, Boolean(row[column]?.bold)));
-            return Math.max(0, ...measured) + TABLE_PAD * 2;
+            return Math.max(0, ...measured) + tableCellPad(input.size) * 2;
           });
     widths.set(columns, tableColumnWidths(natural, input.width));
   }
@@ -332,6 +345,7 @@ export function planTable(input: {
   columnWidths?: number[];
 }): TableLayout {
   const { size, serif, measure } = input;
+  const pad = tableCellPad(size);
   const columns = Math.max(0, ...input.rows.map((row) => row.length));
   const rows = input.rows.map((row) => Array.from({ length: columns }, (_, index) => (row[index] ?? "").trim()));
   const texts: PlanText[] = [];
@@ -347,7 +361,7 @@ export function planTable(input: {
           measure(row[column] ?? "", size, { serif, bold: input.header && content.length > 0 && rowIndex === 0 }),
         ),
       ) +
-      TABLE_PAD * 2
+      pad * 2
     );
   });
   const widths =
@@ -376,9 +390,9 @@ export function planTable(input: {
   ) => {
     const space = spaceOf();
     lines.forEach((line, lineIndex) => {
-      const lineY = lineTop - TABLE_PAD - size * TABLE_ASCENT - lineIndex * leading;
+      const lineY = lineTop - pad - size * TABLE_ASCENT - lineIndex * leading;
       const naturalWidth = lineWidth(line, size, space, measure, serif);
-      let wordX = alignRight ? cellLeft + cellWidth - TABLE_PAD - naturalWidth : cellLeft + TABLE_PAD;
+      let wordX = alignRight ? cellLeft + cellWidth - pad - naturalWidth : cellLeft + pad;
       for (const word of line) {
         texts.push({ text: word.text, x: wordX, y: lineY, size, color: "ink", bold: word.bold, serif });
         wordX += measure(word.text, size, { bold: word.bold, serif }) + space;
@@ -394,10 +408,10 @@ export function planTable(input: {
       if (clipped) return;
       const wrapped = row.cells.map((cell, column) => {
         const words = wordsOf(cell).map((word) => ({ ...word, bold: word.bold || row.bold }));
-        return wrapWords(words, size, Math.max(4, (widths[column] ?? 0) - TABLE_PAD * 2), measure, serif);
+        return wrapWords(words, size, Math.max(4, (widths[column] ?? 0) - pad * 2), measure, serif);
       });
       const lineCount = Math.max(1, ...wrapped.map((lines) => lines.length));
-      const height = tableRowHeight(lineCount, size, leading);
+      const height = tableRowHeight(lineCount, size, leading, pad);
       if (y - height < input.bottom) {
         clipped = true;
         return;
@@ -422,10 +436,10 @@ export function planTable(input: {
     const slot = input.width / shown.length;
     const wrapped = shown.map((cell) => {
       const words = wordsOf(cell);
-      return wrapWords(words, size, Math.max(4, slot - TABLE_PAD * 2), measure, serif);
+      return wrapWords(words, size, Math.max(4, slot - pad * 2), measure, serif);
     });
     const lineCount = Math.max(1, ...wrapped.map((lines) => lines.length));
-    const height = tableRowHeight(lineCount, size, leading);
+    const height = tableRowHeight(lineCount, size, leading, pad);
     if (y - height < input.bottom) {
       clipped = true;
       return;
