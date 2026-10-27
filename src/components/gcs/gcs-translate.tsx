@@ -24,6 +24,15 @@ const TARGETS = targetLanguageChoices();
 const HISTORY_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const TRANSLATING_STATUSES = new Set(["draft", "quoted", "confirmed", "processing"]);
 
+type EditorPage = {
+  documentId: string;
+  pageNumber: number;
+  combinedPageNumber: number;
+  filename: string;
+  paragraphs?: string[];
+  text: string;
+};
+
 type Frame = {
   number: number;
   widthPt: number;
@@ -179,6 +188,12 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
   const [history, setHistory] = useState<GcsHistoryItem[]>([]);
   const [historyReady, setHistoryReady] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorPages, setEditorPages] = useState<EditorPage[]>([]);
+  const [editorIndex, setEditorIndex] = useState(0);
+  const [editorLoading, setEditorLoading] = useState(false);
+  const [editorSaving, setEditorSaving] = useState(false);
+  const [editorError, setEditorError] = useState<string | null>(null);
   const waiting = Boolean(token) && unlocked && !error && !preview;
   const elapsed = useElapsed(pending || waiting);
   const activeHistoryId = order?.id ?? order?.orderId ?? token ?? null;
@@ -189,6 +204,10 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
     setEvaluation(null);
     setError(null);
     setNotice(null);
+    setEditorOpen(false);
+    setEditorPages([]);
+    setEditorIndex(0);
+    setEditorError(null);
   }, [token]);
 
   useEffect(() => {
@@ -353,6 +372,88 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
     window.location.assign(body.url);
   }
 
+  async function openEditor() {
+    if (!token) return;
+    setEditorOpen(true);
+    setEditorError(null);
+    if (editorPages.length > 0) return;
+    setEditorLoading(true);
+    try {
+      const response = await fetch(`/api/gcs/orders/${encodeURIComponent(token)}/translation`);
+      if (response.status === 401) {
+        lockAgain("Enter the PIN to edit this translation.");
+        return;
+      }
+      if (!response.ok) {
+        setEditorError(await readError(response, "The translation text could not be loaded."));
+        return;
+      }
+      const body = (await response.json()) as { pages?: EditorPage[] };
+      const pages = Array.isArray(body.pages) ? body.pages : [];
+      setEditorPages(
+        pages.map((page) => ({
+          documentId: page.documentId,
+          pageNumber: page.pageNumber,
+          combinedPageNumber: page.combinedPageNumber,
+          filename: page.filename,
+          text: page.text || (page.paragraphs ?? []).join("\n"),
+        })),
+      );
+      setEditorIndex(0);
+    } catch {
+      setEditorError("The translation text could not be loaded.");
+    } finally {
+      setEditorLoading(false);
+    }
+  }
+
+  async function saveEditor() {
+    if (!token || editorSaving) return;
+    setEditorSaving(true);
+    setEditorError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/gcs/orders/${encodeURIComponent(token)}/translation`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          pages: editorPages.map((page) => ({
+            documentId: page.documentId,
+            pageNumber: page.pageNumber,
+            combinedPageNumber: page.combinedPageNumber,
+            text: page.text,
+          })),
+        }),
+      });
+      if (response.status === 401) {
+        lockAgain("Enter the PIN to edit this translation.");
+        return;
+      }
+      if (!response.ok) {
+        setEditorError(await readError(response, "The translation could not be saved."));
+        return;
+      }
+      const body = (await response.json()) as { preview?: PreviewPayload; pages?: EditorPage[] };
+      if (body.preview?.translation?.url) setPreview(body.preview);
+      if (Array.isArray(body.pages)) {
+        setEditorPages(
+          body.pages.map((page) => ({
+            documentId: page.documentId,
+            pageNumber: page.pageNumber,
+            combinedPageNumber: page.combinedPageNumber,
+            filename: page.filename,
+            text: page.text || (page.paragraphs ?? []).join("\n"),
+          })),
+        );
+      }
+      setNotice("Certified translation updated.");
+    } catch {
+      setEditorError("The translation could not be saved.");
+    } finally {
+      setEditorSaving(false);
+    }
+  }
+
   async function evaluateDocument() {
     if (!token) return;
     setNotice(null);
@@ -408,24 +509,42 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
       );
     } else {
       main = (
-        <div className="min-h-0 flex-1">
-          <SideBySideViewer
-            order={viewer}
-            chrome="gcs"
-            shellLayout="embedded"
-            notice={notice ?? undefined}
-            onDownload={downloadCertified}
-            onEvaluate={evaluateDocument}
-            onDownloadEvaluation={downloadEvaluation}
-            onCorrect={async ({ note }) => {
-              const response = await fetch(`/api/orders/${encodeURIComponent(token)}/correction-request`, {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ text: note }),
-              });
-              if (!response.ok) throw new Error(await readError(response, "Could not send this correction."));
-            }}
-          />
+        <div className="flex min-h-0 flex-1">
+          <div className="min-h-0 min-w-0 flex-1">
+            <SideBySideViewer
+              order={viewer}
+              chrome="gcs"
+              shellLayout="embedded"
+              notice={notice ?? undefined}
+              onDownload={downloadCertified}
+              onEvaluate={evaluateDocument}
+              onDownloadEvaluation={downloadEvaluation}
+              onEditTranslation={() => void openEditor()}
+              onCorrect={async ({ note }) => {
+                const response = await fetch(`/api/orders/${encodeURIComponent(token)}/correction-request`, {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ text: note }),
+                });
+                if (!response.ok) throw new Error(await readError(response, "Could not send this correction."));
+              }}
+            />
+          </div>
+          {editorOpen ? (
+            <GcsTranslationEditor
+              pages={editorPages}
+              index={editorIndex}
+              loading={editorLoading}
+              saving={editorSaving}
+              error={editorError}
+              onSelect={setEditorIndex}
+              onChange={(text) => {
+                setEditorPages((current) => current.map((page, pageIndex) => (pageIndex === editorIndex ? { ...page, text } : page)));
+              }}
+              onClose={() => setEditorOpen(false)}
+              onSave={() => void saveEditor()}
+            />
+          ) : null}
         </div>
       );
     }
@@ -527,6 +646,100 @@ export function GcsTranslate({ unlocked: initialUnlocked, token }: { unlocked: b
       />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">{main}</div>
     </div>
+  );
+}
+
+function GcsTranslationEditor({
+  pages,
+  index,
+  loading,
+  saving,
+  error,
+  onSelect,
+  onChange,
+  onClose,
+  onSave,
+}: {
+  pages: EditorPage[];
+  index: number;
+  loading: boolean;
+  saving: boolean;
+  error: string | null;
+  onSelect: (index: number) => void;
+  onChange: (text: string) => void;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const page = pages[index];
+  return (
+    <aside
+      data-testid="gcs-translation-editor"
+      className="flex w-[min(100%,420px)] shrink-0 flex-col border-l border-[#e4e8f0] bg-white"
+    >
+      <div className="flex items-center justify-between gap-3 border-b border-[#e4e8f0] px-4 py-3">
+        <h2 className="text-sm font-semibold">Edit translation</h2>
+        <button type="button" className="text-sm font-semibold text-[#5b6474]" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        <p className="text-xs leading-5 text-[#5b6474]">
+          One line per paragraph. <span className="font-semibold text-[#0b1220]">Label: Value</span> becomes a field.{" "}
+          <span className="font-semibold text-[#0b1220]">col1 | col2 | col3</span> becomes a table row.{" "}
+          <span className="font-semibold text-[#0b1220]">[SEAL]</span> draws a round seal stamp. Add{" "}
+          <span className="font-semibold text-[#0b1220]">[Seal: caption]</span> for a short caption under the circle.
+        </p>
+        {loading ? <p className="mt-4 text-sm text-[#5b6474]">Loading translation text…</p> : null}
+        {!loading && pages.length > 1 ? (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {pages.map((item, itemIndex) => (
+              <button
+                key={`${item.documentId}:${item.pageNumber}`}
+                type="button"
+                data-testid="gcs-editor-page"
+                aria-pressed={itemIndex === index}
+                onClick={() => onSelect(itemIndex)}
+                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                  itemIndex === index ? "bg-[#1f5eff] text-white" : "bg-[#eaf0ff] text-[#1f5eff]"
+                }`}
+              >
+                Page {item.combinedPageNumber || item.pageNumber}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {page ? (
+          <label className="mt-3 block text-xs font-semibold text-[#5b6474]">
+            {page.filename ? `${page.filename} · page ${page.pageNumber}` : `Page ${page.pageNumber}`}
+            <textarea
+              data-testid="gcs-editor-text"
+              value={page.text}
+              onChange={(event) => onChange(event.target.value)}
+              spellCheck
+              className="mt-2 h-[min(60vh,32rem)] w-full resize-y rounded-xl border border-[#d5dbe6] px-3 py-2 text-sm font-normal leading-5 text-[#0b1220]"
+            />
+          </label>
+        ) : !loading ? (
+          <p className="mt-4 text-sm text-[#5b6474]">This translation has no pages to edit.</p>
+        ) : null}
+        {error ? (
+          <p role="alert" className="mt-3 text-sm font-semibold text-[#b42318]">
+            {error}
+          </p>
+        ) : null}
+      </div>
+      <div className="border-t border-[#e4e8f0] p-3">
+        <button
+          type="button"
+          data-testid="save-translation"
+          disabled={saving || loading || pages.length === 0}
+          onClick={onSave}
+          className="flex h-10 w-full items-center justify-center rounded-xl bg-[#1f5eff] px-3 text-sm font-semibold text-white disabled:opacity-60"
+        >
+          {saving ? "Saving…" : "Save & Regenerate PDF"}
+        </button>
+      </div>
+    </aside>
   );
 }
 

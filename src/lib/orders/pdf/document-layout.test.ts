@@ -76,8 +76,15 @@ describe("attached document layout", () => {
       hasPhoto: true,
     });
     expect(plan.frame).toBeTruthy();
-    expect(plan.boxes).toHaveLength(2);
-    const [leftBox, rightBox] = [...plan.boxes].sort((a, b) => a.x - b.x);
+    const numberBoxes = plan.boxes.filter((box) => box.radius !== 26);
+    const sealStamps = plan.boxes.filter((box) => box.radius === 26 && box.w === 52 && box.h === 52);
+    expect(numberBoxes).toHaveLength(2);
+    expect(sealStamps).toHaveLength(2);
+    const [leftStamp, rightStamp] = [...sealStamps].sort((a, b) => a.x - b.x);
+    expect(leftStamp && rightStamp && leftStamp.x).toBeLessThan(width / 2);
+    expect(rightStamp && rightStamp.x).toBeGreaterThan(width / 2);
+    expect(plan.texts.filter((item) => item.text === "[SEAL]")).toHaveLength(2);
+    const [leftBox, rightBox] = [...numberBoxes].sort((a, b) => a.x - b.x);
     expect(leftBox && rightBox && leftBox.x).toBeLessThan(width / 2);
     expect(rightBox && rightBox.x).toBeGreaterThan(width / 2);
     const union = plan.texts.find((item) => item.text === "UNION");
@@ -86,7 +93,6 @@ describe("attached document layout", () => {
     expect(license?.bold).toBe(true);
     const kazan = plan.texts.find((item) => item.text.includes("KAZAN"));
     expect(kazan && kazan.x).toBeGreaterThan(width / 2);
-    expect(plan.texts.filter((item) => item.text === "[Seal]")).toHaveLength(2);
     expect(plan.texts.some((item) => item.text === "[Holder's photo]")).toBe(true);
     expect(plan.image).toBeTruthy();
     expect(plan.overflow).toBe(false);
@@ -181,7 +187,7 @@ describe("attached document layout", () => {
     expect(preview.text).toContain("[Logo: OYAK BANK]");
     expect(preview.text).toContain("[Signature]");
     expect(preview.text).toContain("[Holder's photo]");
-    expect(preview.text).toContain("[Seal]");
+    expect(preview.text).toContain("[SEAL]");
     expect(preview.text).toContain("Atatürk");
     expect(preview.text).toContain("Kavaklıdere");
 

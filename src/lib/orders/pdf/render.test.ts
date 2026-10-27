@@ -294,7 +294,8 @@ describe("form translation layout", () => {
     const previewPages = await pdfItems(rendered.watermarkedPreview);
     const cleanPages = await pdfItems(rendered.cleanTranslation);
 
-    expect(previewText.text).toContain("[Seal: Civil Registry of Jalisco]");
+    expect(previewText.text).toContain("[SEAL]");
+    expect(previewText.text).toContain("Civil Registry of Jalisco");
     expect(previewText.text).toContain("[Electronic signature]");
     expect(previewText.text).toContain("First name(s)");
     expect(previewText.text).toContain("VALERIA XIMENA");

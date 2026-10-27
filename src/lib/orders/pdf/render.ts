@@ -1,7 +1,7 @@
 import { PDFDocument, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import { degrees } from "pdf-lib";
 import { PREVIEW_WATERMARK, PREVIEW_WATERMARK_OPACITY, previewWatermarkRgb } from "../constants";
-import { documentKind, paintedPlanText, planDocument, planTable, type PlanRect, type PlanRule, type PlanStyle, type PlanText } from "./document-layout";
+import { documentKind, paintedPlanText, placeSealStamp, planDocument, planTable, type PlanRect, type PlanRule, type PlanStyle, type PlanText } from "./document-layout";
 import { faceForCodePoint, fontFace, serifFace, stableFontkit, type FontFace, type FontFaceId } from "./font";
 import {
   assertContiguousPages,
@@ -13,7 +13,7 @@ import {
   type RenderPage,
 } from "./layout";
 import { drawCertificationPage, drawFinalFooter } from "./cover";
-import { drawGcsLetterhead, drawGcsPageFooter, embedGcsLetterhead, gcsBodyTopInset, type GcsLetterhead } from "./gcs-cover";
+import { drawGcsLetterhead, drawGcsPageFooter, embedGcsLetterhead, GCS_LETTERHEAD_CLEARANCE, GCS_LETTERHEAD_RULE_FROM_TOP, gcsBodyTopInset, type GcsLetterhead } from "./gcs-cover";
 import { applyCredProntoPdfMetadata, applyPdfMetadata } from "./metadata";
 import { blocksToParagraphs, finalizeBlocks, structurePage } from "./structure";
 
@@ -59,7 +59,6 @@ function blocksFor(page: RenderPage): RenderBlock[] {
 }
 
 function noteText(block: RenderBlock): string | null {
-  if (block.type === "seal") return `[Seal: ${block.text}]`;
   if (block.type === "signature") return block.electronic ? "[Electronic signature]" : "[Signature]";
   if (block.type === "note") return block.text;
   return null;
@@ -166,6 +165,18 @@ function drawStyled(
   flush();
 }
 
+function planPaint(item: PlanText): Paint {
+  return {
+    text: item.text,
+    x: item.x,
+    y: item.y,
+    size: item.size,
+    color: item.color === "muted" ? MUTED : INK,
+    italic: false,
+    bold: item.bold,
+  };
+}
+
 function layoutBlocks(
   blocks: RenderBlock[],
   upright: ReadyFace[],
@@ -174,13 +185,15 @@ function layoutBlocks(
   margin: number,
   maxWidth: number,
   top: number,
-): { paints: Paint[]; rules: PlanRule[]; bottom: number } {
+  footer: number,
+): { paints: Paint[]; rules: PlanRule[]; boxes: PlanRect[]; bottom: number } {
   const labelWidth = Math.min(220, maxWidth * 0.44);
   const columnGap = 14;
   const valueWidth = Math.max(40, maxWidth - labelWidth - columnGap);
   const measure = (text: string, fontSize: number, italic: boolean) => widthOf(text, fontSize, italic, upright, italicFace);
   const paints: Paint[] = [];
   const rules: PlanRule[] = [];
+  const boxes: PlanRect[] = [];
   let y = top;
 
   const paintLines = (text: string, x: number, fontSize: number, color: ReturnType<typeof rgb>, italic: boolean, width: number) => {
@@ -193,7 +206,25 @@ function layoutBlocks(
     return lineHeight;
   };
 
-  for (const block of blocks) {
+  const paintBox = (block: Extract<RenderBlock, { type: "box" }>, x: number, width: number, bottom: number) => {
+    const boxH = 44;
+    boxes.push({ x, y: bottom, w: width, h: boxH, radius: 4, stroke: 1 });
+    const labelSize = 8;
+    const valueSize = Math.max(8, size - 0.5);
+    const labelW = measure(block.label, labelSize, false);
+    const valueW = measure(block.value, valueSize, false);
+    const inset = 6;
+    const labelX = x + Math.max(inset, Math.min(width - labelW - inset, (width - labelW) / 2));
+    const valueX = x + Math.max(inset, Math.min(width - valueW - inset, (width - valueW) / 2));
+    if (block.label) paints.push({ text: block.label, x: labelX, y: bottom + 26, size: labelSize, color: MUTED, italic: false });
+    if (block.value) {
+      paints.push({ text: block.value, x: valueX, y: bottom + 10, size: valueSize, color: INK, italic: false, bold: true });
+    }
+  };
+
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (!block) continue;
     const noted = noteText(block);
     if (block.type === "heading") {
       const fontSize = block.level === 2 ? size + 0.5 : size + 2.5;
@@ -202,6 +233,39 @@ function layoutBlocks(
     } else if (block.type === "paragraph") {
       paintLines(block.text, margin, size, INK, false, maxWidth);
       y -= 5;
+    } else if (block.type === "seal") {
+      const stamp = placeSealStamp({
+        text: block.text,
+        column: block.column,
+        left: margin,
+        width: maxWidth,
+        top: y + Math.min(size * 0.35, 6),
+        measure: (text, fontSize) => measure(text, fontSize, false),
+      });
+      boxes.push(stamp.box);
+      paints.push(...stamp.texts.map(planPaint));
+      y = stamp.bottom - 6;
+    } else if (block.type === "box") {
+      const next = blocks[index + 1];
+      const paired =
+        next?.type === "box" &&
+        ((block.column === "left" && next.column === "right") || (block.column === "right" && next.column === "left"));
+      const row = paired && next.type === "box" ? [block, next] : [block];
+      if (paired) index += 1;
+      const gap = 16;
+      const boxH = 44;
+      const topEdge = y + Math.min(size * 0.35, 6);
+      const bottom = topEdge - boxH;
+      const singleWidth = Math.min(180, Math.max(120, maxWidth * 0.46));
+      for (const item of row) {
+        const full = row.length === 1 && item.column === "full";
+        const width = row.length === 2 ? (maxWidth - gap) / 2 : full ? maxWidth : singleWidth;
+        let x = margin;
+        if (row.length === 2) x = item.column === "right" ? margin + width + gap : margin;
+        else if (item.column === "right") x = margin + maxWidth - width;
+        paintBox(item, x, width, bottom);
+      }
+      y = bottom - 8;
     } else if (noted) {
       paintLines(noted, margin, Math.max(8, size - 0.5), MUTED, true, maxWidth);
       y -= 5;
@@ -214,9 +278,9 @@ function layoutBlocks(
         const labels = wrapLines(row.label, (line) => measure(line, labelSize, false), labelWidth);
         const values = wrapLines(row.value || " ", (line) => measure(line, valueSize, false), valueWidth);
         const count = Math.max(labels.length, values.length, 1);
-        for (let index = 0; index < count; index += 1) {
-          const label = labels[index];
-          const value = row.value ? values[index] : undefined;
+        for (let line = 0; line < count; line += 1) {
+          const label = labels[line];
+          const value = row.value ? values[line] : undefined;
           if (label) paints.push({ text: label, x: margin, y, size: labelSize, color: MUTED, italic: false });
           if (value) paints.push({ text: value, x: margin + labelWidth + columnGap, y, size: valueSize, color: INK, italic: false });
           y -= lineHeight;
@@ -232,7 +296,7 @@ function layoutBlocks(
         y: y + size * 0.8,
         width: maxWidth,
         size: Math.max(7.5, size - 1),
-        bottom: 12,
+        bottom: footer,
         serif: false,
         measure: (text, fontSize) => measure(text, fontSize, false),
       });
@@ -240,11 +304,11 @@ function layoutBlocks(
         paints.push({ text: item.text, x: item.x, y: item.y, size: item.size, color: INK, italic: false, bold: item.bold });
       }
       rules.push(...table.rules);
-      y = table.clipped ? Math.min(table.bottom, 11) : table.bottom - size - 4;
+      y = table.clipped ? footer - 1 : Math.max(footer, table.bottom - size - 4);
     }
   }
 
-  return { paints, rules, bottom: y };
+  return { paints, rules, boxes, bottom: y };
 }
 
 type SerifFaces = {
@@ -467,15 +531,25 @@ function drawBody(
   } else {
     let chosen: Paint[] = [];
     let chosenRules: PlanRule[] = [];
+    let chosenBoxes: PlanRect[] = [];
     let size = 11;
     while (size >= 8) {
-      const top = heightPt - margin - size - topInset;
-      const laid = layoutBlocks(blocks, faces.upright, faces.italic, size, margin, maxWidth, top);
+      // Letterhead pages skip the extra font-size drop so inset 72 and margin 48
+      // put the first baseline at height - 120, under the rule at height - 88.
+      let top = options.letterhead ? heightPt - margin - topInset : heightPt - margin - size - topInset;
+      if (options.letterhead) {
+        const rise = Math.max((size + 2.5) * 0.85, size * 0.8);
+        const limit = heightPt - GCS_LETTERHEAD_RULE_FROM_TOP - GCS_LETTERHEAD_CLEARANCE - rise;
+        if (top > limit) top = limit;
+      }
+      const laid = layoutBlocks(blocks, faces.upright, faces.italic, size, margin, maxWidth, top, footer);
       chosen = laid.paints;
       chosenRules = laid.rules;
+      chosenBoxes = laid.boxes;
       if (laid.bottom >= footer || size === 8) break;
       size -= 0.5;
     }
+    for (const box of chosenBoxes) drawRounded(page, box);
     const visible = chosen.filter((paint) => paint.y >= 12);
     for (const paint of visible) {
       drawStyled(page, paint.text, paint.x, paint.y, paint.size, paint.color, paint.italic, faces.upright, faces.italic);

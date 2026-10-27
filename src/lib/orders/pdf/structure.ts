@@ -250,6 +250,13 @@ function isSealMaterial(text: string): boolean {
   return false;
 }
 
+function pipeCells(line: string): string[] | null {
+  if (!/\S\s*\|\s*\S/.test(line)) return null;
+  const cells = line.split("|").map((cell) => cell.trim());
+  if (cells.length < 2 || cells.every((cell) => cell.length === 0)) return null;
+  return cells;
+}
+
 function isAllCapsLabel(text: string): boolean {
   const trimmed = text.trim();
   if (trimmed.length < 3 || trimmed.length > 70) return false;
@@ -477,11 +484,30 @@ export function structurePage(text: string): RenderBlock[] {
       insertSeal();
       continue;
     }
-    const sealNote = line.match(/^\[Seal:\s*(.+)\]$/i);
-    if (sealNote?.[1]) {
+    if (/^\[seal\]$/i.test(line)) {
       flush();
-      blocks.push({ type: "seal", text: cleanSealText(sealNote[1]) });
+      blocks.push({ type: "seal", text: "" });
       sealInserted = true;
+      continue;
+    }
+    const sealNote = line.match(/^\[Seal:\s*(.*)\]$/i);
+    if (sealNote) {
+      flush();
+      blocks.push({ type: "seal", text: cleanSealText(sealNote[1] ?? "") });
+      sealInserted = true;
+      continue;
+    }
+    const piped = pipeCells(line);
+    if (piped) {
+      flush();
+      const rows = [piped];
+      while (index + 1 < lines.length) {
+        const nextCells = pipeCells(lines[index + 1] ?? "");
+        if (!nextCells) break;
+        rows.push(nextCells);
+        index += 1;
+      }
+      blocks.push({ type: "table", rows, header: rows.length > 1 });
       continue;
     }
     const signatureNote = line.match(/^\[(Electronic signature|Signature)\]$/i);
@@ -508,12 +534,15 @@ export function structurePage(text: string): RenderBlock[] {
       blocks.push({ type: "heading", text: entry.english, level: entry.role === "heading" ? 1 : 2 });
       continue;
     }
-    const colon = line.match(/^([^:]{2,80}):\s+(\S.*)$/);
+    const colon = line.match(/^([^:]{1,60}):\s+(\S.*)$/);
     if (colon) {
-      const colonEntry = lookup(colon[1] ?? "");
-      if (colonEntry?.role === "field" || isAllCapsLabel(colon[1] ?? "")) {
+      const rawLabel = (colon[1] ?? "").trim();
+      const colonEntry = lookup(rawLabel);
+      const words = rawLabel.split(/\s+/).filter(Boolean);
+      const shortLabel = rawLabel.length <= 48 && words.length <= 8 && words.length > 0 && !/[.!?]$/.test(rawLabel);
+      if (colonEntry?.role === "field" || isAllCapsLabel(rawLabel) || shortLabel) {
         rows.push({
-          label: colonEntry?.english ?? titleCaseLabel(colon[1] ?? ""),
+          label: colonEntry?.english ?? (isAllCapsLabel(rawLabel) ? titleCaseLabel(rawLabel) : rawLabel),
           value: translateValue(colon[2] ?? ""),
         });
         continue;
@@ -524,6 +553,7 @@ export function structurePage(text: string): RenderBlock[] {
       while (index + 1 < lines.length) {
         const next = lines[index + 1] ?? "";
         if (!next || lookup(next) || isSealMaterial(next) || isElectronicSignatureToken(next) || isProse(next)) break;
+        if (/^\[seal\]$/i.test(next) || /^\[Seal:/i.test(next) || pipeCells(next) || isAllCapsLabel(next)) break;
         values.push(next);
         index += 1;
       }
@@ -541,6 +571,7 @@ export function structurePage(text: string): RenderBlock[] {
     while (index + 1 < lines.length) {
       const next = lines[index + 1] ?? "";
       if (!next || lookup(next) || isSealMaterial(next) || isElectronicSignatureToken(next) || isAllCapsLabel(next)) break;
+      if (/^\[seal\]$/i.test(next) || /^\[Seal:/i.test(next) || pipeCells(next) || /^[^:]{1,60}:\s+\S/.test(next)) break;
       prose.push(next);
       index += 1;
     }

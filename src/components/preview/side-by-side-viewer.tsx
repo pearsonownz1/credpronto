@@ -113,6 +113,8 @@ type ViewerProps = {
   onDownload?: () => void | Promise<void>;
   onEvaluate?: () => void | Promise<void>;
   onDownloadEvaluation?: () => void | Promise<void>;
+  /** GCS desk: open the translation text editor beside the PDF. */
+  onEditTranslation?: () => void;
   notice?: string;
   noticeTestId?: string;
   /** When the page already started PDFium, skip a second wasm download. */
@@ -164,6 +166,7 @@ function SideBySideEngine({
   onDownload,
   onEvaluate,
   onDownloadEvaluation,
+  onEditTranslation,
   notice,
   noticeTestId,
   shellLayout,
@@ -267,6 +270,7 @@ function SideBySideEngine({
         onDownload={onDownload}
         onEvaluate={onEvaluate}
         onDownloadEvaluation={onDownloadEvaluation}
+        onEditTranslation={onEditTranslation}
         notice={notice}
         noticeTestId={noticeTestId}
         onDocumentError={files.recover}
@@ -364,6 +368,7 @@ function ViewerWorkspace({
   onDownload,
   onEvaluate,
   onDownloadEvaluation,
+  onEditTranslation,
   notice,
   noticeTestId,
   onDocumentError,
@@ -378,6 +383,7 @@ function ViewerWorkspace({
   onDownload?: () => void | Promise<void>;
   onEvaluate?: () => void | Promise<void>;
   onDownloadEvaluation?: () => void | Promise<void>;
+  onEditTranslation?: () => void;
   notice?: string;
   noticeTestId?: string;
   onDocumentError: () => void;
@@ -913,6 +919,16 @@ function ViewerWorkspace({
             ) : null}
             {chrome === "gcs" ? (
             <div className="relative flex shrink-0 items-center gap-2">
+              {onEditTranslation ? (
+                <button
+                  type="button"
+                  data-testid="edit-translation"
+                  className="inline-flex h-[34px] items-center rounded-[var(--cp-radius)] border border-line bg-bg px-3 text-[13px] font-semibold text-ink"
+                  onClick={onEditTranslation}
+                >
+                  Edit Translation
+                </button>
+              ) : null}
               <button
                 type="button"
                 data-testid="flag-correction"

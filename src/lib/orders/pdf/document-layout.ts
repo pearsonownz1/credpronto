@@ -80,6 +80,68 @@ function columnOf(block: RenderBlock): BlockColumn {
   return "full";
 }
 
+export const SEAL_STAMP_SIZE = 52;
+
+/** Caption printed under the round stamp. Empty and "Official seal" stay inside the circle only. */
+export function sealStampCaption(text: string): string | null {
+  const trimmed = text.trim().replace(/^\[seal:?\s*/i, "").replace(/\]$/, "").trim();
+  if (!trimmed || /^official seal$/i.test(trimmed) || /^seal$/i.test(trimmed)) return null;
+  if (trimmed.length > 60) return null;
+  return trimmed;
+}
+
+function sealStampX(column: BlockColumn | undefined, left: number, width: number): number {
+  if (column === "left") return left;
+  if (column === "full") return left + Math.max(0, (width - SEAL_STAMP_SIZE) / 2);
+  return left + Math.max(0, width - SEAL_STAMP_SIZE);
+}
+
+/** Round `[SEAL]` stamp. `top` is the top of the circle in PDF coordinates. */
+export function placeSealStamp(input: {
+  text: string;
+  column?: BlockColumn;
+  left: number;
+  width: number;
+  top: number;
+  measure: (text: string, size: number) => number;
+  serif?: boolean;
+}): { box: PlanRect; texts: PlanText[]; bottom: number } {
+  const x = sealStampX(input.column, input.left, input.width);
+  const bottom = input.top - SEAL_STAMP_SIZE;
+  const box: PlanRect = { x, y: bottom, w: SEAL_STAMP_SIZE, h: SEAL_STAMP_SIZE, radius: 26, stroke: 1.1 };
+  const label = "[SEAL]";
+  const labelSize = 8;
+  const labelWidth = input.measure(label, labelSize);
+  const texts: PlanText[] = [
+    {
+      text: label,
+      x: x + (SEAL_STAMP_SIZE - labelWidth) / 2,
+      y: bottom + (SEAL_STAMP_SIZE - labelSize) / 2 + labelSize * 0.15,
+      size: labelSize,
+      color: "ink",
+      bold: true,
+      serif: input.serif,
+    },
+  ];
+  let cursor = bottom - 6;
+  const caption = sealStampCaption(input.text);
+  if (caption) {
+    const captionSize = 7;
+    const captionWidth = input.measure(caption, captionSize);
+    const captionY = bottom - captionSize - 3;
+    texts.push({
+      text: caption,
+      x: x + (SEAL_STAMP_SIZE - captionWidth) / 2,
+      y: captionY,
+      size: captionSize,
+      color: "muted",
+      serif: input.serif,
+    });
+    cursor = captionY - 4;
+  }
+  return { box, texts, bottom: cursor };
+}
+
 function wordsOf(text: string): Word[] {
   const words: Word[] = [];
   let bold = false;
@@ -285,6 +347,7 @@ function planLetter(input: {
   const maxWidth = input.width - margin * 2;
   const texts: PlanText[] = [];
   const rules: PlanRule[] = [];
+  const boxes: PlanRect[] = [];
   let y = input.height - margin - (input.topInset ?? 0);
   const serif = false;
   const size = input.size;
@@ -371,7 +434,22 @@ function planLetter(input: {
       continue;
     }
 
-    if (block.type === "logo" || block.type === "seal" || block.type === "stamp" || block.type === "handwritten" || block.type === "illegible" || block.type === "note") {
+    if (block.type === "seal") {
+      const stamp = placeSealStamp({
+        text: block.text,
+        column: block.column,
+        left: margin,
+        width: maxWidth,
+        top: y + Math.min(size * 0.35, 6),
+        measure: (text, fontSize) => input.measure(text, fontSize, { serif }),
+        serif,
+      });
+      boxes.push(stamp.box);
+      texts.push(...stamp.texts);
+      y = stamp.bottom - 8;
+      continue;
+    }
+    if (block.type === "logo" || block.type === "stamp" || block.type === "handwritten" || block.type === "illegible" || block.type === "note") {
       paintNote(bracketNote(block) ?? "");
       continue;
     }
@@ -478,7 +556,7 @@ function planLetter(input: {
     }
   }
 
-  return { serif, overflow: y < input.footer, boxes: [], texts, rules };
+  return { serif, overflow: y < input.footer, boxes, texts, rules };
 }
 
 /**
@@ -497,6 +575,7 @@ function planLabeledCertificate(input: {
 }): DocumentPlan {
   const texts: PlanText[] = [];
   const rules: PlanRule[] = [];
+  const boxes: PlanRect[] = [];
   const serif = true;
   const size = input.size;
   const inset = 26;
@@ -553,6 +632,21 @@ function planLabeledCertificate(input: {
     if (y < bottom) {
       clipped = true;
       break;
+    }
+    if (block.type === "seal") {
+      const stamp = placeSealStamp({
+        text: block.text,
+        column: block.column,
+        left,
+        width: innerW,
+        top: y + Math.min(size * 0.35, 6),
+        measure: (text, fontSize) => input.measure(text, fontSize, { serif }),
+        serif,
+      });
+      boxes.push(stamp.box);
+      texts.push(...stamp.texts);
+      y = stamp.bottom - 4;
+      continue;
     }
     if (block.type === "heading") {
       const prominent = Boolean(block.bold) || block.level === 1;
@@ -632,7 +726,7 @@ function planLabeledCertificate(input: {
     serif,
     overflow: clipped || lowest < input.footer + 2 || y < frame.y + 8,
     frame,
-    boxes: [],
+    boxes,
     texts,
     rules,
   };
@@ -739,11 +833,18 @@ function planCertificate(input: {
   placeBox(rightBox, "right");
 
   const placeSeal = (block: RenderBlock | undefined, side: "left" | "right") => {
-    if (!block) return;
-    const note = bracketNote(block) ?? "[Seal]";
-    const width = input.measure(note, NOTE_SIZE, { serif });
-    const x = side === "left" ? left : right - width;
-    texts.push({ text: note, x, y: rowTop - 18, size: NOTE_SIZE, color: "muted", serif });
+    if (!block || block.type !== "seal" || (block === leftSeal && side === "right")) return;
+    const stamp = placeSealStamp({
+      text: block.text,
+      column: side,
+      left,
+      width: innerW,
+      top: rowTop,
+      measure: (text, fontSize) => input.measure(text, fontSize, { serif: true }),
+      serif: true,
+    });
+    boxes.push(stamp.box);
+    texts.push(...stamp.texts);
   };
   placeSeal(leftSeal, "left");
   placeSeal(rightSeal, "right");

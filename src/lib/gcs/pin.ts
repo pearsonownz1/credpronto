@@ -59,6 +59,11 @@ export function requestHasGcsPin(request: { headers: { get(name: string): string
   return gcsPinCookieMatches(readCookie(request.headers.get("cookie"), GCS_PIN_COOKIE));
 }
 
+/** GCS desk routes accept the PIN cookie (or the PIN header) and no Supabase session. */
+export function isGcsPinUnlocked(request: { headers: { get(name: string): string | null } }): boolean {
+  return requestHasGcsPin(request);
+}
+
 export function assertGcsPin(request: { headers: { get(name: string): string | null } }): void {
   if (!requestHasGcsPin(request)) {
     throw new HttpError("Enter the GCS PIN to start a translation.", 401);

@@ -37,9 +37,28 @@ const CONTENT_W = PAGE_W - MARGIN_X * 2;
 /** Logo height on the certificate cover. Evaluation reports use the same mark. */
 export const GCS_COVER_LOGO_HEIGHT = 34;
 
-/** Extra space under the letterhead so translated text does not sit on the rule. */
+/**
+ * Distance from the top of the page to the letterhead rule.
+ * `top = height - 36`, logo is 28pt, contact sits 16pt under that, and the rule is 8pt lower.
+ */
+export const GCS_LETTERHEAD_RULE_FROM_TOP = 88;
+
+/** Gap kept between that rule and the top of translated body paint. */
+export const GCS_LETTERHEAD_CLEARANCE = 20;
+
+/** `ruleY` for `drawGcsLetterhead`. Transcript baselines sit `margin + gcsBodyTopInset` below the page top. */
+export function gcsLetterheadRuleY(pageHeight: number): number {
+  return pageHeight - GCS_LETTERHEAD_RULE_FROM_TOP;
+}
+
+/**
+ * Extra space under the letterhead.
+ * On a letter page the transcript margin is 48, so the first baseline is `height - 120`,
+ * under the rule at `height - 88`.
+ */
 export function gcsBodyTopInset(kind: "letter" | "certificate" | null): number {
-  return kind ? 72 : 34;
+  void kind;
+  return 72;
 }
 
 type ReadyFace = { pdf: PDFFont; has: (codePoint: number) => boolean; italic: boolean };
@@ -225,7 +244,7 @@ export function drawGcsLetterhead(page: PDFPage, font: PDFFont, images: GcsLette
     font,
     color: MUTED,
   });
-  const ruleY = contactY - 8;
+  const ruleY = gcsLetterheadRuleY(height);
   page.drawLine({
     start: { x: margin, y: ruleY },
     end: { x: right, y: ruleY },
