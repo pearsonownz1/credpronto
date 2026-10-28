@@ -121,7 +121,7 @@ const repairSchema = z.object({
 });
 
 const IMAGE_LAYOUT_NOTE =
-  "The attached file is the source page, either an image or a one-page PDF. Mirror its arrangement: letterhead, date, address, each reference line, horizontal boxed strips, registry tables, the body, each signature, and the enclosure list. Do not join those regions into one paragraph. A row of two or more boxed or side-by-side labeled cells is one table, with the columns kept horizontal.";
+  "The attached file is the source page, either an image or a one-page PDF. Mirror its arrangement: letterhead, date, address, each reference line, horizontal boxed strips, registry tables, the body, each signature, and the enclosure list. Do not join those regions into one paragraph. A row of two or more boxed or side-by-side labeled cells is one table, with the columns kept horizontal. When an image or PDF page attachment is provided, read the visual page directly as the primary source of truth. If the OCR text below is garbled, corrupted, or missing table rows, signatures, or cursive text that are visible in the attached page image, transcribe and translate all visible text from the image (including cursive certificate body text, all columns and bottom rows of multi-column transcript tables, and printed signatory names/titles under every signature).";
 
 type ModelPage = {
   pageNumber: number;
@@ -150,7 +150,9 @@ For a letter or a certificate, return blocks in reading order. One source page i
 - illegible: a mark that cannot be read.
 - table: a real grid, a multi-column table, or a horizontal strip of 2 or more boxed, bordered, or side-by-side labeled cells. Example: [Alphanumeric Code | National Register of Degrees | Center Code | University Register of Degrees | University File No.]. cells are rows of strings and keep those horizontal columns, either as [labelsRow, valuesRow] or as one row of "Label: Value" cells. Set header true when the first row is labels. Never flatten that strip into vertical kv or fields lines.
 
-Copy every number and ID exactly. Keep diacritics in names. Turkish, Spanish, French, German, and Portuguese dates are day/month/year on the source. Print every date as MM/DD/YYYY, so 31/1/2006 is 01/31/2006 and 7. 9. 1989 is 09/07/1989.`;
+Copy every number and ID exactly. Keep diacritics in names. Turkish, Spanish, French, German, and Portuguese dates are day/month/year on the source. Print every date as MM/DD/YYYY, so 31/1/2006 is 01/31/2006 and 7. 9. 1989 is 09/07/1989.
+
+When an image or PDF page attachment is provided, read the visual page directly as the primary source of truth. If the OCR text below is garbled, corrupted, or missing table rows, signatures, or cursive text that are visible in the attached page image, transcribe and translate all visible text from the image (including cursive certificate body text, all columns and bottom rows of multi-column transcript tables, and printed signatory names/titles under every signature).`;
 
 function pageHasContent(blocks: RenderBlock[]): boolean {
   return blocks.some((block) => {

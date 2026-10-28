@@ -209,7 +209,7 @@ function layoutBlocks(
   const rules: PlanRule[] = [];
   const bands: PlanRect[] = [];
   const seals: PlanSeal[] = [];
-  const tableSize = Math.max(6, size - 1);
+  const tableSize = Math.max(4.5, size - 1);
   const tableWidths = sharedTableColumnWidths({
     tables: blocks.flatMap((block) => (block.type === "table" ? [{ rows: block.rows, header: block.header ?? true }] : [])),
     width: maxWidth,
@@ -544,7 +544,7 @@ function drawBody(
       kind === "certificate" &&
       blocks.some((block) => block.type === "kv" || block.type === "fields" || block.type === "table");
     // A one-language diploma is shorter than the bilingual scan. Start larger
-    // and step down to 8 only when the page would overflow.
+    // and step down to 5.5 only when the page would overflow.
     let size = labeledCertificate ? 13.5 : 12;
     let inset = topInset;
     const planAt = (nextSize: number, nextInset: number) =>
@@ -559,11 +559,15 @@ function drawBody(
         hasPhoto,
         topInset: nextInset,
       });
+    const minSize = 5.5;
     let plan = planAt(size, inset);
-    while (plan.overflow && size > 8) {
-      size -= 0.5;
-      plan = planAt(size, inset);
-    }
+    const fitPlan = () => {
+      while (plan.overflow && size > minSize) {
+        size = Math.round((size - 0.5) * 2) / 2;
+        plan = planAt(size, inset);
+      }
+    };
+    fitPlan();
     if (options.credProntoLetterhead) {
       const textLimit = gcsLetterheadRuleY(heightPt) - GCS_LETTERHEAD_BODY_CLEARANCE;
       const borderLimit = gcsLetterheadRuleY(heightPt);
@@ -577,10 +581,7 @@ function drawBody(
         if (overflow <= 0.2) break;
         inset += overflow;
         plan = planAt(size, inset);
-        while (plan.overflow && size > 8) {
-          size -= 0.5;
-          plan = planAt(size, inset);
-        }
+        fitPlan();
       }
     }
     drawBands(page, plan.bands);
@@ -607,7 +608,7 @@ function drawBody(
     let chosenBands: PlanRect[] = [];
     let chosenSeals: PlanSeal[] = [];
     let size = 11;
-    const minSize = 6.5;
+    const minSize = 5.5;
     for (;;) {
       let top = heightPt - margin - size - topInset;
       if (clearsLetterhead) {
