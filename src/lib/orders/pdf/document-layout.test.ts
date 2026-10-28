@@ -240,6 +240,53 @@ describe("identifier check", () => {
     expect(accepted[0]?.type === "paragraph" && accepted[0].text).toContain("24379");
   });
 
+  it("refuses to replace semester terms or years with slashless OCR noise", () => {
+    const blocks = [
+      {
+        type: "table" as const,
+        header: true,
+        rows: [
+          ["Subject", "Term"],
+          ["Civil Law", "1/1999"],
+          ["Criminal Law", "2/2000"],
+          ["Tax Law", "1/2001"],
+          ["Enrollment", "1999"],
+        ],
+      },
+      { type: "paragraph" as const, text: "Issued 09/07/1989 and registry 2020/217459." },
+    ];
+    const source = "111999 1112000 1112001 201112000 0011120011 Civil Law 1999";
+    const fixed = applyGroundedFixes(
+      blocks,
+      [
+        { wrong: "1/1999", right: "111999" },
+        { wrong: "2/2000", right: "1112000" },
+        { wrong: "1/2001", right: "1112001" },
+        { wrong: "1999", right: "111999" },
+        { wrong: "09/07/1989", right: "09071989" },
+      ],
+      source,
+    );
+    const text = JSON.stringify(fixed);
+    expect(text).toContain("1/1999");
+    expect(text).toContain("2/2000");
+    expect(text).toContain("1/2001");
+    expect(text).toContain("1999");
+    expect(text).toContain("09/07/1989");
+    expect(text).toContain("2020/217459");
+    expect(text).not.toContain("111999");
+    expect(text).not.toContain("1112000");
+    expect(text).not.toContain("1112001");
+    expect(text).not.toContain("09071989");
+
+    const corrected = applyGroundedFixes(
+      [{ type: "paragraph", text: "Term 1/1998 remains until checked." }],
+      [{ wrong: "1/1998", right: "1/1999" }],
+      "Histórico 1/1999",
+    );
+    expect(corrected[0]?.type === "paragraph" && corrected[0].text).toContain("1/1999");
+  });
+
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -254,6 +301,28 @@ describe("identifier check", () => {
     });
     expect(spy).not.toHaveBeenCalled();
     expect(blocks[0]?.type === "paragraph" && blocks[0].text).toBe("Birth certificate");
+  });
+
+  it("ignores a model that rewrites semester terms into OCR noise", async () => {
+    vi.spyOn(ai, "generateObject").mockResolvedValue({
+      fixes: [
+        { wrong: "1/1999", right: "111999" },
+        { wrong: "2/2000", right: "1112000" },
+        { wrong: "1/2001", right: "1112001" },
+      ],
+    });
+    const blocks = await verifyIdentifiers({
+      sourceText: "111999 1112000 1112001 201112000 HISTÓRICO ESCOLAR",
+      blocks: [{ type: "paragraph", text: "Terms 1/1999, 2/2000, and 1/2001." }],
+      sourceLanguage: "pt",
+      dateFormat: "DD/MM/YYYY",
+    });
+    const text = blocks[0]?.type === "paragraph" ? blocks[0].text : "";
+    expect(text).toContain("1/1999");
+    expect(text).toContain("2/2000");
+    expect(text).toContain("1/2001");
+    expect(text).not.toContain("111999");
+    expect(text).not.toContain("1112001");
   });
 
   it("keeps the reconciled number when the check fails", async () => {

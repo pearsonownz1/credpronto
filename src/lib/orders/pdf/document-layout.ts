@@ -152,7 +152,8 @@ const SEAL_INNER = 28;
 
 function tableCellPad(size: number): number {
   if (size >= 8.5) return TABLE_PAD;
-  return Math.max(3, (TABLE_PAD * size) / 8.5);
+  if (size >= 7) return Math.max(2.5, (TABLE_PAD * size) / 8.5);
+  return Math.max(1.4, (size - 3.5) * 0.6);
 }
 
 function tableRowHeight(lineCount: number, size: number, leading: number, pad: number): number {
@@ -375,7 +376,7 @@ export function planTable(input: {
     cursor += width;
   }
   const right = input.x + input.width;
-  const leading = size * 1.22;
+  const leading = size * (size < 7.5 ? 1.12 : 1.22);
   let y = input.y;
   let clipped = false;
   const numeric = (text: string) => /^[\d\s.,/:%+-]+$/.test(text) && /\d/.test(text);
@@ -756,18 +757,22 @@ function planLabeledCertificate(input: {
   const seals: PlanSeal[] = [];
   const serif = true;
   const size = input.size;
+  const compact = size < 7.5;
+  const edgePad = compact ? 12 : 22;
+  const lineLead = compact ? 1.12 : 1.22;
+  const tableGap = compact ? 4 : size + 11.5;
   const inset = 26;
   const frame: PlanRect = {
     x: inset,
     y: input.footer + 6,
     w: input.width - inset * 2,
-    h: input.height - input.footer - 6 - 22 - (input.topInset ?? 0),
+    h: input.height - input.footer - 6 - edgePad - (input.topInset ?? 0),
     radius: 18,
     stroke: 1.6,
   };
   const left = frame.x + 22;
   const innerW = frame.w - 44;
-  let y = frame.y + frame.h - 22;
+  let y = frame.y + frame.h - edgePad;
   const bottom = frame.y + 12;
   let clipped = false;
 
@@ -795,7 +800,7 @@ function planLabeledCertificate(input: {
         });
         cursor += input.measure(word.text, fontSize, { bold: word.bold, serif }) + space;
       }
-      y -= fontSize * 1.22;
+      y -= fontSize * lineLead;
     }
   };
 
@@ -842,7 +847,7 @@ function planLabeledCertificate(input: {
         });
         cursor += input.measure(word.text, fontSize, { bold: word.bold, serif }) + space;
       }
-      cursorY -= fontSize * 1.22;
+      cursorY -= fontSize * lineLead;
     }
     return cursorY;
   };
@@ -913,22 +918,82 @@ function planLabeledCertificate(input: {
       continue;
     }
     if (block.type === "table") {
-      const table = planTable({
-        rows: block.rows,
-        header: block.header ?? true,
-        x: left,
-        y: y + size * 0.6,
-        width: innerW,
-        size: size - 1,
-        bottom,
-        serif,
-        measure: input.measure,
-      });
-      texts.push(...table.texts);
-      rules.push(...table.rules);
-      bands.push(...table.bands);
-      if (table.clipped) clipped = true;
-      y = table.bottom - (size + 1.5) - 10;
+      const next = input.blocks[index + 1];
+      const tableTop = y + size * 0.6;
+      const placeTable = (rows: string[][], header: boolean | undefined, x: number, width: number, top: number) =>
+        planTable({
+          rows,
+          header: header ?? true,
+          x,
+          y: top,
+          width,
+          size: size - 1,
+          bottom,
+          serif,
+          measure: input.measure,
+        });
+      const adopt = (tables: TableLayout[], gap: number) => {
+        for (const table of tables) {
+          texts.push(...table.texts);
+          rules.push(...table.rules);
+          bands.push(...table.bands);
+          if (table.clipped) clipped = true;
+        }
+        y = Math.min(...tables.map((table) => table.bottom)) - gap;
+      };
+      const columnsOf = (rows: string[][]) => Math.max(0, ...rows.map((row) => row.length));
+      if (next?.type === "table") {
+        const leftCols = columnsOf(block.rows);
+        const rightCols = columnsOf(next.rows);
+        const densePair =
+          leftCols > 0 &&
+          rightCols > 0 &&
+          leftCols <= 6 &&
+          rightCols <= 6 &&
+          block.rows.length >= 10 &&
+          next.rows.length >= 10;
+        const compactPair =
+          size <= 9.5 &&
+          leftCols > 0 &&
+          leftCols === rightCols &&
+          leftCols <= 6 &&
+          block.rows.length >= 2 &&
+          next.rows.length >= 2;
+        if (densePair || compactPair) {
+          const colGap = 12;
+          const colW = (innerW - colGap) / 2;
+          const leftTable = placeTable(block.rows, block.header, left, colW, tableTop);
+          const rightTable = placeTable(next.rows, next.header, left + colW + colGap, colW, tableTop);
+          const sideBottom = Math.min(leftTable.bottom, rightTable.bottom);
+          const sideFits = !leftTable.clipped && !rightTable.clipped;
+          const stackedFirst = placeTable(block.rows, block.header, left, innerW, tableTop);
+          const stackedSecond = placeTable(
+            next.rows,
+            next.header,
+            left,
+            innerW,
+            stackedFirst.bottom - tableGap + size * 0.6,
+          );
+          const stackedBottom = Math.min(stackedFirst.bottom, stackedSecond.bottom);
+          const stackedClipped = stackedFirst.clipped || stackedSecond.clipped;
+          const sideChars = leftTable.texts.length + rightTable.texts.length;
+          const stackedChars = stackedFirst.texts.length + stackedSecond.texts.length;
+          const sideHigher = sideBottom > stackedBottom + 0.5;
+          const useSide = sideFits
+            ? stackedClipped || sideBottom + 0.5 >= stackedBottom
+            : stackedClipped && sideHigher && sideChars >= stackedChars;
+          if (useSide) {
+            const sideGap = size < 7.5 ? 4 : size + 1.5 + 6;
+            adopt([leftTable, rightTable], sideGap);
+            index += 1;
+            continue;
+          }
+          adopt([stackedFirst], tableGap);
+          continue;
+        }
+      }
+      const table = placeTable(block.rows, block.header, left, innerW, tableTop);
+      adopt([table], tableGap);
       continue;
     }
     if (block.type === "seal") {
@@ -1044,6 +1109,15 @@ function planCertificate(input: {
     }
   };
 
+  let clipped = false;
+  for (const block of input.blocks) {
+    if (block.type !== "logo") continue;
+    const note = bracketNote(block);
+    if (!note) continue;
+    paintLine(note, left, innerW, NOTE_SIZE, "center", false, "muted");
+    y -= 4;
+  }
+
   const headings = input.blocks.filter((block) => block.type === "heading");
   headings.forEach((block, index) => {
     if (block.type !== "heading") return;
@@ -1059,149 +1133,280 @@ function planCertificate(input: {
   const sealBlocks = input.blocks.filter((block) => block.type === "seal");
   const sideSeals = sealBlocks.filter((block) => block.column !== "center");
   const leftSeal = sideSeals.find((block) => block.column === "left") ?? sideSeals[0];
-  const rightSeal = sideSeals.find((block) => block.column === "right") ?? sideSeals[1];
+  const rightSeal = sideSeals.find((block) => block.column === "right" && block !== leftSeal) ?? sideSeals.find((block) => block !== leftSeal);
   const photo = input.blocks.find((block) => block.type === "photo");
-  const photoW = 92;
-  const photoH = input.hasPhoto ? 122 : 0;
-  const caption = photo ? bracketNote(photo) ?? "[Holder's photo]" : "";
-  const captionSize = NOTE_SIZE;
-  const rowH = Math.max(photoH + (caption ? 16 : 0), 52);
-  const rowTop = y;
-  const centerX = left + innerW / 2;
-
-  const placeBox = (block: RenderBlock | undefined, side: "left" | "right") => {
-    if (!block || block.type !== "box") return;
-    const labelSize = 8;
-    const valueSize = size;
-    const labelW = input.measure(block.label, labelSize, { serif });
-    const valueW = input.measure(block.value, valueSize, { serif, bold: true });
-    const boxW = Math.min(150, Math.max(108, labelW + 18, valueW + 18));
-    const boxH = 44;
-    const boxX = side === "left" ? left + 62 : right - 62 - boxW;
-    const boxY = rowTop - rowH / 2 - boxH / 2;
-    boxes.push({ x: boxX, y: boxY, w: boxW, h: boxH, radius: 4, stroke: 1.1 });
-    const labelX = boxX + (boxW - labelW) / 2;
-    const valueX = boxX + (boxW - valueW) / 2;
-    texts.push({ text: block.label, x: labelX, y: boxY + 27, size: labelSize, color: "ink", serif });
-    texts.push({ text: block.value, x: valueX, y: boxY + 12, size: valueSize, color: "ink", bold: true, serif });
-  };
-  placeBox(leftBox, "left");
-  placeBox(rightBox, "right");
-
-  const placeSeal = (block: RenderBlock | undefined, side: "left" | "right") => {
-    if (!block || block.type !== "seal") return;
-    const placed = layoutSealBadge({
-      text: block.text,
-      column: side,
-      left,
-      right,
-      top: rowTop,
-      measure: (text, fontSize, bold) => input.measure(text, fontSize, { serif, bold }),
-      serif,
-    });
-    seals.push(placed.seal);
-    texts.push(...placed.texts);
-  };
-  placeSeal(leftSeal, "left");
-  placeSeal(rightSeal, "right");
-  for (const block of sealBlocks) {
-    if (block.column !== "center") continue;
-    const placed = layoutSealBadge({
-      text: block.text,
-      column: "center",
-      left,
-      right,
-      top: rowTop,
-      measure: (text, fontSize, bold) => input.measure(text, fontSize, { serif, bold }),
-      serif,
-    });
-    seals.push(placed.seal);
-    texts.push(...placed.texts);
-  }
-
+  const hasBand = boxBlocks.length > 0 || sealBlocks.length > 0 || Boolean(photo);
   let image: DocumentPlan["image"];
-  if (photo) {
-    const imageX = centerX - photoW / 2;
-    const imageBottom = rowTop - photoH;
-    if (input.hasPhoto) image = { x: imageX, y: imageBottom, w: photoW, h: photoH };
-    const capW = input.measure(caption, captionSize, { serif });
-    texts.push({
-      text: caption,
-      x: centerX - capW / 2,
-      y: (input.hasPhoto ? imageBottom : rowTop - 8) - 14,
-      size: captionSize,
-      color: "muted",
-      serif,
-    });
-  }
-  y = rowTop - rowH - 16;
+  if (hasBand) {
+    const photoW = 92;
+    const photoH = input.hasPhoto ? 122 : 0;
+    const caption = photo ? bracketNote(photo) ?? "[Holder's photo]" : "";
+    const captionSize = NOTE_SIZE;
+    const rowH = Math.max(photoH + (caption ? 16 : 0), boxBlocks.length > 0 || photo ? 52 : 0);
+    const rowTop = y;
+    const centerX = left + innerW / 2;
+    const bandBottoms: number[] = [];
 
-  const signatures = input.blocks.filter((block) => block.type === "signature");
-  const signature = signatures.find((block) => columnOf(block) === "right") ?? signatures[0];
-  const signWidth = Math.min(240, innerW * 0.42);
-  const signX = right - signWidth;
-  const signLines = signature && signature.type === "signature" ? signature.lines ?? [] : [];
-  const signNote = signature ? bracketNote(signature) ?? "[Signature]" : "";
-  const signHeight =
-    (signNote ? NOTE_SIZE * 1.4 : 0) +
-    signLines.length * size * 1.3 +
-    8;
-  const signTop = frame.y + 22 + signHeight;
-  const bodyBottom = signTop + 12;
+    const placeBox = (block: RenderBlock | undefined, side: "left" | "right") => {
+      if (!block || block.type !== "box") return;
+      const labelSize = 8;
+      const valueSize = size;
+      const labelW = input.measure(block.label, labelSize, { serif });
+      const valueW = input.measure(block.value, valueSize, { serif, bold: true });
+      const boxW = Math.min(150, Math.max(108, labelW + 18, valueW + 18));
+      const boxH = 44;
+      const boxX = side === "left" ? left + 62 : right - 62 - boxW;
+      const boxY = rowTop - Math.max(rowH, boxH) / 2 - boxH / 2;
+      boxes.push({ x: boxX, y: boxY, w: boxW, h: boxH, radius: 4, stroke: 1.1 });
+      bandBottoms.push(boxY);
+      const labelX = boxX + (boxW - labelW) / 2;
+      const valueX = boxX + (boxW - valueW) / 2;
+      texts.push({ text: block.label, x: labelX, y: boxY + 27, size: labelSize, color: "ink", serif });
+      texts.push({ text: block.value, x: valueX, y: boxY + 12, size: valueSize, color: "ink", bold: true, serif });
+    };
+    placeBox(leftBox, leftBox && "column" in leftBox && leftBox.column === "right" ? "right" : "left");
+    if (rightBox && rightBox !== leftBox) placeBox(rightBox, "right");
 
-  const body = input.blocks.filter(
-    (block) => block.type === "paragraph" || block.type === "list" || block.type === "address" || block.type === "kv",
-  );
-  for (const block of body) {
-    if (y < bodyBottom) break;
-    if (block.type === "paragraph") {
-      const align = block.align ?? (block.caps ? "center" : "justify");
-      const words = wordsOf(block.text).map((word) => ({ ...word, bold: word.bold || Boolean(block.bold) }));
-      const lines = wrapWords(words, size, innerW - 36, input.measure, serif);
-      const space = input.measure(" ", size, { serif });
-      const blockLeft = left + 18;
-      const blockWidth = innerW - 36;
-      for (const line of lines) {
-        if (y < bodyBottom) break;
-        const natural = lineWidth(line, size, space, input.measure, serif);
-        let cursor = blockLeft;
-        if (align === "center") cursor = blockLeft + Math.max(0, (blockWidth - natural) / 2);
-        if (align === "right") cursor = blockLeft + Math.max(0, blockWidth - natural);
-        const justify = align === "justify" && line !== lines[lines.length - 1] && line.length > 4 && blockWidth - natural < blockWidth * 0.15;
-        const gaps = Math.max(1, line.length - 1);
-        const gap = justify ? (blockWidth - (natural - space * (line.length - 1))) / gaps : space;
-        for (const word of line) {
-          texts.push({ text: word.text, x: cursor, y, size, color: "ink", bold: word.bold, underline: word.underline, serif });
-          cursor += input.measure(word.text, size, { bold: word.bold, serif }) + gap;
-        }
-        y -= size * 1.38;
-      }
-      y -= 8;
-    }
-  }
-
-  if (signature && signature.type === "signature") {
-    let signY = frame.y + 24 + signLines.length * size * 1.28 + (signNote ? 14 : 0);
-    if (signNote) {
-      const noteW = input.measure(signNote, NOTE_SIZE, { serif });
-      texts.push({ text: signNote, x: signX + signWidth - noteW, y: signY, size: NOTE_SIZE, color: "muted", serif });
-      signY -= 14;
-    }
-    for (const line of signLines) {
-      const words = wordsOf(line);
-      const bold = words.some((word) => word.bold) || line === signLines[0];
-      const plain = words.map((word) => word.text).join(" ");
-      const width = input.measure(plain, size - 0.5, { serif, bold });
-      texts.push({
-        text: plain,
-        x: signX + signWidth - width,
-        y: signY,
-        size: size - 0.5,
-        color: "ink",
-        bold,
+    const placeSeal = (block: RenderBlock | undefined, side: "left" | "right" | "center") => {
+      if (!block || block.type !== "seal") return null;
+      const placed = layoutSealBadge({
+        text: block.text,
+        column: side,
+        left,
+        right,
+        top: rowTop,
+        measure: (text, fontSize, bold) => input.measure(text, fontSize, { serif, bold }),
         serif,
       });
-      signY -= size * 1.25;
+      seals.push(placed.seal);
+      texts.push(...placed.texts);
+      bandBottoms.push(placed.bottom);
+      return placed.bottom;
+    };
+    placeSeal(leftSeal, leftSeal?.column === "right" ? "right" : "left");
+    if (rightSeal && rightSeal !== leftSeal) placeSeal(rightSeal, "right");
+    for (const block of sealBlocks) {
+      if (block.column !== "center" || block === leftSeal || block === rightSeal) continue;
+      placeSeal(block, "center");
+    }
+
+    if (photo) {
+      const imageX = centerX - photoW / 2;
+      const imageBottom = rowTop - photoH;
+      if (input.hasPhoto) image = { x: imageX, y: imageBottom, w: photoW, h: photoH };
+      const capW = input.measure(caption, captionSize, { serif });
+      const captionY = (input.hasPhoto ? imageBottom : rowTop - 8) - 14;
+      texts.push({
+        text: caption,
+        x: centerX - capW / 2,
+        y: captionY,
+        size: captionSize,
+        color: "muted",
+        serif,
+      });
+      bandBottoms.push(captionY - captionSize * 0.35);
+      if (image) bandBottoms.push(image.y);
+    }
+    const lowestBand = bandBottoms.length > 0 ? Math.min(...bandBottoms) : rowTop - rowH;
+    y = Math.min(rowTop - rowH, lowestBand) - 18;
+  }
+
+  const signatures = input.blocks.filter((block) => block.type === "signature");
+  const signatureRows: Array<Array<Extract<RenderBlock, { type: "signature" }>>> = [];
+  if (signatures.length === 1) {
+    const only = signatures[0];
+    if (only?.type === "signature") signatureRows.push([only]);
+  } else {
+    for (let offset = 0; offset < signatures.length; offset += 3) {
+      const row = signatures.slice(offset, offset + 3).filter((block) => block.type === "signature");
+      if (row.length) signatureRows.push(row);
+    }
+  }
+  const columnHeight = (sign: Extract<RenderBlock, { type: "signature" }>) => {
+    const lines = sign.lines ?? [];
+    return NOTE_SIZE * 1.4 + lines.length * (size - 0.5) * 1.28 + 8;
+  };
+  const signHeight =
+    signatures.length === 1
+      ? (() => {
+          const sign = signatures[0];
+          const lines = sign?.type === "signature" ? sign.lines ?? [] : [];
+          const note = sign ? bracketNote(sign) ?? "[Signature]" : "";
+          return (note ? NOTE_SIZE * 1.4 : 0) + lines.length * size * 1.3 + 8;
+        })()
+      : signatureRows.reduce((sum, row) => sum + Math.max(...row.map(columnHeight)), 0);
+  const bodyBottom = frame.y + 22 + signHeight + 12;
+
+  const paintFlow = (
+    text: string,
+    fontSize: number,
+    align: BlockAlign,
+    bold = false,
+    color: "ink" | "muted" = "ink",
+    justify = false,
+  ) => {
+    const words = wordsOf(text).map((word) => ({ ...word, bold: word.bold || bold }));
+    if (words.length === 0) return;
+    const blockLeft = left + 18;
+    const blockWidth = innerW - 36;
+    const lines = wrapWords(words, fontSize, blockWidth, input.measure, serif);
+    const space = input.measure(" ", fontSize, { serif, bold });
+    for (const line of lines) {
+      if (y < bodyBottom) {
+        clipped = true;
+        return;
+      }
+      const natural = lineWidth(line, fontSize, space, input.measure, serif);
+      let cursor = blockLeft;
+      if (align === "center") cursor = blockLeft + Math.max(0, (blockWidth - natural) / 2);
+      if (align === "right") cursor = blockLeft + Math.max(0, blockWidth - natural);
+      const spread = justify && line !== lines[lines.length - 1] && line.length > 4 && blockWidth - natural < blockWidth * 0.15;
+      const gaps = Math.max(1, line.length - 1);
+      const gap = spread ? (blockWidth - (natural - space * (line.length - 1))) / gaps : space;
+      for (const word of line) {
+        texts.push({
+          text: word.text,
+          x: cursor,
+          y,
+          size: fontSize,
+          color,
+          bold: word.bold,
+          underline: word.underline,
+          serif,
+        });
+        cursor += input.measure(word.text, fontSize, { bold: word.bold, serif }) + gap;
+      }
+      y -= fontSize * 1.38;
+    }
+    y -= 8;
+  };
+
+  const body = input.blocks.filter(
+    (block) =>
+      block.type === "paragraph" ||
+      block.type === "list" ||
+      block.type === "address" ||
+      block.type === "kv" ||
+      block.type === "stamp" ||
+      block.type === "handwritten" ||
+      block.type === "illegible" ||
+      block.type === "note",
+  );
+  for (const block of body) {
+    if (y < bodyBottom) {
+      clipped = true;
+      break;
+    }
+    if (block.type === "paragraph") {
+      const align = block.align ?? (block.caps ? "center" : "justify");
+      paintFlow(block.text, size, align, Boolean(block.bold), "ink", align === "justify");
+      continue;
+    }
+    if (block.type === "address") {
+      for (const line of block.lines) paintFlow(line, size, block.align ?? "left", Boolean(block.bold));
+      continue;
+    }
+    if (block.type === "list") {
+      if (block.label) paintFlow(block.label, size, "left", true);
+      block.items.forEach((item, itemIndex) => {
+        const prefix = block.ordered === false ? "•" : `${itemIndex + 1})`;
+        paintFlow(`${prefix} ${item}`, size, "left");
+      });
+      continue;
+    }
+    if (block.type === "kv") {
+      const name = block.label.trim();
+      const printed = block.value.trim();
+      const text = name && printed ? `${name}: ${printed}` : name || printed;
+      if (text) paintFlow(text, size, "left", Boolean(block.bold));
+      continue;
+    }
+    const note = bracketNote(block);
+    if (note) paintFlow(note, NOTE_SIZE, "left", false, "muted");
+  }
+
+  const paintColumnLine = (
+    text: string,
+    x: number,
+    width: number,
+    top: number,
+    fontSize: number,
+    bold: boolean,
+    color: "ink" | "muted",
+  ) => {
+    const words = wordsOf(text).map((word) => ({ ...word, bold: word.bold || bold }));
+    if (words.length === 0) return top;
+    const lines = wrapWords(words, fontSize, Math.max(8, width), input.measure, serif);
+    const space = input.measure(" ", fontSize, { serif, bold });
+    let cursorY = top;
+    for (const line of lines) {
+      const natural = lineWidth(line, fontSize, space, input.measure, serif);
+      let cursor = x + Math.max(0, (width - natural) / 2);
+      for (const word of line) {
+        texts.push({
+          text: word.text,
+          x: cursor,
+          y: cursorY,
+          size: fontSize,
+          color,
+          bold: word.bold,
+          underline: word.underline,
+          serif,
+        });
+        cursor += input.measure(word.text, fontSize, { bold: word.bold, serif }) + space;
+      }
+      cursorY -= fontSize * 1.25;
+    }
+    return cursorY;
+  };
+
+  if (signatures.length === 1) {
+    const only = signatures[0];
+    if (only?.type === "signature") {
+      const signWidth = Math.min(240, innerW * 0.42);
+      const signX = right - signWidth;
+      const signLines = only.lines ?? [];
+      const signNote = bracketNote(only) ?? "[Signature]";
+      let signY = frame.y + 24 + signLines.length * size * 1.28 + (signNote ? 14 : 0);
+      if (signNote) {
+        const noteW = input.measure(signNote, NOTE_SIZE, { serif });
+        texts.push({ text: signNote, x: signX + signWidth - noteW, y: signY, size: NOTE_SIZE, color: "muted", serif });
+        signY -= 14;
+      }
+      for (const line of signLines) {
+        const words = wordsOf(line);
+        const bold = words.some((word) => word.bold) || line === signLines[0];
+        const plain = words.map((word) => word.text).join(" ");
+        const width = input.measure(plain, size - 0.5, { serif, bold });
+        texts.push({
+          text: plain,
+          x: signX + signWidth - width,
+          y: signY,
+          size: size - 0.5,
+          color: "ink",
+          bold,
+          serif,
+        });
+        signY -= size * 1.25;
+      }
+    }
+  } else if (signatureRows.length > 0) {
+    let rowTop = frame.y + 16 + signHeight;
+    for (const row of signatureRows) {
+      const gap = 16;
+      const colW = (innerW - gap * (row.length - 1)) / row.length;
+      let rowBottom = rowTop;
+      row.forEach((sign, offset) => {
+        const x = left + offset * (colW + gap);
+        let cursor = rowTop;
+        const note = bracketNote(sign) ?? "[Signature]";
+        cursor = paintColumnLine(note, x, colW, cursor, NOTE_SIZE, false, "muted");
+        for (const line of sign.lines ?? []) {
+          cursor = paintColumnLine(line, x, colW, cursor, size - 0.5, true, "ink");
+        }
+        rowBottom = Math.min(rowBottom, cursor);
+      });
+      rowTop = rowBottom - 6;
     }
   }
 
@@ -1213,7 +1418,7 @@ function planCertificate(input: {
     ...(image ? [image.y] : []),
     ...seals.map((seal) => seal.cy - seal.outer),
   );
-  const overflow = lowest < input.footer + 2 || y < frame.y + 8;
+  const overflow = clipped || lowest < input.footer + 2 || y < frame.y + 8;
   return {
     serif,
     overflow,

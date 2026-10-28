@@ -102,9 +102,32 @@ function fixNumber(found: string, source: string[]): string {
   return found;
 }
 
+const ACADEMIC_TERM = /^(?:\d{1,2}\/\d{4}|\d{4}\/\d{1,4}|\d{1,2}\/\d{1,2}\/\d{2,4})$/;
+const YEAR_TOKEN = /^(?:19|20)\d{2}$/;
+
+/** A semester, year, or civil date must not be rewritten into slashless OCR noise. */
+function corruptsAcademicToken(wrong: string, right: string): boolean {
+  if (ACADEMIC_TERM.test(wrong) && /^\d+$/.test(right)) return true;
+  if (YEAR_TOKEN.test(wrong) && /^\d{5,}$/.test(right)) return true;
+  return false;
+}
+
+function academicTokenAt(text: string, offset: number, length: number): boolean {
+  let start = offset;
+  let end = offset + length;
+  while (start > 0 && /[\d/]/.test(text[start - 1] ?? "")) start -= 1;
+  while (end < text.length && /[\d/]/.test(text[end] ?? "")) end += 1;
+  return ACADEMIC_TERM.test(text.slice(start, end));
+}
+
 function rewriteNumbers(text: string, source: string[]): string {
   if (source.length === 0) return text;
-  return text.replace(/\d{4,}/g, (found) => fixNumber(found, source));
+  return text.replace(/\d{4,}/g, (found, offset, text) => {
+    if (academicTokenAt(text, offset, found.length)) return found;
+    const fixed = fixNumber(found, source);
+    if (YEAR_TOKEN.test(found) && /^\d{5,}$/.test(fixed)) return found;
+    return fixed;
+  });
 }
 
 function mapText(blocks: RenderBlock[], fn: (text: string) => string): RenderBlock[] {
@@ -173,7 +196,14 @@ export function applyGroundedFixes(
 ): RenderBlock[] {
   const usable = fixes
     .map((fix) => ({ wrong: (fix.wrong ?? "").trim(), right: (fix.right ?? "").trim() }))
-    .filter((fix) => fix.wrong.length >= 4 && fix.right.length > 0 && fix.wrong !== fix.right && grounded(sourceText, fix.right))
+    .filter(
+      (fix) =>
+        fix.wrong.length >= 4 &&
+        fix.right.length > 0 &&
+        fix.wrong !== fix.right &&
+        grounded(sourceText, fix.right) &&
+        !corruptsAcademicToken(fix.wrong, fix.right),
+    )
     .sort((a, b) => b.wrong.length - a.wrong.length);
   if (usable.length === 0) return blocks;
   return mapText(blocks, (text) => usable.reduce((current, fix) => replaceToken(current, fix.wrong, fix.right), text));
@@ -207,6 +237,7 @@ export async function verifyIdentifiers(input: {
 Source date order: ${order === "DMY" ? "day/month/year" : "month/day/year"}.
 Write dates as MM/DD/YYYY. The day, month, and year must be the same civil date as the source.
 Every number and ID in the translation must appear in the source. A one-digit difference is a mistake. Replace it with the source number.
+Do not replace a semester/year token such as 1/1999, 2/2000, or 1/2001 with concatenated OCR noise such as 111999 or 1112001. A slash between a term number and a four-digit year is an academic term, not a corrupted number. Keep 19xx and 20xx years intact. Do not replace a four-digit year with a run of five or more digits.
 Return fixes as {wrong, right}. right is copied from the source, or a date rewritten as MM/DD/YYYY using only digits from the source. If nothing is wrong, return an empty fixes array.
 Do not change names. Do not invent digits.
 
