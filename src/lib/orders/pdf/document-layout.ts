@@ -1,4 +1,5 @@
 import { sealAlign, type BlockAlign, type BlockColumn, type RenderBlock, type RenderPage } from "./layout";
+import { cleanIllegibleBlocks } from "./structure";
 
 export type PlanStyle = {
   bold?: boolean;
@@ -70,7 +71,7 @@ export function bracketNote(block: RenderBlock): string | null {
   if (block.type === "stamp") return block.text.trim() ? `[Stamp: ${block.text.trim()}]` : "[Stamp]";
   if (block.type === "signature") return block.electronic ? "[Electronic signature]" : "[Signature]";
   if (block.type === "handwritten") return block.text.trim() ? `[Handwritten: ${block.text.trim()}]` : "[Handwritten]";
-  if (block.type === "illegible") return "[Illegible]";
+  if (block.type === "illegible") return null;
   if (block.type === "photo") {
     const caption = (block.caption ?? "Holder's photo").trim().replace(/^\[/, "").replace(/\]$/, "");
     return `[${caption || "Holder's photo"}]`;
@@ -490,8 +491,9 @@ export function planDocument(input: {
   /** Pushes letter and certificate text down so a letterhead can sit above it. */
   topInset?: number;
 }): DocumentPlan {
-  if (input.kind === "certificate") return planCertificate(input);
-  return planLetter(input);
+  const next = { ...input, blocks: cleanIllegibleBlocks(input.blocks) };
+  if (next.kind === "certificate") return planCertificate(next);
+  return planLetter(next);
 }
 
 function planLetter(input: {
@@ -610,7 +612,8 @@ function planLetter(input: {
       y = placed.bottom - size - 6;
       continue;
     }
-    if (block.type === "logo" || block.type === "stamp" || block.type === "handwritten" || block.type === "illegible" || block.type === "note") {
+    if (block.type === "illegible") continue;
+    if (block.type === "logo" || block.type === "stamp" || block.type === "handwritten" || block.type === "note") {
       paintNote(bracketNote(block) ?? "");
       continue;
     }
@@ -871,7 +874,7 @@ function planLabeledCertificate(input: {
 
   for (let index = 0; index < input.blocks.length; index += 1) {
     const block = input.blocks[index];
-    if (!block) continue;
+    if (!block || block.type === "illegible") continue;
     if (y < bottom) {
       clipped = true;
       break;
@@ -1289,7 +1292,6 @@ function planCertificate(input: {
       block.type === "kv" ||
       block.type === "stamp" ||
       block.type === "handwritten" ||
-      block.type === "illegible" ||
       block.type === "note",
   );
   for (const block of body) {

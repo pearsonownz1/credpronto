@@ -121,11 +121,46 @@ describe("runTranslationPage JSON parse", () => {
     await runTranslationPage({} as Db, { orderId, version: 1, jobId });
 
     expect(ai.generateObject).toHaveBeenCalledTimes(1);
+    const prompt = promptText(vi.mocked(ai.generateObject).mock.calls[0] ?? []);
+    expect(prompt).toContain("Never output [illegible]");
+    expect(prompt).toContain("Prof. [illegible]");
+    expect(prompt).toContain("surrounding words in the same font");
+    expect(prompt).not.toContain("illegible: a mark that cannot be read");
     expect(jobs.completePageJob).toHaveBeenCalled();
     expect(jobs.failPageJob).not.toHaveBeenCalled();
     expect(db.updateOrder).not.toHaveBeenCalled();
     expect(email.sendStaffOrderAlert).not.toHaveBeenCalled();
     expect(email.sendTranslationFailureAlert).not.toHaveBeenCalled();
+  });
+
+  it("stores printed names without false illegible tags", async () => {
+    vi.spyOn(jobs, "claimPageJob").mockResolvedValue(claimed(1));
+    vi.spyOn(ai, "generateObject").mockResolvedValue({
+      pageNumber: 1,
+      blocks: [
+        { type: "paragraph", text: "Prof. [illegible] Torres da Silva" },
+        { type: "illegible" },
+        { type: "signature", electronic: false, lines: ["[ILLEGIBLE]"] },
+        { type: "handwritten", text: "(illegible)" },
+        { type: "table", cells: [["Course", "Civil [illegible] Law"], ["Grade", "A"]] },
+        { type: "fields", rows: [{ label: "Dean", value: "Prof. (ILLEGIBLE) Torres da Silva" }] },
+      ],
+    });
+
+    await runTranslationPage({} as Db, { orderId, version: 1, jobId });
+
+    const stored = vi.mocked(jobs.completePageJob).mock.calls[0]?.[2] as {
+      blocks: Array<{ type: string; text?: string; lines?: string[]; rows?: Array<{ label: string; value: string }> }>;
+      paragraphs: string[];
+    };
+    const serialized = JSON.stringify(stored);
+    expect(serialized).not.toMatch(/illegible/i);
+    expect(stored.paragraphs.join("\n")).toContain("Prof. Torres da Silva");
+    expect(stored.paragraphs.join("\n")).toContain("[Signature]");
+    expect(stored.paragraphs.join("\n")).toContain("Civil Law");
+    expect(stored.blocks.some((block) => block.type === "illegible")).toBe(false);
+    const fields = stored.blocks.find((block) => block.type === "fields");
+    expect(fields?.rows?.[0]).toEqual({ label: "Dean", value: "Prof. Torres da Silva" });
   });
 
   it("flags needs_review and alerts staff on the first unreadable JSON response", async () => {

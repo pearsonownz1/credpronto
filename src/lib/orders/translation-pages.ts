@@ -1,5 +1,6 @@
 import { languageLabel, languagesEqual, normalizeLanguage } from "./languages";
 import type { RenderBlock } from "./pdf/layout";
+import { stripIllegibleMarkup } from "./pdf/structure";
 
 /** How many page invocations run at once. Each invocation is one billable page. */
 export const TRANSLATION_PAGE_CONCURRENCY = 3;
@@ -131,7 +132,7 @@ export function pageAttemptResult(attempts: number, ok: boolean): "ready" | "ret
 }
 
 export function passThroughBlocks(text: string | null | undefined): RenderBlock[] {
-  const trimmed = text?.trim() ?? "";
+  const trimmed = stripIllegibleMarkup(text ?? "").trim();
   if (!trimmed) return [{ type: "paragraph", text: " " }];
   return [{ type: "paragraph", text: trimmed }];
 }

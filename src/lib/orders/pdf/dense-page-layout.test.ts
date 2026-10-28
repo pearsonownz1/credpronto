@@ -329,7 +329,7 @@ describe("dense transcript and certificate pages", () => {
     expect(painted).toContain("Registrar]");
     expect(painted).toContain("[Handwritten:");
     expect(painted).toContain("Approved]");
-    expect(painted).toContain("[Illegible]");
+    expect(painted).not.toMatch(/illegible/i);
     expect(painted).toContain("Filed");
     expect(painted).toContain("2002.");
 
@@ -361,6 +361,6 @@ describe("dense transcript and certificate pages", () => {
     expect(text).toContain("[Seal:");
     expect(text).toContain("Mackenzie Presbyterian University");
     expect(text).toContain("[Logo:");
-    expect(text).toContain("[Illegible]");
+    expect(text).not.toMatch(/illegible/i);
   });
 });

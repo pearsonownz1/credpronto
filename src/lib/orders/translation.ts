@@ -23,7 +23,7 @@ import {
   segmentSource,
   translatedProse,
 } from "./pdf/source-mirror";
-import { blocksFromModel, blocksToParagraphs, formBlocksWhenCollapsed, type ModelBlock } from "./pdf/structure";
+import { blocksFromModel, blocksToParagraphs, cleanIllegibleBlocks, formBlocksWhenCollapsed, stripIllegibleMarkup, type ModelBlock } from "./pdf/structure";
 import { segmentsInSourceOrder } from "./segment-source";
 import {
   claimOrderColumn,
@@ -121,7 +121,7 @@ const repairSchema = z.object({
 });
 
 const IMAGE_LAYOUT_NOTE =
-  "The attached file is the source page, either an image or a one-page PDF. Mirror its arrangement: letterhead, date, address, each reference line, horizontal boxed strips, registry tables, the body, each signature, and the enclosure list. Do not join those regions into one paragraph. A row of two or more boxed or side-by-side labeled cells is one table, with the columns kept horizontal. When an image or PDF page attachment is provided, read the visual page directly as the primary source of truth. If the OCR text below is garbled, corrupted, or missing table rows, signatures, or cursive text that are visible in the attached page image, transcribe and translate all visible text from the image (including cursive certificate body text, all columns and bottom rows of multi-column transcript tables, and printed signatory names/titles under every signature).";
+  "The attached file is the source page, either an image or a one-page PDF. Mirror its arrangement: letterhead, date, address, each reference line, horizontal boxed strips, registry tables, the body, each signature, and the enclosure list. Do not join those regions into one paragraph. A row of two or more boxed or side-by-side labeled cells is one table, with the columns kept horizontal. Read the visual page directly as the primary source of truth. When the extracted text below is noisy, partially garbled, or missing table rows, signatures, or cursive text that are visible on the page, transcribe and translate the exact words from the image, using surrounding words in the same font (including cursive certificate body text, all columns and bottom rows of multi-column transcript tables, and printed signatory names and titles under every signature). Never output [illegible], (illegible), or ILLEGIBLE for that printed text. A handwritten signature with no printed caption is [Signature], never [illegible] or Prof. [illegible].";
 
 type ModelPage = {
   pageNumber: number;
@@ -143,16 +143,16 @@ For a letter or a certificate, return blocks in reading order. One source page i
 - list: attachments. ordered true. items are the lines. label is the heading, such as Attachment.
 - logo: the letterhead name only, such as OYAK BANK. Do not transcribe the artwork.
 - photo: the holder's portrait. caption is Holder's photo. Do not describe the face.
-- signature: a handwritten signature. electronic false. On a certificate, two or three signatories across one row (The holder, The Rector, The Head of the Academic Affairs Department) are consecutive signature blocks in left-to-right order so the row stays horizontal. column left or right when two signatures sit on opposite sides of a letter. lines are the printed name and title under the ink, with ** around a bold name. Do not copy the ink.
+- signature: a handwritten signature. electronic false. On a certificate, two or three signatories across one row (The holder, The Rector, The Head of the Academic Affairs Department) are consecutive signature blocks in left-to-right order so the row stays horizontal. column left or right when two signatures sit on opposite sides of a letter. lines are the printed name and title under the ink, with ** around a bold name. Do not copy the ink. If there is no printed caption, leave lines empty. Never put [illegible], ILLEGIBLE, or Prof. [illegible] on a signature line.
 - seal: a round seal. text is a short place name, or empty when the place cannot be read. column left or right when two seals sit on opposite sides.
 - stamp: a rectangular stamp. text is the short wording, or empty.
-- handwritten: a handwritten note that is not a signature.
-- illegible: a mark that cannot be read.
+- handwritten: a handwritten note that is not a signature. Transcribe the words. Do not replace them with [illegible] or ILLEGIBLE.
+Never output [illegible], (illegible), [ILLEGIBLE], or ILLEGIBLE for printed text, headings, course titles, names, grades, dates, or table cells. Do not use a block of type "illegible". When the extracted text layer has OCR noise, read the attached page image directly and use context from surrounding words in the same font to transcribe and translate the exact words cleanly. For a handwritten signature that does not have a printed caption, output [Signature] (type "signature", electronic false, no lines). Never write [illegible], ILLEGIBLE, or Prof. [illegible].
 - table: a real grid, a multi-column table, or a horizontal strip of 2 or more boxed, bordered, or side-by-side labeled cells. Example: [Alphanumeric Code | National Register of Degrees | Center Code | University Register of Degrees | University File No.]. cells are rows of strings and keep those horizontal columns, either as [labelsRow, valuesRow] or as one row of "Label: Value" cells. Set header true when the first row is labels. Never flatten that strip into vertical kv or fields lines.
 
 Copy every number and ID exactly. Keep diacritics in names. Turkish, Spanish, French, German, and Portuguese dates are day/month/year on the source. Print every date as MM/DD/YYYY, so 31/1/2006 is 01/31/2006 and 7. 9. 1989 is 09/07/1989.
 
-When an image or PDF page attachment is provided, read the visual page directly as the primary source of truth. If the OCR text below is garbled, corrupted, or missing table rows, signatures, or cursive text that are visible in the attached page image, transcribe and translate all visible text from the image (including cursive certificate body text, all columns and bottom rows of multi-column transcript tables, and printed signatory names/titles under every signature).`;
+When an image or PDF page attachment is provided, read the visual page directly as the primary source of truth. When the OCR text below is noisy, partially garbled, or missing table rows, signatures, or cursive text that are visible in the attached page image, transcribe and translate the exact words from the image, using surrounding words in the same font (including cursive certificate body text, all columns and bottom rows of multi-column transcript tables, and printed signatory names and titles under every signature). Do not mark that printed text [illegible] or ILLEGIBLE.`;
 
 function pageHasContent(blocks: RenderBlock[]): boolean {
   return blocks.some((block) => {
@@ -165,7 +165,8 @@ function pageHasContent(blocks: RenderBlock[]): boolean {
     if (block.type === "list") return block.items.some((item) => item.trim().length > 0) || Boolean(block.label?.trim());
     if (block.type === "table") return block.rows.some((row) => row.some((cell) => cell.trim().length > 0));
     if (block.type === "seal") return true;
-    if (block.type === "signature" || block.type === "photo" || block.type === "illegible") return true;
+    if (block.type === "signature" || block.type === "photo") return true;
+    if (block.type === "illegible") return false;
     return false;
   });
 }
@@ -237,7 +238,7 @@ async function translateDocument(
     .filter((note): note is string => Boolean(note));
 
   const pageText = input.pages
-    .map((page) => `Page ${page.number}:\n${(page.ocrText ?? "").slice(0, 6000)}`)
+    .map((page) => `Page ${page.number}:\n${stripIllegibleMarkup(page.ocrText ?? "").slice(0, 6000)}`)
     .join("\n\n");
 
   const qaNotes = input.qaIssues
@@ -267,7 +268,7 @@ For prose, use type "paragraph" and preserve paragraph breaks.
 
 For a seal, stamp, coat of arms, or letter-spaced ring such as "C I V I L  R E G I S T R Y", use type "seal" and set text to a short place description such as "Civil Registry of Jalisco". Do not copy ring text, and do not letter-space it.
 
-For a handwritten signature, use type "signature" with electronic false.
+For a handwritten signature, use type "signature" with electronic false. If it has no printed name or title, leave lines empty so the page prints [Signature]. Never write [illegible], ILLEGIBLE, or Prof. [illegible].
 For an electronic signature, firma electrónica, or a long unbroken signature token, use type "signature" with electronic true. Do not copy the signature string.
 
 For a section title, use type "heading".
@@ -334,16 +335,18 @@ async function restoreCollapsedLayout(input: {
   if (!plan) {
     const blocks = ensurePortrait(input.blocks, portrait);
     const kind = input.kind ?? (blocks.some((block) => block.type === "photo") ? "certificate" : undefined);
-    return { blocks: completeLetterFromSource(blocks, input.sourceText), kind };
+    return { blocks: cleanIllegibleBlocks(completeLetterFromSource(blocks, input.sourceText)), kind };
   }
 
   const settle = (blocks: RenderBlock[]) =>
-    reconcileIdentifiers({
-      sourceText: input.sourceText,
-      blocks: completeLetterFromSource(blocks, input.sourceText),
-      sourceLanguage: input.sourceLanguage,
-      dateFormat: input.dateFormat,
-    });
+    cleanIllegibleBlocks(
+      reconcileIdentifiers({
+        sourceText: input.sourceText,
+        blocks: completeLetterFromSource(blocks, input.sourceText),
+        sourceLanguage: input.sourceLanguage,
+        dateFormat: input.dateFormat,
+      }),
+    );
 
   const finish = (blocks: RenderBlock[], via: LayoutFallback) => {
     reportLayout(via, { filename: input.filename, kind: plan.kind });
@@ -371,6 +374,7 @@ async function restoreCollapsedLayout(input: {
 Return one part for every id. A kv or box is "Label: value". An address, signature, or list keeps one line per source line.
 Keep each personal name as printed, including initials. A list keeps a leading 1) marker when the source line has one.
 A photo part is "Holder's photo". Copy numbers exactly. Write dates as ${input.dateFormat}.
+Never write [illegible], (illegible), or ILLEGIBLE. When print is noisy, use the page image and the surrounding words in the same font. A signature with no printed caption is [Signature], never Prof. [illegible].
 
 Parts:
 ${parts}
@@ -413,7 +417,7 @@ async function restoreDocumentPages(
   for (const page of pages) {
     const source = input.pages.find((item) => item.number === page.pageNumber);
     const next = await restoreCollapsedLayout({
-      sourceText: source?.ocrText ?? "",
+      sourceText: stripIllegibleMarkup(source?.ocrText ?? ""),
       blocks: page.blocks,
       kind: page.kind,
       filename: input.filename,
@@ -470,13 +474,13 @@ For prose, use type "paragraph" and preserve paragraph breaks.
 
 For a seal, stamp, coat of arms, or letter-spaced ring such as "C I V I L  R E G I S T R Y", use type "seal" and set text to a short place description such as "Civil Registry of Jalisco". Do not copy ring text, and do not letter-space it.
 
-For a handwritten signature, use type "signature" with electronic false.
+For a handwritten signature, use type "signature" with electronic false. If it has no printed name or title, leave lines empty so the page prints [Signature]. Never write [illegible], ILLEGIBLE, or Prof. [illegible].
 For an electronic signature, firma electrónica, or a long unbroken signature token, use type "signature" with electronic true. Do not copy the signature string.
 
 For a section title, use type "heading".
 ${LAYOUT_INSTRUCTIONS}
 ${input.image ? `${IMAGE_LAYOUT_NOTE}\n` : ""}Page ${input.page.number}:
-${(input.page.ocrText ?? "").slice(0, 6000)}`;
+${stripIllegibleMarkup(input.page.ocrText ?? "").slice(0, 6000)}`;
 
   const deadline = AbortSignal.timeout(TRANSLATION_PAGE_DEADLINE_MS);
   const result = await raceWorkAgainstDeadline(
@@ -492,16 +496,17 @@ ${(input.page.ocrText ?? "").slice(0, 6000)}`;
   if (!page) throw new HttpError("The translation did not return the page.", 502);
   const aligned = alignPages([input.page.number], [page]);
   if (!aligned?.[0]) throw new HttpError("The translation did not return the page.", 502);
-  const recovered = formBlocksWhenCollapsed(input.page.ocrText ?? "", aligned[0].blocks);
+  const sourceText = stripIllegibleMarkup(input.page.ocrText ?? "");
+  const recovered = formBlocksWhenCollapsed(sourceText, aligned[0].blocks);
   const dateFormat = strictDateFormat(input.fields);
   const verified = await verifyIdentifiers({
-    sourceText: input.page.ocrText ?? "",
+    sourceText,
     blocks: recovered ?? aligned[0].blocks,
     sourceLanguage: input.sourceLanguage,
     dateFormat,
   });
   return restoreCollapsedLayout({
-    sourceText: input.page.ocrText ?? "",
+    sourceText,
     blocks: verified,
     kind: recovered ? "form" : aligned[0].kind,
     filename: input.filename,
@@ -737,10 +742,11 @@ export async function runTranslationAssemble(
             }
             const job = ready.get(page.id);
             if (!job?.output) throw new HttpError("The translation did not return every page.", 502);
+            const blocks = cleanIllegibleBlocks(job.output.blocks);
             return {
               page,
-              blocks: job.output.blocks,
-              paragraphs: job.output.paragraphs,
+              blocks,
+              paragraphs: blocksToParagraphs(blocks),
               kind: job.output.kind,
               layoutFallback: job.output.layoutFallback,
             };
@@ -754,7 +760,7 @@ export async function runTranslationAssemble(
               pages: stored.map((page) => ({
                 pageNumber: page.page.pageNumber,
                 combinedPageNumber: page.page.number,
-                paragraphs: segmentsInSourceOrder(page.page.ocrText, page.paragraphs),
+                paragraphs: segmentsInSourceOrder(stripIllegibleMarkup(page.page.ocrText ?? ""), page.paragraphs),
                 blocks: page.blocks,
                 ...(page.kind ? { kind: page.kind } : {}),
                 ...(page.layoutFallback ? { layoutFallback: page.layoutFallback } : {}),

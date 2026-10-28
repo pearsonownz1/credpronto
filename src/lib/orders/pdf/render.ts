@@ -41,7 +41,7 @@ import {
   type GcsLetterhead,
 } from "./gcs-cover";
 import { applyCredProntoPdfMetadata, applyPdfMetadata } from "./metadata";
-import { blocksToParagraphs, finalizeBlocks, structurePage } from "./structure";
+import { blocksToParagraphs, cleanIllegibleBlocks, finalizeBlocks, stripIllegibleMarkup, structurePage } from "./structure";
 
 export type { RenderInput, RenderPage } from "./layout";
 
@@ -80,8 +80,8 @@ type Paint = {
 
 function blocksFor(page: RenderPage): RenderBlock[] {
   if (page.blocks?.length) return finalizeBlocks(page.blocks);
-  const text = page.paragraphs.join("\n");
-  return text.trim() ? structurePage(text) : [{ type: "paragraph", text: " " }];
+  const text = stripIllegibleMarkup(page.paragraphs.join("\n"));
+  return text.trim() ? cleanIllegibleBlocks(structurePage(text)) : [{ type: "paragraph", text: " " }];
 }
 
 function noteText(block: RenderBlock): string | null {
