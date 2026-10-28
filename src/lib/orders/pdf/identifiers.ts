@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { generateObject } from "../ai";
 import type { RenderBlock } from "./layout";
-import { blocksToParagraphs } from "./structure";
+import { blocksToParagraphs, cleanIllegibleBlocks } from "./structure";
 
 export type DateOrder = "DMY" | "MDY";
 
@@ -165,7 +165,7 @@ export function reconcileIdentifiers(input: {
   const order = sourceDateOrder(input.sourceLanguage, input.dateFormat);
   const dates = sourceDates(input.sourceText, order);
   const numbers = sourceNumbers(input.sourceText);
-  return mapText(input.blocks, (text) => rewriteNumbers(rewriteDates(text, dates), numbers));
+  return cleanIllegibleBlocks(mapText(input.blocks, (text) => rewriteNumbers(rewriteDates(text, dates), numbers)));
 }
 
 function hasIdentifiers(source: string, blocks: RenderBlock[]): boolean {
@@ -240,6 +240,7 @@ Every number and ID in the translation must appear in the source. A one-digit di
 Do not replace a semester/year token such as 1/1999, 2/2000, or 1/2001 with concatenated OCR noise such as 111999 or 1112001. A slash between a term number and a four-digit year is an academic term, not a corrupted number. Keep 19xx and 20xx years intact. Do not replace a four-digit year with a run of five or more digits.
 Return fixes as {wrong, right}. right is copied from the source, or a date rewritten as MM/DD/YYYY using only digits from the source. If nothing is wrong, return an empty fixes array.
 Do not change names. Do not invent digits.
+Do not write [illegible], (illegible), or ILLEGIBLE. Printed words, names, course titles, and grades stay as words. A handwritten signature with no printed caption is [Signature], never Prof. [illegible].
 
 Source:
 ${input.sourceText.slice(0, 8000)}

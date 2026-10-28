@@ -30,6 +30,7 @@ import {
   type PageCue,
 } from "./page-order";
 import { buildCombinedOriginal, type SourceFile } from "./pdf/combine";
+import { stripIllegibleMarkup } from "./pdf/structure";
 import { pdfPageTexts } from "./pdf-text";
 import { completeEvaluation, shouldPrepareEvaluationReport, startEvaluationQuote } from "./evaluation";
 import { orderHasEvaluation } from "./service-selection";
@@ -130,8 +131,8 @@ type ModelCue = {
 const CUE_INSTRUCTIONS = `logicalPage: the printed page number when one is visible, including the N in "page N/M", "1/2", or "2 sur 2". Use 0 when there is no printed number and no sequence cue. Do not invent a number from the order the files were uploaded.
 orderHint: the cue itself, such as "page 1/2", "2/2", or "suite". Use an empty string when there is none.
 orderConfidence: a number from 0 to 1. Use 0.8 or higher only when the printed number or a continuation cue (suite, continued, siguiente) is clear. Use a lower score when you are guessing.
-legibility: a number from 0 to 1. 1 is sharp and complete. Score a photo or scan down for blur, crop, glare, darkness, or fields that cannot be read only when the page as a whole cannot be read well enough to translate. If you set blurry, too_dark, unreadable_fields, or cropped, the score must be below 0.6. A high score does not cancel those flags. Do not set blurry, too_dark, or unreadable_fields, and do not score legibility below 0.6, merely because a readable document photo has a handwritten signature, a faint stamp or seal, or a few [unclear] handwritten blanks when the rest of the document is legible.
-flags: any of blurry, cropped, glare, too_dark, unreadable_fields that apply. Set blurry, too_dark, and unreadable_fields only when the page as a whole cannot be read well enough to translate. A handwritten signature, a faint stamp or seal, or a few [unclear] handwritten blanks on an otherwise legible page are not those flags. Set cropped only when the crop cuts off text, not when a margin is missing and every line is still readable. Use an empty array when the page is readable. A blank page is unreadable for transcription but is not an image-quality failure: set legibility to 1, flags to [], and unreadable to true.`;
+legibility: a number from 0 to 1. 1 is sharp and complete. Score a photo or scan down for blur, crop, glare, darkness, or fields that cannot be read only when the page as a whole cannot be read well enough to translate. If you set blurry, too_dark, unreadable_fields, or cropped, the score must be below 0.6. A high score does not cancel those flags. Do not set blurry, too_dark, or unreadable_fields, and do not score legibility below 0.6, merely because a readable document photo has a handwritten signature, a faint stamp or seal, or a few handwritten blanks when the rest of the document is legible.
+flags: any of blurry, cropped, glare, too_dark, unreadable_fields that apply. Set blurry, too_dark, and unreadable_fields only when the page as a whole cannot be read well enough to translate. A handwritten signature, a faint stamp or seal, or a few handwritten blanks on an otherwise legible page are not those flags. Set cropped only when the crop cuts off text, not when a margin is missing and every line is still readable. Use an empty array when the page is readable. A blank page is unreadable for transcription but is not an image-quality failure: set legibility to 1, flags to [], and unreadable to true.`;
 
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -216,7 +217,9 @@ async function assessFile(
   pageCount: number,
   texts: string[],
 ): Promise<PageRead[]> {
-  const reads: PageRead[] = Array.from({ length: pageCount }, (_, index) => blankRead((texts[index] ?? "").trim()));
+  const reads: PageRead[] = Array.from({ length: pageCount }, (_, index) =>
+    blankRead(stripIllegibleMarkup((texts[index] ?? "").trim())),
+  );
   if (pageCount === 0) return reads;
 
   const sparse = reads
@@ -268,8 +271,8 @@ ${excerpt}`,
           {
             type: "text",
             text: `Read this uploaded file for a certified translation. Return one object for every page. pageNumber is the page in this file, starting at 1, in the file's current order. Requested page numbers: ${requested.join(", ")}.
-text: plain transcription. Preserve names, dates, and place names exactly as spelled. Empty string if the page is blank or unreadable.
-unreadable: true if the page is blank or unreadable.
+text: plain transcription of the printed words. Preserve names, dates, course titles, grades, and place names exactly as spelled. Never write [illegible], (illegible), [ILLEGIBLE], or ILLEGIBLE for printed text, headings, course titles, names, grades, dates, or table cells. When a character is noisy, read the page image and use the surrounding words in the same font to transcribe the exact word. For a handwritten signature that does not have a printed caption, write [Signature]. Never write [illegible] or Prof. [illegible]. Use an empty string only when the page is blank.
+unreadable: true only when the page is blank or the page as a whole cannot be read well enough to translate. Noise in a few characters, a handwritten signature, or a faint stamp on an otherwise readable page is not unreadable.
 confidence: 0 to 1 for the transcription.
 ${CUE_INSTRUCTIONS}`,
           },
@@ -286,7 +289,7 @@ ${CUE_INSTRUCTIONS}`,
       let next = current;
       let cue: ModelCue = page;
       if (visual) {
-        const text = page.text.trim();
+        const text = stripIllegibleMarkup(page.text.trim());
         const unreadable = page.unreadable || countWords(text) === 0;
         next = { ...current, text, needsReview: unreadable || clamp01(page.confidence) < 0.5 };
         // A readable photo with a signature, stamp, or a few unclear blanks is still translatable.

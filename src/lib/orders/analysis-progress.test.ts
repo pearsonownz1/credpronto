@@ -416,6 +416,8 @@ describe("thin text layer", () => {
       true,
     );
     expect(prompts.some((prompt) => prompt.includes("Document text:"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("Never write [illegible]"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("[unclear]"))).toBe(false);
     expect(db.markDocuments).not.toHaveBeenCalled();
   });
 });

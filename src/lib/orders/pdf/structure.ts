@@ -863,7 +863,7 @@ function layoutBlock(block: ModelBlock): RenderBlock[] | null {
   }
   if (type === "stamp") return [{ type: "stamp", text: (block.text ?? "").trim(), column }];
   if (type === "handwritten") return [{ type: "handwritten", text: (block.text ?? "").trim() }];
-  if (type === "illegible") return [{ type: "illegible" }];
+  if (type === "illegible") return [];
   if (type === "signature" && (column || block.lines?.length)) {
     const fromLines = (block.lines ?? []).map((line) => line.trim()).filter(Boolean);
     const text = (block.text ?? "").trim();
@@ -933,12 +933,162 @@ export function blocksFromModel(input: {
   lines?: string[];
   paragraphs?: string[];
 }): RenderBlock[] {
-  if (input.blocks?.length) {
-    return refineSeal(coalesce(input.blocks.flatMap(fromModelBlock)));
+  const blocks = input.blocks?.length
+    ? refineSeal(coalesce(input.blocks.flatMap(fromModelBlock)))
+    : input.lines?.length
+      ? structurePage(input.lines.join("\n"))
+      : input.paragraphs?.length
+        ? structurePage(input.paragraphs.join("\n"))
+        : [{ type: "paragraph" as const, text: " " }];
+  const cleaned = cleanIllegibleBlocks(blocks);
+  return cleaned.length > 0 ? cleaned : [{ type: "paragraph", text: " " }];
+}
+
+const BRACKETED_ILLEGIBLE = /\[\s*illegible\s*\]|\(\s*illegible\s*\)/i;
+const SHOUTED_ILLEGIBLE = /\bILLEGIBLE\b/;
+
+/** True when text contains a false illegible tag, not a longer phrase such as "[illegible seal]". */
+export function hasIllegibleMarker(text: string): boolean {
+  return BRACKETED_ILLEGIBLE.test(text) || SHOUTED_ILLEGIBLE.test(text);
+}
+
+/**
+ * Remove `[illegible]`, `(illegible)`, `[ILLEGIBLE]`, and the shouted token.
+ * Surrounding printed words stay, so "Prof. [illegible] Torres da Silva" is "Prof. Torres da Silva".
+ */
+export function stripIllegibleMarkup(text: string): string {
+  if (!hasIllegibleMarker(text)) return text;
+  const stripped = text
+    .replace(/\[\s*illegible\s*\]|\(\s*illegible\s*\)/gi, " ")
+    .replace(/\bILLEGIBLE\b/g, " ")
+    .replace(/\*\*\s*\*\*/g, " ")
+    .replace(/__\s*__/g, " ");
+  return stripped
+    .replace(/[^\S\n]{2,}/g, " ")
+    .replace(/[^\S\n]+([,.;:!?])/g, "$1")
+    .replace(/([,.;:!?])(?:[^\S\n]*[,.;:!?])+/g, "$1")
+    .replace(/\(\s*\)/g, "")
+    .replace(/\[\s*\]/g, "")
+    .replace(/[^\S\n]*\n[^\S\n]*/g, "\n")
+    .replace(/^[^\S\n]*[,.;:!?]+[^\S\n]*/gm, "")
+    .replace(/^[^\S\n]+|[^\S\n]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function textBlock(block: RenderBlock): RenderBlock | null {
+  if (block.type !== "heading" && block.type !== "paragraph" && block.type !== "note" && block.type !== "logo") return block;
+  if (!hasIllegibleMarker(block.text)) return block;
+  const text = stripIllegibleMarkup(block.text).trim();
+  if (!text) return null;
+  return { ...block, text };
+}
+
+/** Drop illegible noise blocks and inline tags before a certified page is stored or drawn. */
+export function cleanIllegibleBlocks(blocks: RenderBlock[]): RenderBlock[] {
+  const cleaned: RenderBlock[] = [];
+  for (const block of blocks) {
+    if (block.type === "illegible") continue;
+    if (block.type === "heading" || block.type === "paragraph" || block.type === "note" || block.type === "logo") {
+      const next = textBlock(block);
+      if (next) cleaned.push(next);
+      continue;
+    }
+    if (block.type === "handwritten") {
+      if (!hasIllegibleMarker(block.text)) {
+        cleaned.push(block);
+        continue;
+      }
+      const text = stripIllegibleMarkup(block.text).trim();
+      cleaned.push(text ? { ...block, text } : { type: "signature", electronic: false });
+      continue;
+    }
+    if (block.type === "stamp" || block.type === "seal") {
+      if (!hasIllegibleMarker(block.text)) {
+        cleaned.push(block);
+        continue;
+      }
+      cleaned.push({ ...block, text: stripIllegibleMarkup(block.text).trim() });
+      continue;
+    }
+    if (block.type === "signature") {
+      if (!block.lines?.some((line) => hasIllegibleMarker(line))) {
+        cleaned.push(block);
+        continue;
+      }
+      const lines = block.lines.map((line) => stripIllegibleMarkup(line).trim()).filter(Boolean);
+      cleaned.push(
+        lines.length > 0
+          ? { ...block, lines }
+          : { type: "signature", electronic: block.electronic, ...(block.column ? { column: block.column } : {}) },
+      );
+      continue;
+    }
+    if (block.type === "fields") {
+      if (!block.rows.some((row) => hasIllegibleMarker(row.label) || hasIllegibleMarker(row.value))) {
+        cleaned.push(block);
+        continue;
+      }
+      const rows = block.rows
+        .map((row) => ({ label: stripIllegibleMarkup(row.label).trim(), value: stripIllegibleMarkup(row.value).trim() }))
+        .filter((row) => row.label || row.value);
+      if (rows.length > 0) cleaned.push({ ...block, rows });
+      continue;
+    }
+    if (block.type === "kv" || block.type === "box") {
+      if (!hasIllegibleMarker(block.label) && !hasIllegibleMarker(block.value)) {
+        cleaned.push(block);
+        continue;
+      }
+      const label = stripIllegibleMarkup(block.label).trim();
+      const value = stripIllegibleMarkup(block.value).trim();
+      if (label || value) cleaned.push({ ...block, label, value });
+      continue;
+    }
+    if (block.type === "address") {
+      if (!block.lines.some((line) => hasIllegibleMarker(line))) {
+        cleaned.push(block);
+        continue;
+      }
+      const lines = block.lines.map((line) => stripIllegibleMarkup(line).trim()).filter(Boolean);
+      if (lines.length > 0) cleaned.push({ ...block, lines });
+      continue;
+    }
+    if (block.type === "list") {
+      const dirty = (block.label ? hasIllegibleMarker(block.label) : false) || block.items.some((item) => hasIllegibleMarker(item));
+      if (!dirty) {
+        cleaned.push(block);
+        continue;
+      }
+      const label = block.label ? stripIllegibleMarkup(block.label).trim() : "";
+      const items = block.items.map((item) => stripIllegibleMarkup(item).trim()).filter(Boolean);
+      if (!label && items.length === 0) continue;
+      cleaned.push({ ...block, ...(label ? { label } : { label: undefined }), items });
+      continue;
+    }
+    if (block.type === "table") {
+      if (!block.rows.some((row) => row.some((cell) => hasIllegibleMarker(cell)))) {
+        cleaned.push(block);
+        continue;
+      }
+      cleaned.push({
+        ...block,
+        rows: block.rows.map((row) => row.map((cell) => stripIllegibleMarkup(cell).trim())),
+      });
+      continue;
+    }
+    if (block.type === "photo") {
+      if (!block.caption || !hasIllegibleMarker(block.caption)) {
+        cleaned.push(block);
+        continue;
+      }
+      const caption = stripIllegibleMarkup(block.caption).trim();
+      cleaned.push(caption ? { ...block, caption } : { type: "photo" });
+      continue;
+    }
+    cleaned.push(block);
   }
-  if (input.lines?.length) return structurePage(input.lines.join("\n"));
-  if (input.paragraphs?.length) return structurePage(input.paragraphs.join("\n"));
-  return [{ type: "paragraph", text: " " }];
+  return cleaned;
 }
 
 /**
@@ -958,32 +1108,89 @@ export function formBlocksWhenCollapsed(sourceText: string, modelBlocks: RenderB
   return structured;
 }
 
+function plainText(text: string): string {
+  const plain = text.replace(/\*\*/g, "").replace(/__/g, "");
+  const stripped = stripIllegibleMarkup(plain);
+  return (stripped === plain ? plain : stripped).trim();
+}
+
 export function blocksToParagraphs(blocks: RenderBlock[]): string[] {
   const lines: string[] = [];
   for (const block of blocks) {
-    if (block.type === "heading" || block.type === "paragraph" || block.type === "note" || block.type === "logo" || block.type === "stamp" || block.type === "handwritten") {
-      const text = block.text.replace(/\*\*/g, "").replace(/__/g, "").trim();
-      if (text) lines.push(block.type === "logo" ? `[Logo: ${text}]` : block.type === "stamp" ? (text ? `[Stamp: ${text}]` : "[Stamp]") : block.type === "handwritten" ? (text ? `[Handwritten: ${text}]` : "[Handwritten]") : text);
+    if (block.type === "illegible") continue;
+    if (block.type === "heading" || block.type === "paragraph" || block.type === "note" || block.type === "logo") {
+      const text = plainText(block.text);
+      if (text) lines.push(block.type === "logo" ? `[Logo: ${text}]` : text);
+    } else if (block.type === "stamp") {
+      const text = plainText(block.text);
+      if (text) lines.push(`[Stamp: ${text}]`);
+      else if (hasIllegibleMarker(block.text)) lines.push("[Stamp]");
+    } else if (block.type === "handwritten") {
+      const text = plainText(block.text);
+      if (text) lines.push(`[Handwritten: ${text}]`);
+      else if (hasIllegibleMarker(block.text)) lines.push("[Signature]");
     } else if (block.type === "fields") {
-      for (const row of block.rows) lines.push(`${row.label}: ${row.value}`);
+      for (const row of block.rows) {
+        const label = stripIllegibleMarkup(row.label);
+        const value = stripIllegibleMarkup(row.value);
+        if (label === row.label && value === row.value) lines.push(`${row.label}: ${row.value}`);
+        else {
+          const line = `${label.trim()}: ${value.trim()}`.trim();
+          if (line !== ":") lines.push(line);
+        }
+      }
     } else if (block.type === "kv" || block.type === "box") {
-      lines.push(`${block.label}: ${block.value}`);
+      const label = stripIllegibleMarkup(block.label);
+      const value = stripIllegibleMarkup(block.value);
+      if (label === block.label && value === block.value) lines.push(`${block.label}: ${block.value}`);
+      else {
+        const line = `${label.trim()}: ${value.trim()}`.trim();
+        if (line !== ":") lines.push(line);
+      }
     } else if (block.type === "address") {
-      lines.push(...block.lines);
+      for (const line of block.lines) {
+        const next = stripIllegibleMarkup(line);
+        if (next === line) lines.push(line);
+        else if (next.trim()) lines.push(next);
+      }
     } else if (block.type === "list") {
-      if (block.label) lines.push(block.label);
-      block.items.forEach((item, index) => lines.push(`${index + 1}) ${item.replace(/\*\*/g, "")}`));
+      if (block.label) {
+        const label = stripIllegibleMarkup(block.label);
+        const text = label === block.label ? block.label : label.trim();
+        if (text) lines.push(text);
+      }
+      block.items.forEach((item, index) => {
+        const plain = item.replace(/\*\*/g, "");
+        const next = stripIllegibleMarkup(plain);
+        const text = next === plain ? plain : next.trim();
+        if (next !== plain && !text) return;
+        lines.push(`${index + 1}) ${text}`);
+      });
     } else if (block.type === "table") {
-      for (const row of block.rows) lines.push(row.join(" "));
+      for (const row of block.rows) {
+        lines.push(
+          row
+            .map((cell) => {
+              const next = stripIllegibleMarkup(cell);
+              return next === cell ? cell : next.trim();
+            })
+            .join(" "),
+        );
+      }
     } else if (block.type === "seal") {
-      lines.push(block.text.trim() ? `[Seal: ${block.text}]` : "[Seal]");
+      const text = stripIllegibleMarkup(block.text).trim();
+      lines.push(text ? `[Seal: ${text}]` : "[Seal]");
     } else if (block.type === "signature") {
       lines.push(block.electronic ? "[Electronic signature]" : "[Signature]");
-      for (const line of block.lines ?? []) lines.push(line.replace(/\*\*/g, ""));
+      for (const line of block.lines ?? []) {
+        const plain = line.replace(/\*\*/g, "");
+        const next = stripIllegibleMarkup(plain);
+        if (next === plain) lines.push(plain);
+        else if (next.trim()) lines.push(next);
+      }
     } else if (block.type === "photo") {
-      lines.push(`[${block.caption?.trim() || "Holder's photo"}]`);
-    } else if (block.type === "illegible") {
-      lines.push("[Illegible]");
+      const caption = stripIllegibleMarkup((block.caption ?? "").trim() || "Holder's photo").trim();
+      lines.push(`[${caption || "Holder's photo"}]`);
     }
   }
   return lines.length ? lines : [" "];
