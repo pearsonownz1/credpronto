@@ -2,6 +2,7 @@ import { PDFDocument } from "pdf-lib";
 import { z } from "zod";
 import { generateObject } from "./ai";
 import { SPARSE_PAGE_WORDS } from "./constants";
+import { isGarbledEmbeddedText, pageNeedsVisionOcr } from "./embedded-text";
 import {
   claimDocuments,
   getOrderById,
@@ -101,7 +102,7 @@ date_format: MM/DD/YYYY or DD/MM/YYYY if the dates on the page show which order 
 export function fieldDetectionText(texts: readonly string[]): string | null {
   const joined = texts
     .map((text) => text.trim())
-    .filter(Boolean)
+    .filter((text) => text && !isGarbledEmbeddedText(text))
     .join("\n");
   if (countWords(joined) < SPARSE_PAGE_WORDS) return null;
   return joined;
@@ -220,8 +221,8 @@ async function assessFile(
   if (pageCount === 0) return reads;
 
   const sparse = reads
-    .map((page, index) => ({ index, words: countWords(page.text) }))
-    .filter((page) => page.words < SPARSE_PAGE_WORDS)
+    .map((page, index) => ({ index, text: page.text }))
+    .filter((page) => pageNeedsVisionOcr(page.text))
     .map((page) => page.index + 1);
   const image = mime !== "application/pdf";
   const visualPages = new Set(image ? reads.map((_, index) => index + 1) : sparse);

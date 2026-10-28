@@ -1,5 +1,6 @@
 import { pinyin } from "pinyin-pro";
 import { isElectronicSignatureToken } from "./pdf/structure";
+import { isGarbledEmbeddedText } from "./embedded-text";
 
 export const QA_ISSUE_TYPES = ["name", "date", "number", "missing_text", "layout", "other"] as const;
 export const QA_SEVERITIES = ["high", "medium", "low"] as const;
@@ -47,6 +48,29 @@ function includesText(haystack: string, needle: string): boolean {
 
 function digitRuns(text: string): string[] {
   return Array.from(text.matchAll(/\d{2,}/g), (match) => match[0]);
+}
+
+/**
+ * A noisy OCR layer glues a grade or day onto a slash date (`11` + `1/2000` → `1112000`).
+ * The clean translation already has the punctuated form, so the glued run is not missing.
+ */
+function translationExplainsRun(run: string, translation: string): boolean {
+  if (run.length < 6 || translation.includes(run)) return false;
+  const pieces = translation.split(/[^\d./,:\-\s]+/);
+  for (const piece of pieces) {
+    if (!/[./,:-]/.test(piece)) continue;
+    const groups = piece.match(/\d+/g) ?? [];
+    if (groups.length < 2) continue;
+    for (let start = 0; start < groups.length; start += 1) {
+      let acc = "";
+      for (let index = start; index < Math.min(groups.length, start + 4); index += 1) {
+        acc += groups[index] ?? "";
+        if (index > start && acc === run) return true;
+        if (acc.length > run.length) break;
+      }
+    }
+  }
+  return false;
 }
 
 function issue(
@@ -402,18 +426,21 @@ export function assessTranslation(input: {
         ),
       );
     }
+    const noisy = isGarbledEmbeddedText(source);
     for (const number of new Set(digitRuns(digitsOutsideSignature(source)))) {
-      if (!translation.includes(number)) {
-        issues.push(
-          issue(
-            "number",
-            page.number,
-            number,
-            translated.slice(0, 240),
-            `The number ${number} is missing from the translation.`,
-          ),
-        );
-      }
+      if (translation.includes(number)) continue;
+      if (translationExplainsRun(number, translation)) continue;
+      // Glued digit runs from a garbled embedded layer are not record numbers.
+      if (noisy && number.length >= 6) continue;
+      issues.push(
+        issue(
+          "number",
+          page.number,
+          number,
+          translated.slice(0, 240),
+          `The number ${number} is missing from the translation.`,
+        ),
+      );
     }
   }
 

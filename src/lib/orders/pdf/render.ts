@@ -2,11 +2,13 @@ import { PDFDocument, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf
 import { degrees } from "pdf-lib";
 import { PREVIEW_WATERMARK, PREVIEW_WATERMARK_OPACITY, previewWatermarkRgb } from "../constants";
 import {
+  bracketNote,
   documentKind,
   layoutSealBadge,
+  layoutSealRun,
+  layoutTranscriptTables,
   paintedPlanText,
   planDocument,
-  planTable,
   sharedTableColumnWidths,
   type PlanRect,
   type PlanRule,
@@ -192,7 +194,7 @@ function drawStyled(
 }
 
 function layoutBlocks(
-  blocks: RenderBlock[],
+  sourceBlocks: RenderBlock[],
   upright: ReadyFace[],
   italicFace: ReadyFace | null,
   size: number,
@@ -200,7 +202,7 @@ function layoutBlocks(
   maxWidth: number,
   top: number,
   floor = 12,
-): { paints: Paint[]; rules: PlanRule[]; bands: PlanRect[]; seals: PlanSeal[]; bottom: number } {
+): { paints: Paint[]; rules: PlanRule[]; bands: PlanRect[]; seals: PlanSeal[]; bottom: number; clipped: boolean; rest: RenderBlock[] } {
   const labelWidth = Math.min(220, maxWidth * 0.44);
   const columnGap = 14;
   const valueWidth = Math.max(40, maxWidth - labelWidth - columnGap);
@@ -209,14 +211,17 @@ function layoutBlocks(
   const rules: PlanRule[] = [];
   const bands: PlanRect[] = [];
   const seals: PlanSeal[] = [];
-  const tableSize = Math.max(6, size - 1);
+  const rest: RenderBlock[] = [];
+  let clipped = false;
+  const tableSize = Math.max(5, size - 1);
   const tableWidths = sharedTableColumnWidths({
-    tables: blocks.flatMap((block) => (block.type === "table" ? [{ rows: block.rows, header: block.header ?? true }] : [])),
+    tables: sourceBlocks.flatMap((block) => (block.type === "table" ? [{ rows: block.rows, header: block.header ?? true }] : [])),
     width: maxWidth,
     size: tableSize,
     measure: (text, fontSize) => measure(text, fontSize, false),
   });
   let y = top;
+  let blocks = sourceBlocks;
 
   const paintLines = (text: string, x: number, fontSize: number, color: ReturnType<typeof rgb>, italic: boolean, width: number) => {
     const lines = wrapLines(text, (line) => measure(line, fontSize, italic), width);
@@ -226,6 +231,39 @@ function layoutBlocks(
       y -= lineHeight;
     }
     return lineHeight;
+  };
+
+  const paintAt = (
+    text: string,
+    x: number,
+    cursor: number,
+    fontSize: number,
+    color: ReturnType<typeof rgb>,
+    italic: boolean,
+    width: number,
+  ) => {
+    const lines = wrapLines(text, (line) => measure(line, fontSize, italic), width);
+    const lineHeight = fontSize * 1.22;
+    let next = cursor;
+    for (const line of lines) {
+      paints.push({ text: line, x, y: next, size: fontSize, color, italic });
+      next -= lineHeight;
+    }
+    return next;
+  };
+
+  const pushSealTexts = (items: PlanText[]) => {
+    for (const item of items) {
+      paints.push({
+        text: item.text,
+        x: item.x,
+        y: item.y,
+        size: item.size,
+        color: item.color === "muted" ? MUTED : INK,
+        italic: false,
+        bold: item.bold,
+      });
+    }
   };
 
   const paintSeal = (block: Extract<RenderBlock, { type: "seal" }>) => {
@@ -238,58 +276,169 @@ function layoutBlocks(
       measure: (text, fontSize) => measure(text, fontSize, false),
     });
     seals.push(placed.seal);
-    for (const item of placed.texts) {
-      paints.push({
-        text: item.text,
-        x: item.x,
-        y: item.y,
-        size: item.size,
-        color: item.color === "muted" ? MUTED : INK,
-        italic: false,
-        bold: item.bold,
-      });
-    }
+    pushSealTexts(placed.texts);
     y = placed.bottom - size - 6;
   };
 
-  for (const block of blocks) {
-    const noted = noteText(block);
+  const paintFields = (rows: Array<{ label: string; value: string }>) => {
+    const labelSize = Math.max(7.5, size - 1);
+    const valueSize = size;
+    const lineHeight = Math.max(labelSize, valueSize) * 1.28;
+    for (const row of rows) {
+      const labels = wrapLines(row.label, (line) => measure(line, labelSize, false), labelWidth);
+      const values = wrapLines(row.value || " ", (line) => measure(line, valueSize, false), valueWidth);
+      const count = Math.max(labels.length, values.length, 1);
+      for (let line = 0; line < count; line += 1) {
+        const label = labels[line];
+        const value = row.value ? values[line] : undefined;
+        if (label) paints.push({ text: label, x: margin, y, size: labelSize, color: MUTED, italic: false });
+        if (value) paints.push({ text: value, x: margin + labelWidth + columnGap, y, size: valueSize, color: INK, italic: false });
+        y -= lineHeight;
+      }
+      y -= 1;
+    }
+    y -= 3;
+  };
+
+  const headerTypes = new Set(["heading", "logo", "address", "stamp", "photo", "seal", "kv", "fields", "box"]);
+  const tableAt = blocks.findIndex((block) => block.type === "table");
+  if (tableAt > 0 && blocks.slice(0, tableAt).some((block) => block.type === "address" || block.type === "logo" || block.type === "photo")) {
+    const preamble = blocks.slice(0, tableAt);
+    const header = preamble.filter((block) => headerTypes.has(block.type));
+    const deferred = preamble.filter((block) => !headerTypes.has(block.type));
+    for (const block of header) {
+      if (block.type !== "heading") continue;
+      const fontSize = block.level === 2 ? size + 0.5 : size + 1.5;
+      paintLines(block.text, margin, fontSize, INK, false, maxWidth);
+      y -= 1;
+    }
+    const sealBlocks = header.filter((block): block is Extract<RenderBlock, { type: "seal" }> => block.type === "seal");
+    if (sealBlocks.length > 0) {
+      const placed = layoutSealRun({
+        blocks: sealBlocks,
+        left: margin,
+        right: margin + maxWidth,
+        top: y + size * 0.85,
+        measure: (text, fontSize) => measure(text, fontSize, false),
+      });
+      seals.push(...placed.seals);
+      pushSealTexts(placed.texts);
+      y = placed.bottom - 4;
+    }
+    const gap = 8;
+    const colW = (maxWidth - gap * 2) / 3;
+    const topY = y;
+    const paintColumn = (column: RenderBlock[], origin: number): number => {
+      let cursor = topY;
+      for (const block of column) {
+        if (block.type === "logo" || block.type === "stamp" || block.type === "photo") {
+          const note = bracketNote(block);
+          if (note) cursor = paintAt(note, origin, cursor, Math.max(7.5, size - 1), MUTED, true, colW);
+        } else if (block.type === "address") {
+          for (const line of block.lines) cursor = paintAt(line, origin, cursor, Math.max(6.5, size - 0.5), INK, false, colW);
+        } else if (block.type === "kv") {
+          const text = block.label && block.value ? `${block.label}: ${block.value}` : block.label || block.value;
+          cursor = paintAt(text, origin, cursor, Math.max(6.5, size - 0.5), INK, false, colW);
+        } else if (block.type === "box") {
+          cursor = paintAt(`${block.label} ${block.value}`.trim(), origin, cursor, Math.max(6.5, size - 0.5), INK, false, colW);
+        } else if (block.type === "fields") {
+          for (const row of block.rows) cursor = paintAt(`${row.label}: ${row.value}`, origin, cursor, Math.max(6.5, size - 0.5), INK, false, colW);
+        }
+      }
+      return cursor;
+    };
+    y = Math.min(
+      paintColumn(header.filter((block) => block.type === "logo" || block.type === "address" || block.type === "stamp"), margin),
+      paintColumn(header.filter((block) => block.type === "photo"), margin + colW + gap),
+      paintColumn(header.filter((block) => block.type === "kv" || block.type === "fields" || block.type === "box"), margin + (colW + gap) * 2),
+    ) - 4;
+    blocks = [...deferred, ...blocks.slice(tableAt)];
+  }
+
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (!block) continue;
+    if (y < floor) {
+      clipped = true;
+      rest.push(...blocks.slice(index));
+      break;
+    }
     if (block.type === "seal") {
-      paintSeal(block);
-    } else if (block.type === "heading") {
+      const group: Array<Extract<RenderBlock, { type: "seal" }>> = [block];
+      while (blocks[index + group.length]?.type === "seal") {
+        const next = blocks[index + group.length];
+        if (next?.type === "seal") group.push(next);
+      }
+      if (group.length === 1) paintSeal(block);
+      else {
+        const placed = layoutSealRun({
+          blocks: group,
+          left: margin,
+          right: margin + maxWidth,
+          top: y + size * 0.85,
+          measure: (text, fontSize) => measure(text, fontSize, false),
+        });
+        seals.push(...placed.seals);
+        pushSealTexts(placed.texts);
+        y = placed.bottom - 4;
+      }
+      index += group.length - 1;
+      continue;
+    }
+    if (block.type === "heading") {
       const fontSize = block.level === 2 ? size + 0.5 : size + 2.5;
       paintLines(block.text, margin, fontSize, INK, false, maxWidth);
       y -= 3;
-    } else if (block.type === "paragraph") {
+      continue;
+    }
+    if (block.type === "paragraph") {
       paintLines(block.text, margin, size, INK, false, maxWidth);
       y -= 5;
-    } else if (noted) {
-      paintLines(noted, margin, Math.max(8, size - 0.5), MUTED, true, maxWidth);
-      y -= 5;
-    } else if (block.type === "fields" || block.type === "kv") {
-      const rows = block.type === "fields" ? block.rows : [{ label: block.label, value: block.value }];
-      const labelSize = Math.max(7.5, size - 1);
-      const valueSize = size;
-      const lineHeight = Math.max(labelSize, valueSize) * 1.28;
-      for (const row of rows) {
-        const labels = wrapLines(row.label, (line) => measure(line, labelSize, false), labelWidth);
-        const values = wrapLines(row.value || " ", (line) => measure(line, valueSize, false), valueWidth);
-        const count = Math.max(labels.length, values.length, 1);
-        for (let index = 0; index < count; index += 1) {
-          const label = labels[index];
-          const value = row.value ? values[index] : undefined;
-          if (label) paints.push({ text: label, x: margin, y, size: labelSize, color: MUTED, italic: false });
-          if (value) paints.push({ text: value, x: margin + labelWidth + columnGap, y, size: valueSize, color: INK, italic: false });
-          y -= lineHeight;
-        }
-        y -= 1;
-      }
+      continue;
+    }
+    if (block.type === "signature") {
+      const note = bracketNote(block) ?? "[Signature]";
+      paintLines(note, margin, Math.max(8, size - 0.5), MUTED, true, maxWidth);
+      for (const line of block.lines ?? []) paintLines(line, margin, size, INK, false, maxWidth);
+      y -= 4;
+      continue;
+    }
+    if (block.type === "address") {
+      for (const line of block.lines) paintLines(line, margin, size, INK, false, maxWidth);
+      y -= 4;
+      continue;
+    }
+    if (block.type === "list") {
+      if (block.label) paintLines(block.label, margin, size, INK, false, maxWidth);
+      block.items.forEach((item, itemIndex) => {
+        const prefix = block.ordered === false ? "•" : `${itemIndex + 1})`;
+        paintLines(`${prefix} ${item}`, margin, size, INK, false, maxWidth);
+      });
       y -= 3;
-    } else if (block.type === "table") {
+      continue;
+    }
+    if (block.type === "box") {
+      paintLines(`${block.label} ${block.value}`.trim(), margin, size, INK, false, maxWidth);
+      y -= 3;
+      continue;
+    }
+    if (block.type === "logo" || block.type === "stamp" || block.type === "handwritten" || block.type === "illegible" || block.type === "photo" || block.type === "note") {
+      const note = bracketNote(block);
+      if (note) paintLines(note, margin, Math.max(8, size - 0.5), MUTED, true, maxWidth);
+      y -= 3;
+      continue;
+    }
+    if (block.type === "fields" || block.type === "kv") {
+      const rows = block.type === "fields" ? block.rows : [{ label: block.label, value: block.value }];
+      paintFields(rows);
+      continue;
+    }
+    if (block.type === "table") {
+      const next = blocks[index + 1];
       const columns = Math.max(0, ...block.rows.map((row) => row.length));
-      const table = planTable({
-        rows: block.rows,
-        header: block.header ?? true,
+      const placed = layoutTranscriptTables({
+        first: block,
+        second: next?.type === "table" ? next : undefined,
         x: margin,
         y: y + size * 0.8,
         width: maxWidth,
@@ -298,18 +447,29 @@ function layoutBlocks(
         serif: false,
         measure: (text, fontSize) => measure(text, fontSize, false),
         columnWidths: tableWidths.get(columns),
+        minRows: index === 0 ? 1 : 0,
       });
-      for (const item of table.texts) {
-        paints.push({ text: item.text, x: item.x, y: item.y, size: item.size, color: INK, italic: false, bold: item.bold });
+      for (const part of placed.parts) {
+        for (const item of part.texts) {
+          paints.push({ text: item.text, x: item.x, y: item.y, size: item.size, color: INK, italic: false, bold: item.bold });
+        }
+        rules.push(...part.rules);
+        bands.push(...part.bands);
       }
-      rules.push(...table.rules);
-      bands.push(...table.bands);
+      const consumed = placed.consumedSecond ? 2 : 1;
+      if (placed.remainders.length > 0) {
+        clipped = true;
+        rest.push(...placed.remainders, ...blocks.slice(index + consumed));
+        y = Math.min(placed.bottom, floor - 1);
+        break;
+      }
+      if (placed.consumedSecond) index += 1;
       const afterTable = size <= 8.5 ? size + 4 : size + 2.5 + 10;
-      y = table.clipped ? Math.min(table.bottom, floor - 1) : table.bottom - afterTable;
+      y = placed.bottom - afterTable;
     }
   }
 
-  return { paints, rules, bands, seals, bottom: y };
+  return { paints, rules, bands, seals, bottom: y, clipped, rest };
 }
 
 type SerifFaces = {
@@ -524,7 +684,7 @@ function drawBody(
     letterhead?: GcsLetterhead | null;
     credProntoLetterhead?: CredProntoLetterhead | null;
   },
-): string {
+): { painted: string; rest: RenderBlock[] } {
   const { widthPt, heightPt } = pageSize(pageSpec);
   const margin = Math.min(48, widthPt * 0.08, heightPt * 0.08);
   const maxWidth = Math.max(40, widthPt - margin * 2);
@@ -536,6 +696,8 @@ function drawBody(
   if (options.letterhead) drawGcsLetterhead(page, faces.regular, options.letterhead);
   else if (options.credProntoLetterhead) drawCredProntoLetterhead(page, faces.regular, options.credProntoLetterhead);
   let painted = "";
+  let rest: RenderBlock[] = [];
+  const minSize = 5.5;
   if (kind) {
     const measure = (text: string, size: number, style: PlanStyle) =>
       widthPlanned(text, size, style, options.serif, faces.upright, faces.italic);
@@ -544,7 +706,7 @@ function drawBody(
       kind === "certificate" &&
       blocks.some((block) => block.type === "kv" || block.type === "fields" || block.type === "table");
     // A one-language diploma is shorter than the bilingual scan. Start larger
-    // and step down to 8 only when the page would overflow.
+    // and step down before any row or block is left off the page.
     let size = labeledCertificate ? 13.5 : 12;
     let inset = topInset;
     const planAt = (nextSize: number, nextInset: number) =>
@@ -560,7 +722,7 @@ function drawBody(
         topInset: nextInset,
       });
     let plan = planAt(size, inset);
-    while (plan.overflow && size > 8) {
+    while (plan.overflow && size > minSize) {
       size -= 0.5;
       plan = planAt(size, inset);
     }
@@ -577,7 +739,7 @@ function drawBody(
         if (overflow <= 0.2) break;
         inset += overflow;
         plan = planAt(size, inset);
-        while (plan.overflow && size > 8) {
+        while (plan.overflow && size > minSize) {
           size -= 0.5;
           plan = planAt(size, inset);
         }
@@ -601,13 +763,14 @@ function drawBody(
       drawPlannedText(page, item, options.serif, faces.upright, faces.italic);
     }
     painted = paintedPlanText(plan);
+    if (plan.overflow && (plan.rest?.length ?? 0) > 0) rest = plan.rest ?? [];
   } else {
     let chosen: Paint[] = [];
     let chosenRules: PlanRule[] = [];
     let chosenBands: PlanRect[] = [];
     let chosenSeals: PlanSeal[] = [];
+    let laid!: ReturnType<typeof layoutBlocks>;
     let size = 11;
-    const minSize = 6.5;
     for (;;) {
       let top = heightPt - margin - size - topInset;
       if (clearsLetterhead) {
@@ -616,12 +779,12 @@ function drawBody(
         const ascender = top + headingSize;
         if (ascender > limit) top -= ascender - limit;
       }
-      const laid = layoutBlocks(blocks, faces.upright, faces.italic, size, margin, maxWidth, top, footer);
+      laid = layoutBlocks(blocks, faces.upright, faces.italic, size, margin, maxWidth, top, footer);
       chosen = laid.paints;
       chosenRules = laid.rules;
       chosenBands = laid.bands;
       chosenSeals = laid.seals;
-      if (laid.bottom >= footer || size <= minSize + 0.001) break;
+      if ((laid.bottom >= footer && !laid.clipped) || size <= minSize + 0.001) break;
       size = Math.round((size - 0.5) * 2) / 2;
     }
     drawBands(page, chosenBands);
@@ -633,6 +796,7 @@ function drawBody(
       if (paint.bold) drawStyled(page, paint.text, paint.x + 0.28, paint.y, paint.size, paint.color, paint.italic, faces.upright, faces.italic);
     }
     painted = visible.map((paint) => paint.text).join(" ");
+    if (laid.clipped || laid.rest.length > 0) rest = laid.rest;
   }
 
   if (options.letterhead) {
@@ -641,7 +805,7 @@ function drawBody(
       pageNumber: pageSpec.combinedPageNumber + 1,
       pageCount: options.translationPages + 1,
     });
-    return painted;
+    return { painted, rest };
   }
   if (options.certified) {
     drawFinalFooter(page, faces.regular, {
@@ -650,7 +814,7 @@ function drawBody(
       pageCount: options.translationPages + 1,
       width: widthPt,
     });
-    return painted;
+    return { painted, rest };
   }
   page.drawText(`Page ${pageSpec.combinedPageNumber} of ${options.translationPages}`, {
     x: margin,
@@ -659,7 +823,7 @@ function drawBody(
     font: faces.regular,
     color: MUTED,
   });
-  return painted;
+  return { painted, rest };
 }
 
 async function renderTranslationPdf(
@@ -690,22 +854,31 @@ async function renderTranslationPdf(
   const pageTexts: PaintedPageText[] = [];
   ordered.forEach((pageSpec, index) => {
     const { widthPt, heightPt } = pageSize(pageSpec);
-    const page = doc.addPage([widthPt, heightPt]);
-    const pageFaces = faces;
-    const blocks = pageBlocks[index];
+    let blocks = pageBlocks[index] ?? [];
     const kind = documentKind({ ...pageSpec, blocks });
-    const text = drawBody(page, pageFaces, { ...pageSpec, blocks }, {
-      orderId: input.orderId,
-      translationPages: ordered.length,
-      certified: !watermark || gcs,
-      serif,
-      image: images.get(index) ?? null,
-      topInset: gcsBodyTopInset(kind),
-      letterhead,
-      credProntoLetterhead,
-    });
-    pageTexts.push({ number: pageSpec.combinedPageNumber, text });
-    if (watermark && !gcs) drawWatermark(page, faces.regular, widthPt, heightPt);
+    const parts: string[] = [];
+    const seen = new Set<string>();
+    for (let guard = 0; guard < 8 && blocks.length > 0; guard += 1) {
+      const page = doc.addPage([widthPt, heightPt]);
+      const drawn = drawBody(page, faces, { ...pageSpec, blocks }, {
+        orderId: input.orderId,
+        translationPages: ordered.length,
+        certified: !watermark || gcs,
+        serif,
+        image: images.get(index) ?? null,
+        topInset: gcsBodyTopInset(kind),
+        letterhead,
+        credProntoLetterhead,
+      });
+      parts.push(drawn.painted);
+      if (watermark && !gcs) drawWatermark(page, faces.regular, widthPt, heightPt);
+      if (drawn.rest.length === 0) break;
+      const key = JSON.stringify(drawn.rest);
+      if (seen.has(key)) break;
+      seen.add(key);
+      blocks = drawn.rest;
+    }
+    pageTexts.push({ number: pageSpec.combinedPageNumber, text: parts.filter(Boolean).join("\n") });
   });
 
   applyPdfMetadata(doc, gcs ? "gcs" : "credpronto");

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { layoutNeedsRestore } from "./pdf/source-mirror";
 import { blocksToParagraphs, formBlocksWhenCollapsed } from "./pdf/structure";
 import { assessTranslation, QA_REVIEW_REASON, qaAttemptForRound, qaStatusForRun, qaWillRetry } from "./qa";
+import { isGarbledEmbeddedText } from "./embedded-text";
 
 const originalPages = [
   { number: 1, text: "Acta de Ada Lovelace. Nació el 14/10/1815. Folio 2019." },
@@ -244,10 +245,37 @@ CADENA ORIGINAL
         { fieldKey: "date_format", confirmedValue: "DD/MM/YYYY" },
       ],
     });
+    expect(isGarbledEmbeddedText(source)).toBe(false);
     expect(recovered).not.toBeNull();
     expect(layoutNeedsRestore(source, recovered ?? [])).toBeNull();
     expect(formBlocksWhenCollapsed(source, recovered ?? [])).toBeNull();
     expect(result.issues).toEqual([]);
     expect(result.pass).toBe(true);
+  });
+
+  it("does not force glued OCR digit runs over a clean slash date", () => {
+    const garbage = [
+      "a sfna Fta de sflfnetda mackenzie direito penal hist",
+      "qwrtnpl sflfnetda xyzzqwr plmntr cadaval conclusao curso",
+      "direito etapa disciplina nota extra words here now",
+      "701211998 1112000 1212000 1111999 folio 2019",
+    ].join(" ");
+    expect(isGarbledEmbeddedText(garbage)).toBe(true);
+    const noisy = assessTranslation({
+      originalPages: [{ number: 1, text: garbage }],
+      translatedPages: [{ number: 1, text: "Constitutional Law I 5,50 1/2000 and term 2/2000." }],
+      confirmations: [],
+    });
+    const numbers = noisy.issues.filter((item) => item.type === "number").map((item) => item.original);
+    expect(numbers).toEqual(["2019"]);
+    expect(numbers).not.toContain("1112000");
+    expect(numbers).not.toContain("1212000");
+
+    const explained = assessTranslation({
+      originalPages: [{ number: 1, text: "Term mark 1112000 sits beside folio 2019." }],
+      translatedPages: [{ number: 1, text: "Term 11 1/2000. Folio 2019." }],
+      confirmations: [],
+    });
+    expect(explained.issues.filter((item) => item.type === "number")).toEqual([]);
   });
 });

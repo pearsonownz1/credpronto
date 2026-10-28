@@ -41,6 +41,8 @@ export type DocumentPlan = {
   bands?: PlanRect[];
   seals?: PlanSeal[];
   overflow: boolean;
+  /** Blocks that did not fit. Callers flow these onto a continuation page. */
+  rest?: RenderBlock[];
   frame?: PlanRect;
   boxes: PlanRect[];
   image?: { x: number; y: number; w: number; h: number };
@@ -152,6 +154,7 @@ const SEAL_INNER = 28;
 
 function tableCellPad(size: number): number {
   if (size >= 8.5) return TABLE_PAD;
+  if (size <= 6.5) return Math.max(1.25, size * 0.28);
   return Math.max(3, (TABLE_PAD * size) / 8.5);
 }
 
@@ -230,6 +233,8 @@ export type TableLayout = {
   bands: PlanRect[];
   bottom: number;
   clipped: boolean;
+  /** Input rows fully painted. The remainder starts at this index. */
+  placedRows: number;
 };
 
 /**
@@ -329,7 +334,10 @@ export function layoutSealBadge(input: {
 /**
  * A grid with a bold header row, wrapped cells, and ruled borders.
  * Summary rows are a full-width band so they do not follow the course columns.
- * Rows that would cross `bottom` are left off and the layout reports clipped.
+ * Rows that would cross `bottom` are left off. `placedRows` is how many input
+ * rows were painted so the caller can continue the rest on the next page.
+ * `minRows` paints that many rows even when they cross `bottom`, so a single
+ * oversized row cannot stall pagination.
  */
 export function planTable(input: {
   rows: string[][];
@@ -343,6 +351,7 @@ export function planTable(input: {
   measure: Measure;
   /** Shared with every other table of this column count on the page. */
   columnWidths?: number[];
+  minRows?: number;
 }): TableLayout {
   const { size, serif, measure } = input;
   const pad = tableCellPad(size);
@@ -351,7 +360,7 @@ export function planTable(input: {
   const texts: PlanText[] = [];
   const rules: PlanRule[] = [];
   const bands: PlanRect[] = [];
-  if (columns === 0 || rows.length === 0) return { texts, rules, bands, bottom: input.y, clipped: false };
+  if (columns === 0 || rows.length === 0) return { texts, rules, bands, bottom: input.y, clipped: false, placedRows: 0 };
   const content = rows.filter((row) => !isTableSummaryRow(row));
   const natural = Array.from({ length: columns }, (_, column) => {
     const source = content.length > 0 ? content : rows;
@@ -400,22 +409,37 @@ export function planTable(input: {
     });
   };
 
-  const paintGrid = (grid: Array<{ cells: string[]; bold: boolean }>) => {
-    if (clipped || grid.length === 0) return;
+  let placedRows = 0;
+  const floorReached = (height: number, paintedInGrid: number) => {
+    if (y - height >= input.bottom) return false;
+    if (placedRows + paintedInGrid < (input.minRows ?? 0)) return false;
+    return true;
+  };
+  const closeVerticals = (top: number) => {
+    if (y === top) return;
+    for (const [index, left] of [...lefts, right].entries()) {
+      rules.push({ x1: left, y1: top, x2: left, y2: y, width: index === 0 || index === lefts.length ? 0.6 : 0.4 });
+    }
+  };
+
+  const paintGrid = (grid: Array<{ cells: string[]; bold: boolean }>): number => {
+    if (clipped || grid.length === 0) return 0;
     const top = y;
+    let painted = 0;
     // Top rule is drawn for every grid, including tables with header: false.
     rules.push({ x1: input.x, y1: y, x2: right, y2: y, width: 0.6 });
     for (const [rowIndex, row] of grid.entries()) {
-      if (clipped) return;
       const wrapped = row.cells.map((cell, column) => {
         const words = wordsOf(cell).map((word) => ({ ...word, bold: word.bold || row.bold }));
         return wrapWords(words, size, Math.max(4, (widths[column] ?? 0) - pad * 2), measure, serif);
       });
       const lineCount = Math.max(1, ...wrapped.map((lines) => lines.length));
       const height = tableRowHeight(lineCount, size, leading, pad);
-      if (y - height < input.bottom) {
+      if (floorReached(height, painted)) {
         clipped = true;
-        return;
+        if (painted === 0) rules.pop();
+        else closeVerticals(top);
+        return painted;
       }
       wrapped.forEach((lines, column) => {
         const cellLeft = lefts[column] ?? input.x;
@@ -423,12 +447,12 @@ export function planTable(input: {
         paintLines(lines, y, cellLeft, cellWidth, !row.bold && numeric(row.cells[column] ?? ""));
       });
       y -= height;
+      painted += 1;
       const last = rowIndex === grid.length - 1;
       rules.push({ x1: input.x, y1: y, x2: right, y2: y, width: row.bold ? 0.9 : last ? 0.6 : 0.4 });
     }
-    for (const [index, left] of [...lefts, right].entries()) {
-      rules.push({ x1: left, y1: top, x2: left, y2: y, width: index === 0 || index === lefts.length ? 0.6 : 0.4 });
-    }
+    closeVerticals(top);
+    return painted;
   };
 
   const paintSummary = (cells: string[]) => {
@@ -442,7 +466,7 @@ export function planTable(input: {
     });
     const lineCount = Math.max(1, ...wrapped.map((lines) => lines.length));
     const height = tableRowHeight(lineCount, size, leading, pad);
-    if (y - height < input.bottom) {
+    if (floorReached(height, 0)) {
       clipped = true;
       return;
     }
@@ -453,20 +477,160 @@ export function planTable(input: {
     });
     y -= height;
     rules.push({ x1: input.x, y1: y, x2: right, y2: y, width: 0.6 });
+    placedRows += 1;
   };
 
   let grid: Array<{ cells: string[]; bold: boolean }> = [];
+  const commitGrid = () => {
+    if (grid.length === 0 || clipped) return;
+    placedRows += paintGrid(grid);
+    grid = [];
+  };
   rows.forEach((row, rowIndex) => {
+    if (clipped) return;
     if (isTableSummaryRow(row)) {
-      paintGrid(grid);
-      grid = [];
+      commitGrid();
+      if (clipped) return;
       paintSummary(row);
       return;
     }
     grid.push({ cells: row, bold: input.header && rowIndex === 0 });
   });
-  paintGrid(grid);
-  return { texts, rules, bands, bottom: y, clipped };
+  commitGrid();
+  return { texts, rules, bands, bottom: y, clipped, placedRows };
+}
+
+type TableBlock = Extract<RenderBlock, { type: "table" }>;
+
+/** Header row is repeated so a continued transcript stays readable. */
+export function tableRemainder(block: TableBlock, placedRows: number): TableBlock | null {
+  if (placedRows >= block.rows.length) return null;
+  if (placedRows <= 0) return block;
+  const headerOn = block.header !== false;
+  const header = headerOn ? block.rows[0] : undefined;
+  const body = block.rows.slice(placedRows);
+  if (body.length === 0) return null;
+  if (header) return { ...block, header: true, rows: [header, ...body] };
+  return { ...block, rows: body };
+}
+
+function tableColumnCount(block: TableBlock): number {
+  return Math.max(0, ...block.rows.map((row) => row.length));
+}
+
+/** Two tall tables with the same columns are the two halves of a transcript. */
+export function canPairTranscriptTables(first: RenderBlock, second: RenderBlock | undefined): second is TableBlock {
+  if (first.type !== "table" || second?.type !== "table") return false;
+  const columns = tableColumnCount(first);
+  if (columns < 3 || columns !== tableColumnCount(second)) return false;
+  return first.rows.length >= 12 && second.rows.length >= 12;
+}
+
+export function layoutTranscriptTables(input: {
+  first: TableBlock;
+  second?: TableBlock;
+  x: number;
+  y: number;
+  width: number;
+  size: number;
+  bottom: number;
+  serif: boolean;
+  measure: Measure;
+  columnWidths?: number[];
+  minRows?: number;
+}): { parts: TableLayout[]; bottom: number; remainders: TableBlock[]; consumedSecond: boolean } {
+  const paint = (block: TableBlock, x: number, width: number, columnWidths?: number[], minRows?: number) => {
+    const columns = tableColumnCount(block);
+    return planTable({
+      rows: block.rows,
+      header: block.header ?? true,
+      x,
+      y: input.y,
+      width,
+      size: input.size,
+      bottom: input.bottom,
+      serif: input.serif,
+      measure: input.measure,
+      columnWidths: columnWidths && columnWidths.length === columns ? columnWidths : undefined,
+      minRows,
+    });
+  };
+  const second = input.second && canPairTranscriptTables(input.first, input.second) ? input.second : undefined;
+  if (second) {
+    const gap = 8;
+    const columnWidth = (input.width - gap) / 2;
+    const left = paint(input.first, input.x, columnWidth);
+    const right = paint(second, input.x + columnWidth + gap, columnWidth);
+    const stacked = paint(input.first, input.x, input.width, input.columnWidths, input.minRows);
+    const pairPlaced = left.placedRows + right.placedRows;
+    if ((!left.clipped && !right.clipped) || pairPlaced > stacked.placedRows) {
+      const remainders: TableBlock[] = [];
+      const leftRest = tableRemainder(input.first, left.placedRows);
+      const rightRest = tableRemainder(second, right.placedRows);
+      if (leftRest) remainders.push(leftRest);
+      if (rightRest) remainders.push(rightRest);
+      return {
+        parts: [left, right],
+        bottom: Math.min(left.bottom, right.bottom),
+        remainders,
+        consumedSecond: true,
+      };
+    }
+  }
+  const single = paint(input.first, input.x, input.width, input.columnWidths, input.minRows);
+  const remainder = tableRemainder(input.first, single.placedRows);
+  return {
+    parts: [single],
+    bottom: single.bottom,
+    remainders: remainder ? [remainder] : [],
+    consumedSecond: false,
+  };
+}
+
+/** Consecutive seals share one row so two 85pt badges do not stack. */
+export function layoutSealRun(input: {
+  blocks: Array<Extract<RenderBlock, { type: "seal" }>>;
+  left: number;
+  right: number;
+  top: number;
+  measure: (text: string, size: number, bold?: boolean) => number;
+  serif?: boolean;
+}): { seals: PlanSeal[]; texts: PlanText[]; bottom: number } {
+  const only = input.blocks.length === 1 ? input.blocks[0] : undefined;
+  if (only) {
+    const placed = layoutSealBadge({
+      text: only.text,
+      column: only.column,
+      left: input.left,
+      right: input.right,
+      top: input.top,
+      measure: input.measure,
+      serif: input.serif,
+    });
+    return { seals: [placed.seal], texts: placed.texts, bottom: placed.bottom };
+  }
+  const gap = 8;
+  const width = (input.right - input.left - gap * Math.max(0, input.blocks.length - 1)) / Math.max(1, input.blocks.length);
+  let bottom = input.top;
+  const seals: PlanSeal[] = [];
+  const texts: PlanText[] = [];
+  input.blocks.forEach((block, index) => {
+    const columnLeft = input.left + index * (width + gap);
+    const fallback = index === 0 ? "left" : index === input.blocks.length - 1 ? "right" : "center";
+    const placed = layoutSealBadge({
+      text: block.text,
+      column: block.column ?? fallback,
+      left: columnLeft,
+      right: columnLeft + width,
+      top: input.top,
+      measure: input.measure,
+      serif: input.serif,
+    });
+    seals.push(placed.seal);
+    texts.push(...placed.texts);
+    bottom = Math.min(bottom, placed.bottom);
+  });
+  return { seals, texts, bottom };
 }
 
 /** Words placed on the page. Text that falls below the page is left out. */
@@ -572,10 +736,15 @@ function planLetter(input: {
   };
 
   const blocks = input.blocks;
+  const rest: RenderBlock[] = [];
   for (let index = 0; index < blocks.length; index += 1) {
     const block = blocks[index];
     const next = blocks[index + 1];
     if (!block) continue;
+    if (y < input.footer) {
+      rest.push(...blocks.slice(index));
+      break;
+    }
     if (
       block.type === "signature" &&
       columnOf(block) === "left" &&
@@ -698,25 +867,35 @@ function planLetter(input: {
       continue;
     }
     if (block.type === "table") {
-      const table = planTable({
-        rows: block.rows,
-        header: block.header ?? true,
+      const placed = layoutTranscriptTables({
+        first: block,
+        second: next?.type === "table" ? next : undefined,
         x: margin,
         y,
         width: maxWidth,
-        size: size - 1,
+        size: Math.max(5, size - 1),
         bottom: input.footer,
         serif,
         measure: input.measure,
+        minRows: index === 0 ? 1 : 0,
       });
-      texts.push(...table.texts);
-      rules.push(...table.rules);
-      bands.push(...table.bands);
-      y = table.clipped ? Math.min(table.bottom, input.footer - 1) : table.bottom - (size + 1) - 10;
+      for (const part of placed.parts) {
+        texts.push(...part.texts);
+        rules.push(...part.rules);
+        bands.push(...part.bands);
+      }
+      const consumed = placed.consumedSecond ? 2 : 1;
+      if (placed.remainders.length > 0) {
+        rest.push(...placed.remainders, ...blocks.slice(index + consumed));
+        y = Math.min(placed.bottom, input.footer - 1);
+        break;
+      }
+      if (placed.consumedSecond) index += 1;
+      y = placed.bottom - (size + 1) - 10;
     }
   }
 
-  return { serif, overflow: y < input.footer, boxes: [], texts, rules, bands, seals };
+  return { serif, overflow: rest.length > 0 || y < input.footer, boxes: [], texts, rules, bands, seals, rest };
 }
 
 /**
@@ -756,20 +935,25 @@ function planLabeledCertificate(input: {
   const seals: PlanSeal[] = [];
   const serif = true;
   const size = input.size;
-  const inset = 26;
+  const dense = size <= 8;
+  const inset = dense ? 12 : 26;
+  const chrome = dense ? 14 : 22;
+  const inner = dense ? 10 : 22;
   const frame: PlanRect = {
     x: inset,
     y: input.footer + 6,
     w: input.width - inset * 2,
-    h: input.height - input.footer - 6 - 22 - (input.topInset ?? 0),
+    h: input.height - input.footer - 6 - chrome - (input.topInset ?? 0),
     radius: 18,
     stroke: 1.6,
   };
-  const left = frame.x + 22;
-  const innerW = frame.w - 44;
-  let y = frame.y + frame.h - 22;
-  const bottom = frame.y + 12;
+  const left = frame.x + inner;
+  const innerW = frame.w - inner * 2;
+  let y = frame.y + frame.h - (dense ? 12 : 22);
+  const bottom = frame.y + (dense ? 8 : 12);
   let clipped = false;
+  const rest: RenderBlock[] = [];
+  let blocks = input.blocks;
 
   const paintLine = (text: string, fontSize: number, align: BlockAlign, bold = false, color: "ink" | "muted" = "ink") => {
     const words = wordsOf(text).map((word) => ({ ...word, bold: word.bold || bold }));
@@ -864,11 +1048,78 @@ function planLabeledCertificate(input: {
     y = lowest - 3;
   };
 
-  for (let index = 0; index < input.blocks.length; index += 1) {
-    const block = input.blocks[index];
+  const headerTypes = new Set(["heading", "logo", "address", "stamp", "photo", "seal", "kv", "fields", "box"]);
+  const tableAt = blocks.findIndex((block) => block.type === "table");
+  if (tableAt > 0) {
+    const preamble = blocks.slice(0, tableAt);
+    if (preamble.some((block) => block.type === "address" || block.type === "logo" || block.type === "photo")) {
+      const header = preamble.filter((block) => headerTypes.has(block.type));
+      const deferred = preamble.filter((block) => !headerTypes.has(block.type));
+      for (const block of header) {
+        if (block.type !== "heading") continue;
+        const prominent = Boolean(block.bold) || block.level === 1;
+        paintLine(block.text, prominent ? size + (dense ? 0.5 : 1.5) : size, "center", prominent);
+        y -= 1;
+      }
+      const sealBlocks = header.filter((block): block is Extract<RenderBlock, { type: "seal" }> => block.type === "seal");
+      if (sealBlocks.length > 0) {
+        const placed = layoutSealRun({
+          blocks: sealBlocks,
+          left,
+          right: left + innerW,
+          top: y + size * 0.85,
+          measure: (text, fontSize, bold) => input.measure(text, fontSize, { serif, bold }),
+          serif,
+        });
+        seals.push(...placed.seals);
+        texts.push(...placed.texts);
+        y = placed.bottom - 4;
+      }
+      const gap = 8;
+      const colW = (innerW - gap * 2) / 3;
+      const top = y;
+      const columnFont = Math.max(6, size - 0.5);
+      const paintColumn = (column: RenderBlock[], origin: number): number => {
+        let cursor = top;
+        for (const block of column) {
+          if (block.type === "logo" || block.type === "stamp" || block.type === "photo") {
+            const note = bracketNote(block);
+            if (note) cursor = paintAnchored(note, origin, colW, cursor, NOTE_SIZE, "left", false, "muted");
+          } else if (block.type === "address") {
+            for (const line of block.lines) {
+              cursor = paintAnchored(line, origin, colW, cursor, columnFont, block.align ?? "left", Boolean(block.bold));
+            }
+          } else if (block.type === "kv") {
+            const text = block.label && block.value ? `${block.label}: ${block.value}` : block.label || block.value;
+            cursor = paintAnchored(text, origin, colW, cursor, columnFont, "left", Boolean(block.bold));
+          } else if (block.type === "box") {
+            cursor = paintAnchored(`${block.label}: ${block.value}`, origin, colW, cursor, columnFont, "left", true);
+          } else if (block.type === "fields") {
+            for (const row of block.rows) {
+              cursor = paintAnchored(`${row.label}: ${row.value}`, origin, colW, cursor, columnFont, "left");
+            }
+          }
+        }
+        return cursor;
+      };
+      const leftBlocks = header.filter((block) => block.type === "logo" || block.type === "address" || block.type === "stamp");
+      const centerBlocks = header.filter((block) => block.type === "photo");
+      const rightBlocks = header.filter((block) => block.type === "kv" || block.type === "fields" || block.type === "box");
+      y = Math.min(
+        paintColumn(leftBlocks, left),
+        paintColumn(centerBlocks, left + colW + gap),
+        paintColumn(rightBlocks, left + (colW + gap) * 2),
+      ) - 4;
+      blocks = [...deferred, ...blocks.slice(tableAt)];
+    }
+  }
+
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
     if (!block) continue;
     if (y < bottom) {
       clipped = true;
+      rest.push(...blocks.slice(index));
       break;
     }
     if (block.type === "heading") {
@@ -913,46 +1164,62 @@ function planLabeledCertificate(input: {
       continue;
     }
     if (block.type === "table") {
-      const table = planTable({
-        rows: block.rows,
-        header: block.header ?? true,
+      const next = blocks[index + 1];
+      const placed = layoutTranscriptTables({
+        first: block,
+        second: next?.type === "table" ? next : undefined,
         x: left,
         y: y + size * 0.6,
         width: innerW,
-        size: size - 1,
+        size: Math.max(5, size - 1),
         bottom,
         serif,
         measure: input.measure,
+        minRows: index === 0 ? 1 : 0,
       });
-      texts.push(...table.texts);
-      rules.push(...table.rules);
-      bands.push(...table.bands);
-      if (table.clipped) clipped = true;
-      y = table.bottom - (size + 1.5) - 10;
+      for (const part of placed.parts) {
+        texts.push(...part.texts);
+        rules.push(...part.rules);
+        bands.push(...part.bands);
+      }
+      const consumed = placed.consumedSecond ? 2 : 1;
+      if (placed.remainders.length > 0) {
+        clipped = true;
+        rest.push(...placed.remainders, ...blocks.slice(index + consumed));
+        y = Math.min(placed.bottom, bottom);
+        break;
+      }
+      if (placed.consumedSecond) index += 1;
+      y = placed.bottom - (dense ? 4 : size + 1.5 + 10);
       continue;
     }
     if (block.type === "seal") {
-      const placed = layoutSealBadge({
-        text: block.text,
-        column: block.column,
+      const group: Array<Extract<RenderBlock, { type: "seal" }>> = [block];
+      while (blocks[index + group.length]?.type === "seal") {
+        const next = blocks[index + group.length];
+        if (next?.type === "seal") group.push(next);
+      }
+      const placed = layoutSealRun({
+        blocks: group,
         left,
         right: left + innerW,
         top: y + size * 0.85,
         measure: (text, fontSize, bold) => input.measure(text, fontSize, { serif, bold }),
         serif,
       });
-      seals.push(placed.seal);
+      seals.push(...placed.seals);
       texts.push(...placed.texts);
-      y = placed.bottom - size - 6;
+      y = placed.bottom - (group.length > 1 ? 4 : size + 6);
+      index += group.length - 1;
       continue;
     }
     if (block.type === "signature") {
       let run = 1;
-      while (run < 3 && input.blocks[index + run]?.type === "signature") run += 1;
+      while (run < 4 && blocks[index + run]?.type === "signature") run += 1;
       if (run >= 2) {
         const signs: Array<Extract<RenderBlock, { type: "signature" }>> = [];
         for (let offset = 0; offset < run; offset += 1) {
-          const sign = input.blocks[index + offset];
+          const sign = blocks[index + offset];
           if (sign?.type === "signature") signs.push(sign);
         }
         paintSignatureRow(signs);
@@ -973,10 +1240,11 @@ function planLabeledCertificate(input: {
   }
 
   const lowest = texts.reduce((min, item) => Math.min(min, item.y), y);
-  const overflow = clipped || lowest < input.footer + 2 || y < frame.y + 8;
+  const overflow = clipped || rest.length > 0 || lowest < input.footer + 2 || y < frame.y + 8;
   return {
     serif,
     overflow,
+    rest,
     frame: snugCertificateFrame(frame, Math.min(y, lowest), overflow),
     boxes: [],
     texts,
@@ -1044,6 +1312,37 @@ function planCertificate(input: {
     }
   };
 
+  const skip = new Set<RenderBlock>();
+  for (const block of input.blocks) {
+    if (
+      block.type === "heading" ||
+      block.type === "paragraph" ||
+      block.type === "box" ||
+      block.type === "seal" ||
+      block.type === "photo" ||
+      block.type === "signature" ||
+      block.type === "list" ||
+      block.type === "kv" ||
+      block.type === "fields"
+    ) {
+      break;
+    }
+    if (block.type === "logo" || block.type === "stamp" || block.type === "note" || block.type === "handwritten" || block.type === "illegible") {
+      const note = bracketNote(block);
+      if (note) paintLine(note, left, innerW, NOTE_SIZE, "center", false, "muted");
+      y -= 2;
+      skip.add(block);
+      continue;
+    }
+    if (block.type === "address") {
+      for (const line of block.lines) paintLine(line, left, innerW, size, block.align ?? "center", Boolean(block.bold));
+      y -= 2;
+      skip.add(block);
+      continue;
+    }
+    break;
+  }
+
   const headings = input.blocks.filter((block) => block.type === "heading");
   headings.forEach((block, index) => {
     if (block.type !== "heading") return;
@@ -1065,7 +1364,8 @@ function planCertificate(input: {
   const photoH = input.hasPhoto ? 122 : 0;
   const caption = photo ? bracketNote(photo) ?? "[Holder's photo]" : "";
   const captionSize = NOTE_SIZE;
-  const rowH = Math.max(photoH + (caption ? 16 : 0), 52);
+  const hasRow = Boolean(photo || leftBox || rightBox || sealBlocks.length);
+  const rowH = hasRow ? Math.max(photoH + (caption ? 16 : 0), 52) : 0;
   const rowTop = y;
   const centerX = left + innerW / 2;
 
@@ -1134,26 +1434,34 @@ function planCertificate(input: {
       serif,
     });
   }
-  y = rowTop - rowH - 16;
+  y = hasRow ? rowTop - rowH - 16 : rowTop;
 
   const signatures = input.blocks.filter((block) => block.type === "signature");
-  const signature = signatures.find((block) => columnOf(block) === "right") ?? signatures[0];
+  const signature = signatures.length >= 2 ? undefined : signatures.find((block) => columnOf(block) === "right") ?? signatures[0];
   const signWidth = Math.min(240, innerW * 0.42);
   const signX = right - signWidth;
   const signLines = signature && signature.type === "signature" ? signature.lines ?? [] : [];
   const signNote = signature ? bracketNote(signature) ?? "[Signature]" : "";
-  const signHeight =
-    (signNote ? NOTE_SIZE * 1.4 : 0) +
-    signLines.length * size * 1.3 +
-    8;
+  const multiLines = signatures.reduce(
+    (max, sign) => Math.max(max, sign.type === "signature" ? (sign.lines?.length ?? 0) : 0),
+    0,
+  );
+  const signHeight = signatures.length >= 2
+    ? NOTE_SIZE * 1.4 + Math.max(1, multiLines) * size * 1.25 + 8
+    : (signNote ? NOTE_SIZE * 1.4 : 0) + signLines.length * size * 1.3 + 8;
   const signTop = frame.y + 22 + signHeight;
   const bodyBottom = signTop + 12;
 
-  const body = input.blocks.filter(
-    (block) => block.type === "paragraph" || block.type === "list" || block.type === "address" || block.type === "kv",
-  );
+  const flow = new Set(["paragraph", "list", "address", "kv", "fields", "logo", "stamp", "handwritten", "illegible", "note"]);
+  const body = input.blocks.filter((block) => flow.has(block.type) && !skip.has(block));
+  const pending: RenderBlock[] = [];
+  let bodyClipped = false;
   for (const block of body) {
-    if (y < bodyBottom) break;
+    if (y < bodyBottom) {
+      bodyClipped = true;
+      pending.push(block);
+      continue;
+    }
     if (block.type === "paragraph") {
       const align = block.align ?? (block.caps ? "center" : "justify");
       const words = wordsOf(block.text).map((word) => ({ ...word, bold: word.bold || Boolean(block.bold) }));
@@ -1177,10 +1485,80 @@ function planCertificate(input: {
         y -= size * 1.38;
       }
       y -= 8;
+      continue;
+    }
+    if (block.type === "address") {
+      for (const line of block.lines) paintLine(line, left + 18, innerW - 36, size, block.align ?? "left", Boolean(block.bold));
+      y -= 4;
+      continue;
+    }
+    if (block.type === "list") {
+      if (block.label) paintLine(block.label, left + 18, innerW - 36, size, "left", true);
+      block.items.forEach((item, itemIndex) => {
+        const prefix = block.ordered === false ? "•" : `${itemIndex + 1})`;
+        paintLine(`${prefix} ${item}`, left + 18, innerW - 36, size, "left");
+      });
+      y -= 4;
+      continue;
+    }
+    if (block.type === "kv") {
+      const text = block.label && block.value ? `${block.label}: ${block.value}` : block.label || block.value;
+      paintLine(text, left + 18, innerW - 36, size, "left", Boolean(block.bold));
+      y -= 3;
+      continue;
+    }
+    if (block.type === "fields") {
+      for (const row of block.rows) paintLine(`${row.label}: ${row.value}`, left + 18, innerW - 36, size, "left");
+      y -= 3;
+      continue;
+    }
+    const noted = bracketNote(block);
+    if (noted) {
+      paintLine(noted, left + 18, innerW - 36, NOTE_SIZE, "left", false, "muted");
+      y -= 2;
     }
   }
 
-  if (signature && signature.type === "signature") {
+  const rest: RenderBlock[] = [];
+  if (bodyClipped) rest.push(...pending, ...signatures);
+
+  if (!bodyClipped && signatures.length >= 2) {
+    const gap = 14;
+    const colW = (innerW - gap * (signatures.length - 1)) / signatures.length;
+    signatures.forEach((sign, offset) => {
+      if (sign.type !== "signature") return;
+      const x = left + offset * (colW + gap);
+      const lines = sign.lines ?? [];
+      let signY = frame.y + 24 + lines.length * size * 1.15 + 14;
+      const note = bracketNote(sign) ?? "[Signature]";
+      const noteW = input.measure(note, NOTE_SIZE, { serif });
+      texts.push({
+        text: note,
+        x: x + Math.max(0, (colW - noteW) / 2),
+        y: signY,
+        size: NOTE_SIZE,
+        color: "muted",
+        serif,
+      });
+      signY -= 14;
+      for (const line of lines) {
+        const words = wordsOf(line);
+        const bold = words.some((word) => word.bold) || line === lines[0];
+        const plain = words.map((word) => word.text).join(" ");
+        const width = input.measure(plain, size - 0.5, { serif, bold });
+        texts.push({
+          text: plain,
+          x: x + Math.max(0, (colW - width) / 2),
+          y: signY,
+          size: size - 0.5,
+          color: "ink",
+          bold,
+          serif,
+        });
+        signY -= size * 1.15;
+      }
+    });
+  } else if (!bodyClipped && signature && signature.type === "signature") {
     let signY = frame.y + 24 + signLines.length * size * 1.28 + (signNote ? 14 : 0);
     if (signNote) {
       const noteW = input.measure(signNote, NOTE_SIZE, { serif });
@@ -1213,10 +1591,11 @@ function planCertificate(input: {
     ...(image ? [image.y] : []),
     ...seals.map((seal) => seal.cy - seal.outer),
   );
-  const overflow = lowest < input.footer + 2 || y < frame.y + 8;
+  const overflow = rest.length > 0 || lowest < input.footer + 2 || y < frame.y + 8;
   return {
     serif,
     overflow,
+    rest,
     frame: snugCertificateFrame(frame, ink, overflow),
     boxes,
     image,

@@ -864,14 +864,28 @@ function layoutBlock(block: ModelBlock): RenderBlock[] | null {
   if (type === "stamp") return [{ type: "stamp", text: (block.text ?? "").trim(), column }];
   if (type === "handwritten") return [{ type: "handwritten", text: (block.text ?? "").trim() }];
   if (type === "illegible") return [{ type: "illegible" }];
-  if (type === "signature" && (column || block.lines?.length)) {
+  if (type === "signature") {
     const fromLines = (block.lines ?? []).map((line) => line.trim()).filter(Boolean);
-    const text = (block.text ?? "").trim();
-    const lines = fromLines.length > 0 ? fromLines : text && !/^(signature|firma)$/i.test(text) ? [text] : [];
+    const raw = (block.text ?? "").trim();
+    const textLines = raw
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter((line) => line && !/^(signature|firma|electronic signature)$/i.test(line));
+    const lines = fromLines.length > 0 ? fromLines : textLines;
+    const mentionsElectronic = /electron/i.test(raw);
+    const labelOnly = /^(signature|firma)$/i.test(raw);
+    const named = lines.length > 0;
+    let electronic: boolean;
+    if (block.electronic === true) electronic = true;
+    else if (block.electronic === false) electronic = false;
+    else if (named && !mentionsElectronic) electronic = false;
+    else if (labelOnly && !mentionsElectronic) electronic = false;
+    else if (mentionsElectronic) electronic = true;
+    else electronic = column ? false : true;
     return [{
       type: "signature",
-      electronic: block.electronic === true,
-      column,
+      electronic,
+      ...(column ? { column } : {}),
       ...(lines.length > 0 ? { lines } : {}),
     }];
   }
@@ -898,9 +912,7 @@ function fromModelBlock(block: ModelBlock): RenderBlock[] {
   }
   if (type === "seal") return [{ type: "seal", text: cleanSealText(block.text ?? "") }];
   if (type === "signature") {
-    const electronic = block.electronic !== false && (block.electronic === true || /electron/i.test(block.text ?? "") || block.electronic === undefined);
-    const handwritten = block.electronic === false || (!block.electronic && /^(signature|firma)$/i.test((block.text ?? "").trim()));
-    return [{ type: "signature", electronic: handwritten ? false : electronic }];
+    return layoutBlock(block) ?? [{ type: "signature", electronic: true }];
   }
   if (type === "lines" && block.lines?.length) return structurePage(block.lines.join("\n"));
   if (type === "heading") {

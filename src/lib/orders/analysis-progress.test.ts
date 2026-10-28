@@ -426,5 +426,12 @@ describe("field detection text", () => {
     expect(fieldDetectionText([dense])).toBe(dense);
     expect(fieldDetectionText(["too short"])).toBeNull();
     expect(fieldDetectionText([])).toBeNull();
+    const garbage = [
+      "a sfna Fta de sflfnetda mackenzie direito penal hist",
+      "qwrtnpl sflfnetda xyzzqwr plmntr cadaval conclusao curso",
+      "direito etapa disciplina nota extra words here now",
+      "701211998 1112000 1212000 1111999",
+    ].join(" ");
+    expect(fieldDetectionText([garbage])).toBeNull();
   });
 });
