@@ -3,7 +3,7 @@
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
 import { useEffect, useState, type FormEvent } from "react";
-import { formatCardExpiry, formatCardLabel } from "@/lib/integrations/present";
+import { formatCardExpiry, formatSavedMethod } from "@/lib/integrations/present";
 
 const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
 const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
@@ -15,6 +15,25 @@ const secondary =
 
 type Card = { brand: string; last4: string; expMonth: number | null; expYear: number | null };
 
+async function persistSetupIntent(setupIntentId: string): Promise<{ card: Card | null; error: string | null }> {
+  const response = await fetch("/api/me/billing/setup-intent/complete", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ setupIntentId }),
+  });
+  const body = (await response.json().catch(() => null)) as { card?: Card | null; error?: string; code?: string } | null;
+  if (!response.ok) return { card: null, error: body?.error ?? "The card was not saved." };
+  return { card: body?.card ?? null, error: null };
+}
+
+function clearSetupReturn() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("setup_intent");
+  url.searchParams.delete("setup_intent_client_secret");
+  url.searchParams.delete("redirect_status");
+  window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+}
+
 export function BillingPanel() {
   const [card, setCard] = useState<Card | null>(null);
   const [terms, setTerms] = useState<"card" | "net">("card");
@@ -25,26 +44,38 @@ export function BillingPanel() {
 
   useEffect(() => {
     let cancel = false;
-    void fetch("/api/me/billing")
-      .then(async (response) => {
-        const body = (await response.json().catch(() => null)) as {
-          card?: Card | null;
-          terms?: string;
-          error?: string;
-        } | null;
-        if (cancel) return;
-        if (!response.ok) {
-          setNotice(body?.error ?? "Couldn't load billing.");
-          setLoaded(true);
-          return;
-        }
-        setCard(body?.card ?? null);
-        setTerms(body?.terms === "net" ? "net" : "card");
+    async function load() {
+      const params = new URLSearchParams(window.location.search);
+      const setupIntentId = params.get("setup_intent");
+      const redirectStatus = params.get("redirect_status");
+      if (setupIntentId && redirectStatus === "succeeded") {
+        const saved = await persistSetupIntent(setupIntentId);
+        if (!cancel && saved.error) setNotice(saved.error);
+        if (!cancel && saved.card) setCard(saved.card);
+        clearSetupReturn();
+      } else if (redirectStatus === "failed") {
+        if (!cancel) setNotice("The card was not saved.");
+        clearSetupReturn();
+      }
+      const response = await fetch("/api/me/billing");
+      const body = (await response.json().catch(() => null)) as {
+        card?: Card | null;
+        terms?: string;
+        error?: string;
+      } | null;
+      if (cancel) return;
+      if (!response.ok) {
+        setNotice(body?.error ?? "Couldn't load billing.");
         setLoaded(true);
-      })
-      .catch(() => {
-        if (!cancel) setNotice("Couldn't load billing.");
-      });
+        return;
+      }
+      setCard(body?.card ?? null);
+      setTerms(body?.terms === "net" ? "net" : "card");
+      setLoaded(true);
+    }
+    void load().catch(() => {
+      if (!cancel) setNotice("Couldn't load billing.");
+    });
     return () => {
       cancel = true;
     };
@@ -118,7 +149,7 @@ export function BillingPanel() {
           ) : null}
           {card ? (
             <div data-testid="saved-card" className="flex flex-wrap items-center gap-3">
-              <span className="text-[13.5px] font-medium">{formatCardLabel(card.brand, card.last4)}</span>
+              <span className="text-[13.5px] font-medium">{formatSavedMethod(card.brand, card.last4)}</span>
               <span className="text-[12.5px] text-ink-muted">
                 {card.expMonth != null && card.expYear != null ? formatCardExpiry(card.expMonth, card.expYear) : "Expiry unavailable"}
               </span>
@@ -140,9 +171,9 @@ export function BillingPanel() {
                 }}
               >
                 <CardForm
-                  onSaved={() => {
+                  onSaved={(saved) => {
                     setSecret(null);
-                    window.location.reload();
+                    if (saved) setCard(saved);
                   }}
                   onError={setNotice}
                 />
@@ -155,7 +186,13 @@ export function BillingPanel() {
   );
 }
 
-function CardForm({ onSaved, onError }: { onSaved: () => void; onError: (message: string) => void }) {
+function CardForm({
+  onSaved,
+  onError,
+}: {
+  onSaved: (card: Card | null) => void;
+  onError: (message: string) => void;
+}) {
   const stripe = useStripe();
   const elements = useElements();
   const [pending, setPending] = useState(false);
@@ -164,14 +201,23 @@ function CardForm({ onSaved, onError }: { onSaved: () => void; onError: (message
     event.preventDefault();
     if (!stripe || !elements) return;
     setPending(true);
-    const { error } = await stripe.confirmSetup({
+    const { error, setupIntent } = await stripe.confirmSetup({
       elements,
       confirmParams: { return_url: `${window.location.origin}/dashboard/billing` },
       redirect: "if_required",
     });
     setPending(false);
-    if (error) onError(error.message ?? "The card could not be saved.");
-    else onSaved();
+    if (error) {
+      onError(error.message ?? "The card could not be saved.");
+      return;
+    }
+    if (setupIntent?.id && setupIntent.status === "succeeded") {
+      const saved = await persistSetupIntent(setupIntent.id);
+      if (saved.error) onError(saved.error);
+      else onSaved(saved.card);
+      return;
+    }
+    onSaved(null);
   }
 
   return (
