@@ -200,6 +200,13 @@ describe("preview order", () => {
         lines: [{ label: "Diploma evaluation", amountCents: 1995 }],
       },
       addonOptions: options,
+      evaluationDetails: [
+        { label: "Credential holder", value: "Ada Lovelace" },
+        { label: "School", value: "Example University" },
+        { label: "Degree", value: "Licence" },
+        { label: "Dates", value: "2018–2022" },
+        { label: "U.S. equivalency", value: "Bachelor's degree" },
+      ],
       included: [
         "Watermark removed after payment",
         "Signed by a credential evaluator",
@@ -212,6 +219,13 @@ describe("preview order", () => {
     expect(html).toContain("Review the report, then buy.");
     expect(html).toContain("Diploma evaluation");
     expect(html).toContain("$19.95");
+    expect(html).toContain("Total");
+    expect(html).not.toContain("Credential holder");
+    expect(html).not.toContain("School");
+    expect(html).not.toContain("Licence");
+    expect(html).not.toContain("2018–2022");
+    expect(html).not.toContain("U.S. equivalency");
+    expect(html).not.toContain('data-testid="evaluation-detail"');
     expect(html).toContain("Notarization");
     expect(html).toContain("$17.95 per order");
     expect(html).toContain("USPS Priority hard copy");
