@@ -17,8 +17,15 @@ export function requireStripeTestKey(): string {
   return key;
 }
 
+/** Test or live secret. Partner off-session charges stay on the test-only gate. */
+export function requireStripeSecret(): string {
+  const key = process.env.STRIPE_SECRET_KEY ?? "";
+  if (key.startsWith("sk_test_") || key.startsWith("sk_live_")) return key;
+  throw new HttpError("Payments not configured", 503, "payments_not_configured");
+}
+
 export function shouldReadCardExpiry(stripeKey: string | null | undefined): boolean {
-  return Boolean(stripeKey?.startsWith("sk_test_"));
+  return Boolean(stripeKey?.startsWith("sk_test_") || stripeKey?.startsWith("sk_live_"));
 }
 
 /** Stripe test-mode PaymentMethod card expiry. Invalid values stay unknown. */
@@ -58,7 +65,7 @@ export function setupIntentCreateParams(customerId: string, userId: string) {
 
 async function readTestModeCard(paymentMethodId: string): Promise<{ exp_month?: number | null; exp_year?: number | null } | null> {
   try {
-    const stripe = new Stripe(requireStripeTestKey());
+    const stripe = new Stripe(requireStripeSecret());
     const method = await stripe.paymentMethods.retrieve(paymentMethodId);
     return method.card ?? null;
   } catch {
@@ -68,17 +75,18 @@ async function readTestModeCard(paymentMethodId: string): Promise<{ exp_month?: 
 
 export async function currentBillingCard(db: Db, userId: string) {
   const row = await billingCustomerForUser(db, userId);
-  if (!row?.brand || !row.last4) return billingCardBody(row);
+  const terms = row?.terms ?? "card";
+  if (!row?.brand || !row.last4) return { ...billingCardBody(row), terms };
   if (!row.paymentMethodId || !shouldReadCardExpiry(process.env.STRIPE_SECRET_KEY)) {
-    return billingCardBody(row);
+    return { ...billingCardBody(row), terms };
   }
   const card = await readTestModeCard(row.paymentMethodId);
   const expiry = cardExpiryFromStripe(card);
-  return billingCardBody({ ...row, expMonth: expiry.expMonth, expYear: expiry.expYear });
+  return { ...billingCardBody({ ...row, expMonth: expiry.expMonth, expYear: expiry.expYear }), terms };
 }
 
 export async function createSetupIntent(db: Db, user: { id: string; email: string | null }) {
-  const stripe = new Stripe(requireStripeTestKey());
+  const stripe = new Stripe(requireStripeSecret());
   let row = await billingCustomerForUser(db, user.id);
   if (!row) {
     const customer = await stripe.customers.create({
@@ -92,6 +100,8 @@ export async function createSetupIntent(db: Db, user: { id: string; email: strin
       paymentMethodId: null,
       brand: null,
       last4: null,
+      terms: "card",
+      openInvoiceId: null,
     };
   }
   const intent = await stripe.setupIntents.create(setupIntentCreateParams(row.stripeCustomerId, user.id));
@@ -100,7 +110,7 @@ export async function createSetupIntent(db: Db, user: { id: string; email: strin
 }
 
 export async function removeSavedCard(db: Db, userId: string) {
-  const key = requireStripeTestKey();
+  const key = requireStripeSecret();
   const row = await billingCustomerForUser(db, userId);
   if (row?.paymentMethodId) {
     const stripe = new Stripe(key);

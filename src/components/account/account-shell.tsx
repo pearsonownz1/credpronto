@@ -96,6 +96,24 @@ export function AccountShell({
           >
             Integrations
           </NavLink>
+          <NavLink
+            href="/dashboard/mcp"
+            active={pathname.startsWith("/dashboard/mcp")}
+            icon={<McpIcon />}
+            testId="nav-mcp"
+            onClick={() => setOpen(false)}
+          >
+            MCP
+          </NavLink>
+          <NavLink
+            href="/dashboard/billing"
+            active={pathname.startsWith("/dashboard/billing")}
+            icon={<BillingIcon />}
+            testId="nav-billing"
+            onClick={() => setOpen(false)}
+          >
+            Billing
+          </NavLink>
           <NavLink href="/dashboard/settings" active={pathname === "/dashboard/settings"} icon={<SettingsIcon />} onClick={() => setOpen(false)}>
             Settings
           </NavLink>
@@ -224,6 +242,22 @@ function ReceiptsIcon() {
       <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" />
       <path d="M9 8h6M9 12h6" />
     </Icon>
+  );
+}
+function McpIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-[17px] shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="m16 18 6-6-6-6" />
+      <path d="m8 6-6 6 6 6" />
+    </svg>
+  );
+}
+function BillingIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-[17px] shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect width="20" height="14" x="2" y="5" rx="2" />
+      <path d="M2 10h20" />
+    </svg>
   );
 }
 function KeyIcon() {

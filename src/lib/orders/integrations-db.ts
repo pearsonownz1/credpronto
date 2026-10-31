@@ -1,5 +1,5 @@
 import type { Db } from "./storage";
-import type { ApiKeyPrefix } from "./api-key";
+import { storedApiKeyPrefix, type ApiKeyPrefix } from "./api-key";
 import type { WebhookEvent } from "./outbound-webhook";
 
 function fail(error: { message: string } | null): void {
@@ -40,7 +40,7 @@ export type WebhookDeliveryRow = {
 type Row = Record<string, unknown>;
 
 function mapKey(row: Row): ApiKeyRow {
-  const prefix = row.prefix === "cp_live_" ? "cp_live_" : "cp_test_";
+  const prefix = storedApiKeyPrefix(row.prefix);
   return {
     id: String(row.id),
     userId: String(row.user_id),
@@ -268,13 +268,21 @@ export async function findBillingCard(
   return { customerId, paymentMethodId };
 }
 
+export type BillingTerms = "card" | "net";
+
 export type BillingCustomerRow = {
   userId: string;
   stripeCustomerId: string;
   paymentMethodId: string | null;
   brand: string | null;
   last4: string | null;
+  terms: BillingTerms;
+  openInvoiceId: string | null;
 };
+
+export function billingTerms(value: unknown): BillingTerms {
+  return value === "net" ? "net" : "card";
+}
 
 function mapBilling(row: Row): BillingCustomerRow {
   return {
@@ -283,6 +291,8 @@ function mapBilling(row: Row): BillingCustomerRow {
     paymentMethodId: typeof row.payment_method_id === "string" ? row.payment_method_id : null,
     brand: typeof row.brand === "string" ? row.brand : null,
     last4: typeof row.last4 === "string" ? row.last4 : null,
+    terms: billingTerms(row.terms),
+    openInvoiceId: typeof row.open_invoice_id === "string" ? row.open_invoice_id : null,
   };
 }
 
@@ -330,6 +340,24 @@ export async function saveBillingMethod(
       last4: input.last4,
       updated_at: new Date().toISOString(),
     })
+    .eq("user_id", userId);
+  fail(error);
+}
+
+export async function setBillingTerms(db: Db, userId: string, terms: BillingTerms): Promise<boolean> {
+  const { data, error } = await db
+    .from("billing_customers")
+    .update({ terms, updated_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .select("user_id");
+  fail(error);
+  return ((data ?? []) as Row[]).length > 0;
+}
+
+export async function saveOpenInvoiceId(db: Db, userId: string, invoiceId: string): Promise<void> {
+  const { error } = await db
+    .from("billing_customers")
+    .update({ open_invoice_id: invoiceId, updated_at: new Date().toISOString() })
     .eq("user_id", userId);
   fail(error);
 }

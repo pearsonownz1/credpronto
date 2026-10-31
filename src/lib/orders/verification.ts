@@ -128,6 +128,23 @@ export async function readVerification(db: Db, token: string): Promise<PublicVer
   if (!isVerificationToken(token)) return { status: "not_found" };
   const link = await findLinkByToken(db, token);
   if (!link) return { status: "not_found" };
+  return verificationFromLink(db, link);
+}
+
+/** Certificates already issued for this order. Empty issuance is `not_found`. */
+export async function orderVerification(db: Db, orderId: string): Promise<PublicVerification[]> {
+  const found: PublicVerification[] = [];
+  for (const type of ["translation", "evaluation"] as const) {
+    const rows = await linksForOrder(db, orderId, type);
+    const active = rows.find((row) => row.revoked_at == null);
+    const link = active ?? latestRevoked(rows);
+    if (!link) continue;
+    found.push(await verificationFromLink(db, link));
+  }
+  return found.length > 0 ? found : [{ status: "not_found" }];
+}
+
+async function verificationFromLink(db: Db, link: LinkRow): Promise<PublicVerification> {
   const type = asDocumentType(link.document_type);
   if (!type) return { status: "not_found" };
   const issuedAt = isoTimestamp(link.created_at);

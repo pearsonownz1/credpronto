@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { HttpError } from "./errors";
 
 export type ApiKeyMode = "live" | "test";
-export type ApiKeyPrefix = "cp_live_" | "cp_test_";
+export type ApiKeyPrefix = "cp_live_" | "cp_test_" | "cpk_live_";
 
 export type GeneratedApiKey = {
   secret: string;
@@ -57,6 +57,12 @@ export function parseApiKeyName(value: unknown): string {
   const name = value.trim();
   if (name.length < 1 || name.length > 80) throw new HttpError("name is required", 400, "validation_error");
   return name;
+}
+
+/** Stored prefix, including MCP keys. Anything else is treated as a test key. */
+export function storedApiKeyPrefix(value: unknown): ApiKeyPrefix {
+  if (value === "cp_live_" || value === "cp_test_" || value === "cpk_live_") return value;
+  return "cp_test_";
 }
 
 export function bearerApiKey(header: string | null): string | null {
