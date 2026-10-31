@@ -36,7 +36,7 @@ import {
 import {
   apiOrdersCsv,
   formatCardExpiry,
-  formatCardLabel,
+  formatSavedMethod,
   formatCharged,
   formatDeliveryStatus,
   formatKeyCreated,
@@ -715,7 +715,7 @@ function BillingCard({
         {cardBadge(card.brand)}
       </span>
       <span className="text-[13.5px]">
-        <span className="font-semibold">{formatCardLabel(cardBrand(card.brand), card.last4)}</span>
+        <span className="font-semibold">{formatSavedMethod(cardBrand(card.brand), card.last4)}</span>
         <span data-testid="card-exp" className="mt-0.5 block text-[12.5px] text-ink-muted">
           {expiry}
         </span>

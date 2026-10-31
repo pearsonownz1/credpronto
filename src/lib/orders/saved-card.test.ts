@@ -5,6 +5,8 @@ import {
   billingCardBody,
   cardExpiryFromStripe,
   requireStripeTestKey,
+  savedMethodFromStripe,
+  setupIntentBelongsToUser,
   setupIntentCreateParams,
   shouldReadCardExpiry,
 } from "./saved-card";
@@ -30,7 +32,7 @@ describe("saved card", () => {
     expect(setupIntentCreateParams("cus_123", "user-1")).toEqual({
       customer: "cus_123",
       usage: "off_session",
-      automatic_payment_methods: { enabled: true, allow_redirects: "never" },
+      automatic_payment_methods: { enabled: true, allow_redirects: "always" },
       metadata: { user_id: "user-1" },
     });
   });
@@ -53,6 +55,30 @@ describe("saved card", () => {
       off_session: true,
       metadata: { order_id: "order-1" },
     });
+  });
+
+  it("keeps a Link payment method when Stripe does not return a card", () => {
+    expect(savedMethodFromStripe({ type: "link" })).toEqual({
+      brand: "link",
+      last4: "link",
+      expMonth: null,
+      expYear: null,
+    });
+    expect(
+      savedMethodFromStripe({
+        type: "link",
+        card: { brand: "mastercard", last4: "6850", exp_month: 8, exp_year: 2028, wallet: { type: "link" } },
+      }),
+    ).toEqual({ brand: "mastercard", last4: "6850", expMonth: 8, expYear: 2028 });
+    expect(savedMethodFromStripe({ type: "us_bank_account" })).toBeNull();
+  });
+
+  it("accepts a SetupIntent for this customer only", () => {
+    expect(setupIntentBelongsToUser({ metadata: { user_id: "user-1" }, customer: "cus_other" }, "user-1", "cus_1")).toBe(
+      true,
+    );
+    expect(setupIntentBelongsToUser({ customer: "cus_1" }, "user-1", "cus_1")).toBe(true);
+    expect(setupIntentBelongsToUser({ customer: "cus_2" }, "user-1", "cus_1")).toBe(false);
   });
 
   it("refuses SetupIntent when Stripe is not in test mode", () => {
