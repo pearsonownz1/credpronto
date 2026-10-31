@@ -41,20 +41,44 @@ export function cardExpiryFromStripe(card: { exp_month?: number | null; exp_year
   return { expMonth: month, expYear: year };
 }
 
+export type BillingMethodView = {
+  brand: string;
+  last4: string;
+  expMonth: number | null;
+  expYear: number | null;
+  email: string | null;
+  wallet: "link" | null;
+};
+
 export function billingCardBody(
-  card: { brand: string | null; last4: string | null; expMonth?: number | null; expYear?: number | null } | null,
-): {
-  card: { brand: string; last4: string; expMonth: number | null; expYear: number | null } | null;
-} {
+  card: {
+    brand: string | null;
+    last4: string | null;
+    expMonth?: number | null;
+    expYear?: number | null;
+    email?: string | null;
+    wallet?: "link" | null;
+  } | null,
+): { card: BillingMethodView | null } {
   if (!card?.brand || !card.last4) return { card: null };
   const expiry = cardExpiryFromStripe({ exp_month: card.expMonth, exp_year: card.expYear });
-  return { card: { brand: card.brand, last4: card.last4, expMonth: expiry.expMonth, expYear: expiry.expYear } };
+  return {
+    card: {
+      brand: card.brand,
+      last4: card.last4,
+      expMonth: expiry.expMonth,
+      expYear: expiry.expYear,
+      email: card.email ?? null,
+      wallet: card.wallet ?? null,
+    },
+  };
 }
 
 const LINK_LAST4 = "link";
 
 export type StripeMethodLike = {
   type?: string | null;
+  link?: { email?: string | null } | null;
   card?: {
     brand?: string | null;
     last4?: string | null;
@@ -100,20 +124,71 @@ export function setupIntentCreateParams(customerId: string, userId: string) {
   return {
     customer: customerId,
     usage: "off_session" as const,
-    automatic_payment_methods: {
-      enabled: true,
-      allow_redirects: "always" as const,
-    },
+    payment_method_types: ["card"] as ["card"],
     metadata: { user_id: userId },
   };
 }
 
-async function readTestModeCard(paymentMethodId: string): Promise<{ exp_month?: number | null; exp_year?: number | null } | null> {
+type CardDigits = {
+  brand: string;
+  last4: string;
+  expMonth: number | null;
+  expYear: number | null;
+};
+
+function digitsFromCard(card: StripeMethodLike["card"]): CardDigits | null {
+  const last4 = card?.last4?.trim() ?? "";
+  if (!/^\d{4}$/.test(last4)) return null;
+  const expiry = cardExpiryFromStripe(card);
+  return { brand: (card?.brand || "card").trim() || "card", last4, expMonth: expiry.expMonth, expYear: expiry.expYear };
+}
+
+async function underlyingCard(
+  stripe: Stripe,
+  customerId: string,
+  paymentMethodId: string,
+): Promise<CardDigits | null> {
+  const intents = await stripe.setupIntents.list({ customer: customerId, limit: 10 });
+  for (const intent of intents.data) {
+    const id = typeof intent.payment_method === "string" ? intent.payment_method : intent.payment_method?.id;
+    if (id !== paymentMethodId) continue;
+    const attempts = await stripe.setupAttempts.list({ setup_intent: intent.id, limit: 3 });
+    for (const attempt of attempts.data) {
+      const card = digitsFromCard(attempt.payment_method_details?.card);
+      if (card) return card;
+    }
+  }
+  const charges = await stripe.charges.list({ customer: customerId, limit: 10 });
+  for (const charge of charges.data) {
+    if (charge.payment_method !== paymentMethodId) continue;
+    const card = digitsFromCard(charge.payment_method_details?.card ?? null);
+    if (card) return card;
+  }
+  return null;
+}
+
+async function describeSavedMethod(
+  paymentMethodId: string,
+  customerId: string,
+): Promise<BillingMethodView | null> {
   try {
     const stripe = new Stripe(requireStripeSecret());
     const method = await stripe.paymentMethods.retrieve(paymentMethodId);
-    return method.card ?? null;
-  } catch {
+    const saved = savedMethodFromStripe(method);
+    if (!saved) return null;
+    const link = method.type === "link" || method.card?.wallet?.type === "link";
+    const email = method.link?.email?.trim() || null;
+    const found = /^\d{4}$/.test(saved.last4) ? null : await underlyingCard(stripe, customerId, paymentMethodId);
+    return {
+      brand: found?.brand ?? saved.brand,
+      last4: found?.last4 ?? saved.last4,
+      expMonth: found?.expMonth ?? saved.expMonth,
+      expYear: found?.expYear ?? saved.expYear,
+      email,
+      wallet: link ? "link" : null,
+    };
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "billing method lookup failed");
     return null;
   }
 }
@@ -126,12 +201,21 @@ export async function currentBillingCard(db: Db, userId: string) {
   }
   const terms = row?.terms ?? "card";
   if (!row?.brand || !row.last4) return { ...billingCardBody(row), terms };
-  if (!row.paymentMethodId || !shouldReadCardExpiry(process.env.STRIPE_SECRET_KEY)) {
-    return { ...billingCardBody(row), terms };
+  if (!row.paymentMethodId) {
+    return { ...billingCardBody({ ...row, wallet: row.brand === "link" ? "link" : null }), terms };
   }
-  const card = await readTestModeCard(row.paymentMethodId);
-  const expiry = cardExpiryFromStripe(card);
-  return { ...billingCardBody({ ...row, expMonth: expiry.expMonth, expYear: expiry.expYear }), terms };
+  const described = await describeSavedMethod(row.paymentMethodId, row.stripeCustomerId);
+  return {
+    ...billingCardBody({
+      brand: described?.brand ?? row.brand,
+      last4: described?.last4 ?? row.last4,
+      expMonth: described?.expMonth ?? null,
+      expYear: described?.expYear ?? null,
+      email: described?.email ?? null,
+      wallet: described?.wallet ?? (row.brand === "link" ? "link" : null),
+    }),
+    terms,
+  };
 }
 
 export async function createSetupIntent(db: Db, user: { id: string; email: string | null }) {

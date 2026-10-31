@@ -3,7 +3,7 @@
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
 import { useEffect, useState, type FormEvent } from "react";
-import { formatCardExpiry, formatSavedMethod } from "@/lib/integrations/present";
+import { SavedMethodSummary, type SavedMethodFields } from "@/components/account/saved-method";
 
 const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
 const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
@@ -13,7 +13,7 @@ const primary =
 const secondary =
   "inline-flex items-center rounded-[var(--cp-radius)] border border-line bg-white px-3 py-[7px] text-[13px] font-medium text-ink";
 
-type Card = { brand: string; last4: string; expMonth: number | null; expYear: number | null };
+type Card = SavedMethodFields;
 
 async function persistSetupIntent(setupIntentId: string): Promise<{ card: Card | null; error: string | null }> {
   const response = await fetch("/api/me/billing/setup-intent/complete", {
@@ -149,10 +149,7 @@ export function BillingPanel() {
           ) : null}
           {card ? (
             <div data-testid="saved-card" className="flex flex-wrap items-center gap-3">
-              <span className="text-[13.5px] font-medium">{formatSavedMethod(card.brand, card.last4)}</span>
-              <span className="text-[12.5px] text-ink-muted">
-                {card.expMonth != null && card.expYear != null ? formatCardExpiry(card.expMonth, card.expYear) : "Expiry unavailable"}
-              </span>
+              <SavedMethodSummary method={card} />
               <button type="button" className={secondary} disabled={busy === "setup"} onClick={() => void startSetup()}>
                 Replace
               </button>
@@ -222,7 +219,7 @@ function CardForm({
 
   return (
     <form onSubmit={(event) => void save(event)} className="space-y-3">
-      <PaymentElement />
+      <PaymentElement options={{ wallets: { link: "auto" } }} />
       <button type="submit" className={primary} disabled={pending}>
         Save card
       </button>

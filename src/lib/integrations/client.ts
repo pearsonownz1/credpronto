@@ -86,6 +86,8 @@ export type SavedCard = {
   last4: string;
   expMonth: number | null;
   expYear: number | null;
+  email?: string | null;
+  wallet?: "link" | null;
 };
 
 export type WebhookDelivery = {
@@ -239,7 +241,17 @@ export function parseBillingCard(body: unknown): { card: SavedCard | null } | nu
   const brand = text(record.brand);
   const last4 = text(record.last4);
   if (!brand || !last4) return null;
-  return { card: { brand, last4, ...cardExpiry(record) } };
+  const email = typeof record.email === "string" && record.email.trim() ? record.email.trim() : null;
+  const wallet = record.wallet === "link" ? "link" : null;
+  return {
+    card: {
+      brand,
+      last4,
+      ...cardExpiry(record),
+      ...(email ? { email } : {}),
+      ...(wallet ? { wallet } : {}),
+    },
+  };
 }
 
 export function parseCreatedKey(body: unknown): (RevealedKey & ApiKeyRecord) | null {
