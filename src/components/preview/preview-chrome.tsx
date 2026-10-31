@@ -70,18 +70,7 @@ export function OrderRail({
             <span className="shrink-0">{formatMoney(line.amountCents)}</span>
           </div>
         ))}
-        {evaluation ? (
-          (order.evaluationDetails ?? []).map((detail) => (
-            <div
-              key={detail.label}
-              data-testid="evaluation-detail"
-              className="flex justify-between gap-3 border-t border-line px-3.5 py-[11px]"
-            >
-              <span>{detail.label}</span>
-              <span className="shrink-0 text-right">{detail.value}</span>
-            </div>
-          ))
-        ) : (
+        {evaluation ? null : (
           <div className="flex justify-between border-t border-line px-3.5 py-[11px]">
             <span>Certification</span>
             <span>{pricing.certificationIncluded ? "Included" : "Extra"}</span>
