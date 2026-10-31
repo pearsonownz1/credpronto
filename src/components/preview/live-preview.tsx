@@ -7,7 +7,14 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
 import { serviceRequestFromOrder } from "@/lib/flow/order-choice";
 import { FlowHeader } from "@/components/flow/flow-header";
-import { checkoutFailureMessage, documentIdForPage, isTranslationBundle, previewShellOrder, toPreviewOrder } from "@/lib/flow/present";
+import {
+  checkoutFailureMessage,
+  documentIdForPage,
+  isCustomerEvaluation,
+  isTranslationBundle,
+  previewShellOrder,
+  toPreviewOrder,
+} from "@/lib/flow/present";
 import { writeToken } from "@/lib/flow/session";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { timedDownloadLabel } from "./download-bytes";
@@ -235,6 +242,7 @@ function LivePreviewReady({
   }, [preview, engine, started]);
 
   const bundle = order != null && isTranslationBundle(order);
+  const evaluation = order != null && isCustomerEvaluation(order) && !bundle;
   if (error || !preview) {
     return <PreviewShell notice={notice} noticeTestId={noticeTestId} status={error ?? "Loading preview…"} />;
   }
@@ -291,10 +299,10 @@ function LivePreviewReady({
       }}
     />
   );
-  if (!bundle) return viewer;
+  if (!bundle && !evaluation) return viewer;
   return (
     <div className="flex h-dvh flex-col">
-      <FlowHeader current="pay" track="bundle" />
+      <FlowHeader current={bundle ? "pay" : "review"} track={bundle ? "bundle" : "evaluation"} />
       <div className="min-h-0 flex-1">{viewer}</div>
     </div>
   );

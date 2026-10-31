@@ -1,7 +1,7 @@
 ---
 url: /evaluations
 title: "Credential Evaluation from $19.95, Foreign Degree to U.S. Equivalent | CredPronto"
-description: "Get a foreign degree evaluated for its U.S. equivalent. Diploma evaluations are $19.95 per degree. Course-by-course with GPA is $39.95 per degree. Pay the flat fee, and we email you when the report is ready."
+description: "Get a foreign degree evaluated for its U.S. equivalent. Diploma evaluations are $19.95 per degree. Course-by-course with GPA is $39.95 per degree. We email you when the report is ready to review, and you pay from that page."
 canonical: https://www.credpronto.com/evaluations
 ---
 
@@ -33,8 +33,8 @@ If you're not sure, check the requirements of whoever will receive the report. W
 ## How it works
 
 1. **Upload** your diploma, transcript or both.
-2. **Pay** the flat fee: $19.95 per degree for a diploma evaluation, or $39.95 per degree for course-by-course.
-3. **Review.** We'll email you when the report is ready.
+2. **Evaluating.** We prepare the report and email you when it is ready.
+3. **Review.** Look at the report, then pay. Notarization and a mailed copy are optional.
 4. **Download** after staff sign off and release the report.
 
 ## Frequently asked questions
@@ -49,4 +49,4 @@ If any of your documents aren't in English, yes. Add a [certified translation](/
 A diploma evaluation names the U.S. equivalent of your degree. A course-by-course evaluation also converts each course into U.S. semester hours and grades and calculates a GPA.
 
 **When do I get the report?**
-You pay the flat fee first. A credential evaluator reviews the documents, and we email you when the report is ready. Staff sign off before the report is released.
+We email you when the evaluation is ready to review. You pay from that page. Staff sign off before the final report is released.

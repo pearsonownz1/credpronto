@@ -147,7 +147,7 @@ export function UploadView({
         </h1>
         <p className="mt-2 mb-6 text-[15px] text-ink-muted">
           {evaluation
-            ? `PDF or phone photos. Diploma evaluation is ${DIPLOMA_PRICE_LABEL}. Course-by-course is ${COURSE_BY_COURSE_PRICE_LABEL}. You pay next.`
+            ? `PDF or phone photos. Diploma evaluation is ${DIPLOMA_PRICE_LABEL}. Course-by-course is ${COURSE_BY_COURSE_PRICE_LABEL}. We'll email you when it's ready to review.`
             : bundle
               ? `PDF or phone photos. Diploma evaluation is ${DIPLOMA_PRICE_LABEL}. Course-by-course is ${COURSE_BY_COURSE_PRICE_LABEL}. We’ll price the translation before you pay.`
               : "PDF or phone photos. Choose a translation or an evaluation. We’ll price it before you pay."}

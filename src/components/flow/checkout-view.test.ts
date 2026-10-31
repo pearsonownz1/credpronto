@@ -71,69 +71,26 @@ function checkoutOrder(includeTranslation: boolean): CustomerOrder {
 }
 
 describe("evaluation checkout", () => {
-  it("asks a guest to create an account before the pay button", () => {
-    state.order = checkoutOrder(false);
-    const html = renderToStaticMarkup(createElement(CheckoutView, { token: "token-1", signedIn: false }));
-    expect(html).toContain("Create your account to track your order");
-    expect(html).toContain('data-testid="pay-button"');
-    expect(html.indexOf('data-testid="account-card"')).toBeLessThan(html.indexOf('data-testid="pay-button"'));
-  });
-
-  it("leaves the pay button in place for a signed-in customer", () => {
+  it("sends a ready evaluation to review instead of a separate pay step", () => {
     state.order = checkoutOrder(false);
     const html = renderToStaticMarkup(createElement(CheckoutView, { token: "token-1", signedIn: true }));
-    expect(html).not.toContain('data-testid="account-card"');
-    expect(html).toContain('data-testid="pay-button"');
-    expect(html).not.toContain("Wrong email? Fix it");
-  });
-
-  it("puts the fix link on the signed-in email", () => {
-    state.order = checkoutOrder(false);
-    const html = renderToStaticMarkup(
-      createElement(CheckoutView, { token: "token-1", signedIn: true, accountEmail: "ada@example.com" }),
-    );
-    expect(html).toContain('data-testid="email"');
-    expect(html).toContain('value="ada@example.com"');
-    expect(html).toContain("Wrong email? Fix it");
-    expect(html).toContain('data-testid="fix-email"');
-  });
-
-  it("shows $19.95 and the evaluation report before the customer opts in", () => {
-    state.order = checkoutOrder(false);
-    const html = renderToStaticMarkup(createElement(CheckoutView, { token: "token-1" }));
-    expect(html).toContain('data-testid="order-total"');
-    expect(html).toContain("$19.95");
-    expect(html).toContain("Evaluation report");
-    expect(html).toContain("CredPronto Certification Team");
-    expect(html).toContain("Pay $19.95");
-    expect(html).toContain("Evaluation ready in about 5 minutes.");
-    expect(html.indexOf('data-testid="quote-turnaround"')).toBeLessThan(html.indexOf('data-testid="pay-button"'));
-    expect(html).not.toContain("reviewed the report");
-    expect(html).not.toContain("Confirm the credential details");
-    expect(html).toContain('data-step="confirm"');
+    expect(html).toContain("Opening your evaluation…");
+    expect(html).toContain("Review");
     expect(html).toContain('data-step="review"');
+    expect(html).not.toContain('data-testid="pay-button"');
+    expect(html).not.toContain('data-step="confirm"');
     expect(html).not.toContain('data-step="quote"');
-    expect(html).not.toContain('data-step="preview"');
-    expect(html).not.toContain("Expedited");
-    expect(html).not.toContain('data-testid="addon-expedited"');
     expect(state.order.addonOptions.map((option) => option.id)).toEqual(["notarization", "mail"]);
-    expect(html).not.toContain("per page");
-    expect(html).not.toContain("$29.90");
-    expect(html).not.toContain("Certificate of accuracy");
-    expect(html).toContain("birth-certificate.pdf");
-    expect(html).not.toContain("We'll confirm the language");
-    expect(html).not.toContain("1 page");
-    expect(html).not.toContain("0 pages");
   });
 
-  it("lets a draft evaluation pay the flat fee", () => {
+  it("sends an evaluation that is still running back to the progress screen", () => {
     state.order = { ...checkoutOrder(false), status: "draft" };
     const html = renderToStaticMarkup(createElement(CheckoutView, { token: "token-1" }));
+    expect(html).toContain("Opening your evaluation…");
+    expect(html).toContain("Evaluating");
+    expect(html).not.toContain('data-testid="pay-button"');
     expect(html).not.toContain("Confirm the credential details");
-    expect(html).toContain("Pay $19.95");
-    expect(html).toMatch(/<button type="button" data-testid="pay-button" class="/);
-    expect(html).not.toContain('data-step="quote"');
-    expect(html).not.toContain('data-step="preview"');
+    expect(html).not.toContain('data-step="confirm"');
   });
 
   it("shows $29.90 after translation is included", () => {
@@ -183,46 +140,10 @@ describe("evaluation checkout", () => {
       addons: ["expedited"],
     };
     const evaluation = renderToStaticMarkup(createElement(CheckoutView, { token: "token-1" }));
+    expect(evaluation).toContain("Opening your evaluation…");
     expect(evaluation).not.toContain("Expedited");
     expect(evaluation).not.toContain('data-testid="addon-expedited"');
-    expect(evaluation).toContain("birth-certificate.pdf");
-    expect(evaluation).not.toContain("1 page");
-    expect(evaluation).not.toContain("We'll confirm the language");
-  });
-
-  it("lists each evaluation file by name when language and pages are still unknown", () => {
-    state.order = {
-      ...checkoutOrder(false),
-      sourceLanguage: null,
-      billablePages: 0,
-      documents: [
-        {
-          id: "diploma",
-          filename: "diploma.pdf",
-          pageCount: null,
-          detectedLanguage: null,
-          confidence: null,
-          uploadPosition: 1,
-          appliedPosition: 1,
-        },
-        {
-          id: "transcript",
-          filename: "transcript.pdf",
-          pageCount: null,
-          detectedLanguage: null,
-          confidence: null,
-          uploadPosition: 2,
-          appliedPosition: 2,
-        },
-      ],
-    };
-    const html = renderToStaticMarkup(createElement(CheckoutView, { token: "token-1" }));
-    expect(html).toContain("diploma.pdf");
-    expect(html).toContain("transcript.pdf");
-    expect(html).toContain("$19.95");
-    expect(html).not.toContain("We'll confirm the language");
-    expect(html).not.toContain("0 pages");
-    expect(html).not.toContain("1 page");
+    expect(evaluation).not.toContain('data-testid="pay-button"');
   });
 
   it("shows the translation line from the upload page count without waiting for a recount", () => {

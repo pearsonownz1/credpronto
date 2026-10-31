@@ -94,6 +94,25 @@ describe("processing view", () => {
     state.progressStep = "translating";
   });
 
+  it("shows an evaluation in progress and lets the customer leave", () => {
+    state.orderType = "evaluation";
+    state.status = "processing";
+    state.progressStep = "quoting";
+    state.delayed = false;
+    const markup = html();
+    expect(markup).toContain("Your evaluation is in progress");
+    expect(markup).toContain(
+      "We&#x27;ll email you in a few minutes when it&#x27;s ready. You can leave this page.",
+    );
+    expect(markup).toContain('data-testid="progress-bar"');
+    expect(markup).toContain("Evaluating");
+    expect(markup).not.toContain('data-step="confirm"');
+    expect(markup).not.toContain(">Pay<");
+    expect(markup).not.toContain("Translating your document");
+    state.orderType = "translation";
+    state.progressStep = "translating";
+  });
+
   it("leaves the progress screen as soon as the preview step is done", () => {
     state.delayed = false;
     state.status = "processing";

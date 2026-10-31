@@ -62,7 +62,13 @@ export function ConfirmView({
   return (
     <div>
       <FlowHeader
-        current={order && isTranslationBundle(order) ? "preview" : "confirm"}
+        current={
+          order && isTranslationBundle(order)
+            ? "preview"
+            : order && isCustomerEvaluation(order)
+              ? "preview"
+              : "confirm"
+        }
         track={
           order && isTranslationBundle(order)
             ? "bundle"
@@ -77,7 +83,7 @@ export function ConfirmView({
         ) : error && !order ? (
           <FlowStatus title="We couldn't load this order" body={error} />
         ) : order && isCustomerEvaluation(order) && !isTranslationBundle(order) ? (
-          <EvaluationPayRedirect token={token} />
+          <EvaluationOrderRedirect token={token} />
         ) : !order || !canOpenConfirm(order) ? (
           <FlowStatus
             title="These details aren't ready to confirm"
@@ -95,13 +101,13 @@ export function ConfirmView({
   );
 }
 
-function EvaluationPayRedirect({ token }: { token: string }) {
+function EvaluationOrderRedirect({ token }: { token: string }) {
   const router = useRouter();
   useEffect(() => {
     if (!token) return;
-    router.replace(`/checkout?token=${encodeURIComponent(token)}`);
+    router.replace(`/order/${encodeURIComponent(token)}`);
   }, [router, token]);
-  return <FlowStatus title="Opening payment…" body="" />;
+  return <FlowStatus title="Opening your evaluation…" body="" />;
 }
 
 function valueOf(order: CustomerOrder, documentId: string, key: string) {

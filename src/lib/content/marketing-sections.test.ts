@@ -45,7 +45,7 @@ describe("marketing sections", () => {
     ]);
     expect(listOf(sectionByHeading(sections, "How it works"), true).map((item) => item.lead)).toEqual([
       "Upload",
-      "Pay",
+      "Evaluating",
       "Review",
       "Download",
     ]);

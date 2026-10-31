@@ -509,7 +509,7 @@ export function UploadCard({
           {pending
             ? "Uploading…"
             : (checks.diploma || checks.courseByCourse) && !checks.translation
-              ? "Continue to payment"
+              ? "Start evaluation"
               : "Get my quote"}
         </button>
         <p className="mt-2.5 text-center text-xs text-ink-muted">

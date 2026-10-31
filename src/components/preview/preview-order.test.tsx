@@ -182,6 +182,50 @@ describe("preview order", () => {
     expect(html).not.toContain("shipping-address");
   });
 
+  it("keeps payment on the evaluation review, with the flat fee and add-ons", () => {
+    const options = [
+      { id: "notarization" as const, label: "Notarization", unitCents: 1795, per: "order" as const, totalCents: 1795 },
+      { id: "mail" as const, label: "USPS Priority hard copy", unitCents: 1295, per: "order" as const, totalCents: 1295 },
+    ];
+    const order: PreviewOrder = {
+      ...CERTIFICATE_PREVIEW,
+      product: "evaluation",
+      filename: "test_diploma.png",
+      pageCount: 1,
+      pricing: {
+        perPageCents: 1995,
+        pages: 1,
+        certificationIncluded: true,
+        totalCents: 1995,
+        lines: [{ label: "Diploma evaluation", amountCents: 1995 }],
+      },
+      addonOptions: options,
+      included: [
+        "Watermark removed after payment",
+        "Signed by a credential evaluator",
+        "Emailed and downloadable",
+      ],
+    };
+    const html = renderToStaticMarkup(
+      <OrderRail order={order} corrections={[]} panel={panel({ options, selected: [], totalCents: 1995 })} />,
+    );
+    expect(html).toContain("Review the report, then buy.");
+    expect(html).toContain("Diploma evaluation");
+    expect(html).toContain("$19.95");
+    expect(html).toContain("Notarization");
+    expect(html).toContain("$17.95 per order");
+    expect(html).toContain("USPS Priority hard copy");
+    expect(html).toContain("$12.95 per order");
+    expect(html).toContain("Pay $19.95");
+    expect(html).toContain('data-testid="buy-download"');
+    expect(html).not.toContain("download-evaluation");
+    expect(html).not.toContain("edit-translation");
+    expect(html).not.toContain("Expedited");
+    expect(html).toContain("Watermark removed after payment");
+    expect(buyLabel(order)).toBe("Pay $19.95");
+    expect(buyLabel(order, ["notarization", "mail"])).toBe("Pay $50.85");
+  });
+
   it("drops Expedited from the buy panel", () => {
     const html = renderToStaticMarkup(
       <AddonPanel

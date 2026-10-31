@@ -883,7 +883,7 @@ export function orderHubStep(
 ): OrderHubStep {
   if (checkout === "success") return "download";
   if (checkout === "cancel") {
-    if (payFirstEvaluation(order)) return "checkout";
+    if (payFirstEvaluation(order) && status !== "preview_ready") return "processing";
     return "cancel";
   }
   if (order?.fulfillment === "released" || order?.fulfillment === "awaiting_review") {
@@ -896,7 +896,8 @@ export function orderHubStep(
   ) {
     return "download";
   }
-  if (payFirstEvaluation(order)) return "checkout";
+  // Standalone evaluations stay here while the draft is built, then the preview route opens Review.
+  if (payFirstEvaluation(order)) return "processing";
   if (status === "preview_ready") return "processing";
   if (
     status === "needs_review" &&

@@ -84,16 +84,22 @@ describe("customer order presentation", () => {
     expect(presentOrder({ ...order("paid"), totalCents: 995 }, NOW).total).toBe("$9.95");
   });
 
-  it("sends an unpaid evaluation to checkout and leaves a quoted translation on confirm", () => {
+  it("keeps an unpaid evaluation on evaluating until the draft is ready to review", () => {
     const draft = { ...order("draft"), serviceType: "evaluation" };
-    expect(orderStepHref(draft)).toBe("/checkout?token=tok");
-    expect(presentOrder(draft, NOW).chip.label).toBe("Ready to pay");
-    expect(presentOrder(draft, NOW).action.label).toBe("Pay");
-    expect(presentOrder(draft, NOW).action.href).toBe("/checkout?token=tok");
+    expect(orderStepHref(draft)).toBe("/order/tok");
+    expect(presentOrder(draft, NOW).chip.label).toBe("Evaluating");
+    expect(presentOrder(draft, NOW).action.label).toBe("—");
+    expect(presentOrder(draft, NOW).action.href).toBeNull();
 
     const quoted = { ...order("quoted"), serviceType: "evaluation" };
-    expect(orderStepHref(quoted)).toBe("/checkout?token=tok");
-    expect(presentOrder(quoted, NOW).action.label).toBe("Pay");
+    expect(orderStepHref(quoted)).toBe("/order/tok");
+    expect(presentOrder(quoted, NOW).chip.label).toBe("Evaluating");
+
+    const ready = { ...order("preview_ready"), serviceType: "evaluation" };
+    expect(orderStepHref(ready)).toBe("/preview/tok");
+    expect(presentOrder(ready, NOW).chip.label).toBe("Preview ready");
+    expect(presentOrder(ready, NOW).action.label).toBe("Review");
+    expect(presentOrder(ready, NOW).action.href).toBe("/preview/tok");
 
     const bundle = { ...order("quoted"), serviceType: "evaluation", includeTranslation: true };
     expect(orderStepHref(bundle)).toBe("/confirm?token=tok");

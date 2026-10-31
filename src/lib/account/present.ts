@@ -149,14 +149,21 @@ function languagePair(order: CustomerOrder): string {
   return `${displayLanguage(source)} → ${displayLanguage(target)}`;
 }
 
-function evaluationPaysFirst(order: {
+function standaloneEvaluation(order: {
+  serviceType?: string | null;
+  includeTranslation?: boolean | null;
+}): boolean {
+  return order.serviceType === "evaluation" && order.includeTranslation !== true;
+}
+
+function evaluationStillRunning(order: {
   status: string;
   serviceType?: string | null;
   includeTranslation?: boolean | null;
 }): boolean {
   return (
-    order.serviceType === "evaluation" &&
-    order.includeTranslation !== true &&
+    standaloneEvaluation(order) &&
+    order.status !== "preview_ready" &&
     order.status !== "paid" &&
     order.status !== "approved" &&
     order.status !== "delivered" &&
@@ -177,8 +184,8 @@ export function orderStepHref(order: {
   const key = token || (orderId && isOrderId(orderId) ? orderId : null);
   if (!key) return null;
   const id = encodeURIComponent(key);
-  if (evaluationPaysFirst(order)) {
-    return `/checkout?token=${id}`;
+  if (evaluationStillRunning(order)) {
+    return `/order/${id}`;
   }
   if (order.status === "preview_ready") return `/preview/${id}`;
   if (order.status === "quoted") return `/confirm?token=${id}`;
@@ -200,12 +207,12 @@ export function presentOrder(order: CustomerOrder, now = Date.now()): OrderPrese
     return { ...base, tab: "refunded", chip: { label: "Refunded", tone: "neutral" }, action: NONE };
   }
 
-  if (evaluationPaysFirst(order)) {
+  if (evaluationStillRunning(order)) {
     return {
       ...base,
-      tab: "needs_check",
-      chip: { label: "Ready to pay", tone: "warn" },
-      action: { kind: "confirm", label: "Pay", emphasis: "primary", href: rowHref },
+      tab: "translating",
+      chip: { label: "Evaluating", tone: "neutral" },
+      action: NONE,
     };
   }
 
@@ -246,7 +253,7 @@ export function presentOrder(order: CustomerOrder, now = Date.now()): OrderPrese
         chip: { label: "Preview ready", tone: "blue" },
         action: {
           kind: "review",
-          label: "Buy now",
+          label: standaloneEvaluation(order) ? "Review" : "Buy now",
           emphasis: "primary",
           href: rowHref,
         },

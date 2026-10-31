@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FlowApiError, getFlowClient } from "@/lib/flow/client";
 import { serviceRequestFromOrder } from "@/lib/flow/order-choice";
 import { formatMoney, pageLabel } from "@/lib/flow/pricing";
@@ -36,14 +36,25 @@ export function CheckoutView({
 }) {
   const token = useStoredToken(pathToken);
   const email = useStoredEmail();
+  const router = useRouter();
   const { order, error, loading } = useCustomerOrder(token, "while-working");
   const bundle = order != null && isTranslationBundle(order);
   const evaluation = order != null && isCustomerEvaluation(order) && !bundle;
+  const reviewReady = order?.status === "preview_ready";
+
+  useEffect(() => {
+    if (!evaluation || !token) return;
+    router.replace(
+      reviewReady
+        ? `/preview/${encodeURIComponent(token)}`
+        : `/order/${encodeURIComponent(token)}`,
+    );
+  }, [evaluation, reviewReady, router, token]);
 
   return (
     <div>
       <FlowHeader
-        current={bundle ? "pay" : evaluation ? "confirm" : "preview"}
+        current={bundle ? "pay" : evaluation ? (reviewReady ? "review" : "preview") : "preview"}
         track={bundle ? "bundle" : evaluation ? "evaluation" : "translation"}
       />
       <main>
@@ -53,6 +64,8 @@ export function CheckoutView({
           <FlowStatus title="We couldn't load this order" body={error} />
         ) : !order ? (
           <FlowStatus title="No order to pay for" body="Start from your quote." />
+        ) : evaluation ? (
+          <FlowStatus title="Opening your evaluation…" body="" />
         ) : (
           <CheckoutForm
             key={order.orderId}
