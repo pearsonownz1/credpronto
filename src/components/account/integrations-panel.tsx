@@ -33,10 +33,9 @@ import {
   type ClioNotice,
   type ClioStatus,
 } from "@/lib/integrations/clio-connect";
+import { SavedMethodSummary } from "@/components/account/saved-method";
 import {
   apiOrdersCsv,
-  formatCardExpiry,
-  formatSavedMethod,
   formatCharged,
   formatDeliveryStatus,
   formatKeyCreated,
@@ -708,18 +707,9 @@ function BillingCard({
       </div>
     );
   }
-  const expiry = card.expMonth != null && card.expYear != null ? formatCardExpiry(card.expMonth, card.expYear) : "Expiry coming soon";
   return (
     <div data-testid="saved-card" className="flex flex-wrap items-center gap-3 rounded-[var(--cp-radius)] border border-line p-3">
-      <span className="inline-flex h-7 min-w-[42px] items-center justify-center rounded-[var(--cp-radius)] bg-[#1a1f71] px-1.5 text-[11px] font-bold text-white">
-        {cardBadge(card.brand)}
-      </span>
-      <span className="text-[13.5px]">
-        <span className="font-semibold">{formatSavedMethod(cardBrand(card.brand), card.last4)}</span>
-        <span data-testid="card-exp" className="mt-0.5 block text-[12.5px] text-ink-muted">
-          {expiry}
-        </span>
-      </span>
+      <SavedMethodSummary method={card} />
       <button type="button" data-testid="replace-card" className={`${secondary} ml-auto`} disabled={busy === "setup"} onClick={onReplace}>
         Replace
       </button>
@@ -849,24 +839,6 @@ function downloadCsv(csv: string) {
   URL.revokeObjectURL(url);
 }
 
-function cardBadge(brand: string): string {
-  const lower = brand.toLowerCase();
-  if (lower === "visa") return "VISA";
-  if (lower === "mastercard") return "MC";
-  if (lower === "amex" || lower === "american express") return "AMEX";
-  return brand.slice(0, 4).toUpperCase();
-}
-
-function cardBrand(brand: string): string {
-  const known: Record<string, string> = {
-    visa: "Visa",
-    mastercard: "Mastercard",
-    amex: "American Express",
-    discover: "Discover",
-  };
-  return known[brand.toLowerCase()] ?? (brand.charAt(0).toUpperCase() + brand.slice(1));
-}
-
 async function startSetup(
   client: ReturnType<typeof getIntegrationsClient>,
   setBusy: (value: string | null) => void,
@@ -927,7 +899,7 @@ function CardSetupForm({ onSaved, onError }: { onSaved: () => void; onError: (me
 
   return (
     <form onSubmit={(event) => void save(event)} className="space-y-3">
-      <PaymentElement />
+      <PaymentElement options={{ wallets: { link: "auto" } }} />
       <button type="submit" data-testid="save-card" className={secondary} disabled={!stripe || pending}>
         Save card
       </button>

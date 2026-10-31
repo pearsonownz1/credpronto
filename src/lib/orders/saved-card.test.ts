@@ -16,10 +16,13 @@ describe("saved card", () => {
     expect(billingCardBody(null)).toEqual({ card: null });
     expect(billingCardBody({ brand: "visa", last4: null })).toEqual({ card: null });
     expect(billingCardBody({ brand: "visa", last4: "4242" })).toEqual({
-      card: { brand: "visa", last4: "4242", expMonth: null, expYear: null },
+      card: { brand: "visa", last4: "4242", expMonth: null, expYear: null, email: null, wallet: null },
     });
     expect(billingCardBody({ brand: "visa", last4: "4242", expMonth: 4, expYear: 2028 })).toEqual({
-      card: { brand: "visa", last4: "4242", expMonth: 4, expYear: 2028 },
+      card: { brand: "visa", last4: "4242", expMonth: 4, expYear: 2028, email: null, wallet: null },
+    });
+    expect(billingCardBody({ brand: "link", last4: "link", email: "guy@gcs.org", wallet: "link" })).toEqual({
+      card: { brand: "link", last4: "link", expMonth: null, expYear: null, email: "guy@gcs.org", wallet: "link" },
     });
     expect(cardExpiryFromStripe({ exp_month: 4, exp_year: 2028 })).toEqual({ expMonth: 4, expYear: 2028 });
     expect(cardExpiryFromStripe({ exp_month: 13, exp_year: 2028 })).toEqual({ expMonth: null, expYear: null });
@@ -32,7 +35,7 @@ describe("saved card", () => {
     expect(setupIntentCreateParams("cus_123", "user-1")).toEqual({
       customer: "cus_123",
       usage: "off_session",
-      automatic_payment_methods: { enabled: true, allow_redirects: "always" },
+      payment_method_types: ["card"],
       metadata: { user_id: "user-1" },
     });
   });

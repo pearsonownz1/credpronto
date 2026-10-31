@@ -60,13 +60,6 @@ export function formatCardLabel(brand: string, last4: string): string {
   return `${brand} •••• ${last4}`;
 }
 
-/** Link methods have no card brand. A real last4 is still shown. */
-export function formatSavedMethod(brand: string, last4: string): string {
-  if (brand.toLowerCase() === "link" && last4.toLowerCase() === "link") return "Link";
-  if (brand.toLowerCase() === "link") return `Link •••• ${last4}`;
-  return formatCardLabel(brand, last4);
-}
-
 /** Charged amount from the API. A missing amount stays blank — never a stand-in price. */
 export function formatCharged(cents: number | null, currency: string): string {
   if (cents == null || !Number.isFinite(cents)) return "—";
