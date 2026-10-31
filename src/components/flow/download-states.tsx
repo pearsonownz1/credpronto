@@ -92,11 +92,7 @@ export function PaidOrderScreen({
       ? "download"
       : "pay"
     : evaluation
-      ? phase === "ready"
-        ? "download"
-        : phase === "certifying"
-          ? "review"
-          : "confirm"
+      ? "download"
       : onDownloadStep
         ? "download"
         : "preview";

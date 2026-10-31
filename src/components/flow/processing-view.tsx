@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { flowUsesMock, getFlowClient } from "@/lib/flow/client";
-import { isTranslationBundle } from "@/lib/flow/present";
+import { isCustomerEvaluation, isTranslationBundle } from "@/lib/flow/present";
 import { TRANSLATION_REVIEW_COPY, previewIsReady, previewWork } from "@/lib/flow/preview-progress";
 import type { CustomerOrder } from "@/lib/orders/view";
 import { FlowHeader } from "./flow-header";
@@ -34,7 +34,7 @@ export function ProcessingView({
     if (order) onOrder?.(order);
   }, [order, onOrder]);
   const bundle = order != null && isTranslationBundle(order);
-  const evaluation = order?.orderType === "evaluation" && !bundle;
+  const evaluation = order != null && isCustomerEvaluation(order) && !bundle;
   const work = order
     ? previewWork({
         status: order.status,
@@ -62,7 +62,10 @@ export function ProcessingView({
 
   return (
     <div>
-      <FlowHeader current="preview" track={bundle ? "bundle" : "translation"} />
+      <FlowHeader
+        current="preview"
+        track={bundle ? "bundle" : evaluation ? "evaluation" : "translation"}
+      />
       <main className="mx-auto w-full max-w-[620px] px-4 pt-12 text-center md:pt-20">
         {loading && !order ? (
           <FlowStatus title="Checking your order…" body="" />
@@ -76,18 +79,20 @@ export function ProcessingView({
           <>
             <p className="preview-kicker blue">Order {order.orderId}</p>
             <p data-testid="preview-held" className="mt-3 text-base text-ink">
-              {TRANSLATION_REVIEW_COPY}
+              {evaluation
+                ? "We're checking your documents. We'll email you when the evaluation is ready."
+                : TRANSLATION_REVIEW_COPY}
             </p>
           </>
         ) : (
           <>
             <p className="preview-kicker blue">Order {order.orderId}</p>
             <h1 className="mt-3 text-[32px] font-bold tracking-[-0.6px] md:text-4xl">
-              {evaluation ? "Preparing your evaluation" : "Translating your document"}
+              {evaluation ? "Your evaluation is in progress" : "Translating your document"}
             </h1>
             <p className={`mt-2.5 text-base text-ink-muted ${takingLong ? "mb-2" : "mb-8"}`}>
               {evaluation
-                ? "We'll email you when the report is ready."
+                ? "We'll email you in a few minutes when it's ready. You can leave this page."
                 : "Usually ready in 3 minutes. We'll email you when your preview is ready."}
             </p>
             {takingLong ? (

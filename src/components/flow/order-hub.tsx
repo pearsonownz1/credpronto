@@ -4,7 +4,6 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 import { trackPreviewReady } from "@/lib/analytics/gtag-events";
 import { downloadPhase, orderHubStep } from "@/lib/flow/present";
-import { isTranslationBundle } from "@/lib/orders/evaluation-price";
 import { quoteReadFinished } from "@/lib/flow/quote-poll";
 import { writeToken } from "@/lib/flow/session";
 import type { CustomerOrder } from "@/lib/orders/view";
@@ -64,13 +63,6 @@ export function OrderHub({ signedIn = true }: { signedIn?: boolean }) {
     if (!token) return;
     if (view === "cancel") {
       if (!current) return;
-      if (
-        (current.orderType === "evaluation" || current.service != null) &&
-        !isTranslationBundle(current)
-      ) {
-        router.replace(`/checkout?token=${encodeURIComponent(token)}`);
-        return;
-      }
       router.replace(`/preview/${encodeURIComponent(token)}?canceled=1`);
       return;
     }

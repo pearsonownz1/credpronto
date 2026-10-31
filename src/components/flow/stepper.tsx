@@ -10,10 +10,21 @@ const TRANSLATION_STEPS: { id: FlowStep; label: string }[] = [
 
 const EVALUATION_STEPS: { id: FlowStep; label: string }[] = [
   { id: "upload", label: "Upload" },
-  { id: "confirm", label: "Pay" },
   { id: "review", label: "Review" },
   { id: "download", label: "Download" },
 ];
+
+/** Evaluating and Review are one step. Pay happens on Review, after the draft exists. */
+function evaluationStepLabel(id: FlowStep, current: FlowStep): string {
+  if (id !== "review") return EVALUATION_STEPS.find((step) => step.id === id)?.label ?? id;
+  return current === "review" || current === "download" ? "Review" : "Evaluating";
+}
+
+function evaluationStepIndex(current: FlowStep): number {
+  if (current === "upload") return 0;
+  if (current === "download") return 2;
+  return 1;
+}
 
 const BUNDLE_STEPS: { id: FlowStep; label: string }[] = [
   { id: "upload", label: "Upload" },
@@ -32,7 +43,7 @@ export function Stepper({
   track?: FlowTrack;
 }) {
   const steps = track === "bundle" ? BUNDLE_STEPS : track === "evaluation" ? EVALUATION_STEPS : TRANSLATION_STEPS;
-  const currentIndex = steps.findIndex((step) => step.id === current);
+  const currentIndex = track === "evaluation" ? evaluationStepIndex(current) : steps.findIndex((step) => step.id === current);
 
   return (
     <div
@@ -67,7 +78,13 @@ export function Stepper({
             >
               {state === "done" ? "✓" : index + 1}
             </span>
-            {state === "current" ? <b>{step.label}</b> : step.label}
+            {state === "current" ? (
+              <b>{track === "evaluation" ? evaluationStepLabel(step.id, current) : step.label}</b>
+            ) : track === "evaluation" ? (
+              evaluationStepLabel(step.id, current)
+            ) : (
+              step.label
+            )}
           </span>
         );
       })}

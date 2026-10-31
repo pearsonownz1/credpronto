@@ -72,6 +72,17 @@ export function orderLiveMessage(input: {
   if (paidLike) {
     return downloadReadyCopy(order).title;
   }
+  if (evaluation && !bundle) {
+    if (order.status === "preview_ready") return "Your evaluation is ready to review.";
+    if (order.status === "failed") return "We couldn't read these files.";
+    if (order.delayed && (order.status === "needs_review" || PREVIEW_WAIT.has(order.status))) {
+      return "Taking longer than usual, we're on it.";
+    }
+    if (order.status === "needs_review") {
+      return "We're checking your documents. We'll email you when the evaluation is ready.";
+    }
+    return "Your evaluation is in progress. We'll email you in a few minutes when it's ready.";
+  }
   if (
     order.status === "needs_review" &&
     (!evaluation || bundle) &&

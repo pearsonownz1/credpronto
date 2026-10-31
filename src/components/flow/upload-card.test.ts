@@ -136,7 +136,7 @@ describe("service checkboxes", () => {
     expect(diploma).not.toContain("Email for your order");
     expect(diploma).not.toContain("Email for your preview link");
     expect(diploma).not.toContain('type="email"');
-    expect(diploma).toContain("Continue to payment");
+    expect(diploma).toContain("Start evaluation");
     expect(diploma).not.toContain("Get my quote");
     expect(diploma).toContain('data-testid="get-quote"');
 
@@ -144,7 +144,7 @@ describe("service checkboxes", () => {
     expect(evaluation).toMatch(/data-testid="choice-diploma"[^>]*checked=""/);
     expect(evaluation).not.toMatch(/data-testid="choice-translation"[^>]*checked=""/);
     expect(evaluation).not.toMatch(/data-testid="choice-course_by_course"[^>]*checked=""/);
-    expect(evaluation).toContain("Continue to payment");
+    expect(evaluation).toContain("Start evaluation");
 
     const translation = html(null, "translation");
     expect(translation).toMatch(/data-testid="choice-translation"[^>]*checked=""/);
@@ -159,7 +159,7 @@ describe("service checkboxes", () => {
     expect(course).toMatch(/data-testid="choice-course_by_course"[^>]*checked=""/);
     expect(course).not.toMatch(/data-testid="choice-translation"[^>]*checked=""/);
     expect(course).not.toMatch(/data-testid="choice-diploma"[^>]*checked=""/);
-    expect(course).toContain("Continue to payment");
+    expect(course).toContain("Start evaluation");
     expect(course).toContain("You can add a certified translation at $9.95/page.");
   });
 
@@ -212,7 +212,7 @@ describe("service checkboxes", () => {
     expect(markup).toContain("licenciatura.pdf");
     expect(markup).toContain("3 pages · 2 KB");
     expect(markup).toContain('aria-label="Remove licenciatura.pdf"');
-    expect(markup).toContain("Continue to payment");
+    expect(markup).toContain("Start evaluation");
   });
 
   it("shows the flat fee and the pay step when the page is a diploma upload", () => {
@@ -221,10 +221,11 @@ describe("service checkboxes", () => {
     );
     expect(markup).toContain("Diploma evaluation is $19.95 per degree");
     expect(markup).toContain("Course-by-course is $39.95 per degree");
-    expect(markup).toContain("You pay next.");
+    expect(markup).toContain("We&#x27;ll email you when it&#x27;s ready to review.");
+    expect(markup).toContain("Evaluating");
     expect(markup).not.toContain("watermarked");
     expect(markup).not.toContain('data-step="quote"');
-    expect(markup).not.toContain('data-step="preview"');
-    expect(markup).toContain("Continue to payment");
+    expect(markup).not.toContain('data-step="confirm"');
+    expect(markup).toContain("Start evaluation");
   });
 });

@@ -167,6 +167,7 @@ describe("checkout session matches the quote", () => {
 
   it("charges both evaluations, and a translation, as separate lines that sum to the server total", async () => {
     const both = order({
+      status: "preview_ready",
       service: null,
       services: ["diploma", "course_by_course"],
       degreeCount: 2,
@@ -203,6 +204,7 @@ describe("checkout session matches the quote", () => {
 
   it("prices the services sent at checkout and rejects a client total", async () => {
     const current = order({
+      status: "preview_ready",
       service: "diploma",
       services: ["diploma"],
       degreeCount: 1,
@@ -258,7 +260,7 @@ describe("checkout session matches the quote", () => {
   });
 
   it("keeps an evaluation-only session equal to the quote", async () => {
-    const current = order();
+    const current = order({ status: "preview_ready" });
     const { quote, amountTotal, params } = await paidSession(current);
     expect(quote.totalCents).toBe(1995);
     expect(amountTotal).toBe(quote.totalCents);
@@ -330,9 +332,9 @@ describe("checkout session matches the quote", () => {
     expect(stripeApi.create).not.toHaveBeenCalled();
   });
 
-  it("still charges an evaluation-only order when language and pages are unknown", async () => {
+  it("charges the flat fee once the draft is ready, even when language and pages are unknown", async () => {
     const current = order({
-      status: "draft",
+      status: "preview_ready",
       sourceLanguage: null,
       languageConfirmed: false,
       billablePages: null,
@@ -340,6 +342,18 @@ describe("checkout session matches the quote", () => {
     const { quote, amountTotal } = await paidSession(current);
     expect(quote.totalCents).toBe(1995);
     expect(amountTotal).toBe(quote.totalCents);
+  });
+
+  it("does not charge an evaluation-only order before the draft exists", async () => {
+    const current = order({
+      status: "draft",
+      sourceLanguage: null,
+      languageConfirmed: false,
+      billablePages: null,
+    });
+    vi.mocked(db.requireOrderByHash).mockResolvedValue(current);
+    await expect(startCheckout(token, {})).rejects.toThrow(/Preview is not ready/);
+    expect(stripeApi.create).not.toHaveBeenCalled();
   });
 
   it("keeps a translation-only session equal to the quote", async () => {

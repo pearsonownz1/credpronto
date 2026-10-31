@@ -71,13 +71,13 @@ export function QuoteView({
   useEffect(() => {
     if (!payFirst || !token) return;
     endHandoff();
-    router.replace(`/checkout?token=${encodeURIComponent(token)}`);
+    router.replace(`/order/${encodeURIComponent(token)}`);
   }, [payFirst, token, router, endHandoff]);
 
   return (
     <div>
       <FlowHeader
-        current={bundle ? "preview" : payFirst ? "confirm" : "quote"}
+        current={bundle ? "preview" : payFirst ? "preview" : "quote"}
         track={bundle ? "bundle" : payFirst ? "evaluation" : "translation"}
       />
       <main>
@@ -108,7 +108,7 @@ export function QuoteView({
             }
           />
         ) : payFirst ? (
-          <FlowStatus title="Opening payment…" body="" />
+          <FlowStatus title="Opening your evaluation…" body="" />
         ) : order.status === "draft" && !quoteReadFinished(order) ? (
           <ReadingFiles status={order.status} progress={order.progress} />
         ) : order.status === "failed" ? (

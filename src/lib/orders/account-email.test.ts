@@ -46,6 +46,27 @@ describe("customer emails that open the account", () => {
     expect(body.html).not.toContain("order-token-secret");
   });
 
+  it("sends an evaluation draft link to the review page, not the upload token", async () => {
+    await sendPreviewReady("ada@example.com", {
+      token: "order-token-secret",
+      orderId: "order-9",
+      sourceLanguage: "es",
+      targetLanguage: "en",
+      documentCount: 1,
+      pageCount: 1,
+      totalCents: 1995,
+      includesTranslation: false,
+    });
+
+    const body = sentMail();
+    expect(body.text).toContain("https://credpronto.com/preview/order-9");
+    expect(body.html).toContain("https://credpronto.com/preview/order-9");
+    expect(body.text).toContain("View and pay: https://credpronto.com/preview/order-9");
+    expect(body.text).not.toContain("order-token-secret");
+    expect(body.html).not.toContain("order-token-secret");
+    expect(body.html).not.toContain("/dashboard");
+  });
+
   it("sends the confirm link we rendered", async () => {
     const rendered = renderAuthLinkEmail({
       confirmUrl: "https://credpronto.com/auth/confirm?token_hash=sample-hash&type=magiclink",

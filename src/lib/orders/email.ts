@@ -33,9 +33,14 @@ export function orderLink(token: string): string {
   return `${appOrigin()}/order/${token}`;
 }
 
-/** Signed-in order list. Preview-ready and payment emails use this. */
+/** Signed-in order list. Translation preview emails use this. */
 export function accountLink(): string {
   return `${appOrigin()}/dashboard`;
+}
+
+/** Signed-in review page. The secret upload token stays out of the email. */
+export function evaluationReviewLink(orderId: string): string {
+  return `${appOrigin()}/preview/${encodeURIComponent(orderId)}`;
 }
 
 /** Order page for a signed-in owner. The raw email token is not stored on the order. */
@@ -150,7 +155,7 @@ export function sendPreviewReady(
 ): Promise<SendResult> {
   const rendered = renderPreviewReadyEmail({
     ...input,
-    payUrl: accountLink(),
+    payUrl: input.includesTranslation ? accountLink() : evaluationReviewLink(input.orderId),
   });
   return send(to, rendered.subject, rendered.text, rendered.html);
 }

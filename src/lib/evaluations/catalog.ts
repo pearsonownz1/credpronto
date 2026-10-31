@@ -36,12 +36,12 @@ export const EVALUATION_STEPS = [
     detail: "Send the diploma or transcript for the degree.",
   },
   {
-    title: "2 · Pay",
-    detail: `Pay ${DIPLOMA_PRICE_LABEL} for a diploma, or ${COURSE_BY_COURSE_PRICE_LABEL} for course-by-course.`,
+    title: "2 · Evaluating",
+    detail: "We prepare the report and email you when it is ready to review.",
   },
   {
     title: "3 · Review",
-    detail: "We'll email you when the report is ready.",
+    detail: `Pay ${DIPLOMA_PRICE_LABEL} for a diploma, or ${COURSE_BY_COURSE_PRICE_LABEL} for course-by-course.`,
   },
   {
     title: "4 · Download",

@@ -69,26 +69,17 @@ export function useQuoteUpload() {
       writeToken(result.orderToken);
       rememberUpload(result.orderToken, input.files);
       clearUploadDraft();
-      const payFirst =
-        input.choice.orderType === "evaluation" && input.choice.includeTranslation !== true;
       const useOrderRoute =
         !mock ||
         (typeof window !== "undefined" &&
           sessionStorage.getItem("credpronto-mock-order-route") === "1");
-      const nextPath = payFirst
-        ? `/checkout?token=${encodeURIComponent(result.orderToken)}`
-        : useOrderRoute
-          ? `/order/${encodeURIComponent(result.orderToken)}`
-          : "/quote";
+      const nextPath = useOrderRoute
+        ? `/order/${encodeURIComponent(result.orderToken)}`
+        : "/quote";
       if (!input.signedIn) {
         endHandoff();
         const params = new URLSearchParams({ next: nextPath });
         router.push(`/sign-up?${params.toString()}`);
-        return;
-      }
-      if (payFirst) {
-        endHandoff();
-        router.push(nextPath);
         return;
       }
       orderCreated();

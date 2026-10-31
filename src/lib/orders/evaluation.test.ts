@@ -217,7 +217,7 @@ describe("assemble evaluation", () => {
     });
   });
 
-  it("lets a diploma pay at the flat fee before a preview exists", () => {
+  it("waits to charge a diploma until the evaluation draft exists", () => {
     expect(
       checkoutBlockReason({
         status: "draft",
@@ -229,7 +229,7 @@ describe("assemble evaluation", () => {
         billablePages: null,
         unitPriceCents: 995,
       }),
-    ).toBeNull();
+    ).toBe("Preview is not ready");
     expect(
       checkoutBlockReason({
         status: "draft",
@@ -239,6 +239,18 @@ describe("assemble evaluation", () => {
         evaluationCents: 3995,
         translationCents: null,
         billablePages: null,
+        unitPriceCents: 995,
+      }),
+    ).toBe("Preview is not ready");
+    expect(
+      checkoutBlockReason({
+        status: "preview_ready",
+        languageConfirmed: true,
+        service: "diploma",
+        degreeCount: 1,
+        evaluationCents: 1995,
+        translationCents: 0,
+        billablePages: 1,
         unitPriceCents: 995,
       }),
     ).toBeNull();

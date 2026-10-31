@@ -122,6 +122,7 @@ export function selectedAddonCents(
 
 export function buyLabel(order: PreviewOrder, selectedIds: readonly string[] = []) {
   const total = order.pricing.totalCents + selectedAddonCents(order.addonOptions ?? [], selectedIds);
+  if (order.product === "evaluation") return `Pay ${formatMoney(total)}`;
   return `Buy & download — ${formatMoney(total)}`;
 }
 

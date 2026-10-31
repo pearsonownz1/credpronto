@@ -89,8 +89,8 @@ export function diplomaEquivalencyPending(
 const EVALUATION_NOT_PAYABLE = new Set(["paid", "approved", "delivered", "cancelled"]);
 
 /**
- * A credential evaluation can pay at its flat fee as soon as the type is chosen.
- * A translation still waits for a confirmed preview.
+ * A standalone evaluation can pay once its watermarked draft exists.
+ * A translation, including one bundled with an evaluation, still waits for a confirmed preview.
  */
 export function checkoutBlockReason(
   order: Parameters<typeof serviceCents>[0] & {
@@ -111,6 +111,8 @@ export function checkoutBlockReason(
   }
   if (orderHasEvaluation(order) && order.degreeCount != null && order.degreeCount >= 1) {
     if (EVALUATION_NOT_PAYABLE.has(order.status)) return "This order is not ready to pay";
+    if (order.status !== "preview_ready") return "Preview is not ready";
+    if (serviceCents(order) == null) return "This order is not ready to pay";
     return null;
   }
   if (order.status !== "preview_ready") return "Preview is not ready";

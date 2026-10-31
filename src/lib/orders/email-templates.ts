@@ -178,11 +178,11 @@ export function renderOrderReceivedEmail(input: OrderReceivedEmail): RenderedEma
   ] as const;
   const evaluation = input.product === "evaluation";
   const intro = evaluation
-    ? "We got your documents. Confirm the details and pay from your quote. An evaluator reviews them after payment, usually within minutes, and we'll email you when the evaluation is ready."
+    ? "We got your documents. We're preparing your evaluation now, and we'll email you when it's ready to review. You pay from that page."
     : "We got your documents. Your free side-by-side preview is being prepared now, and we'll email you the moment it's ready. You only pay once you've seen it.";
   const html = layout({
     preheader: evaluation
-      ? "We got your documents. Pay from the quote, then an evaluator reviews them."
+      ? "We got your documents and are preparing your evaluation."
       : "We got your documents and are preparing your free preview.",
     body: `${badge("Order received", "#EEF3FF", "#1F5EFF")}
 <h1 style="margin:14px 0 8px;font-size:24px;letter-spacing:-.4px;line-height:1.25">${escapeHtml(heading)}</h1>
@@ -191,8 +191,8 @@ ${detailTable(rows)}
 ${button("Track your order", input.trackUrl)}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:22px;font-size:13.5px"><tr>
 <td style="padding-right:8px;vertical-align:top"><b style="color:#1F5EFF">1</b> &nbsp;Received</td>
-<td style="padding:0 8px;vertical-align:top;color:#5B6575"><b>2</b> &nbsp;${evaluation ? "Pay" : "Preview ready"}</td>
-<td style="padding-left:8px;vertical-align:top;color:#5B6575"><b>3</b> &nbsp;${evaluation ? "Evaluation ready" : "Certified PDF"}</td>
+<td style="padding:0 8px;vertical-align:top;color:#5B6575"><b>2</b> &nbsp;${evaluation ? "Evaluating" : "Preview ready"}</td>
+<td style="padding-left:8px;vertical-align:top;color:#5B6575"><b>3</b> &nbsp;${evaluation ? "Review and pay" : "Certified PDF"}</td>
 </tr></table>`,
   });
   const text = [

@@ -28,7 +28,7 @@ describe("approved marketing pages", () => {
       "Credential Evaluation from $19.95, Foreign Degree to U.S. Equivalent | CredPronto",
     );
     expect(evaluationsPage.description).toBe(
-      "Get a foreign degree evaluated for its U.S. equivalent. Diploma evaluations are $19.95 per degree. Course-by-course with GPA is $39.95 per degree. Pay the flat fee, and we email you when the report is ready.",
+      "Get a foreign degree evaluated for its U.S. equivalent. Diploma evaluations are $19.95 per degree. Course-by-course with GPA is $39.95 per degree. We email you when the report is ready to review, and you pay from that page.",
     );
     expect(evaluationsPage.canonical).toBe("https://www.credpronto.com/evaluations");
     expect(evaluationsPage.body).toContain("](/guides/uscis-certified-translation)");

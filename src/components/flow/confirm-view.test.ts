@@ -99,18 +99,21 @@ describe("evaluation confirm", () => {
     flow.order = evaluationOrder();
   });
 
-  it("opens payment instead of a credential form", () => {
+  it("opens the evaluation instead of a credential form", () => {
     const html = renderToStaticMarkup(createElement(ConfirmView, { token: "tok" }));
-    expect(html).toContain("Opening payment…");
+    expect(html).toContain("Opening your evaluation…");
     expect(html).not.toContain("Credential holder name");
     expect(html).not.toContain("Date of birth");
     expect(html).not.toContain("Place of birth");
     expect(html).not.toContain("Continue to payment");
     expect(html).not.toContain('data-testid="continue-to-pay"');
     expect(html).not.toContain("Start my free preview");
-    expect(html).toContain('data-step="confirm"');
+    expect(html).toContain("Evaluating");
+    expect(html).toContain('data-step="review"');
+    expect(html).not.toContain(">Review<");
+    expect(html).not.toContain(">Pay<");
+    expect(html).not.toContain('data-step="confirm"');
     expect(html).not.toContain('data-step="quote"');
-    expect(html).not.toContain('data-step="preview"');
   });
 
   it("shows the evaluation on its own line above the total for a bundle", () => {
@@ -139,7 +142,7 @@ describe("evaluation confirm", () => {
     expect(totalAt).toBeGreaterThan(evaluationAt);
     expect(html).toContain("Start my free preview");
     expect(html).toContain('data-step="preview"');
-    expect(html).not.toContain("Opening payment…");
+    expect(html).not.toContain("Opening your evaluation…");
   });
 });
 

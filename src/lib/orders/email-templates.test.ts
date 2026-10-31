@@ -86,9 +86,10 @@ describe("email templates", () => {
       trackUrl: ORDER_URL,
       product: "evaluation",
     });
-    expect(evaluation.html).toContain("An evaluator reviews them after payment");
+    expect(evaluation.html).toContain("we'll email you when it's ready to review");
     expect(evaluation.html).not.toContain("free side-by-side preview");
-    expect(evaluation.html).toContain("Evaluation ready");
+    expect(evaluation.html).toContain("Evaluating");
+    expect(evaluation.html).toContain("Review and pay");
   });
 
   it("renders the preview-ready email with a view-and-pay link to the order", () => {

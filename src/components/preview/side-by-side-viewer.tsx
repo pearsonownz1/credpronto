@@ -741,6 +741,7 @@ function ViewerWorkspace({
   function paneLabel(visible: Role) {
     if (visible === "original") return "Original";
     if (visible === "evaluation") return "Evaluation";
+    if (order.product === "evaluation" && !hasEvaluation) return "Evaluation";
     return chrome === "gcs" ? "Certified Translation" : "Translation";
   }
 
@@ -1035,7 +1036,9 @@ function ViewerWorkspace({
             label={paneLabel(visible)}
             subtitle={document.subtitle}
             watermark={visible === "translation" && chrome !== "gcs"}
-            onDownload={visible === "evaluation" ? onDownloadEvaluation : undefined}
+            onDownload={
+              visible === "evaluation" && chrome !== "customer" ? onDownloadEvaluation : undefined
+            }
             onDocumentError={onDocumentError}
           />
         );
