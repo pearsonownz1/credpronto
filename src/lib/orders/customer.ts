@@ -83,6 +83,7 @@ import { decideChargeRefunded, decideCheckoutCompleted, decideCheckoutExpired } 
 import { checkedProgress } from "./translation-watch";
 import { orderForToken } from "./order-access";
 import type { CustomerOrder } from "./view";
+import type { OrderRecord } from "./types";
 
 export async function getOrder(token: string): Promise<CustomerOrder> {
   const { db, order } = await orderForToken(token);
@@ -321,6 +322,11 @@ export async function confirmOrder(token: string, body: unknown): Promise<Custom
 
 export async function addCorrection(token: string, body: unknown) {
   const { db, order } = await orderForToken(token);
+  return requestPreviewChange(db, order, body);
+}
+
+/** Customer check. A note on the preview. This does not edit the certified PDF. */
+export async function requestPreviewChange(db: Db, order: OrderRecord, body: unknown) {
   if (order.status !== "preview_ready" && order.status !== "correction_requested" && order.status !== "processing") {
     throw new HttpError("A preview has to be ready before you can request a correction.", 409);
   }

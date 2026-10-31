@@ -3,18 +3,20 @@ import { UNIT_PRICE_CENTS } from "./constants";
 import { evaluationPrice, isTranslationBundle } from "./evaluation-price";
 import { isCurrentGcsEvaluationPath, storedEvaluationFile } from "./evaluation-summary";
 import {
+  getPreviewOrderById,
   insertEvent,
   latestReadyPreview,
   listPreviewCorrections,
   listPreviewFrames,
   listReadyPreviewPaths,
   withCombinedNumbers,
+  type PreviewOrderRow,
 } from "./db";
 import { HttpError } from "./errors";
 import { orderForPreview } from "./order-access";
 import { evaluationPreviewSources } from "./preview-documents";
 import { previewSignedTargets } from "./preview-targets";
-import { signedObjectUrl, signedObjectUrls, type Db } from "./storage";
+import { serviceDb, signedObjectUrl, signedObjectUrls, type Db } from "./storage";
 import { isOrderId } from "./token";
 import { previewPages, type PreviewResponse } from "./view";
 
@@ -73,8 +75,21 @@ async function signBuckets(
 }
 
 export async function getPreview(token: string): Promise<PreviewRead> {
-  const started = performance.now();
   const { db, order } = await orderForPreview(token);
+  return readOrderPreview(db, order);
+}
+
+/** Watermarked preview for an order owned by this customer. */
+export async function previewForOwner(userId: string, orderId: string): Promise<PreviewRead> {
+  if (!isOrderId(orderId)) throw new HttpError("Order not found", 404);
+  const db = serviceDb();
+  const order = await getPreviewOrderById(db, orderId);
+  if (!order || order.userId !== userId) throw new HttpError("Order not found", 404);
+  return readOrderPreview(db, order);
+}
+
+export async function readOrderPreview(db: Db, order: PreviewOrderRow): Promise<PreviewRead> {
+  const started = performance.now();
   const lookupMs = elapsed(started);
   if (!order.combinedOriginalPath) throw new HttpError("Preview is not ready", 409);
 

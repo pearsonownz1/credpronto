@@ -19,6 +19,7 @@ import type { Db } from "./storage";
 
 export type { Db };
 import { eventData } from "./events";
+import { MCP_HOLD_REF, isMcpHold } from "./mcp-hold";
 import { HttpError } from "./errors";
 import { assertEmail } from "./files";
 import type {
@@ -702,6 +703,7 @@ export async function insertDocument(
     size: number;
     position: number;
     pageCount?: number | null;
+    contentSha256?: string | null;
   },
 ): Promise<void> {
   const pageCount = input.pageCount != null && input.pageCount > 0 ? input.pageCount : null;
@@ -715,6 +717,7 @@ export async function insertDocument(
     position: input.position,
     status: "uploaded",
     ...(pageCount != null ? { page_count: pageCount } : {}),
+    ...(input.contentSha256 ? { content_sha256: input.contentSha256 } : {}),
   });
   fail(error);
 }
@@ -1698,6 +1701,7 @@ export async function listOrders(
     .order("paid_at", { ascending: true, nullsFirst: false })
     .order("expedited", { ascending: false })
     .order("created_at", { ascending: false })
+    .or(`external_ref.is.null,external_ref.neq."${MCP_HOLD_REF}"`)
     .range(page.offset, page.offset + page.limit - 1);
   if (status) query = query.eq("status", status);
   if (reviewReason) query = query.eq("review_reason", reviewReason);
@@ -1859,12 +1863,14 @@ export async function listOwnedOrderRows(db: Db, userId: string): Promise<OwnedO
   const { data, error } = await db
     .from("orders")
     .select(
-      "id, status, service_type, service, degree_count, addon_cents, billable_pages, unit_price_cents, total_cents, currency, created_at, include_translation, translation_cents, final_translation_path, certification_path, review_reason",
+      "id, status, service_type, service, degree_count, addon_cents, billable_pages, unit_price_cents, total_cents, currency, created_at, include_translation, translation_cents, final_translation_path, certification_path, review_reason, external_ref",
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
   fail(error);
-  return ((data ?? []) as Row[]).map((row) => {
+  return ((data ?? []) as Row[])
+    .filter((row) => !isMcpHold(str(row.external_ref)))
+    .map((row) => {
     const service = row.service === "diploma" || row.service === "course_by_course" ? row.service : null;
     const includeTranslation = row.include_translation === true;
     const priced = evaluationPrice({

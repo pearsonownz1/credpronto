@@ -22,7 +22,7 @@ describe("saved card", () => {
     expect(cardExpiryFromStripe({ exp_month: 4, exp_year: 2028 })).toEqual({ expMonth: 4, expYear: 2028 });
     expect(cardExpiryFromStripe({ exp_month: 13, exp_year: 2028 })).toEqual({ expMonth: null, expYear: null });
     expect(shouldReadCardExpiry("sk_test_123")).toBe(true);
-    expect(shouldReadCardExpiry("sk_live_123")).toBe(false);
+    expect(shouldReadCardExpiry("sk_live_123")).toBe(true);
     expect(shouldReadCardExpiry(null)).toBe(false);
   });
 

@@ -3,11 +3,12 @@ import { generateApiKey, parseApiKeyMode, parseApiKeyName, publicApiKey } from "
 import { insertApiKey, listApiKeys } from "@/lib/orders/integrations-db";
 import { json, run } from "@/lib/orders/http";
 import { serviceDb } from "@/lib/orders/storage";
+import { partitionApiKeys } from "@/lib/mcp/keys";
 
 export async function GET() {
   return run(async () => {
     const user = await requireUser();
-    const keys = await listApiKeys(serviceDb(), user.id);
+    const keys = partitionApiKeys(await listApiKeys(serviceDb(), user.id)).partner;
     return json({ keys: keys.map(publicApiKey) });
   });
 }
